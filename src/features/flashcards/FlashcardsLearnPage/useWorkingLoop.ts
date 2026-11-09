@@ -17,6 +17,7 @@ import type {
 // Pure util so the weaker-track rule can be tested without the hook.
 import { markTypeForSideOne, sideOneForCard } from "../../../utils/flpFaceSteering";
 import { FLP_MARK_SURFACE } from "../../../../server/contracts/wire";
+import { appendTypedMark } from "../../../../server/contracts/mastery";
 import type { WritingAttempt } from "../../../components/handwriting/types";
 
 // Minimal contract the working loop needs from the card-drag layer. Passed as a
@@ -448,6 +449,19 @@ export function useWorkingLoop({
                     // index math would be brittle) and re-anchor on the card now on
                     // front. Empty loop ⇒ currentEntry null ⇒ empty state.
                     setWorkingLoop(prevLoop => removeCardAndReanchor(prevLoop, currentCard.id));
+                } else if (!isCorrect && markType !== "writing") {
+                    // A missed card STAYS in the loop and comes around again, still carrying
+                    // the history it was dealt with. Mirror the server's write onto the
+                    // loop's copy so anything reading the history in-session sees this miss
+                    // — the hint pawn's wrong-streak check (pawnHints.ts → `hasWrongStreak`,
+                    // docs/HINT_PAWN.md § "Hints") counts the last 3 marks. A miss is never
+                    // accelerated, so one append is exactly what the server stored. Writing
+                    // is left alone: its result fans out onto other cards server-side.
+                    // Undo restores the pre-dismiss loop, which drops this patch with it.
+                    const missed = { timestamp: markTimestamp, isCorrect: false };
+                    setWorkingLoop(prevLoop => prevLoop.map(card => card.id === currentCard.id
+                        ? { ...card, typedMarkHistory: appendTypedMark(card.typedMarkHistory, markType, missed) }
+                        : card));
                 }
                 // A writing result fans out onto several character cards and cannot be
                 // undone (FlashcardMarkService.undoMark refuses it), so offer no undo.

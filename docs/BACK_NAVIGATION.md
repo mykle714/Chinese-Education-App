@@ -181,7 +181,7 @@ This is also the fallback source for Rule 1's first-entry case.
 |---|---|---|---|---|---|
 | Card detail (saved) | `VocabCardDetailPage.tsx` | `navigate(-1)` | ⚠️ no idx guard (its delete is guarded) | — | — |
 | Card detail (dictionary) | `DictionaryCardDetailPage.tsx` | `navigate(-1)` | ⚠️ no idx guard | — | — |
-| Deck Tower | `DeckTowerPage.tsx` at `/` | tab root (Deck) | — | ⚠️ cards page not restored | — |
+| Deck Tower | `DeckTowerPage.tsx` at `/` | tab root (Deck) | — | ✅ world restored on POP (`useRememberTowerWorld` stamps `towerWorld` into its entry); ⚠️ cards page not restored | — |
 | User profile | `UserProfilePage.tsx` | `navigate(-1)` | ⚠️ no idx guard | — | — |
 | Night Market visit | `NightMarketVisitPage.tsx` | `navigate(-1)` | ⚠️ no idx guard | — | — |
 | Add Cards | `AddCardsPage.tsx` → `leave` | `state.exitTo` (td's `SORT_EXIT`, circle back onto the sort platform), else `navigate("/")` with `towerWorld: "core"`; set mode `exitToOrigin` (`-1`, else `?from=`, else `/`) | ✅ set mode (idx-guarded) | — | done popup (arrow-independent) ✅ |

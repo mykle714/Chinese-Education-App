@@ -285,7 +285,7 @@ runs the page's handler and the footer does not navigate. The claim is dropped o
 `NodePage` `backOnFooterTab` is the one packaged use: a tap on that tab plays the page's own
 Back (`exit(onBack, exitCircleTo)`), so a page whose Back leads where the tab does leaves the
 same way either way. Today only **acp opened from the Deck Tower** sets it (`"deck"`), so
-the Deck tab closes the circle onto the tower's sort platform rather than jumping
+the Flashcards tab closes the circle onto the tower's sort platform rather than jumping
 (DECK_TOWER.md § The sort platform). Every other tap, and every other page, navigates as
 before.
 
@@ -352,7 +352,7 @@ own-animation pages) are neither archetype.
 | `/dictionary/card/:word` | `DictionaryCardDetailPage` | Node (read-only cdp; det-keyed by word). Reached only from the saved-card cdp's drill-in fallback (`useOpenWordCard`) since dictionary results open the eip instead |
 | `/reader` | `ReaderPage` | Node (document list; footer kept, Menu tab) — opening a document routes to `/reader/:id`, a footerless node-style surface, see § below |
 | `/reader/:id` | `ReaderDocumentPage` | Node-style (footerless) — the open-document cdp-style page, see § below |
-| `/flashcards/card/:id` | `VocabCardDetailPage` | Node (saved-card cdp; slab footer, Deck tab lit) |
+| `/flashcards/card/:id` | `VocabCardDetailPage` | Node (saved-card cdp; slab footer, Flashcards tab lit) |
 | `/flashcards/writing/notebook` | `WritingNotebookPage` | Leaf (from td's writing-world paper stack, circle transition) |
 | `/friends/requests` | `IncomingRequestsPage` | Node |
 | `/friends/sent` | `SentRequestsPage` | Node |
@@ -407,7 +407,7 @@ So every leaf — `DefinitionFacts`, `BreakdownRow`, `UsedInPaginatedList`,
   non-destructive: `handleDelete` calls `removeFromLibrary`, demoting the card to
   `'provisional'` (history kept; PROVISIONAL_CARDS.md), then goes Back (`navigate(-1)`,
   or `/` when deep-linked with no history entry). Reached from td's cards page, so
-  the **Deck** tab stays active; it wears the slab footer, the Tier 2 ground
+  the **Flashcards** tab stays active; it wears the slab footer, the Tier 2 ground
   (`useTier2Look`) and prints its hero card on the tower card stock (`cardStockVars`,
   `src/features/flashcards/card/cardStock.ts`). Raises the eip from the "More Info" `SheetPill`; passes
   `onWordOpen` through the panel's drill-in callbacks (see § "Breakdown drill-in

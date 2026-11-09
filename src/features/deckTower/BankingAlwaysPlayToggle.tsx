@@ -5,8 +5,10 @@ import { readBankingAlwaysPlay, writeBankingAlwaysPlay } from "../../minutePoint
 /**
  * BankingAlwaysPlayToggle — the FEATURE-TESTER row of chips under the Deck Tower's header
  * that picks how often the daily banking run plays (docs/DAILY_MINUTE_BANKING.md § 8):
- * "Bank daily" (the learner's once-per-streak-day rule) · "Bank every visit" (plays on
- * every landing on td, ignoring the server's `bankingPending`).
+ * "Bank: daily" (the learner's once-per-streak-day rule) · "Every visit" (plays on
+ * every landing on td, ignoring the server's `bankingPending`). The first chip carries the
+ * group's name, like AuroraToggle's "Aurora: Auto", because it shares a TesterSharedRow
+ * with LightningStrikeChips.
  *
  * The chip never plays anything itself — leave td and come back to see the run as a
  * learner meets it, on page entry. A run still needs yesterday's minutes > 0.
@@ -23,8 +25,8 @@ import { readBankingAlwaysPlay, writeBankingAlwaysPlay } from "../../minutePoint
 type BankingCadence = "daily" | "every-visit";
 
 const OPTIONS: readonly { value: BankingCadence; label: string }[] = [
-    { value: "daily", label: "Bank daily" },
-    { value: "every-visit", label: "Bank every visit" },
+    { value: "daily", label: "Bank: daily" },
+    { value: "every-visit", label: "Every visit" },
 ];
 
 const BankingAlwaysPlayToggle: React.FC = () => {

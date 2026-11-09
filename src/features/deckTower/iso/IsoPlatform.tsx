@@ -48,8 +48,12 @@ interface IsoPlatformProps {
     rect: WorldRect;
     /** Slab thickness in world units. */
     thickness: number;
-    /** The surface far below that the platform's shadow falls on. */
-    ground: IsoSurface;
+    /**
+     * The surface far below that the platform's shadow falls on. Omitted = no ground
+     * shadow: a platform floating over DOM content rather than a sky plane (the flp's
+     * hint pawn, docs/HINT_PAWN.md) has no surface to paint one on.
+     */
+    ground?: IsoSurface;
     /** Bob up and down (IsoLevitate). */
     floating?: boolean;
     /** Radians the slab has swung open on its back-left top edge. 0 (default) = shut. */
@@ -99,13 +103,13 @@ const IsoPlatform: React.FC<IsoPlatformProps> = ({ rect, thickness, ground, floa
         if (!open) return null;
         const solid = [...hingedOutline(rect, 0, hinge), ...hingedOutline(rect, -thickness, hinge)];
         const lowestZ = Math.min(...solid.map((p) => p.z));
-        const gap = -thickness - ground.z;
+        const gap = ground ? -thickness - ground.z : 0;
         const drop = -thickness - lowestZ;
         const opacity = gap > 0 ? Math.min(1, Math.max(0, 1 - drop / gap)) : 0;
         return { solid, opacity };
-    }, [open, rect, thickness, hinge, ground.z]);
+    }, [open, rect, thickness, hinge, ground]);
 
-    const shadow = (
+    const shadow = ground ? (
         <g className="iso-platform__fade" style={fadeStyle}>
             {swungShadow ? (
                 swungShadow.opacity > 0 ? (
@@ -117,7 +121,7 @@ const IsoPlatform: React.FC<IsoPlatformProps> = ({ rect, thickness, ground, floa
                 <IsoShadow footprint={rect} casterZ={-thickness} receiver={ground} className="iso-platform__shadow" />
             )}
         </g>
-    );
+    ) : null;
     const body = (
         <g className={bodyClassName ? `iso-platform ${bodyClassName}` : "iso-platform"} style={bodyStyle}>
             <g className="iso-platform__fade" style={fadeStyle}>

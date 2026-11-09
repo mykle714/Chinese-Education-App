@@ -7,7 +7,7 @@ import type {
   IFocusModeDAL,
 } from '../dal/interfaces/IFocusModeDAL.js';
 import type { MasteryWorldId, ReviewMark, TypedMarkHistory } from '../contracts/wire.js';
-import { FOCUS_DAILY_CARDS, FOCUS_QUOTAS } from '../contracts/focusMode.js';
+import { FOCUS_DAILY_CARDS, FOCUS_LEVER_THRESHOLD, FOCUS_QUOTAS } from '../contracts/focusMode.js';
 import { barCategory } from '../contracts/mastery.js';
 
 /**
@@ -209,5 +209,35 @@ describe('FocusModeService.getStatus / setFocus', () => {
     const status = await service.setFocus('u', 'zh', 'core', true);
     expect(status.worlds.core.on).toBe(true);
     expect(status.endedNotices).toEqual([]);
+  });
+});
+
+describe('FocusModeService.autoEnableIfCrowded (docs/FOCUS_MODE.md § 1a)', () => {
+  it('turns focus on when the world already holds the lever threshold', async () => {
+    const { service, dal } = setup(many('Target', FOCUS_LEVER_THRESHOLD), []);
+    dal.state.focusEndedNotices = ['core'];
+    expect(await service.autoEnableIfCrowded('u', 'zh', 'core')).toBe(true);
+    expect(dal.state.focusWorlds).toEqual(['core']);
+    // Same as the lever's turn-on: no stale "focus ended" popup survives.
+    expect(dal.state.focusEndedNotices).toEqual([]);
+  });
+
+  it('leaves focus off below the threshold', async () => {
+    const { service, dal } = setup(many('Target', FOCUS_LEVER_THRESHOLD - 1), []);
+    expect(await service.autoEnableIfCrowded('u', 'zh', 'core')).toBe(false);
+    expect(dal.state.focusWorlds).toEqual([]);
+  });
+
+  it('does not count cooling cards toward the threshold', async () => {
+    const cooling = Array.from({ length: 10 }, () => card('Target', MINUTE));
+    const { service, dal } = setup([...many('Target', FOCUS_LEVER_THRESHOLD - 1), ...cooling], []);
+    expect(await service.autoEnableIfCrowded('u', 'zh', 'core')).toBe(false);
+    expect(dal.state.focusWorlds).toEqual([]);
+  });
+
+  it('reports false for a world already focused, so no popup is owed twice', async () => {
+    const { service, dal } = setup(many('Target', FOCUS_LEVER_THRESHOLD), ['core']);
+    expect(await service.autoEnableIfCrowded('u', 'zh', 'core')).toBe(false);
+    expect(dal.state.focusWorlds).toEqual(['core']);
   });
 });

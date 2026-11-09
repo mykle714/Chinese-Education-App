@@ -34,17 +34,14 @@ export const FIRE_GLYPH_SIZE_PX = 22.5;
 /**
  * The count's size when a caller does not ask for another. Raised from the design's
  * literal 11px to `SIZE.body` (14px) on 2026-10-26: at 11px the figure was hard to read
- * beside the 22.5px glyph, notably over the Deck Tower's sky. Exported so the Writing
- * Notebook's look-alike header counter (`WritingNotebookPage` → `NotebookHeaderCount`),
- * which sits beside this badge, stays the same size.
+ * beside the 22.5px glyph, notably over the Deck Tower's sky.
  */
 export const FIRE_COUNT_FONT_SIZE = SIZE.body;
 
 /**
  * The HEADER flame's glyph and count, ~15% over the defaults above (2026-11-05 header
  * scale-up, docs/SHELF_REDESIGN.md). Separate from the defaults so a non-header caller
- * (ProfileStatsCard) keeps its size. Read by MinutePointsFireBadge (every page header) and
- * the Writing Notebook's look-alike header counter (`NotebookHeaderCount`).
+ * (ProfileStatsCard) keeps its size. Read by MinutePointsFireBadge (every page header).
  */
 export const HEADER_FIRE_GLYPH_PX = 26;
 // Count bumped 16px (bodyLg) → 18px (subtitle) on 2026-11-05 so the figure reads at a glance
@@ -55,8 +52,8 @@ export const HEADER_FIRE_COUNT_FONT_SIZE = SIZE.subtitle;
  * The count's line weight: medium, one step over the design's regular. Bold with a
  * hairline self-outline (the Deck Tower card count's treatment) and then semibold were
  * tried on 2026-10-26 and both read as too heavy. Azeret Mono's 500 is already loaded in
- * index.html. Shared with the Writing Notebook's header counter for the same reason as
- * `FIRE_COUNT_FONT_SIZE`.
+ * index.html. Also read by the Writing Notebook's boxed toolbar counter
+ * (`WritingNotebookPage` → `NotebookCountBox`), so its count has the flame figure's weight.
  */
 export const FIRE_COUNT_INK = {
     fontWeight: WEIGHT.medium,

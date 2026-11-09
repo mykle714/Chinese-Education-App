@@ -5,6 +5,7 @@ import {
   flpReadyCountsByBand,
   isFlpReady,
 } from "../utils/flpReadiness";
+import { flpUpcomingReady } from "../../server/contracts/flpReadiness";
 import { COOLDOWN_MS_BY_CATEGORY } from "../utils/masteryCompute";
 
 /**
@@ -116,5 +117,34 @@ describe("flpReadyCountsByBand", () => {
     // And the identity is not vacuous — both halves carry cards.
     expect(sum(counts, LOWER_BANDS)).toBeGreaterThan(0);
     expect(sum(counts, UPPER_BANDS)).toBeGreaterThan(0);
+  });
+});
+
+// The Deck Tower's release schedule (docs/DECK_TOWER.md § "Cooldown releases"). Pinned:
+// a cooling card is listed at exactly the instant `flpCooldownRemainingMs` reaches 0, in
+// the band it will be counted under, soonest first; ready, never-marked and beyond-horizon
+// cards are not listed.
+describe("flpUpcomingReady — the release schedule", () => {
+  const MIN = 60 * 1000;
+  it("lists cooling cards at the instant their cooldown ends, soonest first, in their band", () => {
+    const later = card(1, [mark(true, NOW - 1 * MIN)], []);
+    const sooner = card(2, [mark(true, NOW - 3 * MIN)], []);
+    const upcoming = flpUpcomingReady([later, sooner], NOW);
+    expect(upcoming.map((u) => u.readyAt)).toEqual([
+      NOW + flpCooldownRemainingMs(sooner, NOW),
+      NOW + flpCooldownRemainingMs(later, NOW),
+    ]);
+    expect(upcoming[0].readyAt).toBeLessThan(upcoming[1].readyAt);
+    const counted = flpReadyCountsByBand([sooner], upcoming[0].readyAt);
+    expect(counted[upcoming[0].band]).toBe(1);
+  });
+
+  it("leaves out ready, never-marked and beyond-horizon cards", () => {
+    const ready = card(1, [mark(true, NOW - 10 * MIN)], []);
+    const fresh = card(2, [], []);
+    const cooling = card(3, [mark(true, NOW - 1 * MIN)], []);
+    expect(flpUpcomingReady([ready, fresh], NOW)).toEqual([]);
+    expect(flpUpcomingReady([cooling], NOW, "core", 1 * MIN)).toEqual([]);
+    expect(flpUpcomingReady([cooling], NOW, "core", 10 * MIN)).toHaveLength(1);
   });
 });

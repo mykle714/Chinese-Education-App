@@ -48,6 +48,7 @@ folder: any feature may consume it.
 | `sortDifficultyCaption` | acp toolbar level pill — `AddCardsPage` `difficultyCaption` / `LevelCaption` | "DIFFICULTY" caption under the pill | the pill alone (Tower Tier 2 design) | 7 visits + 7 days |
 | `towerSortLabel` | td main world's mini sort platform — `DeckTowerPlatform` `fixturePrint` (`FIXTURE_PRINT.sortBin`) | "ADD MORE / CARDS →" printed in white on the floor in front of it, reading toward it (`IsoFloorPrint`) | the slab alone | 70 visits + 14 days |
 | `towerNotebookLabel` | td writing world's notebook paper stack — `DeckTowerPlatform` `fixturePrint` (`FIXTURE_PRINT.notebook`) | "WRITING / NOTEBOOK" + a hung "→" printed into the floor in front of it, reading toward it | the stack alone | 70 visits + 14 days |
+| `pawnDismissCue` | flp hint pawn's speech bubble — `PawnHintBody` `DismissCue`, resolved by `HintPawn` → `DismissCueSoftIntro` | "Tap / to / dismiss" cue in the bubble's bottom-right corner ([HINT_PAWN.md](./HINT_PAWN.md) § Dismissing) | no cue, and no space reserved for it: the line / cpcd words take its width. The bubble is still one tap target | 49 visits + 14 days |
 
 ## 3. Storage
 
@@ -70,6 +71,11 @@ Writes re-read the map first, so two si mounting together cannot clobber each ot
   the si's element is not actually shown. `DeckTowerPlatform` passes
   `enabled: sortBin !== undefined` / `notebook !== undefined`, so a visit counts only on the
   world, and with the Learning deck, where that fixture stands.
+- **A host that outlives the thing it introduces** mounts a tiny keyed child instead of
+  calling the hook itself. `HintPawn` stays mounted while its flp is parked under the
+  tower, so it wraps its bubbles in `DismissCueSoftIntro key={arrival.id}`: each pawn
+  arrival (one study session) is a fresh mount, so one visit, and one style for the whole
+  session.
 
 ## 5. Feature-tester viewing override (Settings)
 

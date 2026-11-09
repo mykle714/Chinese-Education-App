@@ -14,7 +14,7 @@
  * ── Why everything is an EXTRUDED ROUNDED RECT ────────────────────────────────
  * The art style is built from chunky, softly bevelled boxes with no outlines — edges are
  * told apart purely by the value change between the top and the two visible sides. Every
- * object in the framework (platform, carpet, card, and every shadow) is a rounded
+ * object in the framework (platform, card, and every shadow) is a rounded
  * rectangle in the world XY plane pushed up along z, so one primitive covers all of it.
  *
  * For a CONVEX shape extruded straight up, the screen silhouette of the solid is simply
@@ -234,6 +234,13 @@ export interface PrismGeometry {
     bevelHalfWidth: number;
     /** Screen-space bounding box of the silhouette. */
     bounds: { minX: number; minY: number; maxX: number; maxY: number };
+    /**
+     * The top face's outline split at its leftmost and rightmost screen points, as open
+     * paths: FRONT is the lower chain (where the top meets the walls), BACK the upper chain
+     * (where it meets the sky). IsoSolid's `roundedEdge` strokes them.
+     */
+    topFront: string;
+    topBack: string;
 }
 
 export function prism(proj: Projector, rect: WorldRect, zBottom: number, zTop: number): PrismGeometry {
@@ -242,9 +249,12 @@ export function prism(proj: Projector, rect: WorldRect, zBottom: number, zTop: n
     const hullPts = convexHull(topPts.concat(projectOutline(proj, world, zBottom)));
     const r = Math.max(0, Math.min(rect.r, rect.w / 2, rect.d / 2));
     const front = proj.project(rect.x + rect.w, rect.y + rect.d, zTop);
+    const edges = splitChains(topPts);
     return {
         top: toPath(topPts),
         hull: toPath(hullPts),
+        topFront: toOpenPath(edges.front),
+        topBack: toOpenPath(edges.back),
         frontX: front.x,
         bevelHalfWidth: Math.max(1, r * proj.scaleAt(rect.x + rect.w, rect.y + rect.d, zTop) * 0.9),
         bounds: boundsOf(hullPts),
@@ -258,7 +268,16 @@ export function prism(proj: Projector, rect: WorldRect, zBottom: number, zTop: n
  * cards on the tower's walls.
  */
 export function frontContour(proj: Projector, rect: WorldRect, z: number): Pt[] {
-    const pts = projectOutline(proj, roundedRectWorld(rect), z);
+    return splitChains(projectOutline(proj, roundedRectWorld(rect), z)).front;
+}
+
+/**
+ * A closed screen outline split at its leftmost and rightmost points into two chains, both
+ * in outline order: FRONT is the lower one on screen (for a prism's
+ * top face, the edge it shares with the walls), BACK the upper one (the edge against the sky).
+ */
+export function splitChains(pts: Pt[]): { front: Pt[]; back: Pt[] } {
+    if (pts.length === 0) return { front: [], back: [] };
     let iMin = 0;
     let iMax = 0;
     pts.forEach((p, i) => {
@@ -277,7 +296,7 @@ export function frontContour(proj: Projector, rect: WorldRect, z: number): Pt[] 
     const a = walk(iMax, iMin);
     const b = walk(iMin, iMax);
     const avgY = (c: Pt[]) => c.reduce((s, p) => s + p.y, 0) / c.length;
-    return avgY(a) > avgY(b) ? a : b;
+    return avgY(a) > avgY(b) ? { front: a, back: b } : { front: b, back: a };
 }
 
 export function boundsOf(pts: Pt[]) {
@@ -436,9 +455,12 @@ export function posedPrism(proj: Projector, rect: WorldRect, zBottom: number, zT
     const hullPts = convexHull(topPts.concat(toScreen(outlineAt(zBottom))));
     const r = Math.max(0, Math.min(rect.r, rect.w / 2, rect.d / 2));
     const f = place({ x: rect.x + rect.w, y: rect.y + rect.d, z: zTop });
+    const edges = splitChains(topPts);
     return {
         top: toPath(topPts),
         hull: toPath(hullPts),
+        topFront: toOpenPath(edges.front),
+        topBack: toOpenPath(edges.back),
         frontX: proj.project(f.x, f.y, f.z).x,
         bevelHalfWidth: Math.max(1, r * proj.unit * 0.9),
         bounds: boundsOf(hullPts),

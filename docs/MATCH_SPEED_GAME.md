@@ -999,7 +999,7 @@ colours unambiguous — a filled card is always saying something about what just
 
 | State | Treatment |
 |---|---|
-| idle | a raised key: white (both columns since v2, `.msc`), `COLORS.border` inset ring, 5px `COLORS.grey` lip |
+| idle | a raised key: white (both columns since v2, `.msc`), `COLORS.border` inset ring, 5px `COLORS.grey` lip. Every state carries the straight-lip rounded edge (`keyShadow`: a 1px top rim light just inside the ring, mixed from the current fill, and a 0.5px fillet over the lip — docs/designGuidelines.md § "The rounded edge") |
 | selected | the key stays down on a 2px lip: `COLORS.blu` fill with a 2px **ink** inset ring (`.msc.pick`, v2; `SELECTED_CARD_RING`, `src/games/match-speed/constants.ts`; `keyShadow`, `MatchSpeedCard.tsx`) |
 | wrong | `COLORS.red` fill + `dangerInk` text, ~400ms, **board stays live** |
 | partner-hint (cleanup only) | `COLORS.grn` — the same green a correct match pops |

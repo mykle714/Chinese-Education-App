@@ -21,7 +21,7 @@ Deck Tower (/) — main world's mini sort platform
                                ▼
 /discover/sort/:language
   ← Add Cards (AddCardsPage): drag-to-sort.
-    Node page (keeps footer, Deck tab lit). Back → / (main world).
+    Node page (keeps footer, Flashcards tab lit). Back → / (main world).
     Hold Skip 2 s → skipped-cards sheet (hidden).
 ```
 
@@ -29,7 +29,7 @@ Deck Tower (/) — main world's mini sort platform
 
 | Route                          | Component          | Header                                  | Footer        |
 | ------------------------------ | ------------------ | --------------------------------------- | ------------- |
-| `/discover/sort/:language`      | `AddCardsPage`    | `NodePage` (← back arrow) → `/`          | Slab, **Deck** tab lit |
+| `/discover/sort/:language`      | `AddCardsPage`    | `NodePage` (← back arrow) → `/`          | Slab, **Flashcards** tab lit |
 
 - **`/discover/sort/:language` (sort):** a **node page** (see
   [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)) — wrapped in `NodePage`, which **keeps
@@ -41,7 +41,7 @@ Deck Tower (/) — main world's mini sort platform
     circle transition and `exitTo` = the tower's main world (`SORT_EXIT`), and Back closes
     the circle onto that platform and returns there ([DECK_TOWER.md](./DECK_TOWER.md)
     § The sort platform). Without `exitTo` (a deep link) Back goes to `/` with
-    `state.towerWorld: "core"`. With `exitTo`, the footer's Deck tab plays Back too
+    `state.towerWorld: "core"`. With `exitTo`, the footer's Flashcards tab plays Back too
     (`backOnFooterTab = "deck"`). In **set mode** (`?set=provisional`, a sort offer) it
     calls `exitToOrigin` instead (`src/features/discover/AddCardsPage.tsx` →
     `exitToOrigin`): `navigate(-1)` when there is history, else the recorded `?from=`

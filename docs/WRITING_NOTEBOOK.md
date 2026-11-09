@@ -19,7 +19,9 @@ the Deck Tower's writing world (§ Entry point).
 
 ```
 ┌──────────────────────────────┐
-│ ⌄  Writing Notebook  ✎12 (⇄ Change) │  LeafPage header — counter (flame-style) + labelled change-word chip
+│ ⌄  Notebook               🔥 │  LeafPage header — title + the app's flame only
+│ [✓12]   (⇄ Change)       (↑) │  toolbar — counter left, change-word chip centred,
+│                              │    back-to-top right (only when scrolled away)
 │ ┌───┬───┐                    │  word bar — the writing shadows, 2 per row across the
 │ └───┴───┘                    │    sheet's width (2×2 for 3–4 chars); tapping one
 │                              │    cycles its stroke aid
@@ -29,7 +31,22 @@ the Deck Tower's writing world (§ Entry point).
 └──────────────────────────────┘
 ```
 
-- **Change-word button.** A labelled `HeaderActionChip` in the header's right slot
+- **Toolbar.** A row directly under the page header (`WritingNotebookPage` →
+  `NotebookToolbar`, `writing-notebook-page__toolbar`) with three fixed slots on a
+  `1fr auto 1fr` grid: the counter on the **left**, the change-word chip **centred**, the
+  back-to-top chip on the **right**. The grid keeps the middle chip centred on the page and
+  stops anything shifting when a side slot empties. Modelled on the
+  sort cards page's top-right control cluster (`AddCardsPage` → `SortToolbar`) but laid out
+  **in flow**, not floated, because the word bar sits right beneath it. Side padding is
+  `NOTEBOOK_SIDE_GUTTER`, so the side chips sit flush with the grid's edges. It sits outside the body box,
+  so the compact-bar editor never covers it. These controls lived in the header's right slot
+  until 2026-11-08; a 4-digit count crowded the header out.
+- **Back to top.** An icon-only `HeaderActionChip` (`keyboard_double_arrow_up` — the "Next empty" glyph, flipped —
+  `writing-notebook-page__back-to-top`) shown only while the sheet is scrolled at least one
+  row from the top (`NotebookGrid` → `onScrolledAwayChange`, `SCROLLED_AWAY_ROWS`). Its slot
+  holds its space while it is hidden, so nothing else moves. Tapping it calls the grid's `scrollToTop`
+  (`NotebookGridHandle`), the same animated flight as the jump (`flyTo`; see § Scrolling).
+- **Change-word button.** A labelled `HeaderActionChip` in the toolbar
   (`writing-notebook-page__change-word`): **add** + "Choose" until a word is chosen, then
   **swap_horiz** + "Change" (its aria-label also names the current word). Styled as the
   Deck Tower study header's outlined audio chip, in ink2 on the paper header. Tapping it opens the word picker. Words are **one to four characters**
@@ -102,11 +119,14 @@ the Deck Tower's writing world (§ Entry point).
       a number would rather sit on another stroke beside its own than drift away.
     - Spots outside the cell are never taken. With no 2D canvas (tests) numbers avoid only
       each other and stay nearest their own stroke.
-- **Counter** — in the header's right slot, left of the change-word button, drawn in the
-  minute-points flame's shape (`FireCount`): one big filled `edit_note` glyph
-  (`FIRE_GLYPH_SIZE_PX`) beside a mono count at `FIRE_COUNT_FONT_SIZE` (14px) in `FIRE_COUNT_INK` (medium), in ink2 (`COLORS.iconColor`) — the
-  orange stays the flame's (`WritingNotebookPage` → `NotebookHeaderCount`). Hidden until a
-  word is chosen and its count has loaded. See [Counter](#counter).
+- **Counter** — the toolbar's left slot: a `check`
+  glyph (`NOTEBOOK_GLYPH`) and a mono, tabular count held together in one rectangular 1px
+  outline (4px corners, `NOTEBOOK_COUNT_RADIUS_PX`) in ink2 (`COLORS.iconColor`). Sized to the
+  Change chip (`OUTLINED_CHIP_ICON_PX` glyph, `OUTLINED_CHIP_PAD_Y_PX` padding,
+  `OUTLINED_CHIP_TEXT_PX` type) so the toolbar's items share one height; the square corners
+  (vs the chip's pill) keep it from reading as a button
+  (`WritingNotebookPage` → `NotebookCountBox`). Hidden until a word is chosen and its
+  count has loaded. See [Counter](#counter).
 - A failed cell save rolls the cell back and shows one status line under the bar.
 
 Code: `src/features/flashcards/writingNotebook/` → `WritingNotebookPage`, `NotebookWordBar`.
@@ -270,6 +290,9 @@ spacer always reaches a page past the deepest row seen (`rowCountFor`), so it ne
 - Fetching pauses during the flight, so the pages flown past are never requested; the landing
   pages are requested at take-off. **Scrolling back up** into skipped rows fetches their pages
   then. A touch, wheel or key during the flight hands the scroll back to the learner.
+- **Back to top** (the toolbar's up arrow) reuses the same flight to `scrollTop = 0`: one
+  `flyTo(dest)` in `NotebookGrid` serves both, exposed to the page as
+  `NotebookGridHandle.scrollToTop`.
 
 Code: `NotebookGrid`, `notebookLayout.ts`, `useNotebookSheet`.
 

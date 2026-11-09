@@ -1,6 +1,7 @@
 import { keyframes } from "@mui/material/styles";
 import { COLORS } from "../../theme/colors";
 import { keycapPressSx } from "../../theme/keycapPress";
+import { roundedEdgeFillet, roundedEdgeRimLight } from "../../theme/roundedEdge";
 import { shadeHex } from "../deckTower/iso";
 import { FLP_CARD_PANEL_RADIUS_RATIO, FLP_CARD_STOCK_INSET_RATIO } from "../flashcards/constants";
 import { MINI_CARD_DIMENSIONS, type MiniCardSize } from "../../components/miniCardFace";
@@ -77,7 +78,17 @@ export const SORTED_STOCK = {
 export const SORTED_PRINT_OPACITY = 0.4;
 
 const WALL_STEPS = Array.from({ length: PANEL_WALL_PX }, (_, i) => i + 1);
-const panelWall = (color: string) => WALL_STEPS.map((k) => `${k}px ${k}px 0 ${color}`);
+/**
+ * The panel's wall with a hairline ROUNDED perimeter (theme/roundedEdge.ts, user request
+ * 2026-11-08 — the td filter keys' edge): a 1px rim light on the cream rim's top-left edge
+ * and a 0.5px fillet, half-way between the rim and wall colours, over the wall's first
+ * step. `face` is the rim the wall stands under (cream, or the sorted grey).
+ */
+const panelWall = (face: string, wall: string) => [
+    roundedEdgeRimLight(face),
+    roundedEdgeFillet(face, wall),
+    ...WALL_STEPS.map((k) => `${k}px ${k}px 0 ${wall}`),
+];
 const panelCastShadow = (groundShadow: string, lift: number) => {
     const growth = 1 + (HELD_SHADOW_GROWTH - 1) * lift;
     const offset = (PANEL_WALL_PX + PANEL_SHADOW_REACH_PX * growth).toFixed(2);
@@ -92,8 +103,8 @@ const panelCastShadow = (groundShadow: string, lift: number) => {
  */
 export const cardStockShadow = (sorted: boolean, groundShadow: string, lift = 0) =>
     (sorted
-        ? panelWall(SORTED_STOCK.wall)
-        : [...panelWall(COLORS.cardWall), panelCastShadow(groundShadow, lift)]
+        ? panelWall(SORTED_STOCK.rim, SORTED_STOCK.wall)
+        : [...panelWall(COLORS.cardFace, COLORS.cardWall), panelCastShadow(groundShadow, lift)]
     ).join(", ");
 
 /**
@@ -106,7 +117,7 @@ export const cardStockShadow = (sorted: boolean, groundShadow: string, lift = 0)
  * — user call 2026-11-06.) This is the `sorted` silhouette in the live wall colour.
  */
 const PRESS_SINK_PX = 2;
-const PRESSED_STOCK_SHADOW = panelWall(COLORS.cardWall).join(", ");
+const PRESSED_STOCK_SHADOW = panelWall(COLORS.cardFace, COLORS.cardWall).join(", ");
 
 /**
  * The press of a card-stock card whose tap OPENS something (td's cards page → the cdp,
@@ -115,10 +126,10 @@ const PRESSED_STOCK_SHADOW = panelWall(COLORS.cardWall).join(", ");
  * (1, 1) direction, the way the wall and shadow fall) rather than straight down. The tap's action fires on release (`click`), so the card
  * is down while held and the page changes as the finger lifts.
  *
- * Moves through the CSS `translate` property, not `transform`: these cards are
- * useScrollStretch track elements (MiniVocabCardGrid), which write an inline `transform`
- * on them mid-scroll. A press that moves past the delegate's drag slop (a scroll) lets the
- * card up at once, so the two never fight.
+ * Moves through `transform`. These cards are useScrollStretch track elements
+ * (MiniVocabCardGrid), but the stretch writes the separate `translate` property, so the
+ * two compose. (A press that moves past the delegate's drag slop — a scroll — lets the
+ * card up at once anyway.)
  *
  * Spread AFTER any `&:hover` shadow: on touch, `:hover` sticks after a tap, and the
  * pressed selectors share its specificity, so the later one wins.
@@ -129,7 +140,6 @@ export const cardStockPressSx = (groundShadow: string) =>
         pressedShadow: PRESSED_STOCK_SHADOW,
         pressedX: PRESS_SINK_PX,
         pressedY: PRESS_SINK_PX,
-        viaTranslate: true,
     });
 
 /**
@@ -142,13 +152,20 @@ export const cardStockPressSx = (groundShadow: string) =>
  */
 export const sortCardStockSx = (size: MiniCardSize, sorted: boolean, groundShadow: string) => {
     const width = MINI_CARD_DIMENSIONS[size].width;
+    const panelInset = `${width * FLP_CARD_STOCK_INSET_RATIO}px`;
+    const panelRadius = `${width * FLP_CARD_PANEL_RADIUS_RATIO}px`;
     return {
         boxShadow: cardStockShadow(sorted, groundShadow, 0),
+        // The printed panel as a clip shape, under the same name `CardFaceSide` gives the
+        // big face's: `CardIconLayer` reads it, so an advanced layout's icons are cut at the
+        // panel's edge instead of painting over the cream rim — the mini mirrors the big
+        // preview. (The mini's word/definition sit at fixed insets inside the panel already.)
+        "--card-panel-clip": `inset(${panelInset} round ${panelRadius})`,
         "&::before": {
             content: '""',
             position: "absolute",
-            inset: `${width * FLP_CARD_STOCK_INSET_RATIO}px`,
-            borderRadius: `${width * FLP_CARD_PANEL_RADIUS_RATIO}px`,
+            inset: panelInset,
+            borderRadius: panelRadius,
             // `--mini-card-panel` lets a card with its OWN colour (an advanced-layout vet
             // card's `cardColor`, set by MiniVocabCard `stock`) fill the panel while the rim
             // stays cream — the flp card stock's rule (CardFaceSide). Unset on

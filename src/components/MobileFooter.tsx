@@ -12,6 +12,8 @@ import Icon from "./Icon";
 import { SLAB_CAST_SHADOW_VAR } from "./footerCastShadow";
 import { routeFooterStyle } from "../routes/routeMeta";
 import { tier2Var } from "../timeOfDay/tier2Chrome";
+import { CARD_SURFACE_RADIUS } from "../theme/surfaces";
+import { roundedEdgeFillet, roundedEdgeInsetFillet, roundedEdgeRimLight } from "../theme/roundedEdge";
 import { isFeatureEnabled } from "../../server/contracts/featureFlags";
 import { registerDictionaryTabTap, requestDictionarySearchFocus } from "../features/dictionary/dictionarySearchFocus";
 
@@ -64,14 +66,42 @@ export const FOOTER_TOTAL_CLEARANCE = `calc(${FOOTER_CLEARANCE}px + ${SAFE_BOTTO
 export const SLAB_FOOTER_BOTTOM = `max(26px, ${SAFE_BOTTOM})`;
 // Gap to the screen's left/right edges.
 const SLAB_FOOTER_SIDE_INSET = 16;
-// The slab's own height, and the lip it stands on (a solid `0 6px 0` shadow, like a
-// card's wall seen from the front).
+// The slab's own height, and the lip it stands on — the card's thickness.
 const SLAB_FOOTER_HEIGHT = 64;
 const SLAB_FOOTER_LIP = 6;
-// The cast shadow's offset onto the sky (the design's `10px 16px`): down-right, the
-// same direction the tower's iso objects throw theirs.
-const SLAB_CAST_X = 10;
-const SLAB_CAST_Y = 16;
+// Corner radius: the app's card-sized-surface radius (theme/surfaces.ts → 15px, the same
+// curve as the cards, td's filter keys and the card stock). It used to be its own 22px,
+// which read rounder than everything else on screen (user call 2026-11-08).
+const SLAB_FOOTER_RADIUS = CARD_SURFACE_RADIUS;
+// The face's padding round the tab keys.
+const SLAB_FOOTER_PADDING = 6;
+// The active tab key's radius: CONCENTRIC with the slab — its radius minus the padding
+// between them, so the key's corner follows the slab's curve at an even 6px gap.
+const SLAB_KEY_RADIUS = SLAB_FOOTER_RADIUS - SLAB_FOOTER_PADDING;
+// The lip is a DIAGONAL wall (2026-11-08), showing below AND to the right of the face —
+// the slab's thickness seen from the tower's (1, 1) light, like the other raised keys
+// (td's filter keys, TowerFilterKeys.tsx; the mini cards' card stock, sortCardStock.ts →
+// `panelWall`). box-shadow cannot slant, so it is the face's outline stepped 1px at a time
+// along (1, 1), one copy per px of lip, so the wall stays continuous round the radius.
+// (It used to be a solid `0 6px 0` lip — the wall seen straight from the front.)
+// The face's perimeter is a hairline ROUNDED edge (theme/roundedEdge.ts, 2026-11-08 — the
+// filter keys' and card stock's edge): a 1px rim light on the face's top-left edge and a
+// 0.5px fillet, half-way between face and wall colour, over the lip's first step. Both
+// colours are `tier2Var(…)` CSS variables; the helper mixes them with `color-mix`.
+const slabLipShadow = (face: string, wall: string) =>
+    [
+        roundedEdgeRimLight(face),
+        roundedEdgeFillet(face, wall),
+        ...Array.from({ length: SLAB_FOOTER_LIP }, (_, i) => `${i + 1}px ${i + 1}px 0 ${wall}`),
+    ].join(", ");
+// The cast shadow on the sky: along the SAME (1, 1) diagonal as the lip, reaching
+// SLAB_CAST_REACH past the wall on both axes — the tower style's one shadow rule, shared
+// with td's filter keys (TowerFilterKeys.tsx → `CAST_PX` = wall 5 + reach 4) and the
+// card stock (sortCardStock.ts → `panelCastShadow`, wall 4 + reach 4). Hard-edged like the
+// filter keys. (It was the design's `10px 16px` until 2026-11-08 — steeper than every
+// other object's shadow, so the slab looked lit from a different sun.)
+const SLAB_CAST_REACH = 4;
+const SLAB_CAST_PX = SLAB_FOOTER_LIP + SLAB_CAST_REACH;
 // The band from the screen's bottom edge to the slab's TOP — the slab's real footprint.
 // A page laid out around the slab (the Deck Tower's scroller clip and spacer) reserves
 // this, as a CSS string because it carries the safe area. The cast shadow is excluded:
@@ -82,7 +112,7 @@ export const SLAB_FOOTER_TOTAL_HEIGHT = `calc(${SLAB_FOOTER_BOTTOM} + ${SLAB_FOO
 export const SLAB_FOOTER_TOTAL_CLEARANCE = `calc(${SLAB_FOOTER_TOTAL_HEIGHT} + ${FOOTER_EXTRA_GAP}px)`;
 // How far FooterPresenter pushes the slab to clear the frame's bottom edge entirely:
 // its footprint plus the cast shadow, or the shadow's tail would peek up when hidden.
-export const SLAB_FOOTER_HIDDEN_OFFSET = `calc(${SLAB_FOOTER_BOTTOM} + ${SLAB_FOOTER_HEIGHT + SLAB_FOOTER_LIP + SLAB_CAST_Y}px)`;
+export const SLAB_FOOTER_HIDDEN_OFFSET = `calc(${SLAB_FOOTER_BOTTOM} + ${SLAB_FOOTER_HEIGHT + SLAB_CAST_PX}px)`;
 
 // The single, app-wide bottom spacer. Render it as the LAST child of any
 // footer-bearing scroll surface (hubs, decks, dictionary, card details, mastered
@@ -178,7 +208,8 @@ const FooterItem = styled(Box, {
 //   - SlabFooter (outer): position + the cast shadow on the sky. Transparent: box-shadow
 //     paints only outside the box, so the face above covers the rest.
 //   - SlabFooterFace (inner): the flashcard itself, painted in the flashcard's own colours
-//     — the same stock the tower's cards are cut from (ISO.card): cardFace top, cardWall lip.
+//     — the same stock the tower's cards are cut from (ISO.card): cardFace top, cardWall lip
+//     (diagonal — below and right, see `slabLipShadow`).
 //     (It used to be drawn through the Deck Tower's time-of-day wash as an SVG `url()`
 //     filter; cut 2026-10-30 — WebKit rasterises that on the CPU on every repaint.)
 //   Every slab colour reads `tier2Var(…, its card colour)`: a Tier 2 page under the slab
@@ -190,8 +221,8 @@ const SlabFooter = styled(Box)(() => ({
     right: SLAB_FOOTER_SIDE_INSET,
     bottom: SLAB_FOOTER_BOTTOM,
     height: SLAB_FOOTER_HEIGHT,
-    borderRadius: 22,
-    boxShadow: `${SLAB_CAST_X}px ${SLAB_CAST_Y}px 0 var(${SLAB_CAST_SHADOW_VAR}, transparent)`,
+    borderRadius: SLAB_FOOTER_RADIUS,
+    boxShadow: `${SLAB_CAST_PX}px ${SLAB_CAST_PX}px 0 var(${SLAB_CAST_SHADOW_VAR}, transparent)`,
     // Same reason as the bar: a drag from the footer must not pan the page under it.
     touchAction: "none",
     zIndex: 10,
@@ -201,18 +232,38 @@ const SlabFooterFace = styled(Box)(() => ({
     height: "100%",
     backgroundColor: tier2Var("footerFace", COLORS.cardFace),
     borderRadius: "inherit",
-    boxShadow: `0 ${SLAB_FOOTER_LIP}px 0 ${tier2Var("footerWall", COLORS.cardWall)}`,
+    boxShadow: slabLipShadow(tier2Var("footerFace", COLORS.cardFace), tier2Var("footerWall", COLORS.cardWall)),
     display: "grid",
     // One equal column per tab — `grid-auto-flow: column` rather than a fixed count, so
     // the slab stays balanced when a flagged tab (Arena) is absent.
     gridAutoFlow: "column",
     gridAutoColumns: "1fr",
-    padding: 6,
+    padding: SLAB_FOOTER_PADDING,
     boxSizing: "border-box",
 }));
 
+// The active key's wall depth, px — drawn INSIDE the key's box (inset shadows), so the key
+// never grows past its grid cell.
+const SLAB_KEY_LIP = 3;
+// The active key's lip: a DIAGONAL wall showing along its bottom AND right edges — the same
+// (1, 1) side face the slab itself shows (`slabLipShadow`), stepped 1px at a time so the
+// wall stays continuous round the key's radius. Inset because it is drawn within the key's
+// own box; the face's top-left rim light (theme/roundedEdge.ts) matches the slab's edge.
+// Its fillet is the INSET form (`roundedEdgeInsetFillet`): one step past the wall, listed
+// after the steps so they cover all but its last 0.5px — the outset `roundedEdgeFillet`
+// would paint outside the key.
+// (It used to be a straight `inset 0 -3px 0` bottom lip — the wall seen head-on, which
+// disagreed with the slab's diagonal wall from 2026-11-08.)
+const slabKeyShadow = (face: string, wall: string) =>
+    [
+        roundedEdgeRimLight(face),
+        ...Array.from({ length: SLAB_KEY_LIP }, (_, i) => `inset ${-(i + 1)}px ${-(i + 1)}px 0 ${wall}`),
+        roundedEdgeInsetFillet(face, wall, SLAB_KEY_LIP),
+    ].join(", ");
+
 // One slab tab: icon over label. The active tab is a beige keycap set into the slab —
-// the card's inset face panel (cardBeige) with the shaded wall as its bottom lip.
+// the card's inset face panel (cardBeige) with the shaded wall as its diagonal lip
+// (bottom + right, `slabKeyShadow`).
 const SlabFooterItem = styled(Box, {
     shouldForwardProp: (prop) => prop !== "active",
 })<{ active?: boolean }>(({ active }) => ({
@@ -221,10 +272,12 @@ const SlabFooterItem = styled(Box, {
     alignItems: "center",
     justifyContent: "center",
     gap: 2,
-    borderRadius: 16,
+    borderRadius: SLAB_KEY_RADIUS,
     cursor: "pointer",
     backgroundColor: active ? tier2Var("footerKey", COLORS.cardBeige) : "transparent",
-    boxShadow: active ? `inset 0 -3px 0 ${tier2Var("footerWall", COLORS.cardWall)}` : "none",
+    boxShadow: active
+        ? slabKeyShadow(tier2Var("footerKey", COLORS.cardBeige), tier2Var("footerWall", COLORS.cardWall))
+        : "none",
 }));
 
 // The top-level footer tabs. Every other surface is a drill-in reached from one of
@@ -232,7 +285,7 @@ const SlabFooterItem = styled(Box, {
 // destination either: it is a maximizable sheet (AccountSheet, with Settings as one of
 // its tabs) raised from the Deck Tower header's avatar.
 //
-// The four tabs, left to right: Deck · Arena · Dictionary · Menu (2026-11-06). Deck is
+// The four tabs, left to right: Flashcards · Arena · Dictionary · Menu (2026-11-06; the first tab was labelled "Deck" until 2026-11-08). Flashcards is
 // the Deck Tower, which renders at `/` (it replaced the old Home tab, the fdp, on
 // 2026-11-04). Arena is drawn only while the `arena` feature flag is on
 // (server/contracts/featureFlags.ts), like every other entry point to a flagged feature.
@@ -289,7 +342,7 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "deck", varian
     // gone (decision D5) there was nothing left to justify the repetition.
     // `icon` (a Material Symbols name) is drawn by the slab only — the bar stays text-only.
     const baseTabs: FooterTabRow[] = [
-        { tab: "deck", label: "Deck", icon: "stacks", onClick: () => navigate("/") },
+        { tab: "deck", label: "Flashcards", icon: "stacks", onClick: () => navigate("/") },
         ...(ARENA_TAB_ON
             ? [{ tab: "arena", label: "Arena", icon: "emoji_events", onClick: () => navigate("/arena") } satisfies FooterTabRow]
             : []),
@@ -309,7 +362,7 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "deck", varian
     const TABS: FooterTabRow[] = baseTabs.map((t) => ({
         ...t,
         // The page on screen may take over a tab's tap (footerTabOverride.ts — acp opened
-        // from the Deck Tower plays its circle Back on the Deck tab); otherwise navigate.
+        // from the Deck Tower plays its circle Back on the Flashcards tab); otherwise navigate.
         onClick: () => {
             if (!runFooterTabOverride(t.tab)) t.onClick();
         },

@@ -21,6 +21,7 @@ import { Label } from '../../components/primitives/Label';
 import { COLORS, FONTS, SIZE, WEIGHT } from '../../theme';
 import type { Tier2Look } from '../../timeOfDay/tier2Look';
 import { keycapPressSx } from '../../theme/keycapPress';
+import { roundedEdgeFilletDown, roundedEdgeRimLightTop } from '../../theme/roundedEdge';
 
 /** The raised keycap's bottom lip — artboard `.kc` (`box-shadow: 0 4px 0 var(--edge)`). */
 const KEYCAP_LIP = 4;
@@ -72,8 +73,10 @@ function Keycap({
                 // snaps back on release, no transition (theme/keycapPress.ts). A disabled
                 // <button> never matches :active, so the AI keycap stays put while asking.
                 ...keycapPressSx({
-                    restShadow: `inset 0 0 0 1px ${look.outline}, 0 ${KEYCAP_LIP}px 0 ${look.surfaceEdge}`,
-                    pressedShadow: `inset 0 0 0 1px ${look.outline}`,
+                    // The outline ring, the hairline rounded edge just inside it (theme/roundedEdge.ts,
+                    // straight-lip form), then the lip.
+                    restShadow: `inset 0 0 0 1px ${look.outline}, ${roundedEdgeRimLightTop(look.surface, 1)}, ${roundedEdgeFilletDown(look.surface, look.surfaceEdge)}, 0 ${KEYCAP_LIP}px 0 ${look.surfaceEdge}`,
+                    pressedShadow: `inset 0 0 0 1px ${look.outline}, ${roundedEdgeRimLightTop(look.surface, 1)}`,
                     pressedY: KEYCAP_LIP,
                 }),
                 ...sx,

@@ -50,7 +50,9 @@ import { COVER_LIFT_MS, COVER_RETURN_MS, type TowerCover } from "./TowerCoverCar
  *              server's real count (`onClimbedOut`).
  *
  * Parked sessions (docs/DECK_TOWER.md § "Studying the tower" → "Parked sessions"): each world's flp session
- * MOUNTS the first time the learner visits that world (`visitedWorld`) and stays mounted,
+ * MOUNTS as soon as the page lands — every world the account has enabled, not only the one
+ * on screen (`dealtWorlds`), so a tap on any world's tower finds its deal already in — and
+ * stays mounted,
  * dealt and hidden, for the rest of the page's life — leaving the world does not unmount
  * it, so panning back and forth fetches nothing, and a tap dives at once onto a session
  * that is already laid out. A visit's climb-out parks it again with its working loop kept;
@@ -107,7 +109,7 @@ export interface TowerStudy {
     /** The viewBox y on the tower's axis where the screen's middle stood at the tap — the sky's altitude, held for the whole session. */
     startMidY: number;
     /**
-     * Every mounted flp session (one per visited world), with its host contract; the one
+     * Every mounted flp session (one per dealt world), with its host contract; the one
      * being studied has `host.parked` false. `key` changes when a stale session is re-dealt
      * (the page remounts it).
      */
@@ -197,10 +199,13 @@ export function useTowerStudy(opts: {
     unit: number;
     /** The tower's footprint. */
     card: WorldRect;
-    /** The world on screen, whose session mounts (parked) on the visit; null mounts nothing. */
-    visitedWorld: TowerWorldId | null;
-    /** The study header's title for a world. */
-    titleFor: (world: TowerWorldId) => string;
+    /**
+     * The worlds whose sessions mount (parked) and deal now: every enabled world, the one
+     * on screen first so its deal is requested first. Empty mounts nothing (before sign-in).
+     * A world leaving the list (its goal switched off) keeps its mounted session — mounting
+     * only ever adds — exactly as a world panned away from does.
+     */
+    dealtWorlds: readonly TowerWorldId[];
     /** The climb has ended: the tower stands at `cards` again in the tower view. */
     onClimbedOut: (world: TowerWorldId, cards: number) => void;
 }): TowerStudy {
@@ -249,16 +254,24 @@ export function useTowerStudy(opts: {
     }, []);
     useEffect(() => clearClocks, [clearClocks]);
 
-    // ── Parked sessions: mount each world's on its first visit ─────────────────
-    const { visitedWorld } = opts;
+    // ── Parked sessions: mount every enabled world's as the page lands ─────────
+    // Not on each world's first visit (until 2026-11-08): a deal takes a moment, and a
+    // tap that beat it — the first dive after arriving, or after panning to a world for
+    // the first time — waited on it with the footer already gone.
+    const dealtKey = opts.dealtWorlds.join(",");
     useEffect(() => {
-        if (visitedWorld === null) return;
+        const worlds = latest.current.opts.dealtWorlds;
+        if (worlds.length === 0) return;
         setMountedWorlds((ws) => {
-            if (ws.includes(visitedWorld)) return ws;
-            freshAt.current.set(visitedWorld, Date.now());
-            return [...ws, visitedWorld];
+            const added = worlds.filter((w) => !ws.includes(w));
+            if (added.length === 0) return ws;
+            const now = Date.now();
+            for (const w of added) freshAt.current.set(w, now);
+            return [...ws, ...added];
         });
-    }, [visitedWorld]);
+    // Keyed on the worlds' ids, not the array's identity (a new array every render).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dealtKey]);
 
     // ── Start ─────────────────────────────────────────────────────────────────
     const start: TowerStudy["start"] = useCallback(
@@ -275,7 +288,7 @@ export function useTowerStudy(opts: {
             const parked = loops.current.get(w);
             const emptyButCounted = parked !== undefined && !parked.loading && !parked.hasCard && n > 0;
             if (!mounted) {
-                // Tapped before the visit effect mounted it: mount it now.
+                // Tapped before the mount effect reached it: mount it now.
                 freshAt.current.set(w, now);
                 setMountedWorlds((ws) => (ws.includes(w) ? ws : [...ws, w]));
             } else if (emptyButCounted || now - (freshAt.current.get(w) ?? now) > PARKED_LOOP_FRESH_MS) {
@@ -574,7 +587,6 @@ export function useTowerStudy(opts: {
         h = {
             world: w,
             parked: true,
-            title: latest.current.opts.titleFor(w),
             onExit,
             onMarked: marked,
             onUndone: undone,
@@ -599,7 +611,6 @@ export function useTowerStudy(opts: {
                 const host: FlpTowerHost = {
                     world: w,
                     parked: false,
-                    title: latest.current.opts.titleFor(w),
                     onExit,
                     onMarked: marked,
                     onUndone: undone,

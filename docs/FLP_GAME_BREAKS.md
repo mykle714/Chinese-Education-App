@@ -305,9 +305,9 @@ raised objects, so the card still reads as one of the deck's:
 - **Skip** (a cream plate) and **Play** (a plate in the game's hue): `towerPlateSx`, so
   their edge is their wall, with no `COLORS.border` outline (TOWER_STYLE_SHIFT.md).
 
-The wflp's used-in hint bubbles sit on the front word card, which is the card under the
-break's, so they stay away until that word is uncovered (`WritingUsedInBubbles` → `unseen`,
-released on `skipping`).
+The hint pawn speaks for the front word card, which is the card under the break's, so it
+is hidden until that word is uncovered (`HintPawn` → `unseen`, released on `skipping`;
+HINT_PAWN.md § Arrival).
 
 It behaves as a card in the session too: undo works on it, and a tap off
 it is Back through the same `handleTowerOffCardTap` as any card (`stackIsCards`). Leaving

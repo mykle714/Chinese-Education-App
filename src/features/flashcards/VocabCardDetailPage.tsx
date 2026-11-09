@@ -335,7 +335,7 @@ const VocabCardDetailPage: React.FC = () => {
     return (
         // Card Detail is a NODE PAGE (see docs/LEAF_NODE_PAGES.md): keeps the footer,
         // LEFT back arrow (returns to the previous screen), slides in from the right.
-        // Reached from the Deck Tower's cards page, so the Deck tab stays lit.
+        // Reached from the Deck Tower's cards page, so the Flashcards tab stays lit.
         <NodePage
             title="Card Detail"
             onBack={() => navigate(-1)}

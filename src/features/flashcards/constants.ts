@@ -132,26 +132,9 @@ export const TAB_COLORS = [
 ];
 export const TAB_LABELS = ["definition", "examples", "breakdown"];
 
-// Horizontal swipe-to-change-tab gesture (InfoCardPanelBody's underline tab
-// strip). AXIS_LOCK_PX is the cumulative touch movement before the gesture
-// commits to horizontal (tab swipe) vs vertical (sheet resize/scroll) — below
-// this slop, moves are left untouched so tiny wobbles don't glitch either
-// gesture. COMMIT_RATIO is the fraction of the pane's width a swipe must
-// travel before release advances the tab instead of snapping back.
-export const TAB_SWIPE_AXIS_LOCK_PX = 8;
-export const TAB_SWIPE_COMMIT_RATIO = 0.22;
-// Rubber-band at the ends of the strip. Swiping left on the LAST tab (breakdown /
-// "used in") or right on the FIRST one used to clamp the track to exactly zero
-// travel, which is visually identical to "this tab has no swipe" — the gesture
-// looked broken rather than bounded. The track now follows the finger at
-// EDGE_RUBBER_RATIO of its travel, capped at EDGE_RUBBER_MAX_PX, and springs back
-// on release (settleDrag can never commit past an end, so the snap-back is
-// automatic). The cap stays well under paneWidth * TAB_SWIPE_COMMIT_RATIO so an
-// overscroll can never read as a committed swipe.
-export const TAB_SWIPE_EDGE_RUBBER_RATIO = 0.25;
-export const TAB_SWIPE_EDGE_RUBBER_MAX_PX = 40;
-// (TAB_SWIPE_TRANSITION, the slide itself, lives with the shared selector in
-// src/components/sheet/sheetStyled.ts.)
+// The tab-swipe gesture's tuning (TAB_SWIPE_AXIS_LOCK_PX, _COMMIT_RATIO, _EDGE_RUBBER_*)
+// lives with the shared gesture in src/components/sheet/useTabSwipeTrack.ts; the slide
+// itself (TAB_SWIPE_TRANSITION) with the shared selector in src/components/sheet/sheetStyled.ts.
 
 // Max sheet height as a fraction of ContentArea height. The sheet at
 // translateY=0 occupies this much of the container — i.e. how close the

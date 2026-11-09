@@ -8,6 +8,7 @@ import type { BoardCard, CardVisualState } from "./types";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { keycapPressSx } from "../../theme/keycapPress";
+import { roundedEdgeFilletDown, roundedEdgeRimLightTop } from "../../theme/roundedEdge";
 import {
     CARD_KEY,
     CARD_LIP,
@@ -43,10 +44,16 @@ interface MatchSpeedCardProps {
     onTap: (card: BoardCard, eventTimeStamp: number) => void;
 }
 
-/** The key's ring and solid lip as one box-shadow. `lip` 0 is a key held flush. */
-function keyShadow(picked: boolean, lip: number): string {
-    const ring = picked ? `inset 0 0 0 2px ${SELECTED_CARD_RING}` : `inset 0 0 0 1px ${CARD_OUTLINE}`;
-    return lip > 0 ? `${ring}, 0 ${lip}px 0 ${CARD_LIP}` : ring;
+/**
+ * The key's ring, the hairline rounded edge just inside it (theme/roundedEdge.ts,
+ * straight-lip form, on the card's current `face` fill) and its solid lip, as one
+ * box-shadow. `lip` 0 is a key held flush (no fillet).
+ */
+function keyShadow(picked: boolean, lip: number, face: string): string {
+    const ringPx = picked ? 2 : 1;
+    const ring = `inset 0 0 0 ${ringPx}px ${picked ? SELECTED_CARD_RING : CARD_OUTLINE}`;
+    const rim = roundedEdgeRimLightTop(face, ringPx);
+    return lip > 0 ? `${ring}, ${rim}, ${roundedEdgeFilletDown(face, CARD_LIP)}, 0 ${lip}px 0 ${CARD_LIP}` : `${ring}, ${rim}`;
 }
 
 /**
@@ -56,11 +63,11 @@ function keyShadow(picked: boolean, lip: number): string {
  * the tall one if not. The press also runs through the app-wide delegate, because a tap
  * here is too quick for `:active` to paint and a key must show at least KEYCAP_MIN_HELD_MS.
  */
-function cardKeySx(picked: boolean) {
+function cardKeySx(picked: boolean, face: string) {
     const { lip, y } = picked ? CARD_KEY.picked : CARD_KEY.raised;
     return keycapPressSx({
-        restShadow: keyShadow(picked, lip),
-        pressedShadow: keyShadow(picked, 0),
+        restShadow: keyShadow(picked, lip, face),
+        pressedShadow: keyShadow(picked, 0, face),
         restY: y,
         pressedY: CARD_KEY.sinkY,
     });
@@ -259,8 +266,8 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
                 // A matched card stops being a key: a press still held on it would pin it
                 // down through its pop. Transforms only, so the cell's layout box never moves.
                 ...(card.exiting
-                    ? { boxShadow: keyShadow(false, CARD_KEY.raised.lip), transform: "scale(1.14)" }
-                    : cardKeySx(state === "selected")),
+                    ? { boxShadow: keyShadow(false, CARD_KEY.raised.lip, background), transform: "scale(1.14)" }
+                    : cardKeySx(state === "selected", background)),
                 opacity: card.exiting ? 0 : 1,
                 // The press snaps, so only colour eases on a live key.
                 transition: card.exiting

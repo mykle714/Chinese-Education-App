@@ -3,6 +3,7 @@ import {
     IsoPlatform,
     IsoScene,
     IsoSolid,
+    ISO,
     bandMaterial,
     deckUnderLayerMaterial,
     faceTransform,
@@ -173,6 +174,13 @@ const BIN_CSS = `
 `;
 
 const proj = makeProjector(UNIT);
+/**
+ * The rim light's white for the deck's TOP layer (IsoSolid → `roundedEdge`,
+ * docs/ISO_ART_FRAMEWORK.md § "The rounded edge"). The acp's scene is lit by its `SortLook`,
+ * not an iso wash, so this is the unwashed palette's. The layers under the top get no edge:
+ * each sits under the next, and a fillet there would read as a doubled seam.
+ */
+const TOP_EDGE_LIGHT = ISO.edgeLight;
 
 interface SortBinProps {
     spec: SortBinSpec;
@@ -332,7 +340,7 @@ const SortBin: React.FC<SortBinProps> = ({ spec, count, active, look, registerBi
                 {/* While a card is being placed: the deck as it was, old number and all. */}
                 {oldShown != null && (
                     <g className="sort-bins__old-top">
-                        {oldTop && <IsoSolid className="sort-bins__layer" geometry={oldTop.geometry} material={oldTop.material} />}
+                        {oldTop && <IsoSolid className="sort-bins__layer" geometry={oldTop.geometry} material={oldTop.material} roundedEdge={TOP_EDGE_LIGHT} />}
                         <BinPrint count={placingFrom ?? 0} z={printZ(oldShown)} label={spec.label} ink={oldShown > 0 ? COLORS.onSurface : look.countEmpty} />
                     </g>
                 )}
@@ -343,14 +351,14 @@ const SortBin: React.FC<SortBinProps> = ({ spec, count, active, look, registerBi
                     onAnimationEnd={handlePlaceEnd}
                 >
                     {shown > 0 && (
-                        <IsoSolid className="sort-bins__layer" geometry={layers[shown - 1].geometry} material={layers[shown - 1].material} />
+                        <IsoSolid className="sort-bins__layer" geometry={layers[shown - 1].geometry} material={layers[shown - 1].material} roundedEdge={TOP_EDGE_LIGHT} />
                     )}
                     <BinPrint count={count} z={printZ(shown)} label={spec.label} ink={count > 0 ? COLORS.onSurface : look.countEmpty} />
                 </g>
                 {/* Undo: the old top card lifting off the deck as it now stands. */}
                 {liftedTop && (
                     <g key={`lift-${liftKey}`} className="sort-bins__lifted" onAnimationEnd={handleLiftEnd}>
-                        <IsoSolid className="sort-bins__layer" geometry={liftedTop} material={bandMaterial(spec.color)} />
+                        <IsoSolid className="sort-bins__layer" geometry={liftedTop} material={bandMaterial(spec.color)} roundedEdge={TOP_EDGE_LIGHT} />
                         <BinPrint count={liftingFrom ?? 0} z={printZ(liftedShown ?? 0)} label={spec.label} ink={COLORS.onSurface} />
                     </g>
                 )}

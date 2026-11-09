@@ -221,6 +221,9 @@ const MERGE_ZONE_PX = 64;
 // styled.ts — they are the "unmerged" end of the interpolation.
 const SHEET_CORNER_RADIUS_PX = 20;
 const SHEET_TOP_PADDING_PX = 10;
+// The grabber row's own padding around its 5px pill (see the drag zone in the JSX).
+const GRABBER_ROW_TOP_PAD_PX = 4;
+const GRABBER_ROW_BOTTOM_PAD_PX = 8;
 
 
 // Right inset of the close cluster. Matches the tab strip's own 16px side padding, so
@@ -1271,7 +1274,11 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                         flexShrink: 0,
                         // Sized for the pill it holds. It used to reserve
                         // CHROME_ROW_HEIGHT_PX for the ✕ that lived here.
-                        padding: "4px 0 8px",
+                        // With `edgePadding` off the container drops its 10px top pad, so
+                        // the row takes those 10px back itself: the pill then sits 14px
+                        // below the sheet's top edge, like every other sheet's, instead of
+                        // jammed 4px under it (AccountSheet is the one such host).
+                        padding: `${GRABBER_ROW_TOP_PAD_PX + (edgePadding ? 0 : SHEET_TOP_PADDING_PX)}px 0 ${GRABBER_ROW_BOTTOM_PAD_PX}px`,
                     }}
                 >
                     <InfoSheetGrabber className="mobile-demo-drag-handle" />

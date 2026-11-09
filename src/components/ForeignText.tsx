@@ -86,7 +86,7 @@ interface ForeignTextBaseProps {
     // in place of the glyph, keeping its pinyin and its cell width (CPCDRowItem.masked).
     // Row layout only: block and inline layouts ignore it, as does Latin-script plain
     // text. High-level API only (`text`); `items` callers set `masked` per item.
-    // First user: the writing flp's used-in bubbles (docs/WRITING_PRACTICE_REWORK.md § 3b).
+    // First user: the writing flp's used-in hint, in the hint pawn's bubble (docs/HINT_PAWN.md).
     maskChar?: string;
     // Font for every LATIN glyph this renders: the cpcd pinyin overlay (all three
     // layouts) and the Latin-script plain-text word (es). Defaults to FONTS.sans. Pass

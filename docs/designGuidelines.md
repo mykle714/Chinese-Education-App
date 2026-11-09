@@ -16,6 +16,38 @@ This service (internally referred to as cow) is a web application to help non-ma
 The app is moving from the bento look to the Deck Tower's tower style. Before styling a
 surface, read [TOWER_STYLE_SHIFT.md](./TOWER_STYLE_SHIFT.md) to see which style it belongs to.
 
+## Buttons & raised objects
+
+### The rounded edge (the standard for anything rectangular and raised)
+
+Every rectangular object that stands up off its surface — a keycap, a plate button, a card,
+a slab, an iso solid — draws a hairline ROUNDED edge where its face meets its wall, instead
+of a hard corner:
+
+- a **0.5px fillet** on the wall side, half-way between the face and wall colours;
+- a **1px rim light** just inside the face's lit edge, the face mixed 45% toward white.
+
+One module owns the numbers and colours: `src/theme/roundedEdge.ts`. Pick the form by the
+object's wall:
+
+| Wall | Helpers | Rim light on | Users |
+|---|---|---|---|
+| Diagonal, outset (the tower style's (1, 1) extrusion) | `roundedEdgeFillet`, `roundedEdgeRimLight` | top + left edges | td filter keys (`TowerFilterKeys` → `keyShadow`), card-stock mini cards (`sortCardStock.ts`), the footer slab (`MobileFooter` → `slabLipShadow`) |
+| Diagonal, inset (a key set into a slab) | `roundedEdgeInsetFillet`, `roundedEdgeRimLight` | top + left edges | footer active tab (`MobileFooter` → `slabKeyShadow`) |
+| Straight lip (`0 Npx 0 wall`, the wall head-on) | `roundedEdgeFilletDown`, `roundedEdgeRimLightTop` | top edge | flp plate buttons + game-break plates (`towerPlate.ts`), the game-break token (`GameBreakCard`), eip Add key + headword tile, acp keycaps, Dictionary keycaps, tone-keyboard keys, Match Speed cards |
+| Iso solid (SVG) | `IsoSolid` `roundedEdge={palette.edgeLight}` | the top's back edge | IsoCard, IsoPaperStack, raised IsoFloorLabel, IsoLever base, acp bins' top layers — [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md) § "The rounded edge" |
+
+Rules:
+- List the fillet before the wall; omit it when the wall is 0 (a key held flush keeps only
+  its rim light).
+- A key with an inset outline ring lists the ring FIRST and passes `insideRingPx` (the
+  ring's width) to `roundedEdgeRimLightTop`, so the highlight sits just inside the outline.
+- **Exceptions:** an object whose edge is already a bevel (`IsoPlatform`, `IsoSortPlatform`'s
+  light rim) and a solid whose top is hidden under another (a card stack's body, a bin's
+  under-layers). Clouds are not rectangular.
+- Colours come from the caller's face + wall pair, so nothing leaves the colour framework;
+  the HTML forms use CSS `color-mix`, so CSS variables (the Tier 2 night slate) work.
+
 ## Constructs
 You can understand the different constructs of this project by inspecting the tables in the Database Schema section below.
 

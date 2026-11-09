@@ -41,6 +41,8 @@ import { WORLD_ORDER, type TowerWorldId } from "./towerWorlds";
 export interface WorldPalette {
     sky: string;
     space: string;
+    /** The aurora's strength, 0–1 (towerAurora.ts `auroraStrength`) — blended like the sky, so it fades with a swipe. */
+    aurora: number;
 }
 
 /** The scene whipping off screen from rest (shorter when a swipe carries it part-way). */
@@ -144,7 +146,11 @@ function panView(plan: PanPlan, e: number, paletteOf: (id: TowerWorldId) => Worl
         sceneShiftX,
         speed,
         direction: d,
-        palette: { sky: mixHex(from.sky, to.sky, colourT), space: mixHex(from.space, to.space, colourT) },
+        palette: {
+            sky: mixHex(from.sky, to.sky, colourT),
+            space: mixHex(from.space, to.space, colourT),
+            aurora: from.aurora + (to.aurora - from.aurora) * colourT,
+        },
         busy: true,
     };
 }

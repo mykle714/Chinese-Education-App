@@ -9,7 +9,7 @@ import { FLY_OUT_ROTATION, FLY_OUT_X } from "../constants";
  * Per-segment timing: the lift eases out; the throw eases IN, which reads as acceleration.
  *
  * The one definition of the motion, read as CSS keyframes by the writing flp's card
- * (FlashCardSection → `writingThrowKeyframes`) and through the Web Animations API by a
+ * (FlashCardSection → `WRITING_THROW_KEYFRAMES`) and through the Web Animations API by a
  * tapped results card (gameBreak/BreakCardLayer).
  * Docs: docs/WRITING_PRACTICE_REWORK.md § 3, docs/FLP_GAME_BREAKS.md § 5b.
  */

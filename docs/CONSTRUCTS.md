@@ -39,6 +39,15 @@ Exception: the `category_promotions.bar` column (migration 143) and the TS types
 mirror its rows (`CategoryPromotion.bar`, `CategoryPromotionInput.bar` in
 `server/types/velocity.ts`) still say `bar` for a world id.
 
+## Hint pawn
+
+The **hint pawn** is the flp's study helper: a pawn on a tiny floating platform in the
+world's colour, in the session's bottom-left corner, which speaks the front card's **hint**
+in a speech bubble. A hint is a typed piece of data per world (`PawnHint`,
+`hintPawn/pawnHints.ts` → `pawnHintFor`); only writing has one so far, the used-in words.
+It is not the same as the tower's pawn on the platform, though it reuses that figure
+(`IsoPawn`). See docs/HINT_PAWN.md.
+
 ## FLP Card Data Sources
 
 The FLP console logs the following on every card change (see `FlashcardsLearnPage.tsx`):

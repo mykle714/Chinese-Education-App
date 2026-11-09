@@ -16,11 +16,13 @@ import type { TowerWorld } from "./towerWorlds";
  * (`timeOfDayAt`); this file says only what a phase LOOKS like over the tower.
  *
  * ── What a phase changes ───────────────────────────────────────────────────────
- *   - SKY: each world's own day sky (TowerWorld.sky, a COLORS token) by day; at night that
- *     sky turned in OKLCH (`NIGHT_SKY`): its hue rotated part-way toward night's hue along
- *     the shortest arc, its lightness and chroma set to night's. So every world keeps a
- *     tint of its own hue at night. ⚠️ Derived colours, outside the colour framework (the
- *     same divergence as `spaceOver`): the framework has no night tier.
+ *   - SKY: each world's own day sky (TowerWorld.sky, a COLORS token) by day. At night,
+ *     the world's own `nightSky` (OKLCH, towerWorlds.ts — reading's aurora teal, writing's
+ *     velvet violet) or, for a world without one (main), its day sky turned in OKLCH
+ *     (`NIGHT_SKY`): its hue rotated part-way toward night's hue along the shortest arc, its
+ *     lightness and chroma set to night's. ⚠️ Derived colours, outside the colour framework
+ *     (the same divergence as `spaceOver`): the framework has no night tier.
+ *   - AURORA: a rare (1%) aurora over the reading world's night — towerAurora.ts.
  *   - WASH (night only; `phaseWash`, src/timeOfDay/wash.ts): everything drawn ON the sky (platform, cards, pawns, clouds, wind,
  *     plates, the page's white text and arrows) is lit by night's light (the iso
  *     framework's ambient wash); day leaves it as drawn. The sky itself is
@@ -39,8 +41,9 @@ import type { TowerWorld } from "./towerWorlds";
 export { timeOfDayAt, type DayPhase, type TimeOfDay } from "../../timeOfDay/dayPhase";
 
 /**
- * Night's sky, as a turn of the world's day sky (OKLCH): `hueBy` of the shortest turn
- * toward `hue`, at lightness `L` and chroma `C`. Night is dark and cool but keeps most of
+ * Night's sky for a world WITHOUT its own `TowerWorld.nightSky` (today: main), as a turn
+ * of the world's day sky (OKLCH): `hueBy` of the shortest turn toward `hue`, at lightness
+ * `L` and chroma `C`. Night is dark and cool but keeps most of
  * the world's own hue (a 35% turn toward 270°), and is lighter than SPACE (L ≈ 0.25), so a
  * climb at night still deepens. (Dawn and sunset had their own, much stronger turns until
  * they were cut 2026-11-04 — docs/TOWER_WEATHER_SKY.md § 1 — along with the per-world
@@ -58,13 +61,18 @@ const NIGHT_SKY: SkyRecipe = { hue: 270, hueBy: 0.35, L: 0.34, C: 0.08 };
 /** The star field's opacity from the ground, per phase (SpaceBackdrop `groundStars`). */
 const PHASE_STARS: Record<DayPhase, number> = { day: 0, night: 0.55 };
 
-/** The sky-bearing part of a world: its day sky. */
-export type SkyWorld = Pick<TowerWorld, "sky">;
+/** The sky-bearing part of a world: its day sky, and its own night sky if it has one. */
+export type SkyWorld = Pick<TowerWorld, "sky"> & Partial<Pick<TowerWorld, "nightSky">>;
 
-/** A world's day sky at `phase`: as it is by day, turned by `NIGHT_SKY` at night. */
+/**
+ * A world's sky at `phase`: its day sky by day. At night, the world's own `nightSky`
+ * (reading, writing — towerWorlds.ts) when it has one, else the day sky turned by
+ * `NIGHT_SKY` (main, whose day sky follows the weather).
+ */
 export function phaseSky(world: SkyWorld, phase: DayPhase): string {
     const daySky = world.sky;
     if (phase === "day") return daySky;
+    if (world.nightSky) return oklchToHex(world.nightSky.L, world.nightSky.C, world.nightSky.h);
     const [, , h] = hexToOklch(daySky);
     return oklchToHex(NIGHT_SKY.L, NIGHT_SKY.C, (h + hueTurn(h, NIGHT_SKY.hue) * NIGHT_SKY.hueBy + 360) % 360);
 }
@@ -78,6 +86,8 @@ export interface TowerLight {
     groundStars: number;
     /** Whether meteors fly (ShootingStars): true while night outweighs day in the blend. */
     shootingStars: boolean;
+    /** Night's share of the blend, 0 (day) → 1 (night). The aurora fades in by it (towerAurora.ts). */
+    nightShare: number;
     /** A world's sky at this time (unwashed: the sky is the light). Pass the TOWER_WORLDS entry. */
     skyOf: (world: SkyWorld) => string;
 }
@@ -94,6 +104,7 @@ export function towerLight(time: TimeOfDay): TowerLight {
         groundStars: lerp(PHASE_STARS[from], PHASE_STARS[to], t),
         // Night's share of the blend: 1 holding night, 1 − t leaving it, t entering it.
         shootingStars: phaseShare(time, "night") >= 0.5,
+        nightShare: phaseShare(time, "night"),
         skyOf: (world) => {
             let sky = skies.get(world);
             if (sky === undefined) {

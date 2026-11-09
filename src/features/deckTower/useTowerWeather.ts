@@ -18,12 +18,15 @@ import { pinnedWeather, type WeatherOverride } from "./towerWeather";
  *     answer draws no weather (the server already backs off a failing upstream).
  *   - The load effect keys on `user?.id`, never on `token` (CLAUDE.md § "Never
  *     reload/reset a page on a silent token refresh").
+ *   - `settled`: false only while the setting is on and the FIRST answer (ok, not ok, or a
+ *     network failure) has not come back — so a reader that must not act on "no weather
+ *     yet" can wait (the aurora's clear-sky roll, towerAurora.ts). Off or pinned = settled.
  *   - Feature testers can pin a kind (WeatherToggle), stored per device like the
  *     time-of-day pin. A pin shows even with the setting off, so a tester can preview
  *     every effect without granting location.
  *
  * Depends on: src/api/weather.ts, src/hooks/useWeatherEffectsSetting.ts, towerWeather.ts.
- * Depended on by: DeckTowerPage.tsx, discover/AddCardsPage.tsx (the observation only — acp draws no particles).
+ * Depended on by: DeckTowerPage.tsx (also towerAurora.ts via the page), discover/AddCardsPage.tsx (the observation only — acp draws no particles).
  */
 
 /** How often a mounted tower re-asks (the server caches per cell for 30 min). */
@@ -42,6 +45,7 @@ function readOverride(): WeatherOverride {
 
 export function useTowerWeather(allowOverride: boolean): {
     weather: WeatherNow | null;
+    settled: boolean;
     override: WeatherOverride;
     setOverride: (v: WeatherOverride) => void;
 } {
@@ -49,6 +53,8 @@ export function useTowerWeather(allowOverride: boolean): {
     const userId = user?.id;
     const enabled = useWeatherEffectsEnabled();
     const [real, setReal] = useState<WeatherNow | null>(null);
+    // Whether the current load cycle has had its first answer (see `settled` in the header).
+    const [answered, setAnswered] = useState(false);
     const [override, setOverrideState] = useState<WeatherOverride>(readOverride);
 
     // When the last fetch was made, read by the visibility listener without re-subscribing.
@@ -57,17 +63,23 @@ export function useTowerWeather(allowOverride: boolean): {
     useEffect(() => {
         if (!enabled || userId === undefined) {
             setReal(null);
+            setAnswered(true);
             return;
         }
+        setAnswered(false);
         let cancelled = false;
         const load = () => {
             fetchedAt.current = Date.now();
             fetchWeather()
                 .then((res) => {
-                    if (!cancelled) setReal(res.status === "ok" ? res.weather : null);
+                    if (cancelled) return;
+                    setReal(res.status === "ok" ? res.weather : null);
+                    setAnswered(true);
                 })
                 .catch(() => {
                     // Network trouble: keep whatever was drawn; the next refresh retries.
+                    // Still an answer: "unknown" must not hold readers waiting forever.
+                    if (!cancelled) setAnswered(true);
                 });
         };
         load();
@@ -96,5 +108,5 @@ export function useTowerWeather(allowOverride: boolean): {
     }, []);
 
     const pinned = allowOverride && override !== "auto" ? pinnedWeather(override) : null;
-    return { weather: pinned ?? real, override, setOverride };
+    return { weather: pinned ?? real, settled: pinned !== null || answered, override, setOverride };
 }

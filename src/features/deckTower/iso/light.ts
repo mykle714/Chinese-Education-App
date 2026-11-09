@@ -24,9 +24,9 @@
  *     paper then gets a sliver in proportion to it (`contactLift`). Anything 0.06 or
  *     taller — every object today — gets the full (thin) CONTACT_LIFT;
  *   - the tone comes from the receiver, so a shadow on the sky, on the floor and on a
- *     carpet all read as the same strength of shade.
+ *     floor plate all read as the same strength of shade.
  *
- * Flat things lying on a surface (carpets) count as PART of that surface: they receive
+ * Flat things lying on a surface (flush floor labels) count as PART of that surface: they receive
  * shadows but never cast one.
  *
  * Clouds (IsoCloudShadow) keep LIGHT_DIR but slide by a much shorter CLOUD_LIGHT_SLOPE, so

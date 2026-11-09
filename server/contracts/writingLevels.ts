@@ -31,9 +31,9 @@ export const WRITING_LEVELS = [
   { level: 1, mode: 'snap', name: 'Walk-through' }, // renamed from "Snap" 2026-10-04 (display only)
   { level: 2, mode: 'trace', name: 'Trace' },
   { level: 3, mode: 'walkthrough', name: 'Step-through' }, // was "Step Through" (display only)
-  { level: 4, mode: 'quarters', name: 'Quarters' },
+  { level: 4, mode: 'thirds', name: 'Thirds' }, // was 'quarters' (4 田 squares) until 2026-11-08
   { level: 5, mode: 'memorize', name: 'Memorize' },
-  { level: 6, mode: 'sixths', name: 'Sixths' }, // was 'eighths' (8 米 triangles) until 2026-10-06
+  { level: 6, mode: 'quarters', name: 'Quarters' }, // 4 X triangles; was 'sixths' (6 centre wedges) until 2026-11-08, 'eighths' (8 米 triangles) until 2026-10-06
   { level: 7, mode: 'test', name: 'Blank' }, // renamed from "Test" 2026-10-04 (display only)
   { level: 8, mode: 'timed', name: 'Timed' },
 ] as const;

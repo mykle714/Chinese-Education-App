@@ -15,8 +15,8 @@ specific doc.
 | **eip bottom-sheet gestures** | [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) | `SheetPanel`'s height model: three stops (0 / default / max) with the default height as the floor, one snap rule, the resize-vs-scroll mode lock, and release momentum that stops at the default height instead of dismissing. |
 | **Add Cards (Discover flow)** | [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) | `/discover/sort/:language` drag-to-sort page (acp), a Deck drill-in reached from td's sort platform: node page (back arrow → `/`, keeps the footer with Deck lit), hosting the Quick Mark panel and skipped-cards sheet. |
 | **Soft introductions (si)** | [SOFT_INTRODUCTION.md](./SOFT_INTRODUCTION.md) | A minor UI element styled one way (intro) for a learner's first encounters, then another (graduated) once both a visit count and a day count are met. Per-device localStorage only; feature testers pick Auto / Force intro / Force graduated in Settings → "Soft introductions" (under "Enable testing features"). |
-| **Deck Tower** | [DECK_TOWER.md](./DECK_TOWER.md) | `/`, the app's landing page and the footer's Deck tab: the Learning deck (off-cooldown cards) drawn as an isometric tower of cards on a platform, in the "Good Job!" art style (flat three-tone shading, no outlines). Built from the iso art framework. Tapping the floor plate switches to the Mastered deck through an animated transition ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md)). Tapping the Learning tower studies it in place — the camera dives onto the top card and the flp is laid over it, no route change (§ Studying the tower). |
-| **Iso art framework** | [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md) | The "Good Job!"-style SVG kit in `src/features/deckTower/iso/`: projection and geometry, one component per object (platform, carpet, card, card stack, pawn), the single light and the one shadow rule (`IsoShadow`), levitation, and the palette. |
+| **Deck Tower** | [DECK_TOWER.md](./DECK_TOWER.md) | `/`, the app's landing page and the footer's Flashcards tab: the Learning deck (off-cooldown cards) drawn as an isometric tower of cards on a platform, in the "Good Job!" art style (flat three-tone shading, no outlines). Built from the iso art framework. Tapping the floor plate switches to the Mastered deck through an animated transition ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md)). Tapping the Learning tower studies it in place — the camera dives onto the top card and the flp is laid over it, no route change (§ Studying the tower). |
+| **Iso art framework** | [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md) | The "Good Job!"-style SVG kit in `src/features/deckTower/iso/`: projection and geometry, one component per object (platform, card, card stack, pawn), the single light and the one shadow rule (`IsoShadow`), levitation, and the palette. |
 
 ---
 
@@ -284,21 +284,24 @@ three counts, all of which the hook's header comment states in full:
    scroll.
 
 Opening the gaps is exactly "translate each card along by its lag", so a
-compositor-only `translate3d` is visually identical and the only affordable one.
+compositor-only translation (the CSS `translate` property, with a z term) is visually
+identical and the only affordable one.
 **Do not "simplify" this into a `gap` animation.**
 
 ### Cards must not move on hover
 
 A card in one of these lists highlights on hover by **elevation only** — `SHADOW.raised`
 → `SHADOW.float`, no `translateY`. This is a hard rule, not a taste call: these cards are
-the hook's own track elements, so a hover `transform` and the hook's per-frame inline
-`transform` are the same property on the same node and simply overwrite each other.
+the hook's own track elements, so a hover lift would stack on top of the hook's
+per-frame inline `translate` and the card would sit off its row mid-scroll.
 
-For the same reason **`transform` must never appear in a card's CSS `transition`**. A
-transition on transform re-filters every frame the hook writes through a 200ms ease,
+For the same reason **neither `transform` nor `translate` may appear in a card's CSS
+`transition`**. A transition re-filters every frame the hook writes through a 200ms ease,
 which turns the elastic stretch into lag. Transition `box-shadow` alone. The entrance
-`cardPopIn` is a keyframe *animation* rather than a transition and is unaffected — it
-runs at mount, when the list is not scrolling and the hook writes nothing.
+`cardPopIn` is a keyframe *animation* on `transform`, a different property from the
+hook's `translate`, so the two compose — which matters because cards DO pop in
+mid-scroll (a windowed grid mounts rows as it moves; the td cards page's snap glide
+runs while the cascade is still playing).
 
 Applies to `MiniVocabCard`. `QuickMarkCard` opts out of hover
 feedback entirely (deliberate — see its own note).
@@ -310,12 +313,18 @@ feedback entirely (deliberate — see its own note).
   the DOM — a caller never declares its column count.
 - Children marked `aria-hidden` are skipped, which is what keeps the windowing spacers
   from counting as tracks. Mark any decorative filler child `aria-hidden`.
-- It writes `style.transform` on children **directly** (a fling costs zero re-renders)
-  and removes it the moment the fabric settles. While active it overrides a child's own
-  transform, which in practice only overlaps a card's entrance pop-in — and that runs at
-  mount, when the list is not moving and the hook writes nothing.
+- It writes `style.translate` on children **directly** (a fling costs zero re-renders)
+  and removes it the moment the fabric settles. `translate` composes with a child's own
+  `transform` rather than overriding it, so an entrance pop-in keeps playing under the
+  stretch. Do not switch it back to `style.transform` — that made a card popping in
+  mid-scroll ignore the stretch for 0.4s and then jump.
 - Offsets are cached per scroll burst and invalidated by a childList mutation or a
-  resize, since transforms never move a layout box.
+  resize. They are **layout** positions (`offsetTop`/`offsetLeft`, which ignore
+  transforms), never a child's `getBoundingClientRect()`: rebuilds happen mid-stretch
+  (a windowed grid mounts rows during the scroll that is stretching it), and a visual
+  read bakes each row's current shift, and a popping card's `scale`, into its offset, so
+  rows land at the wrong distance from the anchor or merge into one track
+  (`useScrollStretch.ts` → `buildTracks`).
 - `prefers-reduced-motion: reduce` disables it.
 
 ### The frame budget (why the hook reads almost nothing)
@@ -334,7 +343,7 @@ re-measuring:
 
 Two supporting details: the anchor and band edges are found by **binary search** over the
 sorted track offsets (recomputed only when the scroll actually moved, not per frame), and
-`will-change: transform` is set only while an element is inside the band and removed on
+`will-change: transform` (which promotes the layer for `translate` too) is set only while an element is inside the band and removed on
 eviction/settle — a bounded handful of layers rather than one per card.
 
 `findScroller` is the one expensive call (a `getComputedStyle` walk). It runs at mount, on

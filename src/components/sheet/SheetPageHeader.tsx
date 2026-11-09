@@ -6,7 +6,7 @@ import type { SheetTelescopeHandle } from "./SheetPanel";
 
 /**
  * SheetPageHeader — a sheet header that BECOMES a page header at max: a real leaf
- * PageHeader (⌄ + title) with no ✕ and no grabber. For a sheet whose maximized state
+ * PageHeader (⌄ + title) with no ✕. For a sheet whose maximized state
  * should be indistinguishable from a drill-in page. Today: AccountSheet.
  *
  * It matches the eip's caret at both ends of its travel (EipUpperPanel):
@@ -17,8 +17,9 @@ import type { SheetTelescopeHandle } from "./SheetPanel";
  * `extra` here is a plain spacer rather than a title row, so the frame reveals it only as
  * the sheet is pulled to max. SheetPanel's merged top padding adds the status-bar inset.
  *
- * The host passes SheetPanel `telescopeRef`, `showClose={false}`, `showGrabber={false}`
- * and `edgePadding={false}`, then renders this first from the `children` render function,
+ * The host passes SheetPanel `telescopeRef`, `showClose={false}` and `edgePadding={false}`
+ * (plus `showGrabber={false}` for no drag bar; AccountSheet keeps the bar and passes
+ * `withGrabber` here instead — see the note above the props), then renders this first from the `children` render function,
  * wiring `dismiss` to `onClose`. The whole header is a resize handle; filterTaps keeps
  * the caret tappable.
  *
@@ -31,16 +32,23 @@ import type { SheetTelescopeHandle } from "./SheetPanel";
 const OPEN_HEADER_TOP_PX = 17;
 // PageHeader's leaf `padTop` (SIZE_SPEC.leaf) minus the above: the max-only extra.
 const MAX_EXTRA_TOP_PX = 27 - OPEN_HEADER_TOP_PX;
+// With the drag bar shown, SheetPanel's grabber row (`mobile-demo-eic-drag-zone`: 14px
+// above the pill under `edgePadding={false}`, the 5px pill, 8px below) already supplies the
+// gap above the header — it is taller than OPEN_HEADER_TOP_PX — so the header adds none of
+// its own and its row starts right under the pill's 8px. The caret then sits 10px lower
+// than the eip's (which has no top pill); it cannot match it with a pill above.
 
 interface SheetPageHeaderProps {
     title: string;
     /** The caret's action — SheetPanel's `dismiss`. */
     onClose: () => void;
     bindHeaderDrag: ReturnType<typeof useDrag>;
+    /** SheetPanel draws its grabber row above this header (`showGrabber` left on). */
+    withGrabber?: boolean;
 }
 
 const SheetPageHeader = forwardRef<SheetTelescopeHandle, SheetPageHeaderProps>(function SheetPageHeader(
-    { title, onClose, bindHeaderDrag },
+    { title, onClose, bindHeaderDrag, withGrabber = false },
     ref,
 ) {
     const frameRef = useRef<HTMLDivElement | null>(null);
@@ -74,7 +82,11 @@ const SheetPageHeader = forwardRef<SheetTelescopeHandle, SheetPageHeaderProps>(f
                 <Box ref={extraRef} className="sheet-page-header__max-spacer" sx={{ height: MAX_EXTRA_TOP_PX }} />
                 <Box
                     className="sheet-page-header__row"
-                    sx={{ "& .page-header": { paddingTop: `${OPEN_HEADER_TOP_PX}px` } }}
+                    sx={{
+                        "& .page-header": {
+                            paddingTop: `${withGrabber ? 0 : OPEN_HEADER_TOP_PX}px`,
+                        },
+                    }}
                 >
                     {/* No flame: like the pull-up sheets, this surface is not a study page,
                         and a second PageHeader flame would add a second accrual tick. */}

@@ -9,9 +9,11 @@ Parent: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (sub-documents table). It
 user is [DECK_TOWER.md](./DECK_TOWER.md), which uses `IsoScene`, `IsoPlatform`
 (`floating`), `IsoCardStack`, `IsoCardImprint`, `IsoFloorLabel`, `IsoPawn`, `IsoCloud` and `IsoWind`.
 The acp also imports it (`src/features/discover/SortBins.tsx`, which draws through its own
-`makeProjector`; `sortTimeOfDay.ts` → `mixHex`, `shadowTone`; `AddCardsPage.tsx` → `shadeHex`).
-**`IsoCarpet` currently has no user** (the Deck Tower dropped its carpet on 2026-10-17); it is
-kept as part of the kit.
+`makeProjector`; `sortTimeOfDay.ts` → `mixHex`, `shadowTone`; `AddCardsPage.tsx` → `shadeHex`), and so
+does the flp's hint pawn (`hintPawn/HintPawn.tsx`: a tiny, non-bobbing `IsoPlatform` with an `IsoPawn`,
+[HINT_PAWN.md](./HINT_PAWN.md)).
+`IsoCarpet` (a low floor mat) and `IsoModeSwitch` (the Mix / Review floor switch) were deleted
+on 2026-11-08, unused since 2026-10-17 and 2026-10-22.
 
 **Location.** The kit sits under `features/deckTower/`, but it now has a second importing
 feature (`features/discover`), so per [FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md) § 1 it is
@@ -44,17 +46,18 @@ The exemption covers iso scenes only; it is not a precedent for UI chrome.
 | Primitive | `IsoShadow.tsx` → `IsoShadow` | The only shadow drawer |
 | Primitive | `IsoSpacedText.tsx` → `IsoSpacedText` | Centred letter-spaced text that anchors the same in every engine (§ Objects → IsoSpacedText) |
 | Behaviour | `IsoLevitate.tsx` → `IsoLevitate` | Bobs an object up and down; its shadow breathes in sync |
-| Behaviour | `usePawnMotion.ts` → `usePawnMotion`, `depthRankAmong`, `pointInFrontOfRect`, `backToFront`, `PawnEntranceCue` | The pawn's entrance, wander and startle, and depth-sorting a moving object among obstacles |
-| Math | `pawnFigure.ts` → `pawnFigure`, `circleHullPath` | The pawn's body as a projected 3D capsule + sphere (§ IsoPawn → "View") |
+| Behaviour | `usePawnMotion.ts` → `usePawnMotion`, `depthRankAmong`, `pointInFrontOfRect`, `backToFront`, `PawnEntranceCue`, `PawnTapReaction`, `PawnActiveIdle`, `PawnAirRing` | The pawn's entrance, wander and startle, its idles, tap reactions and air rings, and depth-sorting a moving object among obstacles |
+| Behaviour | `pawnIdles.ts` → `PawnIdleKind`, `PawnIdleCue`, `LASTING_IDLES`, `idlePose`, `flinchPose`, `SNEEZE_SNAP_MS`, `KNIT_CLICK_MS` | The idle animations' and the tap flinch's pose curves, pure (§ IsoPawn → "Idles and the flinch") |
+| Math | `pawnFigure.ts` → `pawnFigure`, `pawnVest`, `circleHullPath`, `HEAD_CENTRE` (also read by the flp hint pawn's bubble tail) | The pawn's body as a projected 3D capsule + sphere (§ IsoPawn → "View"); bent along a curved spine by `arch` (§ IsoPawn → "Back stretch"); the optional night vest (§ IsoPawn → "Vest") |
 | Behaviour | `pawnEntrances.ts` → `PawnEntrance`, `FALL_FROM_SKY`, `PAWN_ENTRANCES`, `pickPawnEntrance`, `entranceStartFor` | How a pawn arrives, as pure pose timelines timed by their landing ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md) § Pawn entrances) |
 | Behaviour | `skyTraffic.ts` → `planSidePath`, `useSkyTraffic`, `createAltitudeWander`, `useAltitudeWander`, `SkyRegion`, `SkySide`, `prefersReducedMotion` | What clouds and wind share: the path along a tower's side, the wait → cross → wait slot scheduler, and the wandering spawn altitude (§ Sky traffic) |
 | Behaviour | `useCloudDrifts.ts` → `useCloudDrifts`, `CloudDrift`, `CloudSky`, `sortCloudsBackToFront` | Schedules the clouds drifting past the tower: shapes, speed, timing, mid-sky openers |
 | Behaviour | `fogClouds.ts` → `planFogClouds`, `FogCloud`, `FogUnit`, `FogBridge`, `FogCover`, `FOG_LEVELS` | Shapes the fog clouds (staggered, bridged units) and plans their lanes across a screen box (§ IsoFog) |
 | Behaviour | `useWindGusts.ts` → `useWindGusts`, `WindGust`, `WindStrand`, `WindPt`, `WindSky` | Schedules the wind gusts: strand shapes, curl, timing, on-screen placement |
-| Object | `IsoPlatform.tsx`, `IsoCarpet.tsx`, `IsoCard.tsx`, `IsoCardStack.tsx`, `IsoCardImprint.tsx`, `IsoFloorPrint.tsx`, `IsoPaperStack.tsx`, `IsoSortPlatform.tsx`, `IsoCardRuns.tsx`, `IsoFloorLabel.tsx`, `IsoHatch.tsx`, `IsoLever.tsx`, `IsoModeSwitch.tsx`, `IsoSmokePuff.tsx`, `IsoPawn.tsx`, `IsoCloud.tsx`, `IsoCloudShadow.tsx`, `IsoWind.tsx`, `IsoFog.tsx`, `IsoRain.tsx`, `IsoLightningBolt.tsx`, `IsoBurnMark.tsx` | The things a scene is made of (one component each, below) |
+| Object | `IsoPlatform.tsx`, `IsoCard.tsx`, `IsoCardStack.tsx`, `IsoCardImprint.tsx`, `IsoFloorPrint.tsx`, `IsoPaperStack.tsx`, `IsoSortPlatform.tsx`, `IsoCardRuns.tsx`, `IsoFloorLabel.tsx`, `IsoHatch.tsx`, `IsoLever.tsx`, `IsoSmokePuff.tsx`, `IsoPawn.tsx` (+ its `PawnIdleProps.tsx`, `PawnAirRing.tsx`), `IsoCloud.tsx`, `IsoCloudShadow.tsx`, `IsoWind.tsx`, `IsoFog.tsx`, `IsoRain.tsx`, `IsoLightningBolt.tsx`, `IsoBurnMark.tsx` | The things a scene is made of (one component each, below) |
 | Behaviour | `cardCollapse.ts` → `planCardCollapse`, `cardsShowingAt`, `fallMsFor`, `shadowLandTiming`, `CardCollapsePlan` | The pure plan for a stack losing cards and settling (§ IsoCardRuns) |
 | Rules | `light.ts` → `IsoSurface`, `shadowFootprint`, `shadowSpread`, `shadowTone`, `cloudShadowFootprint` | The light and the shadow rule |
-| Rules | `palette.ts` → `ISO`, `shadeHex`, `mixHex`, `Material` | Colours (`mixHex` blends two colours continuously, e.g. the Deck Tower sky → space) |
+| Rules | `palette.ts` → `ISO` (incl. `yarn`, `airRing`), `shadeHex`, `mixHex`, `Material` | Colours (`mixHex` blends two colours continuously, e.g. the Deck Tower sky → space) |
 | Rules | `levitation.ts` → `BOB_HEIGHT`, `BOB_PERIOD_MS`, `frozenBobOffsetPx` | The bob, and reading back where a paused one stopped |
 | Math | `geometry.ts` | Projection and shape math (below) |
 | Math | `camera.ts` → `makeCameraProjector`, `dimetricView`, `CameraView` | A moving camera with perspective that reproduces the fixed view exactly at one setting (§ The camera) |
@@ -217,9 +220,9 @@ from what it falls on.
   with it, the sliver is `min(CONTACT_LIFT, 2.5 · casterHeight)` (`contactLift`,
   `CONTACT_LIFT_PER_HEIGHT`), which only bites below 0.06 units (one sheet of paper).
   `IsoPaperStack` and `IsoSortPlatform` pass a height; every other caster takes the full lift.
-- **Tone comes from the receiver.** Shadows on the sky, the floor and a carpet read as the
+- **Tone comes from the receiver.** Shadows on the sky, the floor and a floor plate read as the
   same strength of shade. There are no per-receiver shadow colours in the palette.
-- **Flat things are part of their surface.** A carpet or floor label receives shadows but casts none.
+- **Flat things are part of their surface.** A flush floor label receives shadows but casts none.
   A shadow is an opaque fill in the *floor's* shade, so a decal it crosses (a floor label) must be
   shaded in its own tones: the caster draws the decal's `shaded` variant clipped to its shadow
   (`IsoPawn` → `decals`; `IsoFloorLabel` → `shaded`). A plain glaze cannot do this — the floor's
@@ -243,9 +246,48 @@ from what it falls on.
 
 | Caster | Footprint | `casterZ` | Receiver |
 |---|---|---|---|
-| `IsoPlatform` | the slab rect | its underside (−thickness) | `ground` |
+| `IsoPlatform` | the slab rect | its underside (−thickness) | `ground` (optional: omitted, no shadow is drawn) |
 | `IsoCardStack` | the card rect | its `surface.z` | its `surface` |
 | `IsoPawn` | a circle of `FOOT_RADIUS` | its `surface.z` | its `surface` |
+
+## The rounded edge
+
+`IsoSolid.tsx` → `IsoSolid` (`roundedEdge` prop); `geometry.ts` → `splitChains`,
+`PrismGeometry.topFront` / `topBack`; constants from `src/theme/roundedEdge.ts`
+(`ROUNDED_EDGE_FILLET_PX`, `RIM_LIGHT_PX`, `RIM_LIGHT_WHITE_PCT`); palette `ISO.edgeLight`.
+
+The SVG form of the hairline round the HTML tower objects draw with box-shadows (the td
+filter keys, the card-stock mini cards, the slab footer — `theme/roundedEdge.ts`), so a
+solid in the scene and a key on the page share one edge. Opt-in per solid:
+`roundedEdge={palette.edgeLight}`. It has two parts, both stroked on the top face's outline
+split at its leftmost and rightmost screen points (`splitChains`):
+
+- **Fillet.** The FRONT chain (`topFront`, where the top meets the walls) stroked
+  2 × `ROUNDED_EDGE_FILLET_PX` (1px) wide before the top is painted. The top covers the
+  inner half, so 0.5px shows on the wall side. Its colour is half-way from the top to the
+  wall beneath: a gradient on the walls' own left → right step across the front corner.
+- **Rim light.** The BACK chain (`topBack`, against the sky, the edge the upper-left light
+  catches) stroked 2 × `RIM_LIGHT_PX` wide and clipped to the top, so 1px shows inside the
+  face. Its colour is the top mixed `RIM_LIGHT_WHITE_PCT` (45%) toward `ISO.edgeLight`.
+  `edgeLight` is `COLORS.white` kept as a palette entry so the wash dims it; an unwashed
+  white would glow at night. It is painted after the solid's children (unlike the HTML
+  inset shadow, which sits under content), because a raised floor plate's face covers its
+  whole top. Every other print stays inset from the edge.
+
+Widths are viewBox px, which the scenes keep at about screen px (like the 1px wall seams).
+On a white or cream top (the notebook, card stock) the rim light is barely visible, as on
+the HTML card stock.
+
+| Solid | Edge |
+|---|---|
+| `IsoCard` (every top card: IsoCardStack's, IsoCardRuns', TowerCoverCard's) | yes |
+| `IsoCardStack` body | no. Its top is under the top card, so a fillet there would double the seam under the top card |
+| `IsoPaperStack` (the notebook) | yes |
+| `IsoPlatform`, `IsoSortPlatform` | no. Their light rim bevel (`RIM_WIDTH`, `MINI_RIM`) already rounds the edge |
+| `IsoFloorLabel` raised plate | yes, once it has a wall (`raised` > 0); the shaded copy's edge light goes through `shadowTone` |
+| `IsoLever` base | yes |
+| `IsoHatch` lift | no. Flush with the floor when risen, so it would only show mid-motion |
+| acp's `SortBins` | the TOP layer only (the shown top, the old top while placing, the lifted top on Undo — `TOP_EDGE_LIGHT`, the unwashed `ISO.edgeLight`, since the acp is lit by its `SortLook`); the under-layers no, like the card stack's body |
 
 ## Levitation
 
@@ -269,7 +311,7 @@ a camera can aim at where the object actually stands (the Deck Tower's study cam
 
 ### IsoPlatform
 
-`{ rect, thickness, ground, floating?, hingeAngle?, decals?, groundDecals?, children, tone?, bodyClassName?, bodyStyle?, bobPaused?, fadeStyle?, fadeChildren? }`. A slab whose top,
+`{ rect, thickness, ground?, floating?, hingeAngle?, decals?, groundDecals?, children, tone?, bodyClassName?, bodyStyle?, bobPaused?, fadeStyle?, fadeChildren? }`. A slab whose top,
 the floor, is at z = 0 and which extends down to −thickness. `tone` (a `PlatformTone`,
 from `platformTone(base)`) paints it in any hue; it defaults to the gold `ISO.platform` /
 `ISO.platformRim`. The Deck Tower gives each world its own (towerWorlds.ts).
@@ -278,13 +320,14 @@ It draws, in order:
 
 0. `groundDecals`: flat things on the ground (drifting cloud shadows). Drawn outside the bob
    (the ground stays put) but inside `fadeStyle`; the slab's shadow and the slab cover what lies under them.
-1. Its shadow on `ground`.
-2. The slab, with its top in the lighter rim tone.
+1. Its shadow on `ground`. With no `ground` (a platform floating over DOM content, like the flp's
+   hint pawn), no shadow is drawn.
+2. The slab, with its top in the lighter rim tone. No rounded edge (§ The rounded edge): the bevel is its edge.
 3. The floor, inset by `RIM_WIDTH`, leaving a thin bevel line. `RIM_WIDTH` is exported so a
    scene can keep walkers (and their shadows) off the bevel — the Deck Tower's `TowerPlatformLayout.roam` (towerPlatforms.ts) is
    `insetRect(platform, RIM_WIDTH)`.
 4. `decals`: flat things printed on the floor (floor labels).
-5. `children`: the carpets and objects on the floor, in their own group after the slab's.
+5. `children`: the objects on the floor, in their own group after the slab's.
 
 With `floating`, steps 2–5 go through `IsoLevitate`. `bodyClassName` / `bodyStyle` land on
 the group holding steps 2–5, so a scene can move the whole loaded slab on top of the bob
@@ -315,16 +358,10 @@ top edge (`hingedPrism`).
 - **Children do not swing.** They stand on the door, so making them fall is the scene's
   job. See [DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md) § Trap door.
 
-### IsoCarpet
-
-`{ rect, surface, thickness? }`. A low solid mat a step darker than the floor
-(`ISO.carpet`), 0.07 tall by default, so a sliver of wall shows. Things standing on it use
-the surface `{ z: surface.z + thickness, color: ISO.carpet.top }`.
-
 ### IsoCard
 
 `{ rect, z, thickness, figure?, label?, caption?, bandColor?, printOpacity? }`. One flashcard: a `cardFace` top and
-`cardBeige` walls. `printOpacity` (default 1) fades everything printed on the face —
+`cardBeige` walls, with the hairline rounded edge (§ The rounded edge). `printOpacity` (default 1) fades everything printed on the face —
 panel, band, text — leaving the bare card stock (IsoCardStack passes it to its top card; the
 Deck Tower sets it to 0 while its study camera is down on the card, when the count card is
 drawn as its own layer — DECK_TOWER.md § Studying the tower → "The count card"). The face carries:
@@ -384,7 +421,7 @@ palette `ISO.paper`, `paperSeam`, `paperRule`, `paperMargin`.
 
 `{ rect, sheets, surface, progress? }`. A stack of notebook paper: IsoCardStack's construction at
 paper scale. It is ONE body solid in `ISO.paper` (white top, walls shaded off white like the
-clouds'), never a solid per sheet. Its sheets are suggested by a seam every 5 sheets, drawn
+clouds'), never a solid per sheet, with the hairline rounded edge (§ The rounded edge). Its sheets are suggested by a seam every 5 sheets, drawn
 as one path. Every sheet is `PAPER_SHEET_THICKNESS` (0.06 units, ~1px), so the height is the
 count. The top face is printed as ruled paper: sky-blue rules (`bluMk`) run along world x
 (the page's head is its low-y edge, like IsoCard's), and a red margin line (`redMk`) runs
@@ -406,7 +443,7 @@ the Deck Tower's notebook stack (DECK_TOWER.md
 `{ rect, surface, deckColor, slabColor, progress?, hopping?, paused? }`. acp's EMPTY bin in
 miniature: a thin slab (0.28 units) lying flat on `surface` — standing up from it like any
 object on a floor, unlike IsoPlatform, whose top is pinned at z = 0 — with IsoPlatform's
-light rim bevel at this scale, and on its top the dashed outline where a deck would stand,
+light rim bevel at this scale and on its top the dashed outline where a deck would stand,
 in `deckColor` darkened by `FOOTPRINT_SHADE` (acp's day value). Dash and stroke are floor
 units × `proj.unit`. It casts a standing object's `IsoShadow` (with `casterHeight`), classed
 `iso-sort-platform__shadow`. It is drawn in world z, never by a screen-y translate, so it
@@ -514,6 +551,7 @@ an `IsoSolid` whose walls are the band shaded by the platform's own steps (`plat
 `wallSteps` `{ left, right }` overrides the two steps for a band whose default walls read too
 faint — the Deck Tower's yellow Learning plate, `towerDecks.ts` → `TOWER_DECKS` `plateWallSteps`
 0.25 / 0.36, because a full-saturation yellow barely changes brightness at the default steps),
+the hairline rounded edge (§ The rounded edge; the plate's face is drawn as the slab's child so the rim light lands over it),
 plus an `IsoShadow` contact shadow whose opacity follows `raised`, so it fades as the plate
 sinks flush. It stays a floor decal at this height: pawns still walk over it.
 
@@ -531,7 +569,7 @@ already darkens that floor to the same tone.
 
 ### IsoSpacedText
 
-*Code: `src/features/deckTower/iso/IsoSpacedText.tsx` → `IsoSpacedText`. Used by `IsoFloorLabel` (the plate text), `IsoCard` (the head-band label) and `IsoModeSwitch` (the paddle label).*
+*Code: `src/features/deckTower/iso/IsoSpacedText.tsx` → `IsoSpacedText`. Used by `IsoFloorLabel` (the plate text) and `IsoCard` (the head-band label).*
 
 `{ children: string, letterSpacing, ...<text> props }`. A centred (`textAnchor="middle"`), letter-spaced SVG `<text>`. Use it
 instead of a bare `letterSpacing` + `textAnchor="middle"` `<text>`: WebKit (iOS Safari) anchors on the run's UNSPACED width
@@ -558,7 +596,7 @@ plate), while Chrome centres it.
 ### IsoHatch
 
 *Code: `src/features/deckTower/iso/IsoHatch.tsx`, `iso/hatchGeometry.ts` (`hatchFootprint`).
-Used by `IsoLever` and `IsoModeSwitch`; animated by the Deck Tower's `usePopUpMotion`.*
+Used by `IsoLever`; animated by the Deck Tower's `usePopUpMotion`.*
 
 `{ at, w, d?, surface, sink, hatch, sinkDepth, shadowFootprint, air?, className?, children }`.
 A rectangular (`w` across x by `d` along y; square when `d` is omitted) trapdoor in a floor that a fixture rises out of and sinks back into. It draws the
@@ -608,48 +646,6 @@ obstacle among the standing things.
 ⚠️ `ISO.leverBase.right` is derived with `shadeHex`, the same flagged divergence as the card
 stock's right wall.
 
-### IsoModeSwitch
-
-*Code: `src/features/deckTower/iso/IsoModeSwitch.tsx`, `iso/hatchGeometry.ts`
-(`MODE_SWITCH_HOLE`, `modeSwitchFootprint`). **Currently unused**: it was the Deck Tower's Mix / Review
-switch until that was dropped on 2026-10-22, and is kept in the kit
-([DECK_TOWER.md](./DECK_TOWER.md) § Study mode).*
-
-`{ at, surface, flip, labels, colors, sink, hatch, air? }`. A two-position light switch
-standing in an `IsoHatch` (`MODE_SWITCH_HOLE`, 1.6 × 2.7, long along world y) — it rises,
-sinks and drops in from the sky exactly like `IsoLever`.
-
-- **Shape.** A solid grey body (`ISO.switchBase` — `greyA`, so the light yellow Mix paddle
-  stands off it; `BODY_H` 0.5) with one solid V-shaped paddle (`PADDLE_W` 0.95 × `PADDLE_L`
-  2.0) seated in it, sharing its centre. The body is the paddle's plan plus an even `RIM`
-  (0.2) all round, and a dark slot (`SLOT_GAP` 0.05 wider than the paddle, `shadeHex` 0.4 off
-  the body's grey — a flagged divergence like the wall tones) is printed on its top under the
-  paddle. The paddle has a flat underside sunk `PADDLE_SKIRT` (0.5) into the body — deeper
-  than its raised end lifts, so no gap ever shows under it — and a top of two faces meeting
-  in a valley, the crease (a line along world x at `at`; `CREASE_T` 0.2 thick there), each
-  face rising `V_ANGLE` (0.116 rad, ≈6.7°) toward its end. It rocks on the crease by the same
-  `V_ANGLE`, raised `CREASE_LIFT` so the pressed end just meets the body: the pressed half's
-  face lies level, the raised half's stands at 2·`V_ANGLE`. `flip` 0 presses the +y end
-  (screen lower left), 1 the −y end (upper right); it is a spring and may overshoot.
-- **Drawing.** The body is a prism. The V is not convex, so the paddle is drawn as its two
-  convex halves, each like a prism (`halfGeometry`), the far (−y) half first. Each half's
-  wall edges are cut in the world where they cross the body's top, and its silhouette is the
-  hull of its top face and those cut points — so the walls end exactly at the body's top
-  and the skirt inside the body is never drawn. (A screen-space clip to the body's outline
-  would not do: the buried skirt projects down onto the body's top face, inside that
-  outline, and the paddle looked slid forward off its seat.)
-- **Colour.** The paddle takes `colors[nearer]` — the band of the position `flip` is nearer
-  — in the platform's wall steps (`shadeHex` 0.07 / 0.15, the same flagged wall-tone
-  divergence as the rest of the palette).
-- **Label.** Only `labels[nearer]` is printed (an `IsoSpacedText`, spacing 0.03 — § IsoSpacedText), centred on the crease and folded over both
-  faces of the V: it is printed once per face through the affine map onto that face
-  (`facePlane`, measured along the surface from the crease so the two prints meet at the
-  fold), each clipped to its own side. Reads along −y (screen left → right). Its ink fades
-  to 0 as the paddle passes level, where the label and colour swap. `LABEL_FONT` 0.4 fits
-  "REVIEW" across the two faces.
-
-Its footprint is an obstacle among the standing things.
-
 ### IsoSmokePuff
 
 `{ rect, z, side, delayMs? }`. The dust where something heavy lands: `PUFF_COUNT` (14) round
@@ -662,7 +658,7 @@ of the landing. Hidden under reduced motion.
 
 ### IsoPawn
 
-`{ at, surface, startled?, roam?, startledBy?, floorDrop?, onDepthRankChange?, decals?, entrance?, steps?, tappable?, floorSpot?, shockId?, crispy? }`. A featureless ink
+`{ at, surface, startled?, roam?, startledBy?, floorDrop?, onDepthRankChange?, decals?, entrance?, steps?, tappable?, floorSpot?, shockId?, crispy?, castsShadow?, stretch? }`. `castsShadow={false}` drops its floor shadow (the flp hint pawn, whose shadow clashed with its tiny slab; the motion refs stay mounted, empty). A featureless ink
 worker: a pill body and a ball head — a 3D capsule and sphere projected through the scene's
 camera (§ "View") — standing at a world point. Its shadow is a round world footprint cast through `IsoShadow`, like every other shadow.
 
@@ -837,13 +833,133 @@ the shadow does not grow (`air` is clamped at 0) — the page fades it out inste
 pops and the feet are thrown straight up (`POKE_JUMP_HEIGHT`, 2.6 units) through the feet
 physics, so the jump lands in the plate launch's shrinking bounces. Taps count in the air
 too: each re-throws the feet from where they are, so quick taps climb with no ceiling, and
-gravity brings the pawn back down once they stop. A walk stops where it is, and the pawn
+gravity brings the pawn back down once they stop. Each of those mid-air re-throws leaves an
+**air ring** where the feet kicked off (below). A page can pick the reaction instead
+(`onTap`, below). A walk stops where it is, and the pawn
 stands until the bubble has gone (`EMOTE_MS`), then wanders on. A startle keeps its
 timeline, with the jump on top of it. A tap is ignored during an entrance or an edge hop
 (no feet physics runs there), while the floor is dropping, and under
 `prefers-reduced-motion`. The tap target is an invisible circle
 (`iso-pawn__hit`, `PAWN_HIT_RADIUS`) that `applyFrame` keeps centred on the figure, because
 the body alone is only a few px wide. Code: `iso/IsoPawn.tsx`, `iso/usePawnMotion.ts`.
+
+**Tap reaction.** With `onTap` (`(tap: { airborne }) => "jump" | "flinch"`), the page picks
+each tap's reaction, and the poke pops **no** "!" (the page answers in its own way: the flp
+hint pawn's "ouch" bubble, docs/HINT_PAWN.md § "Tap reactions"). `"flinch"` is the `flinch`
+mode: a 420 ms recoil on the spot, pressed down and tipped back away from the viewer, springing
+back with one small rebound (`pawnIdles.ts` → `flinchPose`, `FLINCH_MS`). A tap while the feet
+are in the air always jumps, whatever `onTap` returns, so jumps still chain. Without `onTap`
+every tap is the jump with the "!" (the Deck Tower's pawns). Code: `usePawnMotion.ts` →
+`poke`, `onTap`; `IsoPawn.tsx` → `onTap`.
+
+**Air ring.** A jump thrown while the feet are already up (a chained poke) spawns a
+`PawnAirRing` at the feet's ground point and absolute height (`usePawnMotion` → `airRings`,
+`{ id, x, y, z }`). It is a little platform in the air, so a double jump reads as pushing off
+something: two concentric flat iso circles (`flatPath` of a round footprint, like the rain
+splash ring in IsoRain), `PAWN_FOOT_RADIUS` × 1.5 and × 2.4, stroked `ISO.airRing`
+(`COLORS.blueAccent`, owner's pick 2026-11-08). They swell "lightly" from 80% to 115% on a sine
+ease-out and fade over `AIR_RING_MS` (520 ms), the outer ring 70 ms behind the inner, like a
+ripple. The ring stays where it was kicked off (outside the `travel` group, behind the figure)
+and is unmounted on its outer ring's `animationend` (`dropAirRing`). It applies to every pawn,
+the Deck Tower's included; a ground jump has none. Code: `iso/PawnAirRing.tsx`,
+`iso/usePawnMotion.ts` → `poke`, `iso/IsoPawn.tsx`.
+
+**Idles and the flinch.** Each new `idle` cue (`PawnIdleCue` = `{ id, kind, at }`) plays an
+idle animation, the `idle` mode. Its pose is a pure curve (`pawnIdles.ts` → `idlePose`) of
+`lean`, `arch`, `reach` and `squash`, which map to the figure as the back stretch's do. The
+bend runs in the plane of the pawn's facing, plus the curve's `bendHeadingOffset`. Like a
+stretch cue, it starts only from a standstill; a stretch due at the same time goes first.
+
+| Kind | Shape | Pose | Marks (`PawnIdleProps.tsx`) |
+|---|---|---|---|
+| `sneeze` | one-shot, `SNEEZE_MS` 1.6 s | two inhales, the head going back further each time, a quiver, then a fast snap forward — the spine folding (`arch` +22°) and the whole body tipping with it (`lean` +9°) — with a squash (`SNEEZE_SNAP_MS`), and a recovery | three white discs burst out in front of the face on the snap |
+| `sing` | one-shot, `SING_MS` 4.2 s | head tipped back (`arch` −8°), swaying side to side, breathing on the beat. The sway swings the head-back bend's DIRECTION ±70° round the facing, because a pose has one bend plane | ♪ / ♫ notes on white discs float up and right, swaying, one every 0.5 s |
+| `doze` | lasting | the head droops forward (`arch` +13°) and the body sags, then slow sleeping breaths | big ink "Z"s (no disc, free-floating) drift up off the head, each bigger than the last — one every `DOZE_Z_GAP_MS` (2 s), each drifting for 3 s |
+| `knit` | lasting | looking down (`arch` +7°), the head bobbing on each needle click (`KNIT_CLICK_MS`) | two white needles crossing and clicking in front of the chest, a scarf (`ISO.yarn`, ribbed in a shade of it) growing from nothing for as long as it knits (`SCARF_RATE`, a long strip sliding out of a clip at the needles), down past the slab and off the bottom of the screen, a yarn ball on the floor screen-left of the feet with its strand up to the work |
+
+- A one-shot cue still waiting `IDLE_STALE_MS` (3 s) after `at` is dropped; a lasting one waits.
+- A **lasting** idle holds until the cue is withdrawn (null) or replaced, then eases back to
+  rest over `IDLE_EXIT_MS` (380 ms; `idlePose`'s `endingFor`). A replacement then starts once
+  the pawn stands again.
+- A **tap** ends any idle at once (`startedIdleId` keeps a still-set cue from replaying).
+- **Marks.** `usePawnMotion` mirrors what plays to React (`activeIdle` = `{ id, kind, ending }`,
+  set on a change only, never per frame). IsoPawn mounts `PawnIdleProps` (keyed by id, so its
+  CSS restarts) inside the head anchor, in `EMOTE_DRAW_SCALE` units, and fades it out while
+  `ending`. The notes are ink glyphs on white discs, the "!" bubble's family; the doze Z's are bare, larger ink glyphs. The
+  anchor follows the **bent** head during the idle (`pose.marksFollowHead`), so the marks come
+  off a drooping or tipped-back head. The exception is knitting: its yarn ball sits on the
+  floor and must not slide as the head bobs. The "!" never follows the bend. Reaching the chest
+  and the floor from the head converts world heights through the projector
+  (`heightUnit / facingScaleAt`). This is exact under the fixed view and approximate under a
+  moving camera.
+- Reduced motion: no idle, no flinch, no marks.
+- Code: `iso/pawnIdles.ts`, `iso/PawnIdleProps.tsx`, `iso/usePawnMotion.ts` → the `idle` /
+  `flinch` modes, `pendingIdle`; `iso/IsoPawn.tsx` → `idle`. The flp hint pawn schedules them
+  (docs/HINT_PAWN.md § "Idle animations"); the Deck Tower's pawns have none.
+
+**Back stretch.** Each new `stretch` cue (`PawnStretchCue` = `{ id, at }`) plays a stretch
+starting at `at`: a little crouch, then the pawn draws itself up tall and thin
+(`STRETCH_REACH`) while **curving its back** away from the way it faces (IsoPawn `facing`)
+— the spine bends
+`STRETCH_ARCH_DEG` (−15°) from hips to shoulders over a small whole-body lean
+(`STRETCH_LEAN_DEG`, −3°) — holds the reach with a slight quiver of the arch, and lets go
+into a soft settling squash — `STRETCH_MS` (1.2 s) in
+all. It starts only from a standstill (a `pause`): a cue arriving while the pawn is arriving,
+walking or in the air waits, and is dropped `STRETCH_STALE_MS` after `at`. A poke rides on
+top of it, as on a startle; reduced motion skips it. The flp's hint pawn cues one per new
+speech bubble (docs/HINT_PAWN.md § "Back stretch"). Code: `iso/usePawnMotion.ts` → the
+`stretch` mode, `STRETCH_*`; `iso/IsoPawn.tsx` → `stretch`.
+
+The curve is the figure's `arch` (`iso/pawnFigure.ts` → `PawnPose.arch`,
+`archedPawnFigure`): the axis's tilt turns from `lean` at the feet to `lean + arch` at the
+body's top, gathered toward the top (`ARCH_PROFILE_POWER`), and the spine is traced by
+integrating that direction. The body is drawn as a chain of `ARCH_SEGMENTS` short capsules
+(`circleHullPath`) in ONE path — they all wind the same way, so the nonzero fill draws
+their union as one smooth bent pill, under any camera. The head continues along the top's
+direction. `arch` 0 (every other pose) takes the straight capsule's path unchanged.
+
+The plane of the bend is `PawnPose.bendHeading` (`pawnFigure.ts` → `bendAxis`). It is
+measured like the vest's facing: 0 is toward the camera, +90 is screen-right and 180 is
+away. The default is 90, so every waddle, startle and hop leans in the picture plane as it
+always has. The back stretch sets it to the pawn's `facing`, so its negative lean and arch
+curl the back away from where the pawn faces. Under the fixed view a bend away from the
+camera moves the head straight up the screen, so a pawn facing nearly forward stretches
+mostly upward.
+
+**Vest.** With `vest`, the pawn wears an open hi-viz safety vest (the flp's hint pawn
+after dark, docs/HINT_PAWN.md § "Night vest"). `pawnFigure.ts` → `pawnVest` takes the same
+`(proj, feet, pose)` as `pawnFigure`, plus `facingDeg` (IsoPawn `facing`: 0 faces the
+camera, + turns the vest's front toward screen-right), and returns three paths:
+- `vestPath`: the cloth, spine fractions `VEST_SPAN` of `BODY_HEIGHT`.
+- `stripesPath`: two reflective stripes at `VEST_STRIPE_CENTRES`.
+- `openingsPath`: the open front plus two arm holes.
+
+usePawnMotion writes all three every frame, and only while they are mounted, so a pawn
+without a vest computes nothing. IsoPawn draws them between the body and the head, inside a
+clip made from a `<use>` of the body path. That way they follow each frame's rewrite of the
+outline.
+- **Cloth and stripes.** A band painted on a cylinder is bounded, as seen, by the **front
+  arcs** of its two edge rings, so each band is the top ring's front arc left → right, then
+  the bottom ring's back. The rings are horizontal circles round the spine point
+  (`spinePoint`, which traces the arch the way `archedPawnFigure` does, via the shared
+  `spineTilt`). They are `VEST_RING_OVERSHOOT` × the body's radius, so the arcs' ends run
+  past the outline the clip trims to. "Front" means lower on screen, which holds for every
+  camera this kit has, since each one looks down.
+- **Openings,** filled with `ISO.ink`, which reads as cut out of the cloth. Both are
+  patches of the body's SURFACE, placed by angle round it from the ring's front-most point
+  (`frontAngle`, refined between samples; `screenRightSign` says which way round is
+  screen-right). `surfacePoint` clamps an angle to the camera-facing half, so a patch that
+  wraps round the side is flattened onto the outline (just past it, where the clip trims)
+  and one wholly round the back vanishes:
+  - **Open front** (`vestOpeningPath`): the strip within ±`VEST_OPENING_HALF_ANGLE` of the
+    vest's facing. It is a slit at the hem easing out to a V at the neck.
+  - **Arm holes** (`vestArmHolePath`): ovals ±`VEST_ARM_HOLE.halfAngle` round the body, a
+    quarter turn either side of the facing. Facing the camera they are scoops out of the two
+    sides of the outline. Turned, one comes onto the body's face and the other goes round
+    the back. They sit on the capsule's straight sides (`VEST_ARM_HOLE`): above the top end
+    sphere's centre the outline curves in, and a hole there would fall off the body.
+- Colours: `ISO.vest` (`COLORS.hiViz`) and `ISO.vestStripe` (`COLORS.grey`), washed with the
+  scene like the rest of the palette.
 
 **Lightning.** `floorSpot` (a ref) is kept at the pawn's live ground point every frame, or
 null while it is not on the floor (before its entrance, on the summit, falling). The Deck Tower
@@ -1142,7 +1258,7 @@ The base colours are all `COLORS` tokens:
 ⚠️ **Divergence from the colour framework.** The darker tones are derived at runtime with
 `shadeHex` (an HSL lightness step), because the framework has no darker tier for these
 hues. That covers `space` (the sky's hue taken down to night, `spaceOver` — deep navy for
-blue; every Deck Tower world shares it), the wall tones (of every `platformTone`) (cloud walls included, shaded off `white`), the carpet, the card seams and every shadow
+blue; every Deck Tower world shares it), the wall tones (of every `platformTone`) (cloud walls included, shaded off `white`), the card seams and every shadow
 (`shadowTone`). Every colour under a non-identity ambient wash (§ Ambient wash) is derived
 too. If the style spreads beyond the Deck Tower, promote them to tokens in
 `src/theme/colors.ts`.

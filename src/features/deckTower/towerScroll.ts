@@ -234,6 +234,15 @@ export function useTowerCardsScroll({ scrollerRef, headerLayerRef, cardsPageRef,
 
     // ── The glide ──
     const glideRaf = useRef(0);
+    /**
+     * Whether a glide is in flight. The snap zone checks it and stands down: a glide is
+     * already headed for a line, and its frames pass THROUGH the zone. Without this, a tap
+     * on the up arrow from the top of the cards page was undone — the tap's `touchend`
+     * arms the settle timer, the glide's own (placed) frames never re-arm or clear it, and
+     * 140ms in it found the glide still near the cards line with the last hand-scroll
+     * heading down, and snapped back to the cards.
+     */
+    const gliding = useRef(false);
     /** Whether the glide in flight has the scroller's overflow locked (a release snap). */
     const glideLocked = useRef(false);
     const unlockGlide = () => {
@@ -245,6 +254,7 @@ export function useTowerCardsScroll({ scrollerRef, headerLayerRef, cardsPageRef,
     };
     const cancelGlide = () => {
         cancelAnimationFrame(glideRaf.current);
+        gliding.current = false;
         unlockGlide();
     };
     /**
@@ -270,11 +280,15 @@ export function useTowerCardsScroll({ scrollerRef, headerLayerRef, cardsPageRef,
             el.style.overflowY = "hidden";
         }
         const start = performance.now();
+        gliding.current = true;
         const tick = (now: number) => {
             const u = Math.min(1, (now - start) / ms);
             place(from + (to - from) * ease(u));
             if (u < 1) glideRaf.current = requestAnimationFrame(tick);
-            else unlockGlide();
+            else {
+                gliding.current = false;
+                unlockGlide();
+            }
         };
         glideRaf.current = requestAnimationFrame(tick);
     };
@@ -320,7 +334,7 @@ export function useTowerCardsScroll({ scrollerRef, headerLayerRef, cardsPageRef,
         /** The two lines, or null when the snap may not run now. */
         const snapLines = () => {
             const cards = cardsPageRef.current;
-            if (!cards || touching || !enabledRef.current || !snapEnabledRef.current) return null;
+            if (!cards || touching || gliding.current || !enabledRef.current || !snapEnabledRef.current) return null;
             return { platformLine: platformScrollTop(el), cardsLine: cardsTopScrollTop(el, cards) };
         };
         /** Strictly between the lines: resting on either one is already settled. */
@@ -433,7 +447,7 @@ export function useTowerCardsScroll({ scrollerRef, headerLayerRef, cardsPageRef,
         // The scroller mounts once with the page; refs are stable.
     }, [scrollerRef, cardsPageRef]);
 
-    // Stable identities (they only read refs): `toPlatform` and `toCards` are props of
+    // Stable identities (they only read refs): `up` and `toCards` are props of
     // memoized children, which a fresh function every render would re-render each frame.
     return useMemo(
         () => ({
@@ -445,9 +459,18 @@ export function useTowerCardsScroll({ scrollerRef, headerLayerRef, cardsPageRef,
             /** Stop a glide in flight — the page is about to place the scroller itself. */
             cancelGlide: () => cancelGlideRef.current(),
             /** Glide back up (or down) to the platform line — the cards header's up arrow. */
-            toPlatform: () => {
+            /**
+             * The cards header's up arrow: climbs ONE stop. Down in the grid (below the cards
+             * line) it glides back to the top of the cards page; at the top of the cards page
+             * (on the line, or anywhere above it) it glides on up to the platform line.
+             */
+            up: () => {
                 const el = scrollerRef.current;
-                if (el) glideToRef.current(platformScrollTop(el), GLIDE_MS);
+                if (!el) return;
+                const cards = cardsPageRef.current;
+                const cardsLine = cards ? cardsTopScrollTop(el, cards) : null;
+                const inGrid = cardsLine !== null && el.scrollTop > cardsLine + ON_LINE_PX;
+                glideToRef.current(inGrid ? cardsLine : platformScrollTop(el), GLIDE_MS);
             },
             /** Glide down to the cards line, the title row at the top — the cards cue. */
             toCards: () => {

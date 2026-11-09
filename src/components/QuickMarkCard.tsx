@@ -46,7 +46,7 @@ interface QuickMarkCardProps {
 // at rest, and `leaving` (fly-off, face in the destination colour).
 //
 // Three nested layers, each owning ONE transform so none overwrites another:
-//   outer      — the grid's flex item. `useScrollStretch` writes its row-spread transform
+//   outer      — the grid's flex item. `useScrollStretch` writes its row-spread translate
 //                here, directly on the DOM node; it is also the gesture target (stays
 //                put, so pointer capture and `data-swipe-id` never move).
 //   swipe      — follows the finger / flies off (translateX + tilt).

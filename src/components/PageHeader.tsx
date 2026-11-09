@@ -164,7 +164,9 @@ const BackGroup = styled(Box)(() => ({
 }));
 
 interface PageHeaderProps {
-    title: string;
+    // Optional: a header with no title draws only its back arrow and right slot. The
+    // flp's TowerStudyHeader omits it (2026-11-08) to free the row for its controls.
+    title?: string;
     onBack?: () => void;
     showBack?: boolean;
     // Which way the back chevron points, and therefore WHICH GLYPH is drawn:
@@ -227,7 +229,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
     const resolvedSize: PageHeaderSize = size ?? (showBack ? (arrowDirection === "left" ? "node" : "leaf") : "hub");
     const spec = SIZE_SPEC[resolvedSize];
 
-    const titleNode = (
+    const titleNode = title ? (
         <Typography
             className="page-header__title"
             sx={{
@@ -240,7 +242,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
         >
             {title}
         </Typography>
-    );
+    ) : null;
 
     return (
         <Header className="page-header" size={resolvedSize} safeAreaTop={safeAreaTop}>

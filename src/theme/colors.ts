@@ -139,6 +139,14 @@ export const COLORS = {
     pnk: "#F4D1F4",      // oklch(90%   0.060  326) — soft orchid, in gamut (was #FFD1FF, 2026-11-07)
     pnkSky: "#FFD8EA",   // oklch(92%   0.049  349) clipped
 
+    // ── Hi-viz: a prop colour, not a surface ─────────────────────────────
+    // hiViz (2026-11-08) is the flp hint pawn's night-time safety vest
+    // (features/flashcards/FlashcardsLearnPage/hintPawn/HintPawn.tsx, docs/HINT_PAWN.md
+    // § "Night vest"). Deliberately the neon yellow-green the lime sky `limMk` was cut for
+    // reading as (above): on a ~20 px vest that IS the point. In gamut. Use it for nothing
+    // that has to sit calmly on a page.
+    hiViz: "#D3EE2B",    // oklch(90%   0.20   118)
+
     // ── `--gld`, the action metal ─────────────────────────────────
     // A saturated gold, the one ramp member that is NOT a pale ground. The arena flow
     // (docs/ARENA_FEATURE.md) needs a single page-level ACTION that is unmistakably the
@@ -318,6 +326,18 @@ export const COLORS = {
     // Used as a 1px border + an ~8% tint of itself; see theme/aiGeneratedStyling.ts,
     // which is the only place that composition is written down.
     aiGenerated: "#FF9E5A",
+
+    // ── In-copy UI keywords ───────────────────────────────────────
+    // ALSO outside the ramp (owner, 2026-11-08: "Red Salmon"). Colours the words in a
+    // line of help copy that name a button the learner can press (More Info, Breakdown,
+    // Customize, Compare), so the eye finds the control the tip is talking about. A deep
+    // salmon rather than the classic #FA8072: that one is only 2.5:1 on white and faint at
+    // caption size, this one is 3.4:1. Not the ramp's redMk (#FF767D), which means
+    // Unfamiliar and is fainter still (2.6:1).
+    //
+    // Used by: src/features/flashcards/FlashcardsLearnPage/hintPawn/PawnHintBody.tsx
+    // (the wrong-streak hints' {keyword} markup, docs/HINT_PAWN.md § Wrong-streak).
+    keywordInk: "#E8604C",
 } as const;
 
 export type ColorToken = keyof typeof COLORS;

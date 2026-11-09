@@ -6,7 +6,8 @@ import { Box } from "@mui/material";
 import LeafPage from "../../../components/LeafPage";
 import { HeaderActionChip } from "../../../components/PageHeader";
 import Icon from "../../../components/Icon";
-import { FIRE_COUNT_INK, HEADER_FIRE_COUNT_FONT_SIZE, HEADER_FIRE_GLYPH_PX } from "../../../minutePoints/FireCount";
+import { FIRE_COUNT_INK } from "../../../minutePoints/FireCount";
+import { OUTLINED_CHIP_ICON_PX, OUTLINED_CHIP_PAD_Y_PX, OUTLINED_CHIP_TEXT_PX } from "../../../components/pageHeaderSizing";
 import { useAuth } from "../../../AuthContext";
 import { usePageTitle } from "../../../hooks/usePageTitle";
 import { useBlockEdgeSwipe } from "../../../hooks/useBlockEdgeSwipe";
@@ -18,14 +19,15 @@ import {
 } from "../../../../server/contracts/writingNotebook";
 import { useNotebookSheet } from "./useNotebookSheet";
 import NotebookWordBar from "./NotebookWordBar";
-import { NOTEBOOK_EDITOR_MIN_HEIGHT, wordBarCompacts } from "./notebookLayout";
+import { NOTEBOOK_EDITOR_MIN_HEIGHT, NOTEBOOK_SIDE_GUTTER, wordBarCompacts } from "./notebookLayout";
 import { nextStrokeAid, type StrokeAid } from "./strokeAid";
-import NotebookGrid from "./NotebookGrid";
+import NotebookGrid, { type NotebookGridHandle } from "./NotebookGrid";
 import NotebookCellEditor from "./NotebookCellEditor";
 import NotebookWordPickerSheet from "./NotebookWordPickerSheet";
 import { NOTEBOOK_GLYPH } from "./notebookEntry";
 import { COLORS } from "../../../theme/colors";
 import { FONTS } from "../../../theme/fonts";
+import { LEADING } from "../../../theme/scale";
 
 /**
  * WritingNotebookPage — `/flashcards/writing/notebook` (docs/WRITING_NOTEBOOK.md).
@@ -35,7 +37,9 @@ import { FONTS } from "../../../theme/fonts";
  * paper stack, whose launch carries `state.exitTo` back to that world.
  *
  *   ┌──────────────────────────────┐
- *   │ ⌄  Writing Notebook  ✎12 (⇄ Change) │  LeafPage header — counter (flame-style) + labelled change-word chip
+ *   │ ⌄  Notebook               🔥 │  LeafPage header — title + the app's flame only
+ *   │ [✓12]   (⇄ Change)       (↑) │  NotebookToolbar — counter left, change-word chip
+ *   │                              │    centred, back-to-top right (only when scrolled)
  *   │ ▣▣▣▣▣▣▣                      │  NotebookWordBar — the shadows, 2 per row (3–4 chars: 2×2),
  *   │ ▣▣▣▣▣▣▣                      │    spanning the sheet's width; tapping one cycles its stroke help
  *   │                              │    (a 2×2 drops to one row only if the canvas would not fit)
@@ -53,22 +57,109 @@ import { FONTS } from "../../../theme/fonts";
  * LAYER: feature page — data via useNotebookSheet / src/api/writingNotebook.ts.
  */
 /**
- * The sheet's counter in the header, drawn in the minute-points flame's shape
- * (`FireCount` — `.hd .fire`): one big filled glyph with a mono `HEADER_FIRE_COUNT_FONT_SIZE` / `FIRE_COUNT_INK` count beside it,
- * 4px apart, so the two readouts in the right slot read as a matched pair. Ink2
- * (`COLORS.iconColor`, the header icons' ink) rather than the flame's orange: the
- * orange is the earning signal and stays the flame's alone.
+ * The sheet's counter (in NotebookToolbar): a check + the count, held together by one
+ * rectangular 1px outline (2026-11-08) so the pair reads as a single readout.
+ *
+ * Sized to sit level with the Change chip beside it (HeaderActionChip →
+ * `outlinedChipSx`): the same glyph size (`OUTLINED_CHIP_ICON_PX`), vertical padding
+ * (`OUTLINED_CHIP_PAD_Y_PX`) and 1px outline in the same ink, so the toolbar's items share
+ * one height. Two deliberate differences keep it from reading as a button:
+ *   - RECTANGULAR corners (`NOTEBOOK_COUNT_RADIUS_PX`), not the chip's pill ends — the
+ *     square also echoes the notebook's cells;
+ *   - the count is MONO with tabular figures (a number, not a label), at the chip's type
+ *     size so it lines up with "Change".
+ * Ink2 (`COLORS.iconColor`, the header icons' ink); the orange stays the flame's.
+ * Doc: docs/WRITING_NOTEBOOK.md § "Sheet" (Counter bullet).
  */
-function NotebookHeaderCount({ count }: { count: number }) {
+const NOTEBOOK_COUNT_RADIUS_PX = 4;
+
+function NotebookCountBox({ count }: { count: number }) {
     return (
         <Box
             className="writing-notebook-page__count"
             role="img"
             aria-label={`${count} ${count === 1 ? "time written" : "times written"}`}
-            sx={{ display: "flex", alignItems: "center", gap: "4px", fontFamily: FONTS.mono, fontSize: HEADER_FIRE_COUNT_FONT_SIZE, ...FIRE_COUNT_INK, fontVariantNumeric: "tabular-nums", color: COLORS.iconColor }}
+            sx={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+                flexShrink: 0,
+                lineHeight: LEADING.none,
+                padding: `${OUTLINED_CHIP_PAD_Y_PX}px 8px`,
+                border: `1px solid ${COLORS.iconColor}`,
+                borderRadius: `${NOTEBOOK_COUNT_RADIUS_PX}px`,
+                fontFamily: FONTS.mono,
+                fontSize: OUTLINED_CHIP_TEXT_PX,
+                ...FIRE_COUNT_INK,
+                fontVariantNumeric: "tabular-nums",
+                color: COLORS.iconColor,
+            }}
         >
-            <Icon className="writing-notebook-page__count-icon" name={NOTEBOOK_GLYPH} size={HEADER_FIRE_GLYPH_PX} color={COLORS.iconColor} fill={1} />
+            <Icon className="writing-notebook-page__count-icon" name={NOTEBOOK_GLYPH} size={OUTLINED_CHIP_ICON_PX} color={COLORS.iconColor} />
             {count}
+        </Box>
+    );
+}
+
+/**
+ * NotebookToolbar — the row under the page header (2026-11-08), modelled on the sort
+ * cards page's control cluster (AddCardsPage → SortToolbar), but IN FLOW rather than
+ * floated: the word bar sits directly beneath, and a floated row would cover it.
+ *
+ * Three fixed slots — a `1fr auto 1fr` grid, so the middle slot is truly centred on the
+ * page whatever the side slots hold, and nothing shifts when one of them empties:
+ *   LEFT   the counter (NotebookCountBox) — once a word is chosen and its count has loaded;
+ *   MIDDLE the change-word chip;
+ *   RIGHT  back to top (`keyboard_double_arrow_up`, the "Next empty" glyph flipped) — only while the sheet is scrolled away from the
+ *          top (NotebookGrid → `onScrolledAwayChange`).
+ * Items are the header's outlined-chip family (HeaderActionChip) so they keep the look
+ * they had in the header. Moved out of the header because a 4-digit count crowded it.
+ * Doc: docs/WRITING_NOTEBOOK.md § "Page anatomy".
+ */
+function NotebookToolbar({ count, word, showBackToTop, onBackToTop, onChangeWord }: {
+    /** The sheet counter, or null while it loads / with no word. */
+    count: number | null;
+    word: string | null;
+    showBackToTop: boolean;
+    onBackToTop: () => void;
+    onChangeWord: () => void;
+}) {
+    return (
+        <Box
+            className="writing-notebook-page__toolbar"
+            sx={{
+                display: "grid",
+                gridTemplateColumns: "1fr auto 1fr",
+                alignItems: "center",
+                columnGap: "8px",
+                flexShrink: 0,
+                // Side padding = the sheet's gutter, so the side chips sit flush with the grid's edges.
+                padding: `8px ${NOTEBOOK_SIDE_GUTTER}px 4px`,
+            }}
+        >
+            <Box className="writing-notebook-page__toolbar-left" sx={{ display: "flex", justifyContent: "flex-start", minWidth: 0 }}>
+                {word && count !== null && <NotebookCountBox count={count} />}
+            </Box>
+            <HeaderActionChip
+                className="writing-notebook-page__change-word"
+                icon={word ? "swap_horiz" : "add"}
+                ariaLabel={word ? `Change word (now ${word})` : "Choose a word"}
+                onClick={onChangeWord}
+            >
+                {word ? "Change" : "Choose"}
+            </HeaderActionChip>
+            <Box className="writing-notebook-page__toolbar-right" sx={{ display: "flex", justifyContent: "flex-end", minWidth: 0 }}>
+                {showBackToTop && (
+                    <HeaderActionChip
+                        className="writing-notebook-page__back-to-top"
+                        icon="keyboard_double_arrow_up"
+                        ariaLabel="Back to the top of the sheet"
+                        onClick={onBackToTop}
+                    >
+                        {null}
+                    </HeaderActionChip>
+                )}
+            </Box>
         </Box>
     );
 }
@@ -97,6 +188,9 @@ export default function WritingNotebookPage() {
 
     const [word, setWord] = useState<string | null>(null);
     const [pickerOpen, setPickerOpen] = useState(false);
+    // The grid (for the toolbar's back-to-top) and whether it is scrolled away from the top.
+    const gridRef = useRef<NotebookGridHandle | null>(null);
+    const [scrolledAway, setScrolledAway] = useState(false);
     const [editing, setEditing] = useState<EditingCell | null>(null);
     // Stroke-order help on the word bar's writing shadows, cycled PER POSITION by tapping
     // that cell's shadow: off → numbers → colored strokes + numbers (`StrokeAid`). Keyed by
@@ -197,29 +291,11 @@ export default function WritingNotebookPage() {
 
     return (
         <LeafPage
-            title="Writing Notebook"
+            title="Notebook"
             onBack={leave}
             exitCircleTo={circleBackTo}
             className="writing-notebook-page"
             contentSx={{ position: "relative" }}
-            rightContent={language ? (
-                <>
-                    {word && sheet.count !== null && (
-                        <NotebookHeaderCount count={sheet.count} />
-                    )}
-                    {/* Stays lit while a cell is open, but does not open the picker then: a
-                        word switch mid-edit would land the pending save on the NEW sheet
-                        (the save is keyed on the word at save time). */}
-                    <HeaderActionChip
-                        className="writing-notebook-page__change-word"
-                        icon={word ? "swap_horiz" : "add"}
-                        ariaLabel={word ? `Change word (now ${word})` : "Choose a word"}
-                        onClick={() => { if (!editing) setPickerOpen(true); }}
-                    >
-                        {word ? "Change" : "Choose"}
-                    </HeaderActionChip>
-                </>
-            ) : undefined}
         >
             {!language ? (
                 <Box className="writing-notebook-page__unsupported" sx={{ padding: "32px 24px", textAlign: "center", fontFamily: FONTS.sans, color: COLORS.textSecondary }}>
@@ -227,8 +303,20 @@ export default function WritingNotebookPage() {
                 </Box>
             ) : (
                 <>
-                    {/* Everything under the header — positioned, so a COMPACT-bar editor can
-                        cover the word bar + sheet (never the header). */}
+                    {/* Stays outside the body: a COMPACT-bar editor covers the word bar +
+                        sheet, never the toolbar. The change chip stays lit while a cell is
+                        open but does not open the picker then: a word switch mid-edit would
+                        land the pending save on the NEW sheet (the save is keyed on the word
+                        at save time). */}
+                    <NotebookToolbar
+                        count={sheet.count}
+                        word={word}
+                        showBackToTop={Boolean(word) && scrolledAway}
+                        onBackToTop={() => gridRef.current?.scrollToTop()}
+                        onChangeWord={() => { if (!editing) setPickerOpen(true); }}
+                    />
+                    {/* Everything under the toolbar — positioned, so a COMPACT-bar editor can
+                        cover the word bar + sheet (never the header or toolbar). */}
                     <Box className="writing-notebook-page__body" sx={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
                         <NotebookWordBar word={word} strokeAids={strokeAids} onCycleStrokeAid={cycleStrokeAid} />
                         {sheet.saveError && (
@@ -241,10 +329,10 @@ export default function WritingNotebookPage() {
                         <Box ref={sheetRef} className="writing-notebook-page__sheet" sx={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
                             {word ? (
                                 // Keyed on the word: a new word is a new sheet, scrolled to its top.
-                                <NotebookGrid key={word} sheet={sheet} onOpenCell={openCell} />
+                                <NotebookGrid key={word} ref={gridRef} sheet={sheet} onOpenCell={openCell} onScrolledAwayChange={setScrolledAway} />
                             ) : (
                                 <Box className="writing-notebook-page__empty" sx={{ padding: "40px 24px", textAlign: "center", fontFamily: FONTS.sans, fontSize: 14, color: COLORS.textSecondary }}>
-                                    Tap + above to choose a word to practice.
+                                    Tap Choose above to pick a word to practice.
                                 </Box>
                             )}
                             {editing && !editing.compactBar && editor}

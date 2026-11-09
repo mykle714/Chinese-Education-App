@@ -1162,13 +1162,14 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
    *     it is genuinely everyday.
    * Ordered saved-first, then commonality (unscored last), then shortest, then
    * entryKey, so the leading window is stable. Only the leading window is ever read
-   * (no offset — the bubbles are not paginated).
+   * (no offset — the hint is not paginated).
    *
-   * Powers the writing flp's used-in hint bubbles (`VocabEntry.writingUsedIn`).
+   * Powers the writing flp's used-in hint, spoken by the hint pawn (`VocabEntry.writingUsedIn`;
+   * client: hintPawn/pawnHints.ts → `pawnHintFor`, docs/HINT_PAWN.md).
    * Chinese-only; [] for non-single-char input.
    *
    * Referenced by: OnDeckVocabService.enrichWithUsedIn (writing bar only).
-   * Docs: docs/WRITING_PRACTICE_REWORK.md § 3b "Used-in hint bubbles".
+   * Docs: docs/WRITING_PRACTICE_REWORK.md § 3b "Used-in hints".
    */
   async findWritingUsedInForCharacter(
     userId: string,

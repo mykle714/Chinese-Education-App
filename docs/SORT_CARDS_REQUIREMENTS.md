@@ -222,7 +222,11 @@ A **sort pack** is a small group of vocabulary cards shown together:
       icon and text). In place of MiniCard's soft raised shadow it is drawn as **one
       thick panel** (user request 2026-11-05 — the same stock as td's cards page): a
       solid **wall** in `COLORS.cardWall` showing **below and to the right** of the face,
-      4px deep (`PANEL_WALL_PX`, one stepped box-shadow per px along the (1, 1) vector);
+      4px deep (`PANEL_WALL_PX`, one stepped box-shadow per px along the (1, 1) vector),
+      with a hairline **rounded edge** where rim meets wall (`panelWall` →
+      `src/theme/roundedEdge.ts`, 2026-11-08 — the td filter keys' edge: a 0.5px fillet
+      half-way between rim and wall colour, a 1px rim light on the face's top-left edge;
+      also on the sorted grey stock and the pressed stock);
       **no outline** — the wall and shadow are the card's edge, the tower style's rule
       (removed 2026-11-06; it was a 1px `textFaint` line round face + wall, so the stock is
       an exception to CLAUDE.md "Buttons & cards"); and a near-solid **cast shadow**
@@ -541,7 +545,9 @@ project "Tower Tier 2 - Time of Day", the three "Sort ·" artboards, built on th
   `TOOLBAR_KEY_HEIGHT_PX` (30) tall (skip's hold ring follows `SKIP_BUTTON_RADIUS_PX`, half
   that height): the look's `keyFace` on a solid
   `0 3px 0` lip (`keyWall`), casting `4px 7px 0` onto the ground (`groundShadow`), with
-  the app's hairline outline. **They press like the app's other raised buttons**
+  the app's hairline outline and the straight-lip rounded edge (a 1px top rim light, a 0.5px
+  fillet over the lip, gone with the lip when flush — docs/designGuidelines.md § "The rounded
+  edge"). **They press like the app's other raised buttons**
   (the shared `src/theme/keycapPress.ts` → `keycapPressSx`): on press the face snaps down the lip's 3px
   and the cast shadow tightens by the same amount, snapping back on release (no
   transition — the app's keys snap); skip stays sunk for the whole hold (`add-cards__keycap--pressed`

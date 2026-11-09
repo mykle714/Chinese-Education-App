@@ -31,7 +31,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
  * alphabetic baseline (identical in every engine) and drops by `CAP_CENTRE_DY`, half the cap
  * height, so the capitals' ink centres on `y` everywhere.
  *
- * Users: IsoFloorLabel (the plate), IsoCard (the head-band label), IsoModeSwitch (the paddle label),
+ * Users: IsoFloorLabel (the plate), IsoCard (the head-band label),
  * IsoFloorPrint (the fixture floor prints).
  */
 interface IsoSpacedTextProps extends Omit<React.SVGProps<SVGTextElement>, "children" | "letterSpacing" | "textLength" | "lengthAdjust" | "dominantBaseline" | "dy" | "ref"> {

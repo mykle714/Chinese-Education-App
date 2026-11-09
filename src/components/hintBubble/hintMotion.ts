@@ -3,8 +3,8 @@
  * animates) and the row (CandidateRow.tsx — when bubbles enter, stagger, pop and
  * come back after a scroll).
  *
- * LAYER: shared client constants (bk § 6z-4 + writing flp used-in bubbles,
- * docs/WRITING_PRACTICE_REWORK.md § 3b). Its own module so the bubble files export only
+ * LAYER: shared client constants (bk § 6z-4 + the flp hint pawn's bubble, docs/HINT_PAWN.md;
+  * the used-in data: docs/WRITING_PRACTICE_REWORK.md § 3b). Its own module so the bubble files export only
  * a component (React fast refresh requires that).
  *
  * Spec: docs/BEGINNER_KEYBOARD.md § 6z-4 ("Motion").

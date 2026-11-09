@@ -55,6 +55,7 @@ import { CARD_D, CARD_W, FLOOR_Z, PLATFORM_THICKNESS, TOWER_LAYOUT } from "./tow
 import { TOWER_WORLDS, WORLD_ORDER, type TowerWorldId } from "./towerWorlds";
 import { useTowerStudy } from "./useTowerStudy";
 import { litWorld } from "./timeOfDay";
+import { useHintPawnVisit } from "../flashcards/FlashcardsLearnPage/hintPawn/hintPawnVisit";
 import { useTimeOfDay } from "./useTimeOfDay";
 import { useTowerWeather } from "./useTowerWeather";
 import { RAIN_ALPHA, RAIN_LEAN, RAIN_STROKE_PX, isEffectless, weatherCloudCount, weatherEffect } from "./towerWeather";
@@ -74,6 +75,9 @@ import {
 import { weatherDaySky, worldsUnderWeather } from "./weatherSky";
 import { TOWER_TYPE_SX } from "./towerType";
 import TimeOfDayToggle from "./TimeOfDayToggle";
+import AuroraToggle from "./AuroraToggle";
+import TesterSharedRow from "./TesterSharedRow";
+import { auroraCanRoll, auroraShowing, auroraStrength, useAuroraGlowWash, useTowerAurora } from "./towerAurora";
 import ForcedBreakPicker from "./ForcedBreakPicker";
 import type { Language } from "../../types";
 import TowerCoverCard from "./TowerCoverCard";
@@ -105,7 +109,7 @@ const StudySession = lazy(() =>
 );
 
 /**
- * `/` — the app's landing page and the footer's Deck tab: the learner's Learning deck drawn as a stack of cards standing on an
+ * `/` — the app's landing page and the footer's Flashcards tab: the learner's Learning deck drawn as a stack of cards standing on an
  * isometric platform (docs/DECK_TOWER.md), built from the iso art framework in ./iso
  * (docs/ISO_ART_FRAMEWORK.md).
  *
@@ -113,7 +117,8 @@ const StudySession = lazy(() =>
  * through existing hooks, no new endpoint: Learning is the bar's cards that are OFF
  * COOLDOWN right now (`useFlpReadyCounts` — the same readiness rule the flp deals by), in
  * all four utcm bands (towerModes.ts → Mix), and Mastered is the bar's whole Mastered total
- * (`useMasteredCounts`).
+ * (`useMasteredCounts`). A card that comes off cooldown while the page is up joins the tower
+ * as its own sky drop (`releaseCooldowns`, docs/DECK_TOWER.md § "Cooldown releases").
  *
  * Every world also has a focus lever standing on its floor. It changes the tower's height
  * in place, and every such change plays an animation from the tower-resize library
@@ -149,7 +154,7 @@ const StudySession = lazy(() =>
  * This file only LAYS OUT the scene: which world is up, what stands on it, and the
  * viewBox. The platform draws itself (DeckTowerPlatform.tsx).
  *
- * The footer's Deck tab (first tab; it took `/` from the old Home page on 2026-11-04), so
+ * The footer's Flashcards tab (first tab; it took `/` from the old Home page on 2026-11-04), so
  * it renders in a non-scrolling MobileTabScreen and ends with a FooterSpacer: the scene
  * shrinks to fit above the footer bar rather than sliding under it.
  */
@@ -209,10 +214,6 @@ const DROP_MIN_LIFT = 8;
  * under its arrow; a taller one stands in front of it and covers it.
  */
 const TAP_HINT_FIT_CARDS = 40;
-
-/** The study header's title: the deck, named with its world off the main one. */
-const studyTitleFor = (world: TowerWorldId) =>
-    world === "core" ? TOWER_DECKS["learn-now"].title : `${TOWER_WORLDS[world].name}: ${TOWER_DECKS["learn-now"].title}`;
 
 /**
  * How far into the dive (its eased 0 → 1) the tower UI is gone, and from where the session's
@@ -274,12 +275,11 @@ const WIND_BAND_CARDS = { from: 350, to: 400 };
 const WIND_GUSTS_MAX = 2;
 
 /**
- * The reading and writing worlds always have their wind (and, under cloudy weather, their
- * clouds — which every world gets), however short
- * their tower (for now — their decks are usually far smaller than main's): their sky is
- * measured at least this many cards high (the wind band's top), the travellers' bands stay
- * at their card heights instead of shrinking to the tower, and they fly whatever the
- * card count. Main keeps the earn-them rule (a band appears once the tower reaches it).
+ * The reading and writing worlds' sky is measured at least this many cards high (the wind
+ * band's top), so the travellers' bands stay at their card heights instead of shrinking to
+ * a short tower. Today that only affects their clouds (weather, every world): WIND is
+ * earned in every world — it blows only once the tower reaches WIND_BAND_CARDS.from
+ * (`windActive`; the skill worlds' always-on wind was dropped 2026-11-08).
  * The scene (and so the scroll) is still framed to the TOWER's top, never to this sky:
  * a band above a short tower flies above the screen's top, out of sight.
  */
@@ -416,6 +416,42 @@ function readTowerWorldState(state: unknown): TowerWorldId | undefined {
 }
 
 /**
+ * Stamp the world on screen into td's OWN history entry, as `{ towerWorld }` route state —
+ * the same shape an exit (`NOTEBOOK_EXIT`, `SORT_EXIT`) pushes and `readTowerWorldState`
+ * reads at mount.
+ *
+ * Why: the header arrow on a page launched from td (notebook, acp) lands on the right
+ * world because it pushes `/` with `state.exitTo.state`. A browser-owned Back — the
+ * iOS/Android edge swipe, the browser back button, Android system back — is a `POP`
+ * instead: it returns to td's original entry, whose state named whatever world td was
+ * OPENED on (usually none → main). Writing the current world into that entry as the
+ * learner moves between worlds makes every POP land where the arrow would
+ * (docs/BACK_NAVIGATION.md § 2.1 Rule 1).
+ *
+ * `window.history.replaceState`, not `navigate(…, { replace: true })`: this must not be a
+ * router navigation — that would re-render every location subscriber on each world swipe
+ * and count as a REPLACE. React Router 7's BrowserRouter keeps an entry's route state at
+ * `history.state.usr` (beside its `key` and `idx`, which are preserved), and re-reads it
+ * from there on the POP. The in-memory `location.state` goes stale until then, which is
+ * fine: td reads it only at mount.
+ *
+ * Keyed on the CHOSEN world (`pan.world`), not the shown one, so the brief moment before
+ * the goals load (when only main is shown) does not overwrite a remembered writing world.
+ *
+ * Referenced by docs: DECK_TOWER.md § "Worlds" (Getting back), BACK_NAVIGATION.md § 3.1.
+ */
+function useRememberTowerWorld(world: TowerWorldId): void {
+    useEffect(() => {
+        const entry = window.history.state as { usr?: unknown } | null;
+        // Not an entry React Router wrote (no `idx`/`key` wrapper) — leave it alone.
+        if (!entry || typeof entry !== "object") return;
+        const usr = entry.usr && typeof entry.usr === "object" ? (entry.usr as Record<string, unknown>) : {};
+        if (usr.towerWorld === world) return;
+        window.history.replaceState({ ...entry, usr: { ...usr, towerWorld: world } }, "");
+    }, [world]);
+}
+
+/**
  * Where the Writing Notebook's Back leads when it was opened from the writing world's
  * paper stack (docs/DECK_TOWER.md § "The notebook stack"): back here, on the writing
  * world. The notebook reads it as `state.exitTo` (WritingNotebookPage → `leave`).
@@ -456,8 +492,9 @@ const DeckTowerPage: React.FC = () => {
     // Keyed on `ok`, not `loaded`: a failed fetch reads as 0 and must not make it jump.
     // (`learningLow` itself is derived below, once `mastered` is in scope.)
     const coreCategoryCounts = useCategoryCounts("core");
-    // Ready-now (off-cooldown) counts per band of each bar. Fetched once on open: a card
-    // coming off cooldown while the page is up does not grow the tower.
+    // Ready-now (off-cooldown) counts per band of each bar. Fetched on open; a card coming
+    // off cooldown while the page is up is counted in by its own sky drop
+    // (§ "Cooldown releases", `releaseCooldowns`).
     const readyCounts: Record<TowerWorldId, ReturnType<typeof useFlpReadyCounts>> = {
         core: useFlpReadyCounts("core"),
         reading: useFlpReadyCounts("reading"),
@@ -478,6 +515,21 @@ const DeckTowerPage: React.FC = () => {
     const worldShown = (id: TowerWorldId) =>
         id === "core" || (id === "reading" ? user?.readingGoal === true : user?.writingGoal === true);
     const shownWorlds = WORLD_ORDER.filter(worldShown);
+    // A goal switched ON while td is mounted (the AccountSheet opens over it) may also have
+    // switched that world's focus on (docs/FOCUS_MODE.md § 1a). The skill worlds' counts
+    // were read with the goal off, so they still stand the whole pile with focus off:
+    // re-read them so the world opens on today's set and its lever already pulled. Keyed
+    // on the goal booleans, never on `token` (CLAUDE.md § silent token refresh).
+    const readingGoalOn = user?.readingGoal === true;
+    const writingGoalOn = user?.writingGoal === true;
+    const goalsBefore = useRef({ reading: readingGoalOn, writing: writingGoalOn });
+    useEffect(() => {
+        if (readingGoalOn && !goalsBefore.current.reading) readyCounts.reading.reload();
+        if (writingGoalOn && !goalsBefore.current.writing) readyCounts.writing.reload();
+        goalsBefore.current = { reading: readingGoalOn, writing: writingGoalOn };
+        // `reload` is a stable useCallback; the counts objects themselves change every render.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [readingGoalOn, writingGoalOn]);
     // ── Time of day (docs/DECK_TOWER.md § "Time of day") ─────────────────────────
     // The light every world is drawn under right now: each world's sky at this hour,
     // and the wash over everything on it. Feature testers can pin a phase
@@ -485,9 +537,7 @@ const DeckTowerPage: React.FC = () => {
     // Settings "Enable testing features" switch (useTestingFeatures).
     const testingFeatures = useTestingFeatures();
     const timeOfDay = useTimeOfDay(testingFeatures);
-    const light = timeOfDay.light;
-    // The page's own white things painted on the sky (title, arrows, speed lines) — lit too.
-    const skyInk = light.wash(ISO.white);
+    const dayLight = timeOfDay.light;
     // The flp session (HTML over the scene) and the slab footer are NOT washed. They used to
     // be, through an SVG feColorMatrix `url()` filter, but WebKit rasterises an SVG filter on
     // HTML on the CPU: every repaint inside the session (a key press, the eip opening)
@@ -500,9 +550,17 @@ const DeckTowerPage: React.FC = () => {
     // docs/TOWER_WEATHER_SKY.md); reading and writing keep their fixed skies.
     const towerWeather = useTowerWeather(testingFeatures);
     const weather = towerWeather.weather;
+    // ── Aurora (docs/DECK_TOWER.md § "Time of day" → "Aurora") ────────────────────
+    // Reading only: a 1% roll on this visit's first clear night, kept until the page is left
+    // (towerAurora.ts). Its strength rides the pan's palette into SpaceBackdrop; while it
+    // shows, the weather's effects and the shooting stars are suppressed (`auroraUp`).
+    const aurora = useTowerAurora(auroraCanRoll(dayLight.shootingStars, weather, towerWeather.settled), testingFeatures);
+    const auroraOf = (id: TowerWorldId) => auroraStrength(id, aurora.active, dayLight.nightShare);
+    // The weather's effects as observed — `weatherFx` (below, after the world is known)
+    // is this minus whatever a showing aurora suppresses.
     // Memoised on the observation's fields (a tester pin is a new object every render) so
     // SpaceBackdrop's repaint effect and the particle loop don't restart on unrelated renders.
-    const weatherFx = useMemo(() => {
+    const observedWeatherFx = useMemo(() => {
         const fx = weatherEffect(weather);
         return isEffectless(fx) ? undefined : fx;
     }, [weather?.kind, weather?.intensity]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -512,31 +570,48 @@ const DeckTowerPage: React.FC = () => {
     // Drizzle, rain and storm all draw it; snow and fog do not.
     const rainFall = useMemo<IsoRainFall | undefined>(
         () =>
-            weatherFx && weatherFx.rainDensity > 0
+            observedWeatherFx && observedWeatherFx.rainDensity > 0
                 ? {
-                      density: weatherFx.rainDensity,
-                      speed: weatherFx.rainSpeed,
-                      length: weatherFx.rainLength,
+                      density: observedWeatherFx.rainDensity,
+                      speed: observedWeatherFx.rainSpeed,
+                      length: observedWeatherFx.rainLength,
                       lean: RAIN_LEAN,
                       alpha: RAIN_ALPHA,
                       strokePx: RAIN_STROKE_PX,
                   }
                 : undefined,
-        [weatherFx],
+        [observedWeatherFx],
     );
     // The worlds as the sky sees them: main's day sky follows the weather. Memoised on the
     // hex, because `light.skyOf` caches per world object.
     const mainDaySky = weatherDaySky(weather);
     const skyWorlds = useMemo(() => worldsUnderWeather(mainDaySky), [mainDaySky]);
-    // A return from the Writing Notebook (opened from the writing world's paper stack) lands
-    // back on the writing world rather than main (`NOTEBOOK_EXIT`).
+    // td opens on the world its route state names: an exit's arrow push (`NOTEBOOK_EXIT`,
+    // `SORT_EXIT`), or — on a browser-owned Back (edge swipe, back button) — the world td
+    // stamped into its own entry before leaving (`useRememberTowerWorld`).
     const location = useLocation();
     const pan = useWorldPan(
-        (id) => ({ sky: light.skyOf(skyWorlds[id]), space: skyWorlds[id].space }),
+        (id) => ({ sky: dayLight.skyOf(skyWorlds[id]), space: skyWorlds[id].space, aurora: auroraOf(id) }),
         readTowerWorldState(location.state),
     );
+    useRememberTowerWorld(pan.world);
     // The world on screen. One whose goal is switched off while it is up falls back to main.
     const worldId: TowerWorldId = shownWorlds.includes(pan.world) ? pan.world : "core";
+    // An aurora showing in this world is the sky's only event: no rain, snow, lightning,
+    // fog or clouds (all read `weatherFx` / `cloudsInSky` below), and no shooting stars.
+    const auroraUp = auroraShowing(worldId, aurora.active, dayLight.nightShare);
+    const weatherFx = auroraUp ? undefined : observedWeatherFx;
+    // The light the scene is drawn under: the hour's light, plus — in a world with a live
+    // aurora — the aurora's glow over the wash (platform, cards, pawns, title; the sky is
+    // left alone, it IS the light). Same object as `dayLight` when there is no aurora, so
+    // every memo keyed on the light or its wash holds.
+    const auroraGlowWash = useAuroraGlowWash(dayLight.wash, auroraOf(worldId));
+    const light = useMemo(
+        () => (auroraGlowWash === dayLight.wash ? dayLight : { ...dayLight, wash: auroraGlowWash }),
+        [dayLight, auroraGlowWash],
+    );
+    // The page's own white things painted on the sky (title, arrows, speed lines) — lit too.
+    const skyInk = light.wash(ISO.white);
     // The browser's top-edge colour follows the settled world's sky. Without a claim it is
     // the paper default, and iOS Safari draws its scroll-edge effect behind the clock as a
     // paper-white fade over the sky (and the top of a tall tower). Keyed on the world's
@@ -551,11 +626,11 @@ const DeckTowerPage: React.FC = () => {
     const study = useTowerStudy({
         unit: UNIT,
         card: LAYOUT.card,
-        // Each world's session mounts, parked, on its first visit and stays (§ "Parked
-        // sessions"), so a tap dives straight in instead of waiting on the working loop.
-        // Not before sign-in: the session deals for the account.
-        visitedWorld: user?.id !== undefined ? worldId : null,
-        titleFor: studyTitleFor,
+        // Every enabled world's session mounts, parked, as the page lands and stays
+        // (§ "Parked sessions"), so a tap on any world's tower dives straight in instead of
+        // waiting on the working loop. The world on screen first, so its deal goes out
+        // first. Not before sign-in: the session deals for the account.
+        dealtWorlds: user?.id !== undefined ? [worldId, ...shownWorlds.filter((w) => w !== worldId)] : [],
         onClimbedOut: (w, n) => climbedOut.current(w, n),
     });
     const studying = (id: TowerWorldId) => study.active && study.world === id;
@@ -563,6 +638,9 @@ const DeckTowerPage: React.FC = () => {
     // surface — docs/UX_AND_NAVIGATION.md), and the page earns minute points as a study
     // surface (src/minutePoints/studySurface.ts) — only once the camera is down, so the
     // dive and the climb do not count.
+    // The flp hint pawn's visit scope (docs/HINT_PAWN.md § "Dismissing"): a swipe-away
+    // lasts until td is left, across every session and world, so the visit starts here.
+    useHintPawnVisit();
     useHideFooter(study.active);
     useBlockEdgeSwipe(study.active);
     useClaimStudySurface(study.phase === "studying");
@@ -684,9 +762,11 @@ const DeckTowerPage: React.FC = () => {
     const skyLive = !pan.busy && !study.active;
     const skyTraffic = useSkyTrafficStore();
     // Clouds follow the weather, not the tower (CLOUD_BAND_CARDS): 0 = none in the sky.
-    const cloudsInSky = weatherCloudCount(weather);
+    const cloudsInSky = auroraUp ? 0 : weatherCloudCount(weather);
     const cloudsActive = skyLive && cloudsInSky > 0;
-    const windActive = skyLive && (alwaysHasSky || cardsOnTower >= WIND_BAND_CARDS.from);
+    // Wind blows only once the tower reaches the wind band, in EVERY world (2026-11-08: the
+    // skill worlds' always-on wind was dropped). Clouds still keep the skill worlds' sky.
+    const windActive = skyLive && cardsOnTower >= WIND_BAND_CARDS.from;
 
     // ── Lightning strikes (docs/DECK_TOWER.md § "Weather" → "Lightning strikes") ───
     // One clock for the sky's flash and the strike roll (useLightningFlashes), so a strike
@@ -899,6 +979,8 @@ const DeckTowerPage: React.FC = () => {
             busy: s.busy || pan.busy || resizes[id].busy || study.active,
             hideInstantly: s.busy,
             skyEntrance,
+            // The auto-on popup waits for a real visit (docs/FOCUS_MODE.md § 1a).
+            onScreen: worldId === id,
             // Hold the tower where it stands until the flipped counts land (`resolveRecount`).
             onRecount: () => {
                 if (swaps[id].towerDeck === "learn-now") resizes[id].hold(towerCounts[id] ?? 0, readyCounts[id].version);
@@ -988,6 +1070,64 @@ const DeckTowerPage: React.FC = () => {
     useEffect(() => {
         for (const id of WORLD_ORDER) resolveRecount.current(id);
     }, [readyCounts.core.version, readyCounts.reading.version, readyCounts.writing.version]);
+    // ── Cooldown releases (docs/DECK_TOWER.md § "Cooldown releases") ────────────────
+    // A card whose cooldown ends while the page is up joins the tower then, as its OWN sky
+    // drop: useFlpReadyCounts holds the release schedule and reports cards that came due
+    // (`pendingReleases`); this counts them in one at a time, each with a one-card grow.
+    // While a drop plays the tower stands at its `fromCards`, so counting the card in at
+    // the drop's start shows it only as it lands. Releases that come due during a swap,
+    // pan, resize or study wait and then play one after another. The tower shown is the
+    // only one animated: an off-screen world, or this one on its Mastered deck, takes its
+    // releases quietly (arriving there shows the tower standing at the new height).
+    // A hidden tab takes none (its drop would play unseen); the return re-read below
+    // settles them.
+    const releaseCooldowns = useRef<() => void>(() => {});
+    releaseCooldowns.current = () => {
+        if (document.hidden) return;
+        for (const id of WORLD_ORDER) {
+            const r = readyCounts[id];
+            if (r.pendingReleases === 0 || studying(id) || swaps[id].busy || resizes[id].busy) continue;
+            const watched = id === worldId && swaps[id].towerDeck === "learn-now";
+            if (!watched) {
+                r.applyReleases(r.pendingReleases);
+                continue;
+            }
+            const fromCards = towerCounts[id];
+            if (pan.busy || fromCards === undefined) continue;
+            startResize(fromCards, fromCards + 1);
+            r.applyReleases(1);
+        }
+    };
+    useEffect(() => {
+        releaseCooldowns.current();
+    }, [
+        readyCounts.core.pendingReleases, readyCounts.reading.pendingReleases, readyCounts.writing.pendingReleases,
+        resizes.core.busy, resizes.reading.busy, resizes.writing.busy,
+        swaps.core.busy, swaps.reading.busy, swaps.writing.busy,
+        swaps.core.towerDeck, swaps.reading.towerDeck, swaps.writing.towerDeck,
+        pan.busy, study.active, worldId,
+    ]);
+    // Back from a hidden tab: re-read every world (timers sleep in the background, and
+    // another device may have marked cards meanwhile). The tower shown is held first, so
+    // the cards that came off cooldown while it was out of sight land as one grow, like
+    // opening the page (§ "Opening at the last height"); a lower figure just stands.
+    const rereadOnReturn = useRef<() => void>(() => {});
+    rereadOnReturn.current = () => {
+        for (const id of WORLD_ORDER) {
+            if (studying(id)) continue; // the climb-out re-reads it
+            if (id === worldId && swaps[id].towerDeck === "learn-now" && !swaps[id].busy && !pan.busy) {
+                resizes[id].hold(towerCounts[id] ?? 0, readyCounts[id].version, { quietShrink: true });
+            }
+            readyCounts[id].reload();
+        }
+    };
+    useEffect(() => {
+        const onVisibility = () => {
+            if (!document.hidden) rereadOnReturn.current();
+        };
+        document.addEventListener("visibilitychange", onVisibility);
+        return () => document.removeEventListener("visibilitychange", onVisibility);
+    }, []);
     // A grow's camera move itself: scrollTop eased to the landing, written straight to the DOM
     // (marked as the page's own, so `climb` ignores it) and recorded as the new altitude.
     const cameraKey = resize.camera?.key;
@@ -1191,7 +1331,7 @@ const DeckTowerPage: React.FC = () => {
     return (
         <DailyBankingProvider>
             <MobileTabScreen
-                // The world's title ("Flashcards", "Reading Flashcards", "Writing Flashcards")
+                // The world's title ("Flashcards", "Reading", "Writing")
                 // is the header's title. It stays put through a pan and swaps text mid-pan,
                 // while no scene is on screen; the deck shown is named by the plate and the
                 // top card. White, so it reads on the sky and on space.
@@ -1211,11 +1351,24 @@ const DeckTowerPage: React.FC = () => {
                             sx={{ position: "relative", zIndex: 2, ...TOWER_TYPE_SX, opacity: towerUiOpacity, pointerEvents: study.active ? "none" : undefined }}
                         >
                             {header}
-                            {testingFeatures && <TimeOfDayToggle value={timeOfDay.override} onChange={timeOfDay.setOverride} />}
-                            {testingFeatures && <WeatherToggle value={towerWeather.override} onChange={towerWeather.setOverride} />}
-                            {testingFeatures && <LightningStrikeChips onStrike={() => forceStrike(false)} onStrikePawn={() => forceStrike(true)} />}
-                            {testingFeatures && <ForcedBreakPicker world={worldId} language={language as Language} />}
-                            {testingFeatures && <BankingAlwaysPlayToggle />}
+                            {/* Feature-tester chips (docs/DECK_TOWER.md § "Feature-tester rows").
+                                The short groups pair up on a TesterSharedRow — sky looks
+                                together, the two actions together; the long Weather and
+                                Forced-break rows keep a row each. */}
+                            {testingFeatures && (
+                                <>
+                                    <TesterSharedRow name="sky">
+                                        <TimeOfDayToggle value={timeOfDay.override} onChange={timeOfDay.setOverride} />
+                                        <AuroraToggle value={aurora.override} onChange={aurora.setOverride} />
+                                    </TesterSharedRow>
+                                    <WeatherToggle value={towerWeather.override} onChange={towerWeather.setOverride} />
+                                    <TesterSharedRow name="actions">
+                                        <LightningStrikeChips onStrike={() => forceStrike(false)} onStrikePawn={() => forceStrike(true)} />
+                                        <BankingAlwaysPlayToggle />
+                                    </TesterSharedRow>
+                                    <ForcedBreakPicker world={worldId} language={language as Language} />
+                                </>
+                            )}
                         </Box>
                     )
                 }
@@ -1247,7 +1400,7 @@ const DeckTowerPage: React.FC = () => {
                         band={scene.spaceBand}
                         palette={pan.palette}
                         groundStars={light.groundStars}
-                        shootingStars={light.shootingStars}
+                        shootingStars={light.shootingStars && !auroraUp}
                         weather={weatherFx}
                         flashId={lightningFlashes.flashId}
                         // To the screen's bottom edge, not the footer's top: the slab footer
@@ -1453,7 +1606,7 @@ const DeckTowerPage: React.FC = () => {
                                 fog={fogClouds && weatherFx ? { opacity: weatherFx.fog, clouds: fogClouds } : undefined}
                                 // Not during a study: the camera's projector moves every frame, and
                                 // the session covers the platform anyway.
-                                rain={study.active ? undefined : rainFall}
+                                rain={study.active || auroraUp ? undefined : rainFall}
                                 rainCeilingY={scene.rainCeilingY}
                                 lightning={platformLightning}
                             />
@@ -1503,14 +1656,14 @@ const DeckTowerPage: React.FC = () => {
                             ink={skyInk}
                             sky={pan.palette.sky}
                             onOpenCard={onOpenTowerCard}
-                            onToPlatform={cardsScroll.toPlatform}
+                            onUp={cardsScroll.up}
                             style={cardsPageStyle}
                         />
                     </Box>
 
                     {/* The study session (docs/DECK_TOWER.md § "Studying the tower"): the flp,
                         laid over the scene, its card exactly on the tower's top card. One per
-                        visited world, mounted PARKED on the visit and kept (§ "Studying the tower" → "Parked sessions"):
+                        enabled world, mounted PARKED as the page lands and kept (§ "Studying the tower" → "Parked sessions"):
                         a parked layer is laid out — so its card can be measured for the camera the
                         moment its tower is tapped — but clipped away to nothing (clip-path also
                         hides its children whatever their own visibility, and takes no hits). The

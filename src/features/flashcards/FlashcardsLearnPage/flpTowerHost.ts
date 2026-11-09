@@ -1,4 +1,3 @@
-import type React from "react";
 import type { FlpWorld } from "../../../../server/contracts/studyMode";
 import type { PlateTones } from "../../../theme/towerPlate";
 
@@ -37,8 +36,6 @@ export interface FlpTowerHost {
      * game-break counter over. Its working loop is kept.
      */
     parked: boolean;
-    /** The study header's title (TowerStudyHeader) — the deck being studied. */
-    title: string;
     /** The learner left the session (back arrow, or "Leave anyway" on the sort offer). */
     onExit: () => void;
     /** A card was swiped: true = correct (right). Fired at the swipe, before the server answers. */
@@ -66,8 +63,12 @@ export interface FlpTowerHost {
      * itself is the host's (DeckTowerPage → TowerCoverCard), drawn over this page.
      */
     cardsCovered: boolean;
-    /** The card's box — the host measures it to land its camera on the tower's top card. */
-    cardFrameRef: React.Ref<HTMLDivElement>;
+    /**
+     * The card's box — the host measures it to land its camera on the tower's top card.
+     * A callback ref (never a RefObject): FlashcardsLearnPage → setCardFrame chains it with
+     * its own frame ref for the hint pawn, so it must be invocable.
+     */
+    cardFrameRef: (el: HTMLDivElement | null) => void;
     /** The floor plate's tones, for the page's plate-style buttons (towerPlate.ts). */
     plateTones: PlateTones;
 }

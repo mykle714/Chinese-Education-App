@@ -6,6 +6,7 @@ import { flpBreakGameFor, type FlpBreakCandidate } from "../../../../games/flpBr
 import { COLORS, RAMP } from "../../../../theme/colors";
 import { LEADING, SIZE, WEIGHT } from "../../../../theme/scale";
 import { SHADOW } from "../../../../theme/shadows";
+import { roundedEdgeFilletDown, roundedEdgeRimLightTop } from "../../../../theme/roundedEdge";
 import { shadeHex } from "../../../../theme/shadeHex";
 import { CREAM_PLATE_TONES } from "../../../../theme/towerSlab";
 import { PLATE_WALL_PX, towerPlateSx, type PlateTones } from "../../../../theme/towerPlate";
@@ -82,7 +83,8 @@ const GameBreakCard: React.FC<{
                         marginBottom: `${TOKEN.wall + 10}px`,
                         borderRadius: `${TOKEN.radius}px`,
                         backgroundColor: tones.top,
-                        boxShadow: `0 ${TOKEN.wall}px 0 ${tones.right}, ${SHADOW.chip}`,
+                        // The plate's wall + contact shadow, with the hairline rounded edge (theme/roundedEdge.ts).
+                        boxShadow: `${roundedEdgeRimLightTop(tones.top)}, ${roundedEdgeFilletDown(tones.top, tones.right)}, 0 ${TOKEN.wall}px 0 ${tones.right}, ${SHADOW.chip}`,
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",

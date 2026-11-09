@@ -8,7 +8,8 @@ import { SIZE, WEIGHT } from "../../theme/scale";
  * selected chip is solid ink (CLAUDE.md § Buttons & cards — the solid-ink exception).
  *
  * Depended on by: TesterChipRow.tsx (the single-choice rows), LightningStrikeChips.tsx (the
- * action chips), so every tester chip on the page is the same chip.
+ * action chips), so every tester chip on the page is the same chip; TesterSharedRow.tsx (the
+ * row that holds several short groups, docs/DECK_TOWER.md § "Feature-tester rows").
  */
 
 /** A disabled chip's opacity: still legible, clearly not tappable. */
@@ -20,7 +21,9 @@ const DISABLED_CHIP_OPACITY = 0.45;
  */
 export function testerChipSx(selected: boolean, disabled = false) {
     return {
-        px: 1.25,
+        // 8px, not 10: two short groups have to share a ~343px row on a 375px phone
+        // (TesterSharedRow.tsx; measured 2026-11-08).
+        px: 1,
         py: 0.5,
         borderRadius: 999,
         fontFamily: FONTS.cjk,
@@ -33,5 +36,11 @@ export function testerChipSx(selected: boolean, disabled = false) {
     } as const;
 }
 
-/** The row's layout, shared with the action-chip rows. */
+/** The row's layout, shared with the action-chip rows and TesterSharedRow. */
 export const TESTER_ROW_SX = { display: "flex", justifyContent: "center", gap: 0.75, px: 2, pb: 1, flexWrap: "wrap" } as const;
+
+/**
+ * A chip group INSIDE a TesterSharedRow: the same chip spacing as a row, minus the row's
+ * own gutter and bottom padding (the shared row supplies those once).
+ */
+export const TESTER_GROUP_SX = { display: "flex", justifyContent: "center", gap: 0.75, flexWrap: "wrap" } as const;

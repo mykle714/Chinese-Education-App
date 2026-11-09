@@ -471,8 +471,15 @@ export class UserService {
   /**
    * Update the account's mastery goal flags (Reading / Writing). Recognition +
    * Production are always goals and are not stored. See docs/MASTERY_REWORK.md.
+   *
+   * Also returns `enabledWorlds`: the worlds whose goal this call switched OFF → ON
+   * (a re-send of an already-on goal is not an enabling). UserController.updateGoals
+   * hands them to FocusModeService.autoEnableIfCrowded (docs/FOCUS_MODE.md § 1a).
    */
-  async updateGoals(userId: string, goals: { readingGoal?: boolean; writingGoal?: boolean }): Promise<User> {
+  async updateGoals(
+    userId: string,
+    goals: { readingGoal?: boolean; writingGoal?: boolean }
+  ): Promise<{ user: User; enabledWorlds: Array<'reading' | 'writing'> }> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
@@ -482,9 +489,14 @@ export class UserService {
     if (Object.keys(updateData).length === 0) {
       throw new ValidationError('At least one of readingGoal / writingGoal (boolean) is required');
     }
+    // Read the flags BEFORE the write so an off → on flip can be told apart from a no-op.
+    const before = await this.userDAL.findById(userId);
     const updatedUser = await this.userDAL.update(userId, updateData);
     delete updatedUser.password;
-    return updatedUser;
+    const enabledWorlds: Array<'reading' | 'writing'> = [];
+    if (updateData.readingGoal === true && before?.readingGoal !== true) enabledWorlds.push('reading');
+    if (updateData.writingGoal === true && before?.writingGoal !== true) enabledWorlds.push('writing');
+    return { user: updatedUser, enabledWorlds };
   }
 
   /**

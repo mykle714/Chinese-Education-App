@@ -76,9 +76,10 @@ const SKY_FALL_SHADOW_REACH = 12;
 /**
  * A fall from `height` world units over the floor, under the pawn's own gravity: stretched
  * along the fall, the shadow growing in over the last SKY_FALL_SHADOW_REACH units, a hard
- * squash on landing. FALL_FROM_SKY is this from SKY_FALL_HEIGHT.
+ * squash on landing. FALL_FROM_SKY is this from SKY_FALL_HEIGHT; the flp's hint pawn
+ * drops from the top of the screen onto its platform, the height measured per arrival (HintPawn.tsx → hintPawnDrop).
  */
-function fallFromHeight(height: number, id = "fall-from-height"): PawnEntrance {
+export function fallFromHeight(height: number, id = "fall-from-height"): PawnEntrance {
     const landMs = Math.sqrt((2 * Math.max(0, height)) / SKY_FALL_GRAVITY) * 1000;
     return {
         id,

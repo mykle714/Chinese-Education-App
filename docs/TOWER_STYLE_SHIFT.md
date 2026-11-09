@@ -34,8 +34,8 @@ Code: `src/features/flashcards/card/CardFace.tsx` → `CardFaceSide`;
 `src/features/flashcards/constants.ts` →
 `FLP_CARD_STOCK_INSET_RATIO`, `FLP_CARD_PANEL_RADIUS_RATIO`;
 `src/features/deckTower/iso/IsoCard.tsx` → `FACE_PAD`, `PANEL_RADIUS`;
-`src/cardIcons/CardIconLayer.tsx`, `src/cardIcons/editor/CardIconCanvas.tsx`
-(`--card-panel-clip`); `src/cardIcons/cardTextLayout.ts` → `textBlockMaxWidth`.
+`src/cardIcons/CardIconLayer.tsx`, `src/cardIcons/editor/CardIconCanvas.tsx`,
+`src/features/discover/sortCardStock.ts` → `sortCardStockSx` (`--card-panel-clip`); `src/cardIcons/cardTextLayout.ts` → `textBlockMaxWidth`.
 
 The tower's card (IsoCard) is a cream top (`COLORS.cardFace`) with an inset beige printed
 panel (`COLORS.cardBeige`) and beige / `COLORS.cardWall` walls. Both faces of every vet flashcard use that stock, so the card being studied looks
@@ -59,6 +59,9 @@ like the tower's own cards:
   (`--card-panel-width`, `--card-stock-inset` padding on the front). The writing flp's face
   pads itself further by the rim plus `PANEL_CONTENT_GAP` (`insetPad`, never less than its
   plain-flp padding), so its rows sit a little in from the edge.
+  Stock **mini** cards follow the same rule: `sortCardStockSx` sets `--card-panel-clip` on
+  the tile, and `CardIconLayer` clips to it, so an advanced layout's icons on td's cards
+  page stop at the panel just as they do on the big face.
 - **Not themed.** The tower is one lit scene in every theme. The flp card isn't washed at night either:
   the study layer's SVG wash filter was cut 2026-10-30 (DECK_TOWER.md § Time of day →
   "The wash").
@@ -90,7 +93,7 @@ lag at night.
 | flp page buttons: Write it, Compare, More Info | `src/theme/towerPlate.ts` → `towerPlateSx` | DECK_TOWER.md § "Studying the tower" → "The buttons" |
 | flp game break's card (card stock, plates, glyph token) | `gameBreak/GameBreakCard.tsx`, `BreakCardLayer.tsx` | FLP_GAME_BREAKS.md § 5 |
 | flp study header + audio chip | `TowerStudyHeader.tsx` (`tone="bare"`) | DECK_TOWER.md § "Studying the tower" → "The audio chip" |
-| acp's on-deck cards, its skipped-cards sheet and td's cards page (rim + panel, drawn as one thick panel: a 4px wall and a near-solid cast shadow on the ground, no outline) | `src/features/discover/sortCardStock.ts` → `sortCardStockSx` | SORT_CARDS_REQUIREMENTS.md § 4.5, § 5.1a |
+| acp's on-deck cards, its skipped-cards sheet and td's cards page (rim + panel, drawn as one thick panel: a 4px wall with a hairline rounded edge (`src/theme/roundedEdge.ts`) and a near-solid cast shadow on the ground, no outline) | `src/features/discover/sortCardStock.ts` → `sortCardStockSx` | SORT_CARDS_REQUIREMENTS.md § 4.5, § 5.1a |
 | td's cards page under the platform (the same stock on `MiniVocabCard` `stock`, with the mastery strip, no levitation; an own-colour card fills the panel via `--mini-card-panel`) | `src/features/deckTower/TowerCardsPage.tsx` → `TOWER_CARD_STOCK` | DECK_TOWER.md § "The cards page" |
 | Slab footer (`footerStyle: "slab"` in `src/routes/routeMeta.ts`: `/` (td), `/dictionary`, both cdps, acp) | `src/components/MobileFooter.tsx` | DECK_TOWER.md § Footer |
 | Tier 2 time-of-day ground (the page ground tints with the hour; the slab follows): `/dictionary`, both cdps | `src/timeOfDay/useTier2Look.ts` → `useTier2Look` | DECK_TOWER.md § Time of day |

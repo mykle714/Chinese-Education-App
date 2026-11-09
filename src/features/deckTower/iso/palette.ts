@@ -133,9 +133,6 @@ export const ISO = {
     /** The light bevel line around the platform's top edge. */
     platformRim: GOLD_PLATFORM.rim,
 
-    /** A carpet zone — one solid fill a step darker than the floor it lies on. */
-    carpet: material(shadeHex(COLORS.gld, 0.05), 0.06, 0.12),
-
     /** Card stock: cream top (the app's card face), beige walls. */
     card: { top: COLORS.cardFace, left: COLORS.cardBeige, right: COLORS.cardWall } as Material,
     /** The seams between stacked cards on a stack's walls. */
@@ -151,6 +148,13 @@ export const ISO = {
     paperSeam: shadeHex(COLORS.white, 0.2),
     paperRule: COLORS.bluMk,
     paperMargin: COLORS.redMk,
+    /**
+     * The white an iso solid's rounded-edge RIM LIGHT mixes into its top (IsoSolid →
+     * `roundedEdge`, theme/roundedEdge.ts). A palette entry rather than a bare
+     * `COLORS.white` so the time-of-day wash dims it with everything else — an unwashed
+     * white rim would glow on a night platform.
+     */
+    edgeLight: COLORS.white,
     /** The light wireframe a ghosted card leaves where it stood (IsoCardRuns), softened by its own opacity. */
     ghostWire: COLORS.white,
     /** The inset panel printed on a card's face. */
@@ -196,14 +200,27 @@ export const ISO = {
     leverBase: { top: COLORS.cardFace, left: COLORS.cardBeige, right: COLORS.cardWall } as Material,
     leverKnob: COLORS.redMk,
 
-    /**
-     * The mode switch's body (IsoModeSwitch — currently unused): the framework's mid grey (`greyA`, the
-     * grey rung's mark) so both band paddles — Mix's light yellow especially — stand off it,
-     * with walls shaded off it like the clouds' (the same flagged `shadeHex` divergence).
-     */
-    switchBase: material(COLORS.greyA, 0.08, 0.16),
-
     /** Characters and printed text: pure ink silhouettes. */
     ink: COLORS.onSurface,
     white: COLORS.white,
+    /**
+     * The night vest a pawn can wear (IsoPawn `vest` — the flp's hint pawn after dark,
+     * docs/HINT_PAWN.md § "Night vest"): neon hi-viz cloth and pale grey reflective
+     * stripes (`grey`, the achromatic rung's light member, standing in for silver tape).
+     */
+    vest: COLORS.hiViz,
+    vestStripe: COLORS.grey,
+    /**
+     * The knitting idle's yarn — the ball on the floor and the scarf on the needles
+     * (PawnIdleProps → PawnKnitting, docs/HINT_PAWN.md § "Idle animations"). The red ramp's
+     * mark, as the lever knob: a saturated accent that reads against both the ink body and
+     * every world's platform.
+     */
+    yarn: COLORS.redMk,
+    /**
+     * A mid-air jump's double ring (PawnAirRing, docs/ISO_ART_FRAMEWORK.md § IsoPawn → "Air
+     * ring"): the blue ramp's palest tint (`blueAccent` = `--bluTint`), owner's pick
+     * 2026-11-08 — a light, airy kick-off mark rather than a solid object.
+     */
+    airRing: COLORS.blueAccent,
 } as const;

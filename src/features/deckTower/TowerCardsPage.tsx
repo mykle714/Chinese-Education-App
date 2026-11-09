@@ -121,14 +121,14 @@ interface TowerCardsPageProps {
     /** The sky as drawn right now (the pan's blended palette) — the cards' ground (their cast-shadow tone). */
     sky: string;
     onOpenCard: (entry: VocabEntry, world: TowerWorldId) => void;
-    /** The up arrow: back to the platform line. */
-    onToPlatform: () => void;
+    /** The up arrow: one stop up — the top of the cards page from the grid, else the platform line. */
+    onUp: () => void;
     /** The host's per-frame styling: the world pan's slide, the study dive's fade. */
     style?: CSSProperties;
 }
 
 const TowerCardsPage = forwardRef<HTMLDivElement, TowerCardsPageProps>(function TowerCardsPage(
-    { world, ink, sky, onOpenCard, onToPlatform, style },
+    { world, ink, sky, onOpenCard, onUp, style },
     ref
 ) {
     const panel = useCardLibrary(world);
@@ -177,9 +177,9 @@ const TowerCardsPage = forwardRef<HTMLDivElement, TowerCardsPageProps>(function 
                     className="tower-cards-page__header-row"
                     sx={{ minHeight: TITLE_ROW_CONTENT_PX, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}
                 >
-                    {/* Names whichever set is on screen — "Cards" unfiltered, the latched key's
-                        own name while one is active. No count (dropped 2026-11-04): the filter
-                        keys already carry their sets' figures. */}
+                    {/* Always "Cards" — a filter never renames the page (2026-11-08; it used to
+                        take the latched key's name). The latched key itself names the set on
+                        screen, and carries its figure. */}
                     <Typography
                         className="tower-cards-page__title"
                         component="h2"
@@ -195,16 +195,16 @@ const TowerCardsPage = forwardRef<HTMLDivElement, TowerCardsPageProps>(function 
                             textOverflow: "ellipsis",
                         }}
                     >
-                        {activeCollection?.label ?? "Cards"}
+                        Cards
                     </Typography>
                     <HeaderIconButton
                         className="tower-cards-page__up-button"
-                        icon="arrow_upward"
+                        icon="keyboard_double_arrow_up"
                         label="Back to the tower"
                         variant="outlined"
                         color={ink}
                         outlineColor={ink}
-                        onClick={onToPlatform}
+                        onClick={onUp}
                     />
                 </Box>
             </Box>

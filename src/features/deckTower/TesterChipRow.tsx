@@ -1,5 +1,6 @@
 import { Box, ButtonBase } from "@mui/material";
-import { TESTER_ROW_SX, testerChipSx } from "./testerChipStyle";
+import { TESTER_GROUP_SX, TESTER_ROW_SX, testerChipSx } from "./testerChipStyle";
+import { useTesterInline } from "./TesterSharedRow";
 
 /**
  * TesterChipRow — the Deck Tower's FEATURE-TESTER row of single-choice chips under the
@@ -13,7 +14,10 @@ import { TESTER_ROW_SX, testerChipSx } from "./testerChipStyle";
  * "solid-ink control" exception to the outline rule (CLAUDE.md § Buttons & cards).
  * A disabled chip is the same chip, faded.
  *
- * Depended on by: TimeOfDayToggle.tsx, ForcedBreakPicker.tsx, WeatherToggle.tsx; its chip look
+ * Inside a TesterSharedRow it renders as an inline group (TESTER_GROUP_SX) beside the others.
+ *
+ * Depended on by: TimeOfDayToggle.tsx, ForcedBreakPicker.tsx, WeatherToggle.tsx, AuroraToggle.tsx,
+ * BankingAlwaysPlayToggle.tsx; its chip look
  * lives in testerChipStyle.ts, shared with LightningStrikeChips.tsx
  * (docs/DECK_TOWER.md § "Time of day" → "Tester toggle", § "Forced game breaks").
  */
@@ -35,12 +39,13 @@ interface TesterChipRowProps<V extends string> {
 }
 
 function TesterChipRow<V extends string>({ classBase, ariaLabel, options, value, onChange }: TesterChipRowProps<V>) {
+    const inline = useTesterInline();
     return (
         <Box
             className={`${classBase}-toggle`}
             role="radiogroup"
             aria-label={ariaLabel}
-            sx={TESTER_ROW_SX}
+            sx={inline ? TESTER_GROUP_SX : TESTER_ROW_SX}
         >
             {options.map((o) => {
                 const selected = o.value === value;

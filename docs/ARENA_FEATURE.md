@@ -99,7 +99,7 @@ than above it. The banner is the page's masthead, not a card on it.
 | `/arena` | `src/features/arena/ArenaPage.tsx` | The board. `chrome: "tab"`, `footerTab: "arena"` |
 
 The footer's **Arena** tab (`src/components/MobileFooter.tsx` → `TABS`, icon
-`emoji_events` on the slab, second of Deck · Arena · Dictionary · Menu) is the only entry;
+`emoji_events` on the slab, second of Flashcards · Arena · Dictionary · Menu) is the only entry;
 there is no Menu popover row.
 
 ### 2.1 The board is the shared `Board` primitive

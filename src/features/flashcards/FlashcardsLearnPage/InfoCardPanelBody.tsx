@@ -7,13 +7,8 @@ import OverlayScrollbar, { hiddenNativeScrollbarSx } from "../../../components/O
 import InfoCardTabContent from "./InfoCardTabContent";
 import { tabAvailability } from "./infoCardTabAvailability";
 import SheetSegmentedTabs from "../../../components/sheet/SheetSegmentedTabs";
-import {
-    TAB_LABELS,
-    TAB_SWIPE_AXIS_LOCK_PX,
-    TAB_SWIPE_COMMIT_RATIO,
-    TAB_SWIPE_EDGE_RUBBER_MAX_PX,
-    TAB_SWIPE_EDGE_RUBBER_RATIO,
-} from "../constants";
+import { restingTabTransform, useTabSwipeTrack } from "../../../components/sheet/useTabSwipeTrack";
+import { TAB_LABELS } from "../constants";
 import EipEntryHeader from "./EipEntryHeader";
 import { useEipColors } from "./useEipPalette";
 import type { LearningToggleState } from "../../../hooks/useLearningToggle";
@@ -22,7 +17,7 @@ import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
 // Resting track offset for a tab: the track is (N·100%) wide with N equal
 // panes, so showing tab k means shifting the track left by exactly k panes,
 // i.e. k·(100/N)% of the track's own width.
-const restingTransform = (tab: number) => `translateX(${(-tab * 100) / TAB_LABELS.length}%)`;
+const restingTransform = (tab: number) => restingTabTransform(tab, TAB_LABELS.length);
 
 export interface InfoCardPanelBodyProps {
     currentEntry: VocabEntry | null;
@@ -143,21 +138,41 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     // mounted (see the track JSX), so these are stable for the panel's life — only the
     // off-screen panes' CONTENT is deferred (panesWarm).
     const paneRefs = useRef<(HTMLDivElement | null)[]>([]);
-    // Mirror of selectedTab readable from the mount-once gesture listeners and
-    // the imperative handle getter (both live outside the render cycle).
-    const selectedTabRef = useRef(selectedTab);
     // True for the single frame in which an entry change is repositioning the sub-tab
     // track with its transition off (see the entry-jump layout effect below).
     const entryJumpRef = useRef(false);
     // Entry key the sub-tab track is currently positioned for; see the entry-jump effect.
     const lastEntryKeyRef = useRef(currentEntry?.entryKey);
+    // --- Swipe-to-change-tab ------------------------------------------------
+    // All three tab panes are ALWAYS mounted (their content once panesWarm) side by side
+    // on a permanent (N·100%)-wide track (see the JSX below); a tab change — by tap or by
+    // swipe — only moves the track's transform. The gesture itself is the shared
+    // useTabSwipeTrack (src/components/sheet/useTabSwipeTrack.ts — the Account panel
+    // swipes through the same code). Because every pane is its own scroller, tabs also
+    // stop sharing scroll state: each tab remembers its own scroll position.
+    //
+    // `selectedTabRef` mirrors selectedTab for the imperative handle's getter below;
+    // `dragDxRef` (non-null = finger on the track) gates the entry-jump effect below.
+    const { selectedTabRef, dragDxRef } = useTabSwipeTrack({
+        clipRef,
+        trackRef,
+        tabCount: TAB_LABELS.length,
+        selectedTab,
+        onTabChange,
+        // A swipe may be starting: its neighbour pane has to be drawn (panesWarm).
+        // (warmPanesRef is declared below; the arrow only reads it on a touch.)
+        onGestureStart: () => warmPanesRef.current(),
+        // The entry-jump effect pins the track itself for one frame.
+        pinnedRef: entryJumpRef,
+    });
+
     useImperativeHandle(ref, () => ({
         get root() { return rootRef.current; },
         // The scrollable element is the ACTIVE tab's pane. SheetPanel captures
         // this once per bodyKey, so InfoCardSection folds selectedTab into its
         // bodyKey to re-bind the scroll/resize coupling on every tab change.
         get scroll() { return paneRefs.current[selectedTabRef.current] ?? null; },
-    }), []);
+    }), [selectedTabRef]); // a stable ref from useTabSwipeTrack — never re-runs
 
     const colors = useEipColors();
 
@@ -182,74 +197,6 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     const avail = tabAvailability(currentEntry, breakdownItems, selectedSenseIndex);
     const { breakdownTabLabel } = avail;
 
-    // --- Swipe-to-change-tab ------------------------------------------------
-    // All three tab panes are ALWAYS mounted (their content once panesWarm) side by side on a permanent
-    // (N·100%)-wide track (see the JSX below); changing tabs — by tap or by
-    // swipe — never mounts, unmounts, restyles, or resizes anything. It only
-    // moves the track's transform:
-    //
-    //   · Tap: purely declarative. selectedTab changes → the sx transform
-    //     changes → the track's persistent CSS transition animates it. No JS
-    //     animation lifecycle at all.
-    //   · Finger drag: the raw listeners below override transform/transition
-    //     via INLINE styles only (no React state per touchmove), then hand
-    //     control back to the declarative value on release.
-    //
-    // This is deliberately NOT a state machine. Earlier designs mounted a
-    // temporary two-pane track per slide and tore it down on transitionend;
-    // a dropped touch sequence (native-scroll intervention) or a missed
-    // transitionend left the panel visibly frozen mid-slide, and the mount/
-    // unmount cycles caused settling reflows. Inline overrides that are
-    // cleared on release, on the next tab render, AND on the next touchstart
-    // (see the self-heal notes below) cannot wedge that way — the resting
-    // position always belongs to plain CSS.
-    //
-    // Because every pane is its own scroller, tabs also stop sharing scroll
-    // state: switching tabs can't clamp/jump scrollTop when a tall tab's
-    // content leaves, and each tab remembers its own scroll position.
-    // Pane width in px (= clip-box width; pane padding lives inside the
-    // pane). Feeds only the gesture threshold/clamp math — layout is purely
-    // percentage-based, so this never has to be pixel-perfect.
-    const paneWidthRef = useRef(0);
-    const touchStartRef = useRef<{ x: number; y: number } | null>(null);
-    // null = undecided (within the axis-lock slop), "x" = swipe owns the
-    // gesture, "y" = handed off untouched to SheetPanel's vertical listener.
-    const swipeAxisRef = useRef<"x" | "y" | null>(null);
-    // Live finger delta of an in-flight horizontal drag; null = no drag.
-    // Doubles as the "drag in flight" flag for the self-heal paths.
-    const dragDxRef = useRef<number | null>(null);
-    const onTabChangeRef = useRef(onTabChange);
-    onTabChangeRef.current = onTabChange;
-
-    useLayoutEffect(() => {
-        const el = clipRef.current;
-        if (!el) return;
-        const update = () => { paneWidthRef.current = el.clientWidth; };
-        update();
-        const ro = new ResizeObserver(update);
-        ro.observe(el);
-        return () => ro.disconnect();
-    }, []);
-
-    // Keep selectedTabRef in sync, and clear any inline transform/transition
-    // a drag left behind once the declarative resting transform owns the
-    // position again. On a committed swipe the inline transform was already
-    // set to this tab's resting value, so removing it here is visually a
-    // no-op and the in-flight CSS transition continues undisturbed. This is
-    // also a self-heal: even if a drag's release was swallowed entirely, the
-    // next tab change re-normalizes the track.
-    useEffect(() => {
-        selectedTabRef.current = selectedTab;
-        const track = trackRef.current;
-        // entryJumpRef: an entry change is repositioning the track this frame with the
-        // transition switched off (see the layout effect below). Clearing the inline
-        // styles here would put the transition straight back and let the very slide we
-        // are suppressing play out.
-        if (track && dragDxRef.current === null && !entryJumpRef.current) {
-            track.style.transition = "";
-            track.style.transform = "";
-        }
-    }, [selectedTab]);
 
     // Every pane is its own scroller with its own edge-fade mask (sheetEdgeFadeSx), so
     // each one feeds its own scroll-aware bands. The panes are mounted for the panel's
@@ -309,166 +256,14 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
         return () => {
             cancelAnimationFrame(raf);
             entryJumpRef.current = false;
+            // Deliberately the LIVE value: a finger that landed since must keep its styles.
+            // eslint-disable-next-line react-hooks/exhaustive-deps
             if (dragDxRef.current === null) {
                 track.style.transition = "";
                 track.style.transform = "";
             }
         };
-    }, [currentEntry?.entryKey, selectedTab]);
-
-    // Gesture listeners are raw `addEventListener`s (not React onTouch* JSX
-    // props) attached directly to the clip box, mirroring SheetPanel's own
-    // pattern (SheetPanel.tsx's touchstart/touchmove/touchend effect). This
-    // is required, not stylistic: SheetPanel's resize/scroll listener is
-    // itself a raw addEventListener on an ANCESTOR (rootRef). Native touch
-    // events reach that ancestor's raw listener DURING REAL DOM BUBBLING —
-    // which completes before React ever gets to dispatch a synthetic
-    // onTouchMove prop (React delegates to a single listener at its own root
-    // container, higher up than rootRef, and only starts its synthetic
-    // dispatch once the real bubble reaches THAT point). So a React
-    // onTouchMove handler's stopPropagation() is always too late to stop
-    // SheetPanel's listener — it has already run. Registering our own raw
-    // listener on the clip box (a descendant of rootRef) puts us earlier
-    // in the real bubble order, so our stopPropagation() actually works.
-    useEffect(() => {
-        const el = clipRef.current;
-        if (!el) return;
-
-        // Settle an in-flight drag to a resting position: commit the tab
-        // change when the finger traveled past the commit threshold, else
-        // snap back. Restores the persistent CSS transition first so the
-        // remaining travel animates. Called from touchend/touchcancel, and
-        // from touchstart if a previous drag's release was swallowed by the
-        // browser (native-scroll intervention) — so a dropped gesture can
-        // freeze the track only until the next touch or tab change.
-        const settleDrag = () => {
-            const dx = dragDxRef.current;
-            dragDxRef.current = null;
-            const track = trackRef.current;
-            if (track === null || dx === null) return;
-            const tab = selectedTabRef.current;
-            const target = dx < 0 ? tab + 1 : tab - 1;
-            const committed =
-                target >= 0 &&
-                target <= TAB_LABELS.length - 1 &&
-                Math.abs(dx) > paneWidthRef.current * TAB_SWIPE_COMMIT_RATIO;
-            track.style.transition = ""; // back to the sx transition
-            if (committed) {
-                // Aim the inline transform at the target immediately so the
-                // snap animation starts this frame; the declarative transform
-                // catches up to the SAME value when onTabChange re-renders,
-                // and the selectedTab effect above then clears the (now
-                // redundant) inline override without disturbing the motion.
-                track.style.transform = restingTransform(target);
-                onTabChangeRef.current(target);
-            } else {
-                // Not committed: drop the override — the computed style falls
-                // back to the current tab's resting transform and animates back.
-                track.style.transform = "";
-            }
-        };
-
-        const onTouchStart = (e: TouchEvent) => {
-            // A swipe may be starting: its neighbour pane has to be drawn (panesWarm).
-            warmPanesRef.current();
-            if (e.touches.length !== 1) return;
-            if (dragDxRef.current !== null) settleDrag(); // self-heal a swallowed release
-            touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-            swipeAxisRef.current = null;
-        };
-
-        const onTouchMove = (e: TouchEvent) => {
-            const start = touchStartRef.current;
-            if (!start || e.touches.length !== 1 || !paneWidthRef.current) return;
-            const dx = e.touches[0].clientX - start.x;
-            const dy = e.touches[0].clientY - start.y;
-            if (swipeAxisRef.current === null) {
-                if (Math.max(Math.abs(dx), Math.abs(dy)) < TAB_SWIPE_AXIS_LOCK_PX) {
-                    // Still ambiguous. Block SheetPanel from seeing this
-                    // event too, not just events after the axis is decided —
-                    // otherwise a few px of pre-lock vertical noise leaks
-                    // into SheetPanel's own touchmove handler, which locks its
-                    // gesture into "resize" mode and shrinks the sheet by those
-                    // few px. If the gesture then resolves "x" here, SheetPanel
-                    // never sees another move but still gets the touchend, and
-                    // reads "resize mode + height now a hair below the default
-                    // stop" as "user dragged the sheet down and released" —
-                    // DISMISSING the panel out from under the swipe. Blocking
-                    // from the very first event avoids this entirely:
-                    // SheetPanel's gestureMode simply never gets set for a
-                    // gesture that turns out horizontal, and its touchend
-                    // handler no-ops on a null mode. (No preventDefault yet — if this resolves
-                    // "y", we want the browser's native vertical scroll, if
-                    // any, to engage normally from its own first event.)
-                    e.stopPropagation();
-                    return;
-                }
-                // Biased toward horizontal: real touches are jittery, and a
-                // straight horizontal swipe very often has a few px of
-                // vertical noise at the very start (the initial press-down
-                // wobble). A plain dx>dy comparison would misfire "y" on
-                // that noise and — since the axis then stays locked for the
-                // rest of the gesture — the whole swipe would fall through
-                // to SheetPanel's vertical resize/scroll instead of
-                // changing tabs. Only lock "y" when vertical movement is
-                // clearly (30%+) ahead of horizontal.
-                swipeAxisRef.current = Math.abs(dy) > Math.abs(dx) * 1.3 ? "y" : "x";
-                if (swipeAxisRef.current === "y") {
-                    // Vertical intent: hand the gesture off to SheetPanel's
-                    // own resize/scroll listener from here on. Its
-                    // lastTouchY is still the value from touchstart (we
-                    // blocked every event up to now), so the very next event
-                    // it sees computes one correct, larger delta covering
-                    // the whole gesture so far — no motion is lost.
-                    return;
-                }
-            }
-            if (swipeAxisRef.current !== "x") return;
-            // Horizontal intent: block SheetPanel's vertical resize/scroll
-            // listener from seeing this gesture at all, and stop the
-            // browser's own scroll/edge-swipe from firing.
-            e.stopPropagation();
-            e.preventDefault();
-            const track = trackRef.current;
-            if (!track) return;
-            const tab = selectedTabRef.current;
-            // Toward a neighboring tab: clamp the finger delta to at most one
-            // pane, so the track can never be dragged past the next resting
-            // position. Toward an END of the strip (left on the last tab, right
-            // on the first): rubber-band instead of clamping to zero — a dead
-            // track reads as "swipe not supported on this tab" rather than "you
-            // are at the end". The damped travel is capped far below the commit
-            // threshold, and settleDrag rejects out-of-range targets, so an
-            // overscroll always springs back.
-            const hasNeighbor = dx < 0 ? tab < TAB_LABELS.length - 1 : tab > 0;
-            const clampedDx = hasNeighbor
-                ? Math.max(-paneWidthRef.current, Math.min(paneWidthRef.current, dx))
-                : Math.sign(dx) *
-                  Math.min(TAB_SWIPE_EDGE_RUBBER_MAX_PX, Math.abs(dx) * TAB_SWIPE_EDGE_RUBBER_RATIO);
-            dragDxRef.current = clampedDx;
-            // Drive the drag with inline styles only — no React work per move.
-            track.style.transition = "none";
-            track.style.transform = `translateX(calc(${(-tab * 100) / TAB_LABELS.length}% + ${clampedDx}px))`;
-        };
-
-        const onTouchEnd = () => {
-            touchStartRef.current = null;
-            swipeAxisRef.current = null;
-            if (dragDxRef.current !== null) settleDrag();
-        };
-
-        el.addEventListener("touchstart", onTouchStart, { passive: false });
-        el.addEventListener("touchmove", onTouchMove, { passive: false });
-        el.addEventListener("touchend", onTouchEnd);
-        el.addEventListener("touchcancel", onTouchEnd);
-        return () => {
-            el.removeEventListener("touchstart", onTouchStart);
-            el.removeEventListener("touchmove", onTouchMove);
-            el.removeEventListener("touchend", onTouchEnd);
-            el.removeEventListener("touchcancel", onTouchEnd);
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [currentEntry?.entryKey, selectedTab, dragDxRef]);
 
     return (
         <Box

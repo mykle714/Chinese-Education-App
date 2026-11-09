@@ -44,13 +44,13 @@ removed, **Trace moved from 1 to 2**, and **Snap** became Level 1.
 | 1 | `snap` | persistent outline; only the **next** stroke animates, on repeat (`--faint`) | — | always — a stroke that matches the next expected stroke **snaps** into the printed stroke shape (in ink); a miss turns red and fades out ([PRACTICE_WRITING.md § Snap](./PRACTICE_WRITING.md)) |
 | 2 | `trace` | persistent outline + looped stroke order | — | always |
 | 3 | `walkthrough` | outline flashes 1.5s on entry | **Show** — 1.5s flash, 6s cooldown from press | locked while visible — except a stroke during the **entry** flash ends it early and draws |
-| 4 | `quarters` | one of **4** regions (田 squares), first shown on entry, stays up | **Next** — next region, no cooldown | always |
+| 4 | `thirds` | one of **3** regions (equal-area wedges meeting at the centre, rim cut every 4⁄3 of a side), first shown on entry, stays up (was `quarters` / 田 squares until 2026-11-08) | **Next** — next region, no cooldown | always |
 | 5 | `memorize` | persistent outline, no timer | — | locked until the first stroke (which unlocks + hides) |
-| 6 | `sixths` | one of **6** regions (equal-area wedges meeting at the centre, rim cut every ⅔ of a side), first shown on entry, stays up (Quarters at a finer split; was `eighths` / 8 米 triangles until 2026-10-06) | **Next** — next region, no cooldown | always |
+| 6 | `quarters` | one of **4** regions (the X split: top / right / bottom / left triangles, corner to corner), first shown on entry, stays up (Thirds at a finer split; was `sixths` / 6 centre wedges until 2026-11-08, `eighths` / 8 米 triangles until 2026-10-06) | **Next** — next region, no cooldown | always |
 | 7 | `test` | none | — | always |
 | 8 | `timed` | none; **`TIMED_MS_PER_STROKE` (500) × strokes**, one clock per character, started by its first stroke; Clear / Undo do not reset it | **Retry** (popup, after time-out) | until time runs out → canvas locks, what was drawn is graded |
 
-Regions cycle clockwise from the top-left. 500 ms/stroke is a starting value to tune.
+Regions cycle clockwise from the top-left corner. 500 ms/stroke is a starting value to tune.
 
 ### Code
 - `server/contracts/writingLevels.ts` — `WRITING_LEVELS`, `isWritingLevelNumber` (the
@@ -58,14 +58,14 @@ Regions cycle clockwise from the top-left. 500 ms/stroke is a starting value to 
   `modeOfLevel` / `levelOfMode`, `writingLevelForMastery`, `writingMarkCounts`,
   `TIMED_MS_PER_STROKE`.
 - `src/components/handwriting/levelBehavior.ts` → `LEVEL_BEHAVIOR` (what each mode does),
-  `regionClipPath` (田 squares / six centre-wedge polygons), `WRITING_FOCUS_SIZE` (the 300px capture space).
+  `regionClipPath` (N equal-area centre wedges, built from perimeter cut points), `WRITING_FOCUS_SIZE` (the 300px capture space).
 - `src/components/handwriting/useLevelGuide.ts` → `useLevelGuide` — the guide / lock /
   assist-button state machine (`enter`, `leave`, `press`, `blockedAttempt`). One
   interpreter shared by the popup, the Writing Grid and the writing flp.
 - `src/components/handwriting/useStrokeClock.ts` → `useStrokeClock`, `getStrokeCount`
   (stroke counts from the bundled Hanzi Writer data). Clocks are wall-clock deadlines.
 - `HanziGuide` gained `loopStrokeIndex` (Snap's repeating next-stroke cue) and
-  `regionClip` (a CSS `clip-path`, Quarters / Sixths); `WritingCanvas` gained
+  `regionClip` (a CSS `clip-path`, Thirds / Quarters); `WritingCanvas` gained
   `onStrokeStart` (level 8's clock starts on pointerdown), `onStrokeEnd` (a per-stroke
   keep / replace / reject verdict) and `hideCommittedInk`; `WritingStage` gained `clock`
   (the draining bar + seconds overlay, `StageClock`) and `snap` (owns the whole Snap
@@ -253,10 +253,13 @@ it is the submit tap (`submitOrNudge`: grade + flip once every cell is filled, e
 wiggle), on the graded back the dismiss tap (`sendOff`), the card still going right/left by
 its **grade**, never by the swipe's direction. Either way the click that would follow is
 swallowed, so it cannot submit/dismiss twice or open a cell's editor. The dismissal plays a **grab-and-throw** keyframe (`FlashCardSection` →
-`writingThrowKeyframes`, built from `cardThrow.ts` → `cardThrowSteps`, `CARD_FLY_OUT_MS` long): the card lifts (grows to `LIFT_SCALE` = 1.1 over the first 30%, rises `LIFT_RISE_PX` = 40 px, tilts
+`WRITING_THROW_KEYFRAMES`, built from `cardThrow.ts` → `cardThrowSteps`, `CARD_FLY_OUT_MS` long): the card lifts (grows to `LIFT_SCALE` = 1.1 over the first 30%, rises `LIFT_RISE_PX` = 40 px, tilts
 toward its exit), then accelerates off along an arc. It is a keyframe animation rather than
 the core flp's transition because the flying slot remounts on dismiss (its key changes) and
-a tapped card has no drag release point to fly from. The flying slot draws above the
+a tapped card has no drag release point to fly from. The throw is the **correct** dismissal only:
+the Deck Tower's correct slide-off (`towerFlyRight`) is gated off the writing card (`!writingFace`)
+— it is checked first, so ungated it replaces the throw. An **incorrect** writing card tucks back
+into the deck like every tower card (`towerTuck`, starting from its resting pose). The flying slot draws above the
 promoted one (`zIndex` 3), since it starts dead centre over it, and the promoted card grows
 from its peek pose with its own keyframe (`writingPromote`) for the same remount reason;
 `sendOff` resets `shakeNonce` in the dismiss batch so the promoted card's
@@ -278,7 +281,7 @@ so it opens only after the submit tap.
   look-alike notice may nudge it up (§ 3c).
 - **Front** — the header, then the character grid. Each cell PREVIEWS
   what the editor first shows at the level (`levelPreview`, `levelBehavior.ts`): the outline
-  (looping on Trace) for Snap / Trace / Step Through, the first region for Quarters / Sixths,
+  (looping on Trace) for Snap / Trace / Step Through, the first region for Thirds / Quarters,
   nothing for Memorize / Blank / Timed (Memorize's outline is the editor's study phase, never
   previewed: `levelPreview`, 2026-10-04) — with the learner's ink on top once written. Tap a cell →
   `WritingFocusEditor` in a phone-sized Dialog. On level 8, a character whose clock started
@@ -344,28 +347,27 @@ names the other character and how to tell them apart.
 - Tests: `src/__tests__/lookalikes.test.ts` (lookup contract; every listed character has
   `hanzi-writer-data` strokes).
 
-### 3b. Used-in hint bubbles (single-character cards)
+### 3b. Used-in hints (single-character cards)
 
-**Floating on the writing card's top edge, up to 2 bubbles show words that contain the card's character — the learner's own saved words
-first, then everyday dictionary words**: each with
+**Spoken by the hint pawn** in the flp's bottom-left corner ([HINT_PAWN.md](./HINT_PAWN.md),
+since 2026-11-08; until then they floated as bubbles on the writing card's top edge):
+**up to 2 words that contain the card's character — the learner's own saved words
+first, then everyday dictionary words**, under one of the pawn's cycling lines ("This
+character is used in these words", …). Each with
 its pinyin, its dd, and the word with the character being written drawn as a **mask**: a
 plain `?` (`ForeignText` → `maskChar`, see below). For 你, a saved
 你们 shows as `?们 · nǐmen · you (plural)`, with the pinyin kept above the mask.
 
 | question | decision (2026-10-04) |
 |---|---|
-| which cards | **single-character zh only**. Multi-character writing cards show an empty band |
+| which cards | **single-character zh only**. Multi-character writing cards have no hint (the pawn's bubble pops; the pawn stays) |
 | which words | used-in **pass 1**: the learner's own *sorted* vet words (≤ 4 chars) containing the character (lent/provisional cards don't count), then **pass 2**: dictionary words (2–4 chars) not already in the sorted vet. Both kinds look the same |
 | frequency gate | pass 1 **none**: words the learner chose aren't vetted for commonality. Pass 2 **`frequencyScore` 4–5** (added 2026-10-04), stricter than the eip list's 3–5. Ordered saved-first, then `frequencyScore DESC NULLS LAST`, then shortest, then `entryKey` |
 | how many | up to **2** in total (cut from 4 on 2026-10-04). Saved words fill first, and dictionary words only take the slots left over |
 | tap | **inert**. The eip is gated until submit on the writing flp, so a tap must not open the word |
-| look / motion | the bk's hint bubble (§ 6z-4 of `docs/BEGINNER_KEYBOARD.md`) through the shared `HintBubbleSurface`: grows in after `HINT_MOTION.enterDelayMs`, staggered in random order. When the front card changes, the old set pops and the new set grows in. On the Deck Tower the set is cleared at once (no pop) while the card is unseen — session parked, count card over it, respawn drop (`WritingUsedInBubbles` → `unseen`, from FlpTowerHost `parked`/`cardsCovered`/`cardsHidden`) — so a visit's first card grows its bubbles in on screen |
-| placement | every bubble sits on **one level**, its tail touching the card's top edge, at a **random x** drawn uniformly from the spots inside the card's width that don't overlap a bubble already placed. If none is free (a card narrower than ~300 px), it takes whichever end overlaps least. Computed once per bubble when first measured, in card-relative coordinates (`writingBubblePlacement.ts` → `placeBubble`), so a bubble never jumps. Popping bubbles from the previous card don't block spots. (A same-day version stacked colliding bubbles upward into levels. That was dropped 2026-10-04.) |
-| width | hugs the content (the wider of the word and its dd), capped at **140 px**, with the dd truncated by an ellipsis |
-| geometry | the bubbles live in an overlay (`position: absolute; inset: 0`) over the flp's `ContentArea`, mounted after `FlashCardSection` so they paint above the card stack and below the eip. `ContentArea` centres its children (`alignItems: center`), which collapsed the first in-flow version to 0 px wide. The card's box comes from the `offsetLeft`/`offsetTop` chains of the card AND the overlay, walked to their first common `offsetParent` (the overlay is a sibling, not an ancestor, of the card — `WritingUsedInBubbles.tsx` → `offsetBoxWithin`), which ignores transforms, so a flip/lift/drag in progress never skews the measured card. It is re-measured on any resize of the card or its ancestors up to `ContentArea` (the slot's padding glide moves a width-bound card without resizing it), and each bubble is bottom-anchored (`translateY(-100%)`) so its tail kisses the card edge whatever its final height |
-| room | `WritingUsedInBand`, a fixed **92 px** in-flow spacer (holds the one level) reserved on **every** writing card so the card slot never resizes from one card to the next. |
+| presentation | the hint pawn's speech bubble: arrival, motion, placement, swipe-away and the setting are [HINT_PAWN.md](./HINT_PAWN.md) |
 | faces | shown on both faces. The mask stays after the flip |
-| mask by level | levels **1–3** (Snap / Trace / Step Through) show the **real character** in the bubbles: the card front already shows its whole outline, so there's nothing to hide. Levels 4–8 mask it. Derived from `levelBehavior.ts` → `previewShowsWholeCharacter(mode)` for the card's level (`writingLevelForMastery`), so the bubbles and the card's own preview can't disagree |
+| mask by level | levels **1–3** (Snap / Trace / Step Through) show the **real character** in the hint: the card front already shows its whole outline, so there's nothing to hide. Levels 4–8 mask it. Derived from `levelBehavior.ts` → `previewShowsWholeCharacter(mode)` for the card's level (`writingLevelForMastery`), so the hint and the card's own preview can't disagree |
 
 Data path: the writing bar's loop and refill (`getDistributedWorkingLoop`,
 `getNextLibraryCardWithFallback`) pass `bar` into `enrichWithUsedIn`. On `writing` it attaches
@@ -377,9 +379,9 @@ Code:
   `toUsedInItem` (row mapper shared with `findUsedInForCharacter`)
 - `server/services/OnDeckVocabService.ts` → `enrichWithUsedIn`, `enrichMultipleWithUsedIn`
 - `server/contracts/wire.ts` → `VocabEntry.writingUsedIn`
-- `src/features/flashcards/FlashcardsLearnPage/WritingUsedInBubbles.tsx` → `WritingUsedInBubbles`
-  (overlay), `WritingUsedInBand` (spacer), `useCardBox`, `offsetBoxWithin`,
-  `MAX_BUBBLES`, `MAX_BUBBLE_WIDTH`; both mounted by `FlashcardsLearnPage` (writing mode only)
+- `src/features/flashcards/FlashcardsLearnPage/hintPawn/pawnHints.ts` → `pawnHintFor`,
+  `UsedInPawnHint` (the hint's data, mask by level); `hintPawn/PawnHintBody.tsx` (the words);
+  `hintPawn/HintPawn.tsx` (the pawn — [HINT_PAWN.md](./HINT_PAWN.md))
 - `src/components/ForeignText.tsx` → `maskChar` prop (row layout only) →
   `src/components/CPCDRow.tsx` → `CPCDRowItem.masked`, `MaskedCharMark`. The mask is a plain
   `?` in `FONTS.sans` (the circled-`?` ring was dropped 2026-10-28; the earlier `⍰` (U+2370)
@@ -387,8 +389,6 @@ Code:
   advance of the CJK glyph it replaces, so the row's spacing and pinyin centring don't
   shift, and inherits the cell's font size, so it scales with every CPCDSize; it takes the glyph colour (`characterColor`, else
   `COLORS.textSecondary`) and copies as `?` under `tapToCopy`
-- `src/features/flashcards/FlashcardsLearnPage/writingBubblePlacement.ts` → `placeBubble`
-  (tests: `src/__tests__/writingBubblePlacement.test.ts`)
 - `src/components/hintBubble/HintBubbleSurface.tsx`, `useHintBubblePresence.ts`,
   `hintMotion.ts`: shared with the beginner keyboard
 

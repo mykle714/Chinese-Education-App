@@ -3,7 +3,7 @@ import { Box, Typography, useTheme, type BoxProps } from "@mui/material";
 import ForeignText from "./ForeignText";
 import GlossText from "./GlossText";
 import { iconImageUrl } from "../cardIcons/cardIconLayout";
-import { masteryWindowCells, PBH_FULL, WORLD_LABELS, MARK_TYPE_LABELS, type MasteryBar } from "../utils/masteryCompute";
+import { masteryWindowCells, type MasteryBar } from "../utils/masteryCompute";
 import { getBandMark } from "../utils/categoryColors";
 import type { Language } from "../types";
 import { COLORS } from "../theme/colors";
@@ -147,16 +147,12 @@ const MasteryStrip: React.FC<{ bar: MasteryBar }> = ({ bar }) => {
     // surfaces must not drift on where the partial cell falls.
     const cells = masteryWindowCells(bar);
     const bandMark = getBandMark(bar.category);
-    // The per-mark-type split the cells no longer show, kept on hover: "Know 4.3/8 ·
-    // Comfortable · Recognition 5, Production 2". One shared `title` rather than one per
-    // cell — eight native tooltips along a 3px strip would fight each other.
-    const stripTitle =
-        `${WORLD_LABELS[bar.id]} ${Number.isInteger(bar.pbh) ? bar.pbh : bar.pbh.toFixed(1)}/${PBH_FULL} · ${bar.category}` +
-        ` · ${bar.segments.map((seg) => `${MARK_TYPE_LABELS[seg.type]} ${seg.positive}`).join(", ")}`;
+    // No hover tooltip. It used to spell out the recognition/production split
+    // ("Recognition 5, Production 2"); that split is a backend modelling detail, not a
+    // learner concept (docs/BACKLOG.md § 9b, docs/MASTERY_REWORK.md § "Mini cards").
     return (
         <Box
             className="mini-card__mastery-window"
-            title={stripTitle}
             sx={{
                 position: "absolute",
                 bottom: BAR_STRIP.bottom,

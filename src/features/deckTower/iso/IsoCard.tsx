@@ -10,7 +10,8 @@ import { WEIGHT } from "../../../theme/scale";
  * IsoCard — one flashcard (docs/ISO_ART_FRAMEWORK.md § "IsoCard").
  *
  * A thin extruded rounded rect: cream top (`COLORS.cardFace`, the same fill as every
- * flat card in the app), beige walls, no outline. Its face content is drawn FLAT in world
+ * flat card in the app), beige walls, no outline, and the hairline rounded edge where the
+ * top meets the walls (IsoSolid → `roundedEdge`, theme/roundedEdge.ts). Its face content is drawn FLAT in world
  * units and mapped onto the top face with `faceTransform`, so it lies on the card like a
  * print rather than standing up off it. The card's HEAD is its low-y edge (the
  * upper-right edge on screen), because printed text runs along +x.
@@ -81,9 +82,10 @@ const IsoCard: React.FC<IsoCardProps> = ({ rect, z, thickness, figure, label, ca
     const bodyTop = label ? band.y + band.d : panel.y;
     const bodyMidY = bodyTop + (panel.y + panel.d - bodyTop) / 2;
 
-    if (printOpacity <= 0) return <IsoSolid geometry={geometry} material={palette.card} className="iso-card" />;
+    // The hairline rounded edge (IsoSolid → `roundedEdge`), as on the card-stock mini cards.
+    if (printOpacity <= 0) return <IsoSolid geometry={geometry} material={palette.card} roundedEdge={palette.edgeLight} className="iso-card" />;
     return (
-        <IsoSolid geometry={geometry} material={palette.card} className="iso-card">
+        <IsoSolid geometry={geometry} material={palette.card} roundedEdge={palette.edgeLight} className="iso-card">
             <g className="iso-card__face" opacity={printOpacity < 1 ? printOpacity : undefined}>
                 <path className="iso-card__panel" d={flatPath(proj, panel, faceZ)} fill={palette.cardPanel} />
                 {label && <path className="iso-card__band" d={flatPath(proj, band, faceZ)} fill={bandFill} />}

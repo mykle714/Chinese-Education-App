@@ -54,6 +54,7 @@ import { RAMP, type RampHue } from '../../theme/colors';
 import { deleteBeforeCaret, insertAtCaret, moveCaret } from './insertAtCaret';
 import { KEYBOARD_COLORS } from './keyboardColors';
 import { keycapPressSx } from '../../theme/keycapPress';
+import { roundedEdgeFilletDown, roundedEdgeRimLightTop } from '../../theme/roundedEdge';
 import type { EditableField } from './eligibility';
 
 /** One vowel's four tones, and the ramp hue the group is painted in. */
@@ -88,19 +89,21 @@ const REPEAT_INTERVAL_MS = 70;
 /**
  * The keycap outline: the app's 1px `COLORS.border` ring (CLAUDE.md § Buttons &
  * cards — every tappable carries it) drawn as an inset shadow so it does not
- * change the key's box, plus the raised lip beneath.
+ * change the key's box, the hairline rounded edge just inside it (theme/roundedEdge.ts,
+ * straight-lip form), plus the raised lip beneath.
  */
-const keycapShadow = (lip: string, outline: string = COLORS.border) => `inset 0 0 0 1px ${outline}, 0 ${LIP}px 0 ${lip}`;
+const keycapShadow = (face: string, lip: string, outline: string = COLORS.border) =>
+  `inset 0 0 0 1px ${outline}, ${roundedEdgeRimLightTop(face, 1)}, ${roundedEdgeFilletDown(face, lip)}, 0 ${LIP}px 0 ${lip}`;
 
 /**
  * A key's resting shadow + the app's raised-key press (theme/keycapPress.ts): it snaps
  * down onto its lip while held, keeping its outline, and snaps back on release — no
  * transition.
  */
-const keyPressSx = (lip: string, outline: string = COLORS.border) =>
+const keyPressSx = (face: string, lip: string, outline: string = COLORS.border) =>
   keycapPressSx({
-    restShadow: keycapShadow(lip, outline),
-    pressedShadow: `inset 0 0 0 1px ${outline}`,
+    restShadow: keycapShadow(face, lip, outline),
+    pressedShadow: `inset 0 0 0 1px ${outline}, ${roundedEdgeRimLightTop(face, 1)}`,
     pressedY: LIP,
   });
 
@@ -248,7 +251,7 @@ export default function PinyinToneKeyboard({ field, height, onCommit, onDismiss 
                     lineHeight: 1,
                     color: COLORS.onSurface,
                     cursor: 'pointer',
-                    ...keyPressSx(RAMP[group.hue].mark),
+                    ...keyPressSx(RAMP[group.hue].surface, RAMP[group.hue].mark),
                   }}
                 >
                   {vowel}
@@ -331,7 +334,7 @@ function utilityKeySx(extra: Record<string, unknown>) {
     fontWeight: WEIGHT.semibold,
     color: KEYBOARD_COLORS.ink2,
     cursor: 'pointer',
-    ...keyPressSx(KEYBOARD_COLORS.keyEdge, KEYBOARD_COLORS.outline),
+    ...keyPressSx(KEYBOARD_COLORS.key, KEYBOARD_COLORS.keyEdge, KEYBOARD_COLORS.outline),
     ...extra,
   } as const;
 }

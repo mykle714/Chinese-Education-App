@@ -35,7 +35,9 @@
 >   the vet read/write is `VocabEntryDAL.findMarkState` / `updateMarkHistory`.
 > - Goal flags API: `PUT /api/users/goals` (`UserController.updateGoals` →
 >   `UserService.updateGoals`); surfaced via `useAuth().updateGoals` and the
->   account page Goals section (`src/pages/AccountSheet.tsx`).
+>   account sheet's Goals section (`src/pages/account/AccountPane.tsx` → `handleToggleGoal`).
+>   Switching a goal on may also switch that world's focus mode on
+>   ([FOCUS_MODE.md](./FOCUS_MODE.md) § 1a; response field `focusAutoEnabled`).
 > - Client mark sources: flp (`useWorkingLoop.ts`), Word Search
 >   (`WordSearchStage.tsx`), Bubble Match (`BubbleMatchPage.tsx`), Practice Writing
 >   (`PracticeWritingButton.tsx` → `PracticeWritingPopup.tsx`).
@@ -585,15 +587,14 @@ thumbnail is actually asked — *"how well do I know this?"* — which is precis
 deleted corner letter badge answered.
 
 `masteryWindowCells` still returns the owning mark **type**, not a colour; neither surface
-paints by it any more, but it is kept for the strip's `title` breakdown below.
+paints by it any more, and nothing else reads it (a candidate for removal).
 
-**What this costs.** The per-mark-type split is no longer visible on the thumbnail — an
-earlier version drew one pip per mark type, which let a card say *"you recognise this but
-cannot produce it"* at a glance. The 8-cell window cannot. The split survives in the
-strip's `title` (`"Know 4.3/8 · Comfortable · Recognition 5, Production 2"`), which costs
-nothing visually, but it is hover-only and therefore absent on touch. If that read matters
-on the grid, it needs a different device than colour or length — both channels are spoken
-for.
+**No per-mark-type split on the thumbnail, by design.** An earlier version drew one pip per
+mark type ("you recognise this but cannot produce it"). Recognition vs production is a
+backend modelling detail, not a learner concept ([BACKLOG.md](./BACKLOG.md) § 9b), so the
+strip shows only the blended Know window. It has no hover `title` either: the old one
+("Recognition 5, Production 2") was removed 2026-11-08, along with
+`MARK_TYPE_LABELS`, which had no other reader.
 
 **Lineage.** Frame 17 of the shelf design draws this strip as one pip per mark type in
 Recognition blue / Production green, and its `.mcd .mk` is a two-pip row. Two later
@@ -901,7 +902,11 @@ least-overdue.
 
 Because ranking needs `typedMarkHistory`, it is computed in app code and the candidate
 query (`fetchFlpCandidates`) is deliberately **unlimited** — a partial scan would rank a
-random subset and return the wrong card.
+random subset and return the wrong card. The working-loop deal reads it **once**, for every
+band (`OnDeckVocabService.loadFlpDealPool`), bands the rows in app code with `barCategory`
+(the TS mirror of `barCategoryExpr`) and ranks each band once; its quota, top-up and cooled
+tiers then take cards from that pool in memory. The mark refill
+(`getNextLibraryCardWithFallback`) still reads one band per call.
 
 ### When a quota runs short: borrow, then cool, then lend
 

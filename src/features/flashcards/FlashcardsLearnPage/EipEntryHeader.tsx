@@ -13,6 +13,7 @@ import type { LearningToggleState } from "../../../hooks/useLearningToggle";
 import type { VocabEntry } from "../types";
 import { COLORS } from "../../../theme/colors";
 import { keycapPressSx } from "../../../theme/keycapPress";
+import { roundedEdgeFilletDown, roundedEdgeRimLightTop } from "../../../theme/roundedEdge";
 import { useEipColors } from "./useEipPalette";
 
 // The eip's ENTRY HEADER — the band above the eip tabs: headword cpcd, speaker (+ the
@@ -107,6 +108,9 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
     const colors = useEipColors();
     // The keycap's 1px outline: the app's border token on the light palette, a faint white ring on the dark one.
     const tileRing = `inset 0 0 0 1px ${colors.dark ? "rgba(255, 255, 255, 0.12)" : COLORS.border}`;
+    // The hairline rounded edge (theme/roundedEdge.ts, straight-lip form), the rim light
+    // just inside the ring.
+    const tileRim = roundedEdgeRimLightTop(colors.face, 1);
     // A tap on the keycap's PADDING (outside the cpcd row) still copies: forward it as a
     // click on the row, so CPCDRow's tap-to-copy — and its characters ⇄ pinyin alternation
     // and confirmation caption — stays the one implementation. A tap ON the row is already
@@ -194,8 +198,8 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                             // The app's raised-key press (theme/keycapPress.ts): the
                             // tile jumps down onto its lip and back up, no easing.
                             ...keycapPressSx({
-                                restShadow: `${tileRing}, 0 ${TILE_LIP}px 0 ${colors.edge}`,
-                                pressedShadow: tileRing,
+                                restShadow: `${tileRing}, ${tileRim}, ${roundedEdgeFilletDown(colors.face, colors.edge)}, 0 ${TILE_LIP}px 0 ${colors.edge}`,
+                                pressedShadow: `${tileRing}, ${tileRim}`,
                                 pressedY: TILE_LIP,
                             }),
                         }}

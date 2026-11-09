@@ -3,7 +3,8 @@ import { insetRect, insideRoundedRect, type Projector, type WorldRect } from "./
 import { shadowSlide, shadowSpread } from "./light";
 import { prefersReducedMotion } from "./skyTraffic";
 import { PAWN_GRAVITY, type PawnEntrance } from "./pawnEntrances";
-import { EMOTE_GAP, HEAD_RADIUS, pawnFigure } from "./pawnFigure";
+import { EMOTE_GAP, HEAD_RADIUS, pawnFigure, pawnVest } from "./pawnFigure";
+import { flinchPose, idlePose, IDLE_STALE_MS, LASTING_IDLES, type IdlePose, type PawnIdleCue, type PawnIdleKind } from "./pawnIdles";
 
 /**
  * usePawnMotion — the IsoPawn's behaviour (docs/ISO_ART_FRAMEWORK.md § "IsoPawn").
@@ -104,8 +105,41 @@ import { EMOTE_GAP, HEAD_RADIUS, pawnFigure } from "./pawnFigure";
  * it walks on. `floorSpot` reports where it stands on the floor every frame (null when it
  * is not on the floor), which is how the Deck Tower tests a strike against it.
  *
- * Under prefers-reduced-motion nothing runs: the pawn stands at `at`, and the startle and
- * the poke are skipped.
+ * STRETCH: each new `stretch` cue (a `{ id, at }`; the flp's hint pawn sends one per new
+ * speech bubble, timed to the bubble's grow-in — docs/HINT_PAWN.md § "Back stretch") plays a
+ * back stretch from a standstill, starting at `at`: a little crouch (STRETCH_CROUCH_END),
+ * then it draws itself up tall and thin while CURVING ITS BACK — the spine bends
+ * (STRETCH_ARCH_DEG, pawnFigure's `arch`) over a small whole-body lean — (STRETCH_REACH_END),
+ * holds the reach with a slight quiver (STRETCH_HOLD_END), and lets go — straightening in a
+ * breath out with a soft squash as it settles (STRETCH_MS). It curls BACKWARD, away from
+ * the way the pawn faces: the stretch's pose sets pawnFigure's `bendHeading` to `facing`
+ * and both angles are < 0 (for the hint pawn, away from the viewer and its bubble). A cue
+ * waits while the pawn is busy (arriving, walking, mid-air) and is dropped if it is still
+ * waiting STRETCH_STALE_MS after `at`. A poke rides on top of it, as on a startle.
+ *
+ * IDLE ANIMATIONS (not the wandering IDLE above): each new `idle` cue (a `PawnIdleCue`,
+ * pawnIdles.ts; the flp's hint pawn sends one a minute — docs/HINT_PAWN.md § "Idle
+ * animations") plays a sneeze, a song, a doze or knitting from a standstill (the `idle`
+ * mode; the pose curves are pawnIdles.ts's). Like a stretch cue it waits while the pawn is
+ * busy; a one-shot cue is dropped IDLE_STALE_MS after `at`, a lasting one waits. A one-shot
+ * ends on its own. A LASTING idle (doze, knit) holds until the cue is withdrawn (null) or
+ * replaced, then eases out (IDLE_EXIT_MS). A tap ends any idle at once. `activeIdle` reports
+ * what is playing (and when it is easing out), so IsoPawn draws its marks — z's, notes,
+ * the sneeze puff, the needles — only while the pose is.
+ *
+ * TAP REACTION: with `onTap`, the page picks each tap's reaction — "jump" (the POKE) or
+ * "flinch" (the `flinch` mode: a short recoil on the spot, pawnIdles.ts → `flinchPose`;
+ * the hint pawn shows its "ouch" bubble with it) — and the poke pops NO "!" bubble (the
+ * page has its own reply). A tap while the feet are in the air always jumps, whatever
+ * `onTap` returns. Without `onTap` every tap is a jump with the "!", as on the Deck Tower.
+ *
+ * AIR RING: a jump thrown while the feet are already in the air (a chained poke) leaves a
+ * double ring where the feet kicked off (`airRings`, drawn by IsoPawn's PawnAirRing) — a
+ * little platform in the air, so the double jump reads as pushing off something. The page
+ * removes each with `dropAirRing` when its animation ends.
+ *
+ * Under prefers-reduced-motion nothing runs: the pawn stands at `at`, and the startle, the
+ * poke, the stretch, the idles and the flinch are skipped.
  *
  * Referenced by: docs/ISO_ART_FRAMEWORK.md § "IsoPawn", docs/DECK_TOWER.md § "The scene",
  * docs/DECK_TOWER_TRANSITIONS.md § "Pawn entrances".
@@ -251,6 +285,35 @@ const RECOVER_MS = 450;
 const LANDED_AT = LEAN_MS + LEAP_MS;
 const RECOVER_AT = LANDED_AT + LOOK_HOLD_MS;
 const STARTLE_END = RECOVER_AT + RECOVER_MS;
+
+/**
+ * Back stretch (see the header's STRETCH). Phase ends in ms from its start: the crouch,
+ * the reach up and back, the held reach, then the release to STRETCH_MS.
+ */
+const STRETCH_CROUCH_END = 150;
+const STRETCH_REACH_END = 520;
+const STRETCH_HOLD_END = 820;
+const STRETCH_MS = 1200;
+/** The crouch's depth (squash, as the landing squashes measure it). */
+const STRETCH_CROUCH = 0.08;
+/** How much taller (and, at half that, thinner) it draws itself up at full reach; the hold adds REACH_GROW. */
+const STRETCH_REACH = 0.16;
+const STRETCH_REACH_GROW = 0.03;
+/**
+ * The back's curve at full reach: the spine bends this many degrees from the hips to the
+ * body's top (pawnFigure's `arch`; negative = curling away from `bendHeading`, which the
+ * stretch sets to the pawn's facing), on top of a small whole-body lean. The head carries on along the top's direction, so it ends up
+ * tipped back by LEAN + ARCH.
+ */
+const STRETCH_ARCH_DEG = -15; // halved from −30 (owner, 2026-11-08): the facing-relative bend read as too tilted
+const STRETCH_LEAN_DEG = -3;
+/** The held reach's quiver (on the arch): degrees, and cycles across the hold. */
+const STRETCH_QUIVER_DEG = 0.6;
+const STRETCH_QUIVER_CYCLES = 2;
+/** The settle's squash as it lets go. */
+const STRETCH_SETTLE_SQUASH = 0.06;
+/** A cue still waiting this long after its `at` (the pawn was busy) is dropped. */
+const STRETCH_STALE_MS = 1500;
 
 /** Poke (see the header's POKE): how high the jump clears its surface, and the speed that gets it there. */
 const POKE_JUMP_HEIGHT = 2.6;
@@ -450,6 +513,15 @@ type Mode =
     | { kind: "walk"; target: Pt2 }
     | { kind: "land" }
     | { kind: "startle"; t0: number; from: Pt2; to: Pt2; leanSign: 1 | -1 }
+    /** The back stretch (see the header's STRETCH), from a standstill. */
+    | { kind: "stretch"; t0: number }
+    /**
+     * An idle animation (see the header's IDLE ANIMATIONS). `endT0` is when a LASTING idle's
+     * cue was withdrawn (null while it holds): it eases out from there.
+     */
+    | { kind: "idle"; t0: number; idle: PawnIdleKind; id: string | number; endT0: number | null }
+    /** The tap flinch (see the header's TAP REACTION), from a standstill. */
+    | { kind: "flinch"; t0: number }
     | { kind: "entrance"; t0: number; anim: PawnEntrance }
     /** A throw onto or off the summit: the ground position glides `from` → `to` over `ms`. */
     | { kind: "flight"; t0: number; from: Pt2; to: Pt2; ms: number }
@@ -485,6 +557,15 @@ export interface PawnMotionRefs {
     body: React.RefObject<SVGPathElement | null>;
     /** The head's circle: rewritten every frame. */
     head: React.RefObject<SVGCircleElement | null>;
+    /**
+     * The night vest's band and its reflective stripes (IsoPawn `vest`, pawnFigure.ts →
+     * `pawnVest`): rewritten every frame while mounted. Unmounted (null) on a pawn without a
+     * vest, which then skips the vest's geometry entirely.
+     */
+    vest: React.RefObject<SVGPathElement | null>;
+    vestStripes: React.RefObject<SVGPathElement | null>;
+    /** The vest's open front and arm holes, drawn in ink over the cloth. */
+    vestOpenings: React.RefObject<SVGPathElement | null>;
     /** Places the "!" bubble (drawn round its tail tip at the origin, EMOTE_DRAW_SCALE px per unit) over the head. */
     emoteAnchor: React.RefObject<SVGGElement | null>;
     /** The invisible tap target (IsoPawn `tappable`), centred on the figure every frame. */
@@ -522,6 +603,33 @@ export const EMOTE_MS = 2000;
  */
 export const SHOCK_MS = 1000;
 const SHOCK_RECOVER_MS = 900;
+
+/**
+ * A back stretch to play (see the header's STRETCH): a new `id` is a new stretch, starting
+ * at `at` (a `performance.now()` timestamp).
+ */
+export interface PawnStretchCue {
+    id: string | number;
+    at: number;
+}
+
+/** What the page answers a tap with (see the header's TAP REACTION). */
+export type PawnTapReaction = "jump" | "flinch";
+
+/** The idle being played (see the header's IDLE ANIMATIONS); `ending` while it eases out. */
+export interface PawnActiveIdle {
+    id: string | number;
+    kind: PawnIdleKind;
+    ending: boolean;
+}
+
+/** A mid-air jump's ring (see the header's AIR RING): where the feet kicked off, in world units. */
+export interface PawnAirRing {
+    id: number;
+    x: number;
+    y: number;
+    z: number;
+}
 
 /** An entrance to play on mount, and when to start it (a `performance.now()` timestamp). */
 export interface PawnEntranceCue {
@@ -561,7 +669,29 @@ export function usePawnMotion(opts: {
     floorSpot?: React.MutableRefObject<Pt2 | null>;
     /** Freezes the pawn for a lightning shock each time this changes (see the header's SHOCK). */
     shockId?: number;
-}): { refs: PawnMotionRefs; emote: PawnEmote | null; poke: () => void } {
+    /** Plays a back stretch for each new cue id (see the header's STRETCH). */
+    stretch?: PawnStretchCue | null;
+    /**
+     * Degrees the pawn faces off the camera, + toward screen-right (0 = facing the viewer).
+     * Turns the night vest (pawnFigure.ts → `pawnVest`) and sets the back stretch's
+     * direction — it curls away from it (see the header's STRETCH). Read each frame.
+     */
+    facing?: number;
+    /** Plays an idle animation for each new cue id; null withdraws a lasting one (see the header's IDLE ANIMATIONS). */
+    idle?: PawnIdleCue | null;
+    /**
+     * Picks each tap's reaction (see the header's TAP REACTION). Told whether the feet are
+     * in the air (a tap then always jumps). Read live. Without it: always jump, with the "!".
+     */
+    onTap?: (tap: { airborne: boolean }) => PawnTapReaction;
+}): {
+    refs: PawnMotionRefs;
+    emote: PawnEmote | null;
+    poke: () => void;
+    activeIdle: PawnActiveIdle | null;
+    airRings: PawnAirRing[];
+    dropAirRing: (id: number) => void;
+} {
     const { proj, at, startled, roam, startledBy, onDepthRankChange } = opts;
     // Only the mount-time cue matters (an entrance is how the pawn ARRIVES), so it is
     // pinned in a ref and a later prop change never replays it.
@@ -571,6 +701,9 @@ export function usePawnMotion(opts: {
         presence: useRef<SVGGElement>(null),
         body: useRef<SVGPathElement>(null),
         head: useRef<SVGCircleElement>(null),
+        vest: useRef<SVGPathElement>(null),
+        vestStripes: useRef<SVGPathElement>(null),
+        vestOpenings: useRef<SVGPathElement>(null),
         hit: useRef<SVGCircleElement>(null),
         floorShadow: useRef<SVGGElement>(null),
         summitShadow: useRef<SVGGElement>(null),
@@ -581,6 +714,12 @@ export function usePawnMotion(opts: {
         decalAnchor: useRef<SVGGElement>(null),
     };
     const [emote, setEmote] = useState<PawnEmote | null>(null);
+    // What the loop is playing, mirrored to React for IsoPawn's marks. Set only on a change
+    // (start, start of the ease-out, end), never per frame.
+    const [activeIdle, setActiveIdle] = useState<PawnActiveIdle | null>(null);
+    const [airRings, setAirRings] = useState<PawnAirRing[]>([]);
+    const airRingIds = useRef(0);
+    const dropAirRing = (id: number) => setAirRings((rings) => rings.filter((r) => r.id !== id));
 
     // Mutable motion state lives in a ref: the rAF loop reads and writes it every frame,
     // and the startle effect below swaps its mode without restarting the loop.
@@ -616,16 +755,31 @@ export function usePawnMotion(opts: {
         // With the floor dropping away (FLOOR DROP): when the pawn's own fall started —
         // null until then.
         fall: null as { t0: number } | null,
+        // A back stretch cued but not started yet: its start time (see the header's STRETCH).
+        pendingStretch: null as number | null,
+        // An idle cued but not started yet (see the header's IDLE ANIMATIONS), and the id
+        // of the last one started, so a cue that is still set never replays.
+        pendingIdle: null as PawnIdleCue | null,
+        startedIdleId: undefined as string | number | undefined,
+        // What `activeIdle` was last set to, as "id:ending" (or ""), so the loop only sets
+        // React state on a change.
+        shownIdle: "",
         // The last frame's pose, which `applyFrame` draws (the loop, and a re-render with a
         // new camera, both draw from it). `hop` is world units off the surface, `lean`
-        // degrees; `emoteLean` the lean the "!" bubble follows (the startle's look-up only —
+        // degrees; `arch` the spine's bend in degrees (the back stretch's curve, pawnFigure's
+        // `arch`); `emoteLean` the lean the "!" bubble follows (the startle's look-up only —
         // it does not waddle). Hidden from the start when an entrance is to come.
         pose: {
             hop: 0,
             lean: 0,
+            arch: 0,
+            bendHeading: undefined as number | undefined,
             sx: 1,
             sy: 1,
             emoteLean: 0,
+            // The anchor over the head follows the BENT head (its arch and squash) — an idle's
+            // marks (z's, notes, needles) ride a drooping head; the "!" never does.
+            marksFollowHead: false,
             shadowOverride: null as { scale: number; opacity: number } | null,
             hidden: !!opts.entrance && !prefersReducedMotion(),
         },
@@ -649,6 +803,9 @@ export function usePawnMotion(opts: {
     // Latest floor drop (animates every frame of a swap), read by the loop.
     const floorDropRef = useRef(opts.floorDrop ?? 0);
     floorDropRef.current = opts.floorDrop ?? 0;
+    // Latest facing, read by the loop's back stretch (`applyFrame` reads `opts.facing` itself).
+    const facingRef = useRef(opts.facing ?? 0);
+    facingRef.current = opts.facing ?? 0;
     // What `applyFrame` last wrote to the DOM, so the loop can skip a frame that would
     // write the same thing (see IDLE FRAMES in `applyFrame`). Null until the first draw.
     const drawn = useRef<{
@@ -659,9 +816,12 @@ export function usePawnMotion(opts: {
         lift: number;
         hop: number;
         lean: number;
+        arch: number;
+        bendHeading: number | undefined;
         sx: number;
         sy: number;
         emoteLean: number;
+        marksFollowHead: boolean;
         shadowScale: number | undefined;
         shadowOpacity: number | undefined;
         hidden: boolean;
@@ -677,7 +837,7 @@ export function usePawnMotion(opts: {
      */
     const applyFrame = (force: boolean) => {
         const s = state.current;
-        const { hop, lean, sx, sy, emoteLean, shadowOverride, hidden } = s.pose;
+        const { hop, lean, arch, bendHeading, sx, sy, emoteLean, marksFollowHead, shadowOverride, hidden } = s.pose;
         // CSS px on SVG elements are user units, so these are scene units.
         const p = projRef.current;
         const z0 = surfaceZRef.current;
@@ -698,9 +858,12 @@ export function usePawnMotion(opts: {
             d.lift === s.lift &&
             d.hop === hop &&
             d.lean === lean &&
+            d.arch === arch &&
+            d.bendHeading === bendHeading &&
             d.sx === sx &&
             d.sy === sy &&
             d.emoteLean === emoteLean &&
+            d.marksFollowHead === marksFollowHead &&
             d.shadowScale === shadowOverride?.scale &&
             d.shadowOpacity === shadowOverride?.opacity &&
             d.hidden === hidden
@@ -715,9 +878,12 @@ export function usePawnMotion(opts: {
             lift: s.lift,
             hop,
             lean,
+            arch,
+            bendHeading,
             sx,
             sy,
             emoteLean,
+            marksFollowHead,
             shadowScale: shadowOverride?.scale,
             shadowOpacity: shadowOverride?.opacity,
             hidden,
@@ -735,8 +901,15 @@ export function usePawnMotion(opts: {
 
         // VIEW (header): the figure in true 3D, its feet `hop` above the surface.
         const feet = { x: s.pos.x, y: s.pos.y, z: z0 + s.lift + hop };
-        const fig = pawnFigure(p, feet, { lean, sx, sy });
+        const fig = pawnFigure(p, feet, { lean, sx, sy, arch, bendHeading });
         refs.body.current?.setAttribute("d", fig.bodyPath);
+        // The night vest (IsoPawn `vest`), on the same pose as the body; only when it is mounted.
+        if (refs.vest.current || refs.vestStripes.current) {
+            const vest = pawnVest(p, feet, { lean, sx, sy, arch, bendHeading }, opts.facing ?? 0);
+            refs.vest.current?.setAttribute("d", vest.vestPath);
+            refs.vestStripes.current?.setAttribute("d", vest.stripesPath);
+            refs.vestOpenings.current?.setAttribute("d", vest.openingsPath);
+        }
         if (refs.head.current) {
             refs.head.current.setAttribute("cx", String(fig.head.cx));
             refs.head.current.setAttribute("cy", String(fig.head.cy));
@@ -751,7 +924,10 @@ export function usePawnMotion(opts: {
         if (refs.emoteAnchor.current) {
             // Billboard: upright on screen, its tail tip just over the head's top, not
             // squashed or waddling with the body (an unsquashed figure at the look-up lean).
-            const still = emoteLean === lean && sx === 1 && sy === 1 ? fig : pawnFigure(p, feet, { lean: emoteLean, sx: 1, sy: 1 });
+            const still =
+                marksFollowHead || (emoteLean === lean && arch === 0 && sx === 1 && sy === 1)
+                    ? fig
+                    : pawnFigure(p, feet, { lean: emoteLean, sx: 1, sy: 1 });
             const k = still.headScale;
             const tipY = still.head.cy - (HEAD_RADIUS + EMOTE_GAP) * k;
             const f = k / EMOTE_DRAW_SCALE;
@@ -828,6 +1004,36 @@ export function usePawnMotion(opts: {
         s.mode = { kind: "pause", until: performance.now() + SHOCK_MS + SHOCK_RECOVER_MS };
     }, [opts.shockId]);
 
+    // A new stretch cue: queue it; the loop starts it once the pawn stands still (STRETCH).
+    const stretchId = opts.stretch?.id;
+    const stretchAt = opts.stretch?.at;
+    useEffect(() => {
+        if (stretchId === undefined || stretchAt === undefined || reduced) return;
+        state.current.pendingStretch = stretchAt;
+    }, [stretchId, stretchAt, reduced]);
+
+    // An idle cue (see the header's IDLE ANIMATIONS). A new id queues it; withdrawing the
+    // cue (null) or replacing it eases a held LASTING idle out — a replacement then starts
+    // once the pawn is standing again.
+    const idleId = opts.idle?.id;
+    const idleKind = opts.idle?.kind;
+    const idleAt = opts.idle?.at;
+    useEffect(() => {
+        if (reduced) return;
+        const s = state.current;
+        const m = s.mode;
+        if (m.kind === "idle" && m.endT0 === null && m.id !== idleId) s.mode = { ...m, endT0: performance.now() };
+        if (idleId === undefined || idleKind === undefined || idleAt === undefined) {
+            s.pendingIdle = null;
+            return;
+        }
+        if (idleId === s.startedIdleId) return;
+        s.pendingIdle = { id: idleId, kind: idleKind, at: idleAt };
+    }, [idleId, idleKind, idleAt, reduced]);
+
+    const onTapRef = useRef(opts.onTap);
+    onTapRef.current = opts.onTap;
+
     /** Throws the pawn to `to`, on a surface `toZ` high: the time is what the feet will take to land there. */
     const startFlight = (to: Pt2, toZ: number, now: number) => {
         const s = state.current;
@@ -854,14 +1060,37 @@ export function usePawnMotion(opts: {
             setEmote((e) => ({ id: (e?.id ?? 0) + 1 }));
             return;
         }
-        // A startle keeps its own timeline: the jump rides on top of its leap or stare.
-        if (m.kind !== "startle") {
+        // TAP REACTION (header): the page picks, unless the feet are already up — a tap in
+        // the air always chains the jump.
+        const airborne = s.feetZ > s.lift + FEET_EPS;
+        const onTap = onTapRef.current;
+        const reaction: PawnTapReaction = onTap ? onTap({ airborne }) : "jump";
+        // Any idle stops at once on a tap (a lasting one's page also withdraws its cue).
+        if (m.kind === "idle") {
+            s.startedIdleId = m.id;
+            s.mode = { kind: "pause", until: performance.now() + PAUSE_MIN_MS };
+        }
+        if (reaction === "flinch" && !airborne) {
             s.stepPhase = 0;
-            s.mode = { kind: "pause", until: performance.now() + EMOTE_MS };
+            s.mode = { kind: "flinch", t0: performance.now() };
+            return;
+        }
+        // A startle or a stretch keeps its own timeline: the jump rides on top of it.
+        const mode = s.mode;
+        if (mode.kind !== "startle" && mode.kind !== "stretch") {
+            s.stepPhase = 0;
+            s.mode = { kind: "pause", until: performance.now() + (onTap ? PAUSE_MIN_MS : EMOTE_MS) };
+        }
+        // AIR RING (header): a jump off nothing leaves a ring where the feet kicked off.
+        if (airborne) {
+            airRingIds.current += 1;
+            const ring = { id: airRingIds.current, x: s.pos.x, y: s.pos.y, z: surfaceZRef.current + s.feetZ };
+            setAirRings((rings) => [...rings, ring]);
         }
         // Re-thrown from wherever the feet are.
         s.feetV = POKE_JUMP_SPEED;
-        setEmote((e) => ({ id: (e?.id ?? 0) + 1 }));
+        // The "!" is the default reply; a page with `onTap` replies its own way.
+        if (!onTap) setEmote((e) => ({ id: (e?.id ?? 0) + 1 }));
     };
 
     useEffect(() => {
@@ -890,6 +1119,10 @@ export function usePawnMotion(opts: {
             last = now;
             let hop = 0; // world units off the floor
             let lean = 0; // degrees
+            let arch = 0; // degrees of spine bend (the back stretch only)
+            // The direction lean/arch tip toward (pawnFigure's `bendHeading`): the picture
+            // plane (undefined = its default) except in the back stretch.
+            let bendHeading: number | undefined;
             let sx = 1;
             let sy = 1;
             // Set only by an entrance; otherwise the shadow follows `hop` (see Apply).
@@ -899,6 +1132,32 @@ export function usePawnMotion(opts: {
             const under = stepsRef.current[s.stepIdx];
             if (under?.summit?.closed && s.mode.kind !== "flight" && floorDropRef.current <= 0) startFlight(at, 0, now);
             if (under?.summit?.held && s.mode.kind === "walk") s.mode = { kind: "land" };
+            // A cued stretch starts from a standstill; a cue left waiting too long is dropped.
+            if (s.pendingStretch !== null && now >= s.pendingStretch) {
+                if (now > s.pendingStretch + STRETCH_STALE_MS) s.pendingStretch = null;
+                else if (s.mode.kind === "pause" && !feetAirborne()) {
+                    s.mode = { kind: "stretch", t0: now };
+                    s.pendingStretch = null;
+                }
+            }
+            // A cued idle likewise (a stretch due first goes first); a one-shot left waiting
+            // too long is dropped, a lasting one waits for its standstill.
+            const cuedIdle = s.pendingIdle;
+            if (cuedIdle !== null && now >= cuedIdle.at && s.pendingStretch === null) {
+                if (!LASTING_IDLES.has(cuedIdle.kind) && now > cuedIdle.at + IDLE_STALE_MS) s.pendingIdle = null;
+                else if (s.mode.kind === "pause" && !feetAirborne()) {
+                    s.mode = { kind: "idle", t0: now, idle: cuedIdle.kind, id: cuedIdle.id, endT0: null };
+                    s.startedIdleId = cuedIdle.id;
+                    s.pendingIdle = null;
+                }
+            }
+            // Mirror what is playing to React (IsoPawn's marks), on a change only.
+            const playing = s.mode.kind === "idle" ? s.mode : null;
+            const shown = playing ? `${playing.id}:${playing.endT0 !== null}` : "";
+            if (shown !== s.shownIdle) {
+                s.shownIdle = shown;
+                setActiveIdle(playing ? { id: playing.id, kind: playing.idle, ending: playing.endT0 !== null } : null);
+            }
             const m = s.mode;
 
             if (m.kind === "entrance") {
@@ -1019,6 +1278,56 @@ export function usePawnMotion(opts: {
                         ? { kind: "pause", until: now + PAUSE_MIN_MS + Math.random() * (PAUSE_MAX_MS - PAUSE_MIN_MS) }
                         : { kind: "walk", target: m.resume };
                 }
+            } else if (m.kind === "stretch") {
+                const t = now - m.t0;
+                // Bend in the plane of the pawn's facing: the negative angles below curl
+                // the back away from where it faces (the header's STRETCH).
+                bendHeading = facingRef.current;
+                // `reach` draws it up tall and thin, `squash` presses it down and wide.
+                let reach = 0;
+                let squash = 0;
+                if (t < STRETCH_CROUCH_END) {
+                    // Gather: a little crouch before the reach.
+                    squash = STRETCH_CROUCH * Math.sin((Math.PI / 2) * (t / STRETCH_CROUCH_END));
+                } else if (t < STRETCH_REACH_END) {
+                    // Up and back: the crouch springs into the reach, the lean easing in with it.
+                    const u = (t - STRETCH_CROUCH_END) / (STRETCH_REACH_END - STRETCH_CROUCH_END);
+                    squash = STRETCH_CROUCH * (1 - easeOut(clamp01(u * 2)));
+                    reach = STRETCH_REACH * easeOut(u);
+                    lean = STRETCH_LEAN_DEG * easeInOut(u);
+                    arch = STRETCH_ARCH_DEG * easeInOut(u);
+                } else if (t < STRETCH_HOLD_END) {
+                    // The held reach: a touch further, with a slight quiver.
+                    const u = (t - STRETCH_REACH_END) / (STRETCH_HOLD_END - STRETCH_REACH_END);
+                    reach = STRETCH_REACH + STRETCH_REACH_GROW * Math.sin((Math.PI / 2) * u);
+                    lean = STRETCH_LEAN_DEG;
+                    arch = STRETCH_ARCH_DEG + STRETCH_QUIVER_DEG * Math.sin(2 * Math.PI * STRETCH_QUIVER_CYCLES * u);
+                } else if (t < STRETCH_MS) {
+                    // Let go: straighten up, settling in a soft squash over the back half.
+                    const u = (t - STRETCH_HOLD_END) / (STRETCH_MS - STRETCH_HOLD_END);
+                    const out = 1 - easeInOut(u);
+                    reach = (STRETCH_REACH + STRETCH_REACH_GROW) * out;
+                    lean = STRETCH_LEAN_DEG * out;
+                    arch = STRETCH_ARCH_DEG * out;
+                    squash = STRETCH_SETTLE_SQUASH * Math.sin(Math.PI * clamp01((u - 0.45) / 0.55));
+                } else {
+                    s.mode = { kind: "pause", until: now + PAUSE_MIN_MS };
+                }
+                sx = (1 - 0.5 * reach) * (1 + 0.75 * squash);
+                sy = (1 + reach) * (1 - squash);
+            } else if (m.kind === "idle" || m.kind === "flinch") {
+                // IDLE ANIMATIONS / TAP REACTION (header): the pose curve is pawnIdles.ts's.
+                const p: IdlePose =
+                    m.kind === "flinch"
+                        ? flinchPose(now - m.t0)
+                        : idlePose(m.idle, now - m.t0, m.endT0 === null ? null : now - m.endT0);
+                bendHeading = facingRef.current + p.bendHeadingOffset;
+                lean = p.lean;
+                arch = p.arch;
+                // Reach and squash map to the body's scale as the stretch's do.
+                sx = (1 - 0.5 * p.reach) * (1 + 0.75 * p.squash);
+                sy = (1 + p.reach) * (1 - p.squash);
+                if (p.done) s.mode = { kind: "pause", until: now + PAUSE_MIN_MS };
             } else {
                 const t = now - m.t0;
                 const L = LOOK_UP_LEAN_DEG * m.leanSign;
@@ -1194,7 +1503,12 @@ export function usePawnMotion(opts: {
             }
 
             // Apply: hand the pose to `applyFrame`, which draws it.
-            s.pose = { hop, lean, sx, sy, emoteLean: s.mode.kind === "startle" ? lean : 0, shadowOverride, hidden };
+            s.pose = { hop, lean, arch, bendHeading, sx, sy, emoteLean: s.mode.kind === "startle" ? lean : 0,
+                // Not for knitting: its yarn ball sits on the floor (PawnIdleProps).
+                marksFollowHead: s.mode.kind === "idle" && s.mode.idle !== "knit",
+                shadowOverride,
+                hidden,
+            };
             applyRef.current(false);
 
             const onSummit = !!stepsRef.current[s.stepIdx]?.summit;
@@ -1233,5 +1547,5 @@ export function usePawnMotion(opts: {
         // reached through `applyRef` (see VIEW in the header), so a new camera never restarts it.
     }, [reduced, at, roam]);
 
-    return { refs, emote, poke };
+    return { refs, emote, poke, activeIdle, airRings, dropAirRing };
 }

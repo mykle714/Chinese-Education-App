@@ -12,7 +12,7 @@ import db from '../db.js';
 import { dictTableForLanguage } from '../dal/shared/dictTable.js';
 import { vetTableForLanguage, vetReadFrom, CORE_CATEGORY_EXPR, CORE_CATEGORY_SELECT, barCategoryExpr, masteredBarClause, builtinCollectionClause, type BuiltinCollectionId, typeCategoryExpr, vetSortedClause, WRITING_MASTERY_SELECT, WRITING_FLP_WORD_CLAUSE } from '../dal/shared/vetTable.js';
 import { computeTypeCategory } from '../utils/masteryCompute.js';
-import { flpReadyCountsByBand } from '../contracts/flpReadiness.js';
+import { flpReadyCountsByBand, flpUpcomingReady, type FlpUpcomingRelease } from '../contracts/flpReadiness.js';
 import { rankCardQueue, rankCardQueueCooled, isMarkOnCooldown } from './cardQueueRanking.js';
 import { DICT_COLS, DICT_JOIN } from '../dal/shared/dictJoin.js';
 import type { TTSService } from './TTSService.js';
@@ -68,6 +68,18 @@ export type CollectionFilter =
    * Rides this slot for the same reason as `focus`: no lend tier can fire.
    */
   | { kind: 'outside-focus'; setIds: number[]; remainingIds: number[] };
+
+/**
+ * The working-loop deal's candidates, read once and banded in memory
+ * (`OnDeckVocabService.loadFlpDealPool`). Each call returns up to `limit` cards of
+ * `band` at the head of its queue, skipping any already in `picked`.
+ */
+interface FlpDealPool {
+  /** Off-cooldown cards, in rankFlpEligible order (the quota and top-up tiers). */
+  eligible(band: string, limit: number, picked: VocabEntry[]): VocabEntry[];
+  /** Cooling cards, nearest-to-ready first (rankCardQueueCooled — the cooled tier). */
+  cooled(band: string, limit: number, picked: VocabEntry[]): VocabEntry[];
+}
 
 /** The shape of a working loop: ordered quotas plus the top-up priority. */
 interface LoopConfig {
@@ -762,7 +774,7 @@ export class OnDeckVocabService {
      * (docs/FOCUS_MODE.md § 4). Omitted = every sorted card.
      */
     onlyIds?: number[]
-  ): Promise<{ counts: Record<string, number> }> {
+  ): Promise<{ counts: Record<string, number>; upcoming: FlpUpcomingRelease[] }> {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
@@ -784,7 +796,11 @@ export class OnDeckVocabService {
         typedMarkHistory: row.typedMarkHistory ?? undefined,
         writingMastery: row.writingMastery,
       }));
-      return { counts: flpReadyCountsByBand(rows, Date.now(), world) };
+      const now = Date.now();
+      // `upcoming`: the cooling cards' release schedule, from the same rows, so the Deck
+      // Tower can grow card by card as each comes off cooldown (docs/DECK_TOWER.md §
+      // "Cooldown releases") without polling this endpoint.
+      return { counts: flpReadyCountsByBand(rows, now, world), upcoming: flpUpcomingReady(rows, now, world) };
     } finally {
       client.release();
     }
@@ -849,9 +865,10 @@ export class OnDeckVocabService {
   }
 
   /**
-   * Every flp candidate row of one category (DICT-joined, category-stamped,
-   * UN-enriched), newest first. The single candidate source for BOTH flp paths — the
-   * initial working loop and the mark-endpoint refill — so the two cannot drift.
+   * Every flp candidate row of one category — or of every band, for the working-loop
+   * deal's pool (`loadFlpDealPool`) — DICT-joined, category-stamped, UN-enriched,
+   * newest first. The single candidate source for BOTH flp paths — the initial working
+   * loop and the mark-endpoint refill — so the two cannot drift.
    * `excludeIds` keeps already-chosen cards out.
    *
    * Deliberately UNLIMITED. Cooldown eligibility and the two-tier queue ranking
@@ -859,12 +876,19 @@ export class OnDeckVocabService {
    * re-implement over jsonb to order by; a partial scan would rank a random subset and
    * silently return the wrong card. The refill path has always scanned a category in
    * full for the same reason. Enrichment stays deferred to only the chosen cards, so
-   * the cost here is one narrow read per category, not per candidate.
+   * the cost here is one read per call, not per candidate — and the deal makes one call
+   * for its whole pool rather than one per band and tier.
    */
   private async fetchFlpCandidates(
     client: PoolClient,
     userId: string,
-    category: string,
+    /**
+     * The band to read, on `world`'s bar. `null` reads EVERY band in one pass — the
+     * working-loop deal's pool (`getDistributedWorkingLoop`), which bands the rows in app
+     * code (`barCategory`) instead of re-running this query, and the per-row
+     * `barCategoryExpr`, once per band.
+     */
+    category: string | null,
     language: string,
     excludeIds: number[],
     collection?: CollectionFilter | null,
@@ -873,18 +897,28 @@ export class OnDeckVocabService {
     /** The bar whose band `category` is read off — core except for the reading flp. */
     world: MasteryWorldId = OnDeckVocabService.FLP_WORLD
   ): Promise<VocabEntry[]> {
-    // Optional focus-mode scope; $6 is the next free placeholder after the five below.
-    const scope = this.focusPlayFilter(collection, 6);
+    // Fixed placeholders: $1 user, $2 excluded ids, $3 language, $4 lent ids. The band
+    // ($5, when one is asked for) and the focus scope take the next free ones. Numbered
+    // as they are added, because an unreferenced placeholder is a Postgres error
+    // ("could not determine data type of parameter").
+    const params: unknown[] = [userId, excludeIds, language, lentIds];
+    let bandClause = '';
+    if (category !== null) {
+      params.push(category);
+      bandClause = `AND ${barCategoryExpr(world)} = $${params.length}`;
+    }
+    const scope = this.focusPlayFilter(collection, params.length + 1);
+    params.push(...scope.params);
     const result = await client.query<VocabEntry>(`
       SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}, ${CORE_CATEGORY_SELECT}
       FROM ${vetReadFrom(language)} ${DICT_JOIN}
       WHERE ve."userId" = $1
-      AND ve."language" = $4
+      AND ve."language" = $3
       -- SORTED ONLY: same rule as the game pools — a lent card enters a round only
       -- through the last-resort lend tier, by id (docs/PROVISIONAL_CARDS.md § 4b).
-      AND (${vetSortedClause()} OR ve.id = ANY($5::int[]))
-      AND ${barCategoryExpr(world)} = $2
-      AND ve.id != ALL($3::int[])
+      AND (${vetSortedClause()} OR ve.id = ANY($4::int[]))
+      ${bandClause}
+      AND ve.id != ALL($2::int[])
       ${world === 'writing' ? WRITING_FLP_WORD_CLAUSE : ''}
       ${scope.clause}
       -- Stable tiebreak only; the real ordering is rankFlpEligible in app code, which
@@ -892,7 +926,7 @@ export class OnDeckVocabService {
       -- stale cards of equal ease, which keep this order — own-first is repeated here
       -- so the tiebreak agrees with the ranker.
       ORDER BY (ve."starterPackBucket" = 'provisional') ASC, ve."createdAt" DESC
-    `, [userId, category, excludeIds, language, lentIds, ...scope.params]);
+    `, params);
     return result.rows;
   }
 
@@ -1080,56 +1114,73 @@ export class OnDeckVocabService {
   }
 
   /**
-   * The top `limit` flp-eligible cards of one category for the initial working loop —
-   * the head of that category's queue (rankFlpEligible).
-   * `excludeIds` keeps already-picked cards out. Returns fewer than `limit`, including zero, when the category is spent.
+   * The working-loop deal's candidate pool: every flp candidate row, read ONCE
+   * (`fetchFlpCandidates` with no band), banded in app code on `world`'s bar and ranked
+   * once per band. The deal's quota, top-up and cooled tiers then take cards from it in
+   * memory.
+   *
+   * Until 2026-11-08 each tier re-ran the candidate query for one band — five or more
+   * full reads per deal, each evaluating `barCategoryExpr` on every one of the user's
+   * rows. On a 400-card deck that was most of a ~0.8 s deal (dev), and the Deck Tower's
+   * first dive waits on the deal (docs/DECK_TOWER.md § "Studying the tower").
+   *
+   * Equivalent to the per-band reads: the bands come from `barCategory`, the TS mirror of
+   * `barCategoryExpr` (the same banding the tower's ready counts use,
+   * `getFlpReadyCounts`); both rankers score each card on its own, so ranking a band once
+   * and skipping the cards already picked yields the same order as re-querying with
+   * `excludeIds`; and grouping keeps the query's ORDER BY as the rankers' stable tiebreak.
+   *
+   * Referenced by docs/MASTERY_REWORK.md (§ "Ordering", the candidate query) and
+   * docs/DEFERRED_WORK.md (the scaling table's refill row).
    */
-  private async fetchEligibleCategoryCards(
+  private async loadFlpDealPool(
     client: PoolClient,
     userId: string,
     language: string,
-    category: string,
-    limit: number,
-    excludeIds: number[],
     now: number,
-    collection?: CollectionFilter | null,
-    lentIds: number[] = [],
-    world: MasteryWorldId = OnDeckVocabService.FLP_WORLD
-  ): Promise<VocabEntry[]> {
-    if (limit <= 0) return [];
-    const candidates = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, lentIds, world);
-    return this.rankFlpEligible(candidates, now, world).slice(0, limit);
-  }
-
-  /**
-   * The COOLING cards of one category, nearest-to-ready first — the flp's
-   * next-to-last fill tier (2026-08-20).
-   *
-   * The flp had no cooled tier at all: a loop that could not be filled from rested
-   * cards either lent new ones or came back short. Both were worse than re-showing a
-   * card the learner chose, so the ladder now reads fresh → borrowed → COOLED → lent
-   * (docs/PROVISIONAL_CARDS.md § 4b).
-   *
-   * These cards are shown but earn nothing: a mark fired at a still-cooling clock is
-   * dropped at `POST /api/flashcards/mark`. That is the point of the cooldown — a card
-   * answered correctly minutes ago has nothing left to teach today — and it is a
-   * better answer than growing the learner's deck with words they never chose.
-   */
-  private async fetchCooledCategoryCards(
-    client: PoolClient,
-    userId: string,
-    language: string,
-    category: string,
-    limit: number,
-    excludeIds: number[],
-    now: number,
-    collection?: CollectionFilter | null,
-    lentIds: number[] = [],
-    world: MasteryWorldId = OnDeckVocabService.FLP_WORLD
-  ): Promise<VocabEntry[]> {
-    if (limit <= 0) return [];
-    const candidates = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, lentIds, world);
-    return rankCardQueueCooled(candidates, now, { world }).slice(0, limit);
+    collection: CollectionFilter | null | undefined,
+    lentIds: number[],
+    world: MasteryWorldId
+  ): Promise<FlpDealPool> {
+    const rows = await this.fetchFlpCandidates(client, userId, null, language, [], collection, lentIds, world);
+    const byBand = new Map<string, VocabEntry[]>();
+    for (const card of rows) {
+      const band = barCategory(card.typedMarkHistory, world, card.writingMastery);
+      const list = byBand.get(band);
+      if (list) list.push(card);
+      else byBand.set(band, [card]);
+    }
+    // Ranked lazily, once per band and tier: a deal often never reaches the cooled tier.
+    const eligible = new Map<string, VocabEntry[]>();
+    const cooled = new Map<string, VocabEntry[]>();
+    const take = (ranked: VocabEntry[], limit: number, picked: VocabEntry[]): VocabEntry[] => {
+      if (limit <= 0) return [];
+      const pickedIds = new Set(picked.map((c) => c.id));
+      const out: VocabEntry[] = [];
+      for (const card of ranked) {
+        if (out.length >= limit) break;
+        if (!pickedIds.has(card.id)) out.push(card);
+      }
+      return out;
+    };
+    return {
+      eligible: (band, limit, picked) => {
+        let ranked = eligible.get(band);
+        if (!ranked) {
+          ranked = this.rankFlpEligible(byBand.get(band) ?? [], now, world);
+          eligible.set(band, ranked);
+        }
+        return take(ranked, limit, picked);
+      },
+      cooled: (band, limit, picked) => {
+        let ranked = cooled.get(band);
+        if (!ranked) {
+          ranked = rankCardQueueCooled(byBand.get(band) ?? [], now, { world });
+          cooled.set(band, ranked);
+        }
+        return take(ranked, limit, picked);
+      },
+    };
   }
 
   /**
@@ -1171,10 +1222,11 @@ export class OnDeckVocabService {
     // FILTERED TO `lentIds` (not just excluded): passing `lentIds` widens the
     // candidate query to "sorted OR lent", so without this filter the pass could hand
     // back an ordinary sorted card instead of the lent row this call exists to place.
-    // Goes through `fetchFlpCandidates` rather than `fetchEligibleCategoryCards`
-    // because the latter applies its LIMIT before we could filter: a category holding
-    // plenty of ordinary sorted cards would fill the slice with those and drop the
-    // lent rows this call exists to return. The candidate query is deliberately
+    // Goes through `fetchFlpCandidates` rather than the deal's pool (loadFlpDealPool):
+    // the rows lent here may have just been minted, after the pool was read, and taking
+    // a band's head before filtering would let a category holding plenty of ordinary
+    // sorted cards fill the slice with those and drop the lent rows this call exists to
+    // return. The candidate query is deliberately
     // unlimited (see its docblock), so filtering first costs nothing.
     const lent = new Set(lentIds);
     const rows: VocabEntry[] = [];
@@ -1257,12 +1309,12 @@ export class OnDeckVocabService {
       const loopCategories: string[] = [...STUDY_MIX_FILL_ORDER];
       const workingLoop: VocabEntry[] = [];
 
-      // Initial quota fetches (eligibility-filtered).
+      // One read of every candidate, banded and ranked in memory (loadFlpDealPool).
+      const pool = await this.loadFlpDealPool(client, userId, language, now, collection, lentIds, world);
+
+      // Initial quotas (eligibility-filtered).
       for (const { category, count } of config.quotas) {
-        const rows = await this.fetchEligibleCategoryCards(
-          client, userId, language, category, count, workingLoop.map(c => c.id), now, collection, lentIds, world
-        );
-        workingLoop.push(...rows);
+        workingLoop.push(...pool.eligible(category, count, workingLoop));
       }
 
       // The cross-category top-up runs below, as tier 1 of the shared fill ladder.
@@ -1289,22 +1341,14 @@ export class OnDeckVocabService {
       // See canLendProvisional and docs/PROVISIONAL_CARDS.md.
       for (const category of fillOrder) {
         if (workingLoop.length >= WORKING_LOOP_SIZE) break;
-        const rows = await this.fetchEligibleCategoryCards(
-          client, userId, language, category,
-          WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection, lentIds, world
-        );
-        workingLoop.push(...rows);
+        workingLoop.push(...pool.eligible(category, WORKING_LOOP_SIZE - workingLoop.length, workingLoop));
       }
 
       // 2. COOLING cards, nearest-to-ready first, across every category this loop may
       //    draw from.
       for (const category of loopCategories) {
         if (workingLoop.length >= WORKING_LOOP_SIZE) break;
-        const rows = await this.fetchCooledCategoryCards(
-          client, userId, language, category,
-          WORKING_LOOP_SIZE - workingLoop.length, workingLoop.map(c => c.id), now, collection, lentIds, world
-        );
-        workingLoop.push(...rows);
+        workingLoop.push(...pool.cooled(category, WORKING_LOOP_SIZE - workingLoop.length, workingLoop));
       }
 
       // 3. LEND — the learner really is short of cards.

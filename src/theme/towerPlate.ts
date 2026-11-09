@@ -3,6 +3,7 @@ import { COLORS } from "./colors";
 import { WEIGHT } from "./scale";
 import { FONTS } from "./fonts";
 import { keycapPressSx } from "./keycapPress";
+import { roundedEdgeFilletDown, roundedEdgeRimLightTop } from "./roundedEdge";
 
 /**
  * The three tones of the tower's floor plate (iso palette `bandMaterial`): its face and
@@ -66,9 +67,14 @@ export const PLATE_WALL_PX = 5;
 export const TOWER_STUDY_FONT = FONTS.cjk;
 
 
-/** Rest: the wall under the face, then the contact shadow. Pressed: flush, no wall, no shadow. */
-const restShadow = (tones: PlateTones) => `0 ${PLATE_WALL_PX}px 0 ${tones.right}, ${SHADOW.chip}`;
-const pressedShadow = (tones: PlateTones) => `0 0 0 ${tones.right}`;
+/**
+ * Rest: the hairline rounded edge (theme/roundedEdge.ts, straight-lip form — a 1px top rim
+ * light, a 0.5px fillet), the wall under the face, then the contact shadow. Pressed: flush,
+ * no wall, no fillet, no shadow; the rim light stays.
+ */
+const restShadow = (tones: PlateTones) =>
+    `${roundedEdgeRimLightTop(tones.top)}, ${roundedEdgeFilletDown(tones.top, tones.right)}, 0 ${PLATE_WALL_PX}px 0 ${tones.right}, ${SHADOW.chip}`;
+const pressedShadow = (tones: PlateTones) => `${roundedEdgeRimLightTop(tones.top)}, 0 0 0 ${tones.right}`;
 
 /**
  * The plate's SLAB alone — fill, wall, contact shadow and the push-down — with none of

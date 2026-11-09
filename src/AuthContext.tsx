@@ -7,6 +7,8 @@ import { API_BASE_URL } from './constants';
 // of the app's three User declarations with the current field set — see
 // docs/ARCHITECTURE_REVIEW.md finding 2.
 import type { Language, User } from './types';
+import type { MasteryWorldId } from '../server/contracts/wire';
+import type { GoalsFocusAutoEnabled } from '../server/contracts/focusMode';
 import { apiPost, apiPut, apiDelete } from './api/http';
 import { setFetchInterceptorHandlers, setupFetchInterceptor } from './utils/fetchInterceptor';
 import { setRefreshHandlers, attemptTokenRefresh, endServerSession } from './utils/tokenRefresh';
@@ -55,7 +57,8 @@ interface AuthContextType {
     deleteAccount: (password: string) => Promise<void>;
     updateLanguage: (language: Language) => Promise<void>;
     updateAvatar: (avatarIconId: string | null) => Promise<void>;
-    updateGoals: (goals: { readingGoal?: boolean; writingGoal?: boolean }) => Promise<void>;
+    /** Resolves to the worlds whose focus mode the server auto-enabled (docs/FOCUS_MODE.md § 1a). */
+    updateGoals: (goals: { readingGoal?: boolean; writingGoal?: boolean }) => Promise<MasteryWorldId[]>;
     updateDisplaySettings: (settings: { showSegmentSpaces?: boolean; chineseFont?: string }) => Promise<void>;
     updateDemographics: (demographics: Demographics) => Promise<void>;
     error: string | null;
@@ -406,7 +409,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
      *
      * `updateLanguage` / `updateAvatar` / `updateGoals` / `updateDisplaySettings` were
      * four ~30-line functions differing ONLY in URL, payload and error string — see
-     * docs/ARCHITECTURE_REVIEW.md finding 5. They are now four one-liners over this.
+     * docs/ARCHITECTURE_REVIEW.md finding 5. Three are now one-liners over this;
+     * `updateGoals` writes its own PUT because it needs the response (see below).
      * Each PUT still hits its own endpoint (the routes validate different fields), and
      * the local user state is patched optimistically with the same object that was sent.
      */
@@ -427,9 +431,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
      * Toggle the account's Reading / Writing mastery goals (docs/MASTERY_REWORK.md).
      * Enabling a goal can demote some Mastered cards to Comfortable (the pbh math
      * reweights across more goal tracks) — surfaced in the account settings copy.
+     *
+     * Not routed through `updateProfile`, which drops the response: switching a goal on
+     * can also switch that world's focus mode on (docs/FOCUS_MODE.md § 1a), and the
+     * caller (AccountPane) needs `focusAutoEnabled` to owe the explaining popup.
      */
     const updateGoals = (goals: { readingGoal?: boolean; writingGoal?: boolean }) =>
-        updateProfile('goals', 'update your goals', goals);
+        withAuth('update your goals', async () => {
+            const data = await apiPut<Partial<GoalsFocusAutoEnabled>>('/api/users/goals', goals);
+            setUser((current) => (current ? { ...current, ...goals } : current));
+            return Array.isArray(data?.focusAutoEnabled) ? data.focusAutoEnabled : [];
+        });
 
     /**
      * Toggle the account's display preferences — word spacing in segmented sentences

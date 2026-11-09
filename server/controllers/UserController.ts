@@ -4,6 +4,9 @@ import { IIcons8DAL } from '../dal/interfaces/IIcons8DAL.js';
 import { NightMarketWorldService } from '../services/NightMarketWorldService.js';
 import { ValidationError, DuplicateError, NotFoundError, DALError } from '../types/dal.js';
 import { CHINESE_FONT_IDS } from '../contracts/wire.js';
+import type { GoalsFocusAutoEnabled } from '../contracts/focusMode.js';
+import { FocusModeService } from '../services/FocusModeService.js';
+import { getUserLanguage } from '../utils/controllerUtils.js';
 
 // The access-token cookie lives at root (sent with every API request); the
 // refresh-token cookie is scoped to /api/auth so it is only ever sent to the
@@ -30,6 +33,8 @@ export class UserController {
     private userService: UserService,
     private icons8DAL: IIcons8DAL,
     private nightMarketWorldService: NightMarketWorldService,
+    /** Auto-enables focus when a Reading / Writing goal opens a crowded world (docs/FOCUS_MODE.md § 1a). */
+    private focusModeService: FocusModeService,
   ) {}
 
   /**
@@ -300,8 +305,27 @@ export class UserController {
         return;
       }
 
-      const updatedUser = await this.userService.updateGoals(userId, { readingGoal, writingGoal });
-      res.json(updatedUser);
+      const { user: updatedUser, enabledWorlds } = await this.userService.updateGoals(userId, { readingGoal, writingGoal });
+
+      // A goal just switched on opens its world with every sorted card ready at once — a
+      // giant tower. If that pile is past the lever's threshold, switch focus on for the
+      // learner (docs/FOCUS_MODE.md § 1a). In the account's selected language: focus is
+      // per (user, language). Best-effort: a failure here must not fail the goal write,
+      // which has already committed; the learner can still pull the lever.
+      const response: typeof updatedUser & GoalsFocusAutoEnabled = { ...updatedUser, focusAutoEnabled: [] };
+      if (enabledWorlds.length > 0) {
+        try {
+          const language = await getUserLanguage(userId);
+          for (const world of enabledWorlds) {
+            if (await this.focusModeService.autoEnableIfCrowded(userId, language, world)) {
+              response.focusAutoEnabled.push(world);
+            }
+          }
+        } catch (focusError) {
+          console.error('UserController.updateGoals: focus auto-enable failed', focusError);
+        }
+      }
+      res.json(response);
     } catch (error) {
       this.handleError(error, res);
     }

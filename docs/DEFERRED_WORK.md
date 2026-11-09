@@ -149,7 +149,7 @@ carries `suppressed: true`, and **no client reads it today**.
 
 | | |
 |---|---|
-| **What** | Artboard elements whose data does not reach the client. **(a)** Artboard 2's Mastered tile reads **"+17 this week"**; `masteredAt` (migration 142) makes the delta derivable but no endpoint exposes it, and `LibraryDuo` now renders no sub-caption at all (label + figure only). ~~**(b)** Artboard 25's "How the parts make the word" paragraph~~ — **built 2026-11-07**: `breakdownElaboration` is on the wire and rendered under the breakdown rows (BREAKDOWN_FEATURE_IMPLEMENTATION.md, Frontend Integration). Only (a) remains. |
+| **What** | Artboard elements whose data does not reach the client. **(a)** Artboard 2's Mastered tile reads **"+17 this week"**; `masteredAt` (migration 142) makes the delta derivable but no endpoint exposes it as such. ⚠️ **2026-11-08:** `LibraryDuo` (the tile's host) has since been deleted (c5541a9), and `GET /api/users/me/velocity` (`VelocityController.getVelocity`) now returns per-boundary `boundaryCounts` over `windowDays`, which `LibraryShelfWithVelocity` draws. That likely supersedes (a). Confirm it, then close this item. ~~**(b)** Artboard 25's "How the parts make the word" paragraph~~ — **built 2026-11-07**: `breakdownElaboration` is on the wire and rendered under the breakdown rows (BREAKDOWN_FEATURE_IMPLEMENTATION.md, Frontend Integration). Only (a) remains. |
 | **Why deferred** | (a) and (b) were each one column on an existing response plus its enrichment path; neither blocked the layout, and both were cheaper to leave a hole for than to add mid-pass. |
 | **Cost of leaving it** | (a) the sheet's Mastered tile shows a total with no sense of movement, which was the tile's whole argument for existing beside Learning. (b) resolved. |
 | **Trigger** | (a) when a velocity/streak pass is next touching `masteredAt` |
@@ -211,7 +211,7 @@ need to decide. A 502/503 for an upstream failure would make the distinction che
 
 | | |
 |---|---|
-| **What** | Roughly ten call sites still write `boxShadow: 2 \| 3 \| 4 \| 6` — MUI's own elevation index, which resolves to MUI's default **pure-black** shadow ladder. Convert them to `SHADOW` (`src/theme/shadows.ts`) like every other card and floating surface. Known sites: `src/components/FlashCard.tsx` (4), `src/components/VocabDisplayCard.tsx`, `src/features/flashcards/FlashcardsPage.tsx` (3), `src/components/SegmentedSentenceDisplay.tsx`, `src/components/VocabEntryCards.tsx`, `src/games/word-search/WordSearchGrid.tsx` |
+| **What** | Roughly ten call sites still write `boxShadow: 2 \| 3 \| 4 \| 6` — MUI's own elevation index, which resolves to MUI's default **pure-black** shadow ladder. Convert them to `SHADOW` (`src/theme/shadows.ts`) like every other card and floating surface. Sites as of 2026-11-08 (9): `src/components/FlashCard.tsx` (4), `src/features/flashcards/FlashcardsPage.tsx` (3), `src/games/word-search/WordSearchGrid.tsx`, `src/components/CpcdPopup.tsx`. (`VocabDisplayCard` and `SegmentedSentenceDisplay` have been converted; `VocabEntryCards.tsx` was deleted.) |
 | **Why deferred** | Split out of the D13 shadow adoption on 2026-08-24 to keep that pass reviewable. It is a different KIND of edit: the `rgba(...)` sites were a mechanical find-and-replace, but a numeric elevation carries no information about what the surface IS, so each one has to be read and assigned a role token by hand (`raised`? `float`? `menu`?). Several are also on components that predate the redesign and may be deleted rather than converted |
 | **Cost of leaving it** | These are **invisible to the obvious check**: a `grep` for `rgba(0` over `src/` now comes back almost clean, which reads as "the shadow migration is done" when ten surfaces are still on MUI's black ladder. That false all-clear is the real cost — more than the visual drift, which is subtle |
 | **Trigger** | Whichever entry next touches one of those files (`FlashCard` and `VocabDisplayCard` in particular are old and un-converted), or a deliberate sweep. Do it with `git grep -nE "boxShadow: [0-9]"` rather than from this list, which will go stale |
@@ -309,7 +309,7 @@ something.
 
 | | |
 |---|---|
-| **What** | Run `scripts/backfill/chinese/backfill-breakdown-senses.js --reconcile` **unscoped** (no `--words=`, no `--shard=`) over the whole zh corpus, in oracle mode, until the `breakdownSenseOrphan` drift probe returns 0. ⚠️ `--reconcile`, never `--force` — `--force` re-tags all ~9.5k rows and re-spends every prompt to fix the ~1.4k that drifted |
+| **What** | Run `server/scripts/backfill/chinese/backfill-breakdown-senses.js --reconcile` **unscoped** (no `--words=`, no `--shard=`) over the whole zh corpus, in oracle mode, until the `breakdownSenseOrphan` drift probe returns 0. ⚠️ `--reconcile`, never `--force` — `--force` re-tags all ~9.5k rows and re-spends every prompt to fix the ~1.4k that drifted |
 | **Why deferred** | It needs a dedicated run of its own. Oracle rounds are scoped to a sharded 50-row candidate batch, and the orphan backlog is corpus-wide |
 | **Cost of leaving it** | **The backlog grows every round and scoped rounds structurally cannot catch up**: 1185 → 1264 → 1290 → 1383 over four rounds, and 1358 → 1475 (+117) in the 2026-09-22T09:29Z round alone, then 1496 → 1674 (+178) in the 2026-09-22T16:26Z shard-0/2 round, which clustered 字 and 学 — components of hundreds of headwords. Each round's re-clustering renames cluster `sense` labels and orphans more rows elsewhere in the corpus than the round's own batch contains, so each round reconciles ~44 rows and creates ~137. The rise is worst exactly where the clusterer is most useful — 基/报/场/外 are components of hundreds of headwords, so refreshing 43 of them orphaned ~150 others. A round that shows a *fall* (e.g. 1443 → 1395, or 1669 → 1639 in the 2026-09-23T03:27Z shard-0/2 round, whose 38 clustered rows sat on 德-/心- compounds) is a round whose batch happened to sit on rare characters, not evidence of convergence. An orphaned pointer means a bt component shows a sense label that no longer exists on that character's entry. **The 2026-09-24T16:17Z shard-0/2 round is the cleanest evidence the sweep would work**: its planner named `backfill-breakdown-senses` as the *only* script with work, so the round ran no clusterer at all and the probe fell 1303 → 1253 — exactly −50, the batch size, with nothing created. That isolates the two effects: reconciling is exactly 1:1, and every net rise seen above comes from the clusterer running in the same round. An unscoped sweep, which by construction clusters nothing, converges in one pass. The 2026-09-24T19:32Z shard-0/2 round adds a mid-sized data point: 49 clustered rows (科, 管, 空-, 神- compounds) + 41 reconciled rows moved the probe 1120 → 1149 (+29 net), and 4 of the rows it orphaned were inside its own batch and had to be re-tagged in a second pass within the round |
 | **Trigger** | Any oracle session with a full five-hour window free, or the next time the bt sense labels are worked on. Take the §2 det backup first, as any oracle round does |
@@ -364,7 +364,7 @@ with a brief static avatar glow. Precedent for honoring the setting: `IWSceneInt
 **Why deferred.** The owner chose to ignore the setting for the first build.
 
 **Cost to leave.** A learner sensitive to motion gets a large animation (up to ~5 s, 1.8×
-scale) once a day per language, on the Deck Tower (the footer's Deck tab).
+scale) once a day per language, on the Deck Tower (the footer's Flashcards tab).
 
 **Trigger.** Any accessibility pass, or any feedback about motion from a learner.
 
@@ -418,7 +418,7 @@ any accessibility pass.
 
 | | |
 |---|---|
-| **What** | acp's bins (`src/features/discover/SortBins.tsx`) are the first importer of `src/features/deckTower/iso` from outside the Deck Tower feature. The kit's own index says it moves to `src/components/iso/` when that happens |
+| **What** | `src/features/deckTower/iso` is imported from outside the Deck Tower feature by **four** acp files as of 2026-11-08: `SortBins.tsx`, `sortTimeOfDay.ts`, `sortCardStock.ts` and `SkippedCardsSheet.tsx` (all in `src/features/discover/`), plus the flp's hint pawn (`src/features/flashcards/FlashcardsLearnPage/hintPawn/HintPawn.tsx`, docs/HINT_PAWN.md). The kit's own index says it moves to `src/components/iso/` once that happens. **The "third importer" trigger has been met.** |
 | **Why deferred** | A wide `git mv` across files other sessions were editing on the same day; the cross-feature import works meanwhile |
 | **Cost of leaving it** | A layering violation (features/ importing another feature's internals) that the next importer will copy |
 | **Trigger** | The next quiet day on `src/features/deckTower/`, or a third importer |
@@ -430,7 +430,7 @@ any accessibility pass.
 
 | | |
 |---|---|
-| **What** | Three copies of the same sRGB hex lerp: `src/features/deckTower/iso/palette.ts` → `mixHex` (exported), a private one in `src/features/flashcards/FlashcardsLearnPage/eipPalette.ts`, and a private one in `src/timeOfDay/tier2Look.ts`. Collapse them into one shared colour util (e.g. `src/theme/`) |
+| **What** | The shared copy now exists at `src/theme/shadeHex.ts` → `mixHex`. `src/features/deckTower/iso/palette.ts` re-exports it, and `eipPalette.ts` imports it. **One duplicate remains:** the private `mixHex` in `src/timeOfDay/tier2Look.ts`, which can now import `theme/shadeHex` directly because theme/ is shared |
 | **Why deferred** | The shared `src/timeOfDay/` module may not import from a feature, and the other two files were being edited by other sessions the same day |
 | **Cost of leaving it** | A fix to one (clamping, short hex, alpha) silently misses the other two |
 | **Trigger** | Item 28 (the iso kit move), or the next touch of any of the three |
@@ -473,6 +473,41 @@ were deleted from the code. Docs: [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md),
 | **Cost of leaving it** | Spanish cards and sense lists keep their long headlines; every es word the cron promotes with a single long gloss arrives without a short one |
 | **Trigger** | Spanish work resumes |
 | **References** | [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) § "Short lead gloss per sense"; [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) § 3 |
+
+### 36. Scaling: where server load concentrates, and what breaks first
+
+*Added 2026-11-08 from a code-shape load analysis (no PPE measurements yet). "Checked"
+below means the claim was confirmed by reading the cited code; "inferred" means it comes
+from code shape alone, with no EXPLAIN or production data behind it.*
+
+| | |
+|---|---|
+| **What** | Work through the concerns in the table below, measuring first (row 0) so the order is driven by real numbers rather than code shape |
+| **Why deferred** | Current PPE traffic is test-scale; nothing here is failing today |
+| **Cost of leaving it** | The pool starvation (row 2) degrades **silently**: cards arrive unenriched or with `hasAudio=false` instead of erroring, so it would read as flaky data rather than load. Per-swipe cost grows with deck size |
+| **Trigger** | Before any public launch or marketing push, or when PPE shows either symptom: missing audio or related words on cards, or `connectionTimeoutMillis` errors in `cow-backend` logs |
+| **References** | the files named per row; [CLIENT_PERF_DIAGNOSTICS.md](./CLIENT_PERF_DIAGNOSTICS.md) (client-side latency telemetry, complementary to this) |
+
+**Baseline client traffic (for sizing).** A user actively studying sends about 22–25
+requests a minute, about half of them writes. Most of it is one `POST /api/flashcards/mark`
+plus one `POST /api/tts/synthesize` per card, plus 1–2 `POST /api/users/minutePoints/increment`
+a minute. There is no WebSocket and no meaningful polling, so load scales with **active
+study time**, not with open tabs.
+
+| # | Concern | Evidence | Fix direction |
+|---|---|---|---|
+| 0 | **No measurement yet.** PPE has `pg_stat_statements` (`docker-compose.ppe.yml`, `track=all`); dev's `docker-compose.yml` does not, so query cost cannot be profiled locally | Checked | Read the top queries by `total_exec_time` plus table row counts on PPE; add `pg_stat_statements` to the dev compose too |
+| 1 | **The replacement-card refill inside every mark.** `FlashcardMarkService.applyMark` → `OnDeckVocabService.getNextLibraryCardWithFallback` can call `fetchFlpCandidates` up to ~8 times. Each call is a whole-deck `DICT_JOIN` read filtered on `barCategoryExpr` (JSONB, unindexable), returning heavy JSONB columns, then the enrichment pipeline. About 15–30 SQL statements per correct swipe. (The working-loop deal had the same shape — five or more such reads per deal, ~0.7 s on a 400-card dev deck — and since 2026-11-08 reads its candidates once: `loadFlpDealPool`, ~0.25 s) | Inferred (call count from code shape); the deal measured | Read only the needed band; select narrow columns for ranking and fetch the winner's full row afterwards; a stored generated column + index for `compute_core_category` (it is IMMUTABLE) |
+| 2 | **Nested pool acquisition.** `getDistributedWorkingLoop`, `getNextLibraryCardWithFallback`, the game-pool and word-search-grid reads hold one `db.getClient()` for the whole call. Meanwhile `enrichMultipleWithRelatedWords` / `enrichMultipleWithUsedIn` / `prewarmAudio` each take **another pool client per card** via `Promise.all`. A 10-card deal can want around 30 clients; the pool is `max: 20` with a 2s connect timeout (`server/db-config.ts`) | Checked (`OnDeckVocabService`) | Release the outer client before enrichment and pre-warm, or thread the same client through; bound the per-card fan-out |
+| 3 | **Full scan per single-character card.** `VocabEntryDAL.findUsedInForCharacter` pass 2 uses `position($3 IN d.word1) > 0` over ~115k `dictionaryentries_zh` rows, run once per single-character card in every deal and refill. `findWritingUsedInForCharacter` has the same shape | Checked (predicate); index absence inferred from migrations | pg_trgm GIN index on `dictionaryentries_zh.word1` (the extension is already installed), or precompute used-in lists |
+| 4 | **TTS pre-warm blocks the request, and its cache resets on deploy.** `TTSService` `CACHE_DIR` resolves to `<dist>/../cache/tts`, which is not a volume in `docker-compose.ppe.yml`, so every `up --build` empties it and the next deals wait on synchronous Google calls with no timeout. A cache hit still does a full `fs.readFile` (`hasCachedFile` exists but is unused) plus an `UPDATE "ttsVoice"` on its own pool client | Checked | Mount the cache dir as a volume; use `hasCachedFile`; add a timeout; skip the `UPDATE` once `ttsVoice` is already set; longer term a shared object store (see item 13) |
+| 5 | **API JSON is not compressed.** `nginx.conf` `gzip_types` leaves out `application/json` and `image/svg+xml`, and the server has no `compression` middleware. The worst case is `GET /api/onDeck/collectionCards`: a whole deck with no paging, enriched (substring extraction + `findMultipleByWord1` + greedy segmentation per example sentence) and sorted on the client | Checked (gzip); payload size inferred | Add both types to `gzip_types`; then consider paging or trimming fields for `collectionCards`. (`libraryCards` has the same shape but no caller, see item 35) |
+| 6 | **Dictionary search scans with a regex per row, twice.** `DictionaryDAL` search applies `STRIPPED_ALL_GLOSSES` (`regexp_replace(definitions::text, …) ~* …`) to every row, then repeats the WHERE in a separate `COUNT(*)`. In-code timings: 80–260 ms per term on dev. GET requests are not rate-limited | Inferred | Full-text or trigram index on a stored stripped-gloss column; drop or approximate the separate count; cache hot terms |
+| 7 | **`WRITING_MASTERY_SELECT` on every vocab read.** `compute_writing_mastery` (migration 170) runs one `vocabentries_zh` probe per character for every multi-character `entryKey`, including Spanish rows | Inferred | Only select it for the writing world and zh rows |
+| 8 | **Minute-point increment is ~8 statements, with no transaction.** `UserMinutePointsService.incrementMinutePoints`, once a minute per active user, and twice a minute while the eip is open: each `useMinutePoints` instance ticks independently, and the server's 59s cooldown dedupes the write but both requests still arrive | Inferred | One shared client-side minute-points timer (a context, not per-flame hooks); batch the server statements |
+| 9 | **Blockers to running more than one backend.** One Node process (`server/Dockerfile`); in-memory `express-rate-limit` stores (`server/middleware/rateLimits.ts`); in-memory iw state (`services/iw/turnBudget.ts`, `services/iw/sceneTranscript.ts`); local-disk TTS cache; nginx `proxy_pass` with no `upstream`/keepalive and `Connection 'upgrade'` forced on every `/api` request | Checked (process, limiters); nginx checked | Shared store (Redis or Postgres) for limiters and iw state; nginx `upstream` with `keepalive`; then cluster/replicas |
+| 10 | **No query timeouts.** No `statement_timeout` or `idle_in_transaction_session_timeout` in `server/`, `database/` or either compose file, so one runaway query or leaked transaction holds a pool client indefinitely | Checked | Set both on the pool (`server/db-config.ts`) or as role defaults |
+| 11 | **Tables that grow without bound.** `refresh_tokens` (an insert per refresh; `RefreshTokenDAL` never deletes), `category_promotions`, `wins`, `discover_skips`, `focus_daily_snapshots`, `iw_scene_runs` | Inferred | Retention sweep in the hourly `cow-maintenance` timer, starting with expired/revoked refresh tokens |
 
 ## Recently closed
 

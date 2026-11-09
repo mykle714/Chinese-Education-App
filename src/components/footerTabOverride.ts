@@ -11,7 +11,7 @@ import type { FooterTab } from "./MobileFooter";
  * `runFooterTabOverride` before navigating and skips its own navigation when a handler
  * ran.
  *
- * Today's one user: acp opened from the Deck Tower's sort platform. Its Deck tab leads back
+ * Today's one user: acp opened from the Deck Tower's sort platform. Its Flashcards tab leads back
  * to the tower anyway, so a tap on it plays the page's Back — the circle closing onto the
  * platform — instead of the footer's plain jump (NodePage `backOnFooterTab`).
  *

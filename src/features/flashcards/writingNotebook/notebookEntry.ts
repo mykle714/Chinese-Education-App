@@ -13,8 +13,13 @@ import { isFeatureEnabled } from "../../../../server/contracts/featureFlags";
 
 /** The page's route (src/routes/routeMeta.ts). */
 export const NOTEBOOK_PATH = "/flashcards/writing/notebook";
-/** The card's glyph, also the page header counter's (WritingNotebookPage → NotebookHeaderCount). */
-export const NOTEBOOK_GLYPH = "edit_note";
+/**
+ * The toolbar counter's glyph (WritingNotebookPage → NotebookCountBox): a check,
+ * boxed together with the count by the counter's own outline — the counter tallies
+ * correctly written words (docs/WRITING_NOTEBOOK.md § Counter).
+ * History: `edit_note` until 2026-11-08 (the pencil read as "edit", not "done right").
+ */
+export const NOTEBOOK_GLYPH = "check";
 
 /**
  * The notebook total (the sum of every sheet's counter), fetched once per visit. Keyed on the account,

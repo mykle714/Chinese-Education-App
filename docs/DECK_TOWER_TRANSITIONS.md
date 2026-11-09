@@ -330,7 +330,7 @@ platform) under `SKY_FALL_GRAVITY` (60 u/s² — its own, gentler than the pawn'
 `PAWN_GRAVITY`, which read as too fast from this height). That gives `landMs` ≈ 1354 ms and
 ~81 u/s at impact. `landMs` must stay under the shortest trap-door `readyMs` (1420 ms, an
 empty tower), or the entrance would be scheduled to start before the swap does.
-`FALL_FROM_SKY` is the module-private `fallFromHeight(SKY_FALL_HEIGHT)` (`landMs` = √(2h / g)).
+`FALL_FROM_SKY` is `fallFromHeight(SKY_FALL_HEIGHT)` (`landMs` = √(2h / g)). `fallFromHeight` is exported: the flp's hint pawn drops onto its platform from the top of the screen with `fallFromHeight(h)`, `h` measured per arrival from the window (`HintPawn.tsx` → `hintPawnDrop`, [HINT_PAWN.md](./HINT_PAWN.md) § Arrival). It is not in `PAWN_ENTRANCES`, so the tower never picks it.
 
 - **In the air** it is stretched (0.92 × 1.1).
 - **Shadow.** Its shadow is a faint dot while it is high, and grows to full size and tone

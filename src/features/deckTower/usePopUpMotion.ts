@@ -98,6 +98,8 @@ export function usePopUpMotion({
     jump.current = instant;
     const skyCue = useRef(skyEntrance);
     skyCue.current = skyEntrance;
+    // A skipped visibility change still waiting for its targets to reach the tweens.
+    const snap = useRef(false);
     // The sky fall's clock: ms since its start (negative while waiting), null when none is playing.
     const [skyT, setSkyT] = useState<number | null>(null);
     const [skyAnim, setSkyAnim] = useState<PawnEntranceCue["animation"] | null>(null);
@@ -128,6 +130,12 @@ export function usePopUpMotion({
         }
         const skip = reduced || jump.current;
         if (skip) {
+            // The targets set here only reach the tweens on the NEXT render, by which time
+            // the caller's `instant` may already be false (the focus lever's first-load
+            // jump lasts one render). `snap` carries the jump to that render. Set only when
+            // a target actually moves, or nothing would clear it before a later, animated
+            // change. (`sinkTarget` / `hatchTarget` are this commit's values.)
+            if (sinkTarget !== (visible ? 0 : 1) || hatchTarget !== (visible ? 1 : 0)) snap.current = true;
             setHatchTarget(visible ? 1 : 0);
             setSinkTarget(visible ? 0 : 1);
             return;
@@ -140,13 +148,20 @@ export function usePopUpMotion({
         setSinkTarget(1);
         const timer = window.setTimeout(() => setHatchTarget(0), RECEDE_MS);
         return () => window.clearTimeout(timer);
+        // `sinkTarget` / `hatchTarget` are read only to tell whether a skip moves anything.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [visible]);
 
     // The rise eases out without overshoot: the lift stops flush with the floor.
     // A sky fall's targets jump too: it arrives standing, not through the hatch.
-    const jumpNow = instant || skyT !== null;
+    const jumpNow = instant || skyT !== null || snap.current;
     const sink = useTween(sinkTarget, jumpNow ? 0 : sinkTarget === 0 ? RISE_MS : RECEDE_MS, sinkTarget === 0 ? easeOut : easeIn);
     const hatch = useTween(hatchTarget, jumpNow ? 0 : hatchTarget === 1 ? HATCH_MS : SHUT_MS, hatchTarget === 1 ? easeOut : easeOutBack);
+    // Cleared once the jumped targets have been handed to the tweens (their effects run
+    // before this one in the same commit).
+    useEffect(() => {
+        snap.current = false;
+    }, [sinkTarget, hatchTarget]);
     // Put away instantly: report it sunk and shut in this very render, not after the tween's
     // effects catch up — the frame the fall's translate drops would otherwise flash the
     // fixture standing back on the floor.

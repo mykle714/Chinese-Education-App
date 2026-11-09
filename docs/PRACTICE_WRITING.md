@@ -187,7 +187,7 @@ through `WritingStage` (`guideFadeIn` / `guideFadeOut`) by the editing hosts:
 
 Everything else is **instant**: a canvas that starts with the guide (mount, a level
 change, a new character — even on Step Through, whose entry flash is drawn, not faded
-in), the Quarters / Sixths region cycle (a plain `regionClip` swap), the post-Verify
+in), the Thirds / Quarters region cycle (a plain `regionClip` swap), the post-Verify
 reveal (the popup turns `guideFadeIn` off while `verifyRevealed`), and every read-only
 preview (grid slots, writing flp cells, Writing Grid cells pass no fade flags).
 
@@ -264,7 +264,7 @@ with or without writing in the slot (the ink draws on top):
 - **Snap / Step Through** → the full outline (static). Snap's next-stroke
   animation is an editor-only cue; its snapped ink paints as printed shapes
   (`LevelPreview.snap`).
-- **Quarters / Sixths** → only the **first region** (top-left), clipped as in the editor.
+- **Thirds / Quarters** → only the **first region** (the wedge clockwise from the top-left corner), clipped as in the editor.
 - **Memorize / Blank / Timed** → no outline. **Memorize is the one exception to "first see"**
   (2026-10-04): its editor opens on the outline, but that's the **study phase**. The learner
   enters it deliberately by opening the slot, and their first stroke ends it. Previewing it

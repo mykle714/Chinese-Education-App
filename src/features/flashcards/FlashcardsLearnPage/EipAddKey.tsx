@@ -4,6 +4,7 @@ import { COLORS } from "../../../theme/colors";
 import { FONTS } from "../../../theme/fonts";
 import { WEIGHT } from "../../../theme/scale";
 import { keycapPressSx } from "../../../theme/keycapPress";
+import { roundedEdgeFilletDown, roundedEdgeRimLightTop } from "../../../theme/roundedEdge";
 import type { LearningToggleState } from "../../../hooks/useLearningToggle";
 import { useEipColors } from "./useEipPalette";
 
@@ -59,6 +60,11 @@ const EipAddKey: React.FC<{ state: LearningToggleState }> = ({ state }) => {
     // The outline ring: the app's border token on the light palette, a faint white ring on the dark slate.
     const ring = `inset 0 0 0 1px ${colors.dark ? "rgba(255, 255, 255, 0.12)" : COLORS.border}`;
     const lip = inLibrary ? LIP_ADDED : LIP_ADD;
+    // The hairline rounded edge (theme/roundedEdge.ts, straight-lip form): the rim light
+    // under the ring (listed after it, so it shows as the 1px just inside the outline),
+    // the fillet over the lip.
+    const rim = roundedEdgeRimLightTop(colors.face, 1);
+    const fillet = lip > 0 ? `, ${roundedEdgeFilletDown(colors.face, colors.edge)}` : "";
 
     return (
         <ButtonBase
@@ -94,8 +100,8 @@ const EipAddKey: React.FC<{ state: LearningToggleState }> = ({ state }) => {
                 // lifted 1px at rest (an added key sits 2px LOW, as if it stayed pressed);
                 // held, it jumps 4px down with the lip gone, and jumps back.
                 ...keycapPressSx({
-                    restShadow: `${ring}, 0 ${lip}px 0 ${colors.edge}`,
-                    pressedShadow: ring,
+                    restShadow: `${ring}, ${rim}${fillet}, 0 ${lip}px 0 ${colors.edge}`,
+                    pressedShadow: `${ring}, ${rim}`,
                     restY: inLibrary ? 2 : -1,
                     pressedY: SINK,
                 }),

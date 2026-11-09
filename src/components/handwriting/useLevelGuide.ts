@@ -14,7 +14,7 @@ import { LEVEL_BEHAVIOR, type LevelBehavior } from "./levelBehavior";
  *
  * Outputs:
  *   outlineVisible — show the grey guide now
- *   regionIndex    — which region (levels 4/6) the guide is clipped to
+ *   regionIndex    — which region (levels 4/6: Thirds / Quarters) the guide is clipped to
  *   drawLocked     — canvas refuses new strokes
  *   blocked        — Memorize's study-first lock (red "no writing" badge)
  *   loading        — a TIMED lock is running (corner spinner)

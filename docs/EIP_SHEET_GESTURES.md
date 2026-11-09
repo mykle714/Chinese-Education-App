@@ -426,11 +426,18 @@ telescope never appears mid-session, so there is nothing to grow for.
 leaf `PageHeader` (⌄ + title, no flame) shown at every height, for a sheet that should be
 indistinguishable from a drill-in page once maximized. `AccountSheet` is its one host.
 
-- **The host turns SheetPanel's own chrome off:** no `title`, `showClose={false}`,
-  `showGrabber={false}`, `edgePadding={false}`, and it passes `telescopeRef`. The caret
-  calls `dismiss`; the whole header is a resize handle.
-- **The caret lines up with the eip's at both ends.** At the open height it is on the eip's
-  trail-row line (`OPEN_HEADER_TOP_PX`); at max it is on a leaf page's. The telescope's
+- **The host turns most of SheetPanel's own chrome off:** no `title`, `showClose={false}`,
+  `edgePadding={false}`, and it passes `telescopeRef`. The caret calls `dismiss`; the whole
+  header is a resize handle.
+- **It keeps the drag bar** (2026-11-08): SheetPanel's grabber row stays on (`showGrabber`
+  default). Under `edgePadding={false}` the row takes back the container's missing 10px
+  (`GRABBER_ROW_TOP_PAD_PX` + `SHEET_TOP_PADDING_PX`), so the pill sits 14px below the
+  sheet's top edge like every other sheet's. The host passes `SheetPageHeader`
+  `withGrabber`, which drops the header's own open top inset (the pill row already spaces
+  it). The pill stays at max, so maximized the panel is a page with a drag bar on top.
+- **The caret does not line up with the eip's** once the pill is shown: it sits 10px lower
+  at the open height (without `withGrabber` it is on the eip's trail-row line,
+  `OPEN_HEADER_TOP_PX`). The telescope's
   `extra` is a 10px spacer (`MAX_EXTRA_TOP_PX`) rather than a title row, so the frame
   reveals the difference over the same open → max travel.
 - **Ground:** `AccountSheet` passes `surface={COLORS.background}`, the paper a page sits on,
@@ -441,12 +448,16 @@ The panel also has three tabs (Account · Friends · Settings) on the eip's sele
 `SheetSegmentedTabs`. The eip passes its theme palette's colours; the account panel takes the
 defaults, which are framework tokens for a paper ground. As in the eip each pane is its own
 scroller and `selected` is folded into `bodyKey`, so SheetPanel re-binds to the shown pane.
-The strip is a resize handle too. Panes change by tap only: the eip's swipe pager is not used
-here. A pane mounts on first visit, so opening the panel does not fetch the leaderboard.
+The strip is a resize handle too. Panes change by tap OR by a sideways swipe over the panes —
+the eip's exact gesture, shared through `useTabSwipeTrack` (§ Interaction with the body's own
+horizontal swipe). A pane mounts on first visit, and a finger landing on the panes mounts the
+current tab's neighbours (`warmNeighbours`) so a swipe never drags in a blank page; merely
+opening the panel still does not fetch the leaderboard.
 
 Code: `src/components/sheet/SheetPageHeader.tsx` → `SheetPageHeader`;
 `src/components/sheet/SheetSegmentedTabs.tsx` → `SheetSegmentedTabs`;
-`src/pages/AccountSheet.tsx` → `AccountSheet`, `AccountSheetPanes`.
+`src/pages/AccountSheet.tsx` → `AccountSheet`, `AccountSheetPanes`;
+`src/components/sheet/useTabSwipeTrack.ts` → `useTabSwipeTrack`.
 
 ### Light / dark theme — the eip's palette
 
@@ -499,15 +510,18 @@ the dictionary cdp keeps its glowing `LearningToggle` under the header speaker. 
 is a Dictionary-flow action only: no other eip host (flp, acp, saved-card cdp, iw) offers one —
 the flp's old add-only "+" for drilled-in words was removed 2026-10-29.
 
+**Both eip keycaps carry the straight-lip rounded edge** (a 1px top rim light just inside the
+outline ring, a 0.5px fillet over the lip; docs/designGuidelines.md § "The rounded edge").
+
 **Both eip keycaps press the same way** — the Add key and the headword tile use the app's
 raised-key press, `src/theme/keycapPress.ts` → `keycapPressSx`: they SNAP down onto the lip
 and back up with no transition. Since 2026-10-29 (by request) that is EVERY raised keycap in
 the app — the tower plates (`towerPlate.ts` → `towerPlatePressSx`), the acp toolbar, the
 Dictionary page's keycaps, the beginner keyboard and td's cards-page mini cards
 (`sortCardStock.ts` → `cardStockPressSx`) all spread the same helper. Two options cover the
-mini cards: `pressedX` pushes a key back diagonally, and `viaTranslate` moves it through
-the CSS `translate` property for an element that `useScrollStretch` writes an inline
-`transform` on. It used to
+mini cards: `pressedX` pushes a key back diagonally. The press always moves through
+`transform`, which composes with the inline `translate` that `useScrollStretch` writes on
+those same cards mid-scroll. It used to
 animate (the scene plate's 80 ms ease-out sink and 220 ms overshoot pop).
 
 **`:active` does not work in the upper panel.** Both keys sit inside its drag handle, and
@@ -839,10 +853,11 @@ all panes stay mounted for the panel's life.
 
 ## Interaction with the body's own horizontal swipe
 
-`InfoCardPanelBody` binds its own **raw** touch listeners on an inner clip box so its
-`stopPropagation()` runs before `SheetPanel`'s ancestor listener (React synthetic
-handlers would be too late — see the long comment at `InfoCardPanelBody.tsx`'s gesture
-effect). It swallows every touchmove until its axis lock resolves; if it resolves `y`
+`InfoCardPanelBody` (and `AccountSheet`) bind their own **raw** touch listeners on an
+inner clip box — both through the shared hook `src/components/sheet/useTabSwipeTrack.ts` →
+`useTabSwipeTrack` — so its `stopPropagation()` runs before `SheetPanel`'s ancestor
+listener (React synthetic handlers would be too late — see the long comment at the hook's
+gesture effect). It swallows every touchmove until its axis lock resolves; if it resolves `y`
 it stops interfering and `SheetPanel` sees one correct larger delta covering the
 gesture so far.
 
@@ -856,8 +871,8 @@ the track follows the finger at `TAB_SWIPE_EDGE_RUBBER_RATIO` (0.25) of its trav
 capped at `TAB_SWIPE_EDGE_RUBBER_MAX_PX` (40px), and springs back on release. The cap
 sits far below the commit threshold (`paneWidth · TAB_SWIPE_COMMIT_RATIO`) and
 `settleDrag` rejects out-of-range targets, so an overscroll can never land on a tab
-change. See `InfoCardPanelBody.tsx`'s touchmove handler and the constants block in
-`src/features/flashcards/constants.ts`.
+change. See `useTabSwipeTrack`'s touchmove handler and the constants at the top of
+`src/components/sheet/useTabSwipeTrack.ts`.
 
 ---
 
@@ -997,8 +1012,9 @@ Code: `src/components/OverlayScrollbar.tsx` → `OverlayScrollbar`,
   `eipPillIn` entrance keyframes
 - `src/features/flashcards/FlashcardsLearnPage/EipTabStrip.tsx` — the trail breadcrumb
   (always shown; rendered inside EipUpperPanel's trail row)
-- `src/features/flashcards/constants.ts` — `TAB_SWIPE_*` gesture constants
-  (axis lock, commit ratio, transition, edge rubber-band)
+- `src/components/sheet/useTabSwipeTrack.ts` — the shared tab-swipe gesture and its
+  `TAB_SWIPE_*` constants (axis lock, commit ratio, edge rubber-band); the transition is
+  `TAB_SWIPE_TRANSITION` in `src/components/sheet/sheetStyled.ts`
 - `src/components/CPCDRow.tsx` — `tapToCopy` (the header copy gesture) and
   `src/components/CpcdPopup.tsx` — the shared caption card it confirms with
 - `src/utils/copyToClipboard.ts` — clipboard write with the non-secure-context fallback

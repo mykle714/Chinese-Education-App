@@ -90,11 +90,12 @@ export interface MiniCardFaceOptions {
  * The face, as an `sx` object to spread. Callers add their own positioning, their
  * badges and any state fill on top.
  *
- * ⚠️ `transition` is box-shadow ONLY — never add `transform`. These cards are track
- * elements of `useScrollStretch`, which writes an inline transform every frame during a
- * scroll; a CSS transition on transform re-filters each of those writes through an ease
- * curve and turns the elastic stretch into lag. The pop-in is a keyframe ANIMATION, not
- * a transition, so it is unaffected — it runs at mount, when nothing is scrolling.
+ * ⚠️ `transition` is box-shadow ONLY — never add `transform` or `translate`. These cards
+ * are track elements of `useScrollStretch`, which writes an inline `translate` every frame
+ * during a scroll; a CSS transition on it re-filters each of those writes through an ease
+ * curve and turns the elastic stretch into lag. The pop-in is a keyframe ANIMATION on
+ * `transform` (a separate property from `translate`), so it composes with the stretch
+ * even when a card pops in mid-scroll.
  */
 export const miniCardFaceSx = ({ background, hoverLift = false, animationDelayMs, size = "regular" }: MiniCardFaceOptions) => ({
     width: MINI_CARD_DIMENSIONS[size].width,
@@ -114,8 +115,8 @@ export const miniCardFaceSx = ({ background, hoverLift = false, animationDelayMs
     ...(typeof animationDelayMs === "number" && {
         animation: `cardPopIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) ${animationDelayMs}ms backwards`,
     }),
-    // Elevation only — the card must NOT translate on hover, or it fights the inline
-    // transform useScrollStretch writes on this same element mid-scroll.
+    // Elevation only — the card must NOT move on hover: a hover lift would add to the
+    // inline `translate` useScrollStretch writes on this same element mid-scroll.
     ...(hoverLift && {
         "&:hover": { boxShadow: `${MINI_CARD_RING}, ${SHADOW.float}` },
     }),

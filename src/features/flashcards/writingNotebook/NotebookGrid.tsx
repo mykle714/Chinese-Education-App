@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Box } from "@mui/material";
 import Icon from "../../../components/Icon";
 import NotebookCell from "./NotebookCell";
@@ -48,13 +48,33 @@ import { WEIGHT } from "../../../theme/scale";
  * learner scrolls back up into them.
  *
  * A touch, wheel or key press during the flight hands the scroll back to the learner.
+ *
+ * ── Back to the top ──────────────────────────────────────────────────────────
+ * The page's toolbar owns an up arrow (WritingNotebookPage → NotebookToolbar). The grid
+ * reports whether it is scrolled away from the top (`onScrolledAwayChange`) and exposes
+ * `scrollToTop` through its ref; both flights share `flyTo`, so the up arrow has the jump's
+ * easing, duration curve and interrupt rule.
  */
 interface NotebookGridProps {
     sheet: NotebookSheet;
     onOpenCell: (cellIndex: number, element: HTMLElement) => void;
+    /** Fires when the sheet crosses `SCROLLED_AWAY_ROWS` rows from the top, either way. */
+    onScrolledAwayChange?: (scrolledAway: boolean) => void;
 }
 
-export default function NotebookGrid({ sheet, onOpenCell }: NotebookGridProps) {
+/** What the page can ask of the grid (via `ref`). */
+export interface NotebookGridHandle {
+    /** Animated scroll back to row 0 (instant under reduced motion). */
+    scrollToTop: () => void;
+}
+
+/**
+ * How far (in rows) the sheet must be scrolled before it counts as "away from the top" and
+ * the toolbar's up arrow appears. One full row, so a nudge of a few px does not flicker it.
+ */
+const SCROLLED_AWAY_ROWS = 1;
+
+const NotebookGrid = forwardRef<NotebookGridHandle, NotebookGridProps>(function NotebookGrid({ sheet, onOpenCell, onScrolledAwayChange }, ref) {
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const [size, setSize] = useState({ width: 0, height: 0 });
     const [scrollTop, setScrollTop] = useState(0);
@@ -113,6 +133,13 @@ export default function NotebookGrid({ sheet, onOpenCell }: NotebookGridProps) {
     // The "Next empty" button: the current page is fetched and every cell of it is filled.
     const filled = useMemo(() => new Set(sheet.cells.keys()), [sheet.cells]);
     const page = currentPage(scrollTop, size.height, pitch);
+
+    // Tell the page whether it is away from the top (drives the toolbar's up arrow). Only
+    // transitions are reported, and only once the scroller has been measured.
+    const scrolledAway = pitch > 0 && scrollTop >= SCROLLED_AWAY_ROWS * pitch;
+    useEffect(() => {
+        onScrolledAwayChange?.(scrolledAway);
+    }, [scrolledAway, onScrolledAwayChange]);
     const showJump = !flying && !seeking && sheet.loadedPages.has(page) && isPageFull(page, filled);
 
     // Hand the scroll back to the learner the moment they touch it mid-flight.
@@ -136,6 +163,41 @@ export default function NotebookGrid({ sheet, onOpenCell }: NotebookGridProps) {
         };
     }, [flying]);
 
+    /**
+     * Animate the scroller to `dest` (easeInOutCubic over `jumpDurationMs(distance)`), the
+     * one flight both the "Next empty" jump and the toolbar's up arrow use. Marks the grid
+     * `flying` (pauses page fetches; arms the interrupt listeners above). Instant under
+     * prefers-reduced-motion or when already there.
+     */
+    const flyTo = useCallback((dest: number) => {
+        const el = scrollRef.current;
+        if (!el) return;
+        if (flightRef.current !== null) cancelAnimationFrame(flightRef.current);
+        flightRef.current = null;
+        const from = el.scrollTop;
+        const distance = dest - from;
+        const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+        if (reduceMotion || distance === 0) {
+            el.scrollTop = dest;
+            setFlying(false);
+            return;
+        }
+        const duration = jumpDurationMs(distance);
+        setFlying(true);
+        const start = performance.now();
+        const step = (now: number) => {
+            const t = Math.min(1, (now - start) / duration);
+            el.scrollTop = from + distance * easeInOutCubic(t);
+            if (t < 1) {
+                flightRef.current = requestAnimationFrame(step);
+            } else {
+                flightRef.current = null;
+                setFlying(false);
+            }
+        };
+        flightRef.current = requestAnimationFrame(step);
+    }, []);
+
     const { findNextEmpty } = sheet;
     const jump = useCallback(async () => {
         const el = scrollRef.current;
@@ -157,31 +219,13 @@ export default function NotebookGrid({ sheet, onOpenCell }: NotebookGridProps) {
         setDeepestRow((d) => Math.max(d, row + viewRows));
         ensurePages(pagesForRows(Math.max(0, row - 2), row + viewRows));
 
-        const from = el.scrollTop;
-        const distance = dest - from;
-        const duration = jumpDurationMs(distance);
-        const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
         // The spacer grows on the next render; wait one frame so `dest` is reachable.
-        requestAnimationFrame(() => {
-            if (reduceMotion || distance === 0) {
-                el.scrollTop = dest;
-                return;
-            }
-            setFlying(true);
-            const start = performance.now();
-            const step = (now: number) => {
-                const t = Math.min(1, (now - start) / duration);
-                el.scrollTop = from + distance * easeInOutCubic(t);
-                if (t < 1) {
-                    flightRef.current = requestAnimationFrame(step);
-                } else {
-                    flightRef.current = null;
-                    setFlying(false);
-                }
-            };
-            flightRef.current = requestAnimationFrame(step);
-        });
-    }, [seeking, findNextEmpty, page, pitch, ensurePages]);
+        requestAnimationFrame(() => flyTo(dest));
+    }, [seeking, findNextEmpty, page, pitch, ensurePages, flyTo]);
+
+    // The toolbar's up arrow. Row 0 is always mounted-able, so no spacer growth or page
+    // request is needed first: the rows land as they scroll into view.
+    useImperativeHandle(ref, () => ({ scrollToTop: () => flyTo(0) }), [flyTo]);
 
     // Only the mounted rows render; everything else is spacer.
     const cellsOut: ReactElement[] = [];
@@ -275,4 +319,6 @@ export default function NotebookGrid({ sheet, onOpenCell }: NotebookGridProps) {
             )}
         </Box>
     );
-}
+});
+
+export default NotebookGrid;

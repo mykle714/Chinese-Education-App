@@ -10,7 +10,7 @@ Parent: [MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md). Related:
 [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (the AccountSheet),
 [DECK_TOWER.md](./DECK_TOWER.md) § "Daily banking" (how td hosts the run).
 
-> **The run lives on the Deck Tower (td, `/`, the footer's Deck tab).** Menu has no
+> **The run lives on the Deck Tower (td, `/`, the footer's Flashcards tab).** Menu has no
 > banking run.
 
 ## 1. What it is
@@ -201,10 +201,11 @@ Constraints:
 ## 8. Feature-tester "always play" toggle (test tool)
 
 Feature-tester accounts (`users.isFeatureTester`, migration 178; `isValidator` before) get a
-chip row under td's header, the last of its tester rows: **Bank daily** · **Bank every
-visit** (`TesterChipRow`, `deck-tower-page__banking-*`).
+chip group under td's header, sharing a row with the lightning chips: **Bank: daily** ·
+**Every visit** (`TesterChipRow` inside a `TesterSharedRow`, `deck-tower-page__banking-*`;
+[DECK_TOWER.md](./DECK_TOWER.md) § "Feature-tester rows").
 
-While **Bank every visit** is chosen, the banking run plays on **every** landing on td: the
+While **Every visit** is chosen, the banking run plays on **every** landing on td: the
 provider ignores the server's once-per-day `bankingPending`. The chip itself never plays
 anything. To see the run as a learner meets it, on page entry, leave td and come back
 (returning from a study session inside td is not a landing and does not replay it). A forced run still

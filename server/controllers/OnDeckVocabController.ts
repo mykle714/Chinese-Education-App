@@ -310,7 +310,10 @@ export class OnDeckVocabController {
    * Cooldown-aware ready counts per utcm band of the session bar — the Deck Tower's
    * Learning-deck figures (docs/DECK_TOWER.md), one call per bar.
    * GET /api/onDeck/flpReadyCounts[?world=core|reading|writing]
-   * → { counts: {Unfamiliar,Target,Comfortable,Mastered}, focusOn: boolean }
+   * → { counts: {Unfamiliar,Target,Comfortable,Mastered}, upcoming: {readyAt, band}[], focusOn: boolean }
+   *
+   * `upcoming` is the cooling cards' release schedule for the next 24 h
+   * (`flpUpcomingReady`), scoped like `counts` (a focused world: today's set only).
    *
    * `reviewNextReadyMs` (the Review study mode's countdown) was dropped from the
    * response 2026-11-04 with that mode (docs/DEFERRED_WORK.md § 31).

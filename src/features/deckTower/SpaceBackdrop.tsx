@@ -2,6 +2,7 @@ import React, { useLayoutEffect, useRef } from "react";
 import { Box } from "@mui/material";
 import { mixHex, shadeHex } from "./iso";
 import { setFooterCastShadow, translucentShadow } from "../../components/footerCastShadow";
+import AuroraLayer from "./AuroraLayer";
 import ShootingStars from "./ShootingStars";
 import StarField, { STAR_LAYERS, starLayerTransform } from "./StarField";
 import WeatherLayer from "./WeatherLayer";
@@ -27,6 +28,9 @@ import { heightAbovePlatform, towerSceneOf } from "./towerScroll";
  *   - The time of day (timeOfDay.ts) arrives through `palette.sky` (the world's sky at
  *     this hour) and `groundStars` (night's faint stars from the ground). At night it
  *     also hosts the ShootingStars layer (`shootingStars`), over the star field.
+ *   - The reading world's rare aurora (towerAurora.ts) arrives as `palette.aurora`, its
+ *     strength (blended mid-pan like the sky). AuroraLayer draws it over the stars and under
+ *     the meteors; it fades out over the whole climb into space (`AURORA_FADE_TO`).
  *   - The learner's weather (towerWeather.ts) arrives as `weather` — the particles
  *     WeatherLayer draws, over the stars. The weather FADES OUT on the first half of the climb
  *     (`WEATHER_FADE_TO`): it belongs to the sky, not to space.
@@ -46,7 +50,7 @@ import { heightAbovePlatform, towerSceneOf } from "./towerScroll";
  * same z-index, but earlier in the DOM, so the scroller (and the svg in it) paints over
  * it, and whatever covers the scroller covers it too.
  *
- * Depends on: iso/palette.ts (`mixHex`); StarField.tsx; ShootingStars.tsx; WeatherLayer.tsx; towerWorlds.ts (the palettes, via the page).
+ * Depends on: iso/palette.ts (`mixHex`); StarField.tsx; AuroraLayer.tsx; ShootingStars.tsx; WeatherLayer.tsx; towerWorlds.ts (the palettes, via the page).
  * Depended on by: DeckTowerPage.tsx. Docs: docs/DECK_TOWER.md § "Sky → space".
  */
 
@@ -65,8 +69,8 @@ interface SpaceBackdropProps {
     /** The page's scroll surface. Its one direct `<svg>` child is the scene (other children, e.g. a `<style>`, are skipped). */
     scrollerRef: React.RefObject<HTMLDivElement | null>;
     band: SpaceBand;
-    /** The current world's sky and the space above it (blending mid-pan). */
-    palette: { sky: string; space: string };
+    /** The current world's sky, the space above it and its aurora strength (all blending mid-pan). */
+    palette: { sky: string; space: string; aurora: number };
     /**
      * The star field's opacity on the ground — above 0 at night (timeOfDay.ts
      * `groundStars`), so stars show over a night sky before any climb. The climb's own
@@ -96,6 +100,8 @@ interface SpaceBackdropProps {
 const STARS_FADE_FROM = 0.35;
 /** The weather is fully gone once the sky → space blend is this far along. */
 const WEATHER_FADE_TO = 0.5;
+/** The aurora is fully gone once the sky has turned to space: it belongs to the night sky, not to space. */
+const AURORA_FADE_TO = 1;
 
 /** Hermite smoothstep of `x` between `edge0` and `edge1`. */
 function smoothstep(edge0: number, edge1: number, x: number): number {
@@ -108,6 +114,7 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
     const starsRef = useRef<HTMLDivElement>(null);
     const starLayerRefs = useRef<(HTMLDivElement | null)[]>([]);
     const weatherRef = useRef<HTMLDivElement>(null);
+    const auroraRef = useRef<HTMLDivElement>(null);
     // Read by `apply` through refs: the palette changes per frame during a pan, and
     // re-subscribing the scroll listener that often would be wasted work.
     const paletteRef = useRef(palette);
@@ -133,6 +140,7 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
         let lastSky = "";
         let lastStarsOpacity = "";
         let lastWeatherOpacity = "";
+        let lastAuroraOpacity = "";
         const lastStarTransforms: string[] = [];
         const apply = () => {
             // The scene's svg, found by class (towerScroll → towerSceneOf): it sits in the
@@ -173,6 +181,16 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
                 if (weatherOpacity !== lastWeatherOpacity || weatherEl.style.opacity === "") {
                     lastWeatherOpacity = weatherOpacity;
                     weatherEl.style.opacity = weatherOpacity;
+                }
+            }
+            // The aurora thins out over the whole climb (it is always mounted; its own loop
+            // idles at strength 0).
+            const auroraEl = auroraRef.current;
+            if (auroraEl) {
+                const auroraOpacity = (1 - smoothstep(0, AURORA_FADE_TO, t)).toFixed(3);
+                if (auroraOpacity !== lastAuroraOpacity) {
+                    lastAuroraOpacity = auroraOpacity;
+                    auroraEl.style.opacity = auroraOpacity;
                 }
             }
             // Parallax: how far the learner has scrolled UP from the platform. Content moves
@@ -224,6 +242,7 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
             sx={{ position: "absolute", zIndex: 1, top: 0, left: 0, right: 0, bottom, backgroundColor: palette.sky, pointerEvents: "none" }}
         >
             <StarField fieldRef={starsRef} layerRefs={starLayerRefs} opacity={0} />
+            <AuroraLayer strength={palette.aurora} rootRef={auroraRef} />
             <ShootingStars active={shootingStars} />
             {weather && <WeatherLayer effect={weather} rootRef={weatherRef} flashId={flashId} />}
         </Box>

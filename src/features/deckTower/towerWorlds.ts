@@ -15,7 +15,7 @@ import type { MasteryWorldId } from "../../../server/contracts/wire";
  * The main (core) world is always there; reading / writing only while the account has
  * that goal on (`users.readingGoal` / `writingGoal`).
  *
- * Colours (the DAY look — timeOfDay.ts turns each sky and lights the rest for night, docs/DECK_TOWER.md § "Time of day"): main is the ramp's blue mark (bluMk, its clear-weather sky; weatherSky.ts turns it by the weather) on a gold platform, reading a green sky (grnSky) on
+ * Colours (the DAY look — at night reading and writing take their own `nightSky`, main's sky is turned by timeOfDay.ts `NIGHT_SKY`, and the rest is lit by the wash, docs/DECK_TOWER.md § "Time of day"): main is the ramp's blue mark (bluMk, its clear-weather sky; weatherSky.ts turns it by the weather) on a gold platform, reading a green sky (grnSky) on
  * a pink platform (pnk), writing a cherry-blossom pink sky (pnkSky) on a cornflower platform (bluCorn). Each platform sits clear of its
  * sky and of the yellow LEARNING plate (yelM); writing's cornflower platform is well darker
  * than the MASTERED plate (bluM, every world: 82% vs 88% L), so the plate still reads on it.
@@ -29,6 +29,13 @@ import type { MasteryWorldId } from "../../../server/contracts/wire";
 
 export type TowerWorldId = MasteryWorldId;
 
+/** A night sky in OKLCH: lightness 0–1, chroma, hue in degrees. */
+export interface NightSky {
+    L: number;
+    C: number;
+    h: number;
+}
+
 export interface TowerWorld {
     id: TowerWorldId;
     /** The world's name on the neighbouring worlds' swipe indicators. */
@@ -41,6 +48,12 @@ export interface TowerWorld {
      * `ground`, `platform`, `floor` and `leverKnob` are the world at the current hour.
      */
     sky: string;
+    /**
+     * The world's own NIGHT sky (OKLCH), used by `phaseSky` in place of the shared
+     * `NIGHT_SKY` turn. Absent = the turn (main: its day sky follows the weather, so its
+     * night must follow too). ⚠️ Outside the colour framework, which has no night tier.
+     */
+    nightSky?: NightSky;
     /** The night the sky darkens into on a tall tower (SpaceBackdrop) — one for every world (`SPACE`). */
     space: string;
     platform: PlatformTone;
@@ -59,12 +72,18 @@ export interface TowerWorld {
  */
 const SPACE = spaceOver(COLORS.bluMk);
 
+/** Reading's night: aurora teal (#004C37 — red channel clipped, just outside sRGB), a 22° turn of grnSky toward blue. */
+const READING_NIGHT_SKY: NightSky = { L: 0.36, C: 0.095, h: 172 };
+/** Writing's night: velvet violet (#372053), a 47° turn of pnkSky toward violet. */
+const WRITING_NIGHT_SKY: NightSky = { L: 0.3, C: 0.09, h: 302 };
+
 function world(
     id: TowerWorldId,
     name: string,
     title: string,
     sky: string,
     platformBase: string,
+    nightSky?: NightSky,
     leverKnob: string = ISO.leverKnob,
 ): TowerWorld {
     const platform = platformTone(platformBase);
@@ -73,6 +92,7 @@ function world(
         name,
         title,
         sky,
+        ...(nightSky ? { nightSky } : {}),
         space: SPACE,
         platform,
         floor: { z: FLOOR_Z, color: platform.material.top },
@@ -83,9 +103,10 @@ function world(
 
 export const TOWER_WORLDS: Record<TowerWorldId, TowerWorld> = {
     core: world("core", "Main", "Flashcards", COLORS.bluMk, COLORS.gld),
-    reading: world("reading", "Reading", "Reading Flashcards", COLORS.grnSky, COLORS.pnk),
-    // Night (#4A2851, plum) comes from the shared night recipe, like every world's.
-    writing: world("writing", "Writing", "Writing Flashcards", COLORS.pnkSky, COLORS.bluCorn),
+    // Night skies chosen 2026-11-08 in an OKLCH explorer (the "Aurora" and "Velvet violet"
+    // presets). Reading's teal is the sky its rare aurora (towerAurora.ts) is drawn on.
+    reading: world("reading", "Reading", "Reading", COLORS.grnSky, COLORS.pnk, READING_NIGHT_SKY),
+    writing: world("writing", "Writing", "Writing", COLORS.pnkSky, COLORS.bluCorn, WRITING_NIGHT_SKY),
 };
 
 /** Left to right. A swipe LEFT moves the camera right (core → writing); a swipe RIGHT, left. */

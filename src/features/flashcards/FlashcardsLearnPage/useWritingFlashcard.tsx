@@ -38,7 +38,7 @@ import type { WritingFaceRenderer } from "./FlashCardSection";
  * (`swipeHandlers`) is read as the tap on whichever face is showing — on the front it
  * submits and flips (or wiggles while a cell is empty), on the graded back it dismisses,
  * the card going right/left by its grade, never by the swipe's direction — and
- * FlashCardSection plays its "grab and throw" fly-out (`writingThrowKeyframes`).
+ * FlashCardSection plays its "grab and throw" fly-out (`WRITING_THROW_KEYFRAMES`).
  *
  * Level 8: a character whose clock started is final once its editor closes (`locked`),
  * so closing and reopening cannot reset the clock. A locked cell counts as FILLED for the

@@ -11,17 +11,20 @@ import { FOCUS_WORLD_NAMES } from "./focusWorldNames";
  *
  *   turn-on       the lever was pulled while focus is off: what focus mode does + confirm.
  *   turn-off      the lever was tapped while focus is on: confirm switching it off.
+ *   auto-on       first visit to a world whose focus was switched on for the learner when
+ *                 its Reading / Writing goal was turned on (docs/FOCUS_MODE.md § 1a). Info only.
  *   ended         the server switched focus off by itself (the pile is back under FOCUS_DAILY_CARDS).
  *   game-blocked  a game was tapped in a focused world with too few of today's cards left.
  *
  * Same MUI Dialog treatment as the app's other confirms (NewGameConfirmDialog).
- * Callers: src/features/deckTower/useFocusLever.ts (turn-on / turn-off),
+ * Callers: src/features/deckTower/useFocusLever.tsx (turn-on / turn-off / auto-on),
  * FocusEndedNoticeHost.tsx (ended), useFocusGameGate.tsx (game-blocked).
  */
 
 export type FocusDialogContent =
     | { kind: "turn-on"; world: MasteryWorldId; readyCount: number }
     | { kind: "turn-off"; world: MasteryWorldId }
+    | { kind: "auto-on"; world: MasteryWorldId }
     | { kind: "ended"; worlds: MasteryWorldId[] }
     | { kind: "game-blocked"; world: MasteryWorldId; gameTitle: string; remaining: number; needed: number };
 
@@ -63,6 +66,15 @@ function copyFor(content: FocusDialogContent): { title: string; body: string; di
                 dismiss: "Keep it on",
                 confirm: "Turn off",
             };
+        case "auto-on":
+            return {
+                title: "Focus mode is on",
+                body:
+                    `You already have a lot of cards ready in ${worldsPhrase([content.world])}, so we turned on ` +
+                    `focus mode for you: each day you'll see at most ${FOCUS_DAILY_CARDS} of them, and a card you ` +
+                    `get right is done for the day. Tap the lever on the platform to turn it off.`,
+                dismiss: "Got it",
+            };
         case "ended":
             return {
                 title: "Focus mode is off",
@@ -77,7 +89,7 @@ function copyFor(content: FocusDialogContent): { title: string; body: string; di
                 body:
                     `Focus mode is on in ${worldsPhrase([content.world])}, and ${content.remaining} of today's ` +
                     `cards ${content.remaining === 1 ? "is" : "are"} left. ${content.gameTitle} needs ${content.needed}. ` +
-                    `Come back tomorrow, or turn focus mode off on the Deck tab.`,
+                    `Come back tomorrow, or turn focus mode off on the Flashcards tab.`,
                 dismiss: "OK",
             };
     }

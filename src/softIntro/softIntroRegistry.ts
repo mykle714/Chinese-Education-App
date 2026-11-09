@@ -55,6 +55,18 @@ export const SOFT_INTROS = {
         minDays: 14,
         description: 'td notebook stack: "Writing notebook" floor print under it (intro) → stack alone (graduated)',
     },
+    /**
+     * The hint pawn's "Tap / to / dismiss" cue (PawnHintBody `DismissCue`, flp hint bubble).
+     * Intro: the three-line cue in the bubble's bottom-right corner. Graduated: no cue, and it
+     * takes no space — the line (text variant) or the cpcd words (cpcd variant) get its
+     * width. The bubble stays tappable either way. A visit is one pawn ARRIVAL (one study
+     * session — HintPawn `DismissCueSoftIntro`, keyed by `arrival.id`), not a bubble.
+     */
+    pawnDismissCue: {
+        minVisits: 49,
+        minDays: 14,
+        description: 'flp hint-pawn bubble: "Tap / to / dismiss" cue in its corner (intro) → no cue, no space (graduated)',
+    },
 } as const satisfies Record<string, SoftIntroSpec>;
 
 export type SoftIntroId = keyof typeof SOFT_INTROS;

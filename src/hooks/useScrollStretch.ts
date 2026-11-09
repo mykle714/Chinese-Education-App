@@ -103,11 +103,14 @@ import { useEffect, type RefObject } from "react";
  *      between the browser's own scroll work and ours.
  *
  * ── Notes for callers ─────────────────────────────────────────────────────────
- * • The hook writes `style.transform` on the children directly (never through React,
- *   so a fling costs no re-render) and REMOVES it the moment the fabric settles.
- *   While it is active it therefore overrides a child's own transform — which in
- *   practice only collides with a card's entrance pop-in, and that animation happens
- *   at mount when the list is not moving and this hook is writing nothing.
+ * • The hook writes the individual CSS `translate` property (`style.translate`) on the
+ *   children directly (never through React, so a fling costs no re-render) and
+ *   REMOVES it the moment the fabric settles. `translate`, not `transform`: the two
+ *   compose instead of overwriting each other, so a card's own transform — the
+ *   `cardPopIn` entrance's `scale` — keeps running under the stretch. Cards DO pop in
+ *   mid-scroll (a windowed grid mounts rows as it moves; the td cards page's snap
+ *   glide runs while the cascade is still playing), and with `transform` a popping
+ *   card ignored the stretch for 0.4s, then jumped to its row's shifted position.
  * • Children marked `aria-hidden` are ignored, so the windowing spacers don't count
  *   as tracks.
  * • Honours `prefers-reduced-motion`.
@@ -332,6 +335,15 @@ const viewportOf = (scroller: Scroller, axis: "x" | "y"): number =>
  * Reads are batched deliberately: one rect read flushes layout, and the rest are then
  * served from the same clean layout, so the cost is one flush regardless of the child
  * count.
+ *
+ * ⚠️ Offsets are LAYOUT positions, read with `offsetTop`/`offsetLeft` (which ignore
+ * transforms), never a child's `getBoundingClientRect()` (which includes them). A
+ * rebuild usually happens MID-STRETCH — a windowed grid mounts rows during the very
+ * scroll that is stretching it — so a visual read would bake each surviving row's
+ * current shift (and a popping card's `scale(0.3)`) into its offset: rows land on the
+ * wrong `along`, a shifted row can even merge with a freshly mounted one into a single
+ * track, and those cards visibly slide to the wrong place. Only the LIST's own rect is
+ * read visually, and the hook never moves the list itself.
  */
 const buildTracks = (list: HTMLElement, scroller: Scroller, axis: "x" | "y"): TrackSet => {
     const base =
@@ -342,14 +354,37 @@ const buildTracks = (list: HTMLElement, scroller: Scroller, axis: "x" | "y"): Tr
               : (scroller as HTMLElement).getBoundingClientRect().left;
     const scrolled = scrollPosOf(scroller, axis);
 
+    // The list's padding edge in the scroller's content coordinates — the origin a child's
+    // `offsetTop` is measured from when the list is its offsetParent.
+    const listRect = list.getBoundingClientRect();
+    const listStart =
+        (axis === "y" ? listRect.top + list.clientTop : listRect.left + list.clientLeft) - base + scrolled;
+    const listOffset = axis === "y" ? list.offsetTop : list.offsetLeft;
+    const listParent = list.offsetParent;
+
     const byOffset = new Map<number, HTMLElement[]>();
     for (const child of Array.from(list.children)) {
         if (!(child instanceof HTMLElement)) continue;
         // Windowing spacers and other decorative fillers are layout, not cards.
         if (child.getAttribute("aria-hidden") === "true") continue;
-        const rect = child.getBoundingClientRect();
-        if (rect.width === 0 && rect.height === 0) continue;
-        const raw = (axis === "y" ? rect.top : rect.left) - base + scrolled;
+        // offsetWidth/Height are layout sizes too (untouched by a scale), so a card
+        // mid pop-in is still counted.
+        if (child.offsetWidth === 0 && child.offsetHeight === 0) continue;
+        const childOffset = axis === "y" ? child.offsetTop : child.offsetLeft;
+        // A child's offset is relative to its offsetParent: the list itself when the list
+        // is positioned (offset from its padding edge), otherwise the list's own
+        // offsetParent (so subtract the list's offset from that same parent). Anything
+        // else — e.g. a positioned wrapper between the two — falls back to the visual
+        // rect, which is right whenever the fabric is at rest.
+        let raw: number;
+        if (child.offsetParent === list) {
+            raw = listStart + childOffset;
+        } else if (child.offsetParent === listParent) {
+            raw = listStart - (axis === "y" ? list.clientTop : list.clientLeft) + (childOffset - listOffset);
+        } else {
+            const rect = child.getBoundingClientRect();
+            raw = (axis === "y" ? rect.top : rect.left) - base + scrolled;
+        }
         // Rounded to 2px so sub-pixel differences inside one row don't split it into
         // two tracks, which would shear the row apart under the stretch.
         const key = Math.round(raw / 2) * 2;
@@ -435,7 +470,7 @@ export function useScrollStretch(
 
         /** Drop our transform (and the compositor hint) from one element. */
         const unpaint = (el: HTMLElement) => {
-            el.style.transform = "";
+            el.style.translate = "";
             el.style.willChange = "";
         };
 
@@ -500,19 +535,22 @@ export function useScrollStretch(
                 // Rule C — an invisible delta is not worth a style write.
                 if (Math.abs(shift - track.written) < WRITE_EPS_PX) continue;
                 track.written = shift;
-                const transform =
-                    axis === "y"
-                        ? `translate3d(0, ${shift.toFixed(2)}px, 0)`
-                        : `translate3d(${shift.toFixed(2)}px, 0, 0)`;
+                // The individual `translate` property, so a card's own `transform` (its
+                // pop-in `scale`) composes with the shift instead of replacing it. The
+                // z term keeps it on the compositor like the old `translate3d`.
+                const translate =
+                    axis === "y" ? `0 ${shift.toFixed(2)}px 0` : `${shift.toFixed(2)}px 0 0`;
                 for (const el of track.els) {
                     if (!painted.has(el)) {
                         // Promote only while the element is in the band and moving. The
                         // band is a handful of rows, so this stays a bounded number of
                         // layers rather than one per card in the library.
+                        // `will-change: transform` (not `translate`) for the widest WebView
+                        // support; it promotes the layer either way.
                         el.style.willChange = "transform";
                         painted.add(el);
                     }
-                    el.style.transform = transform;
+                    el.style.translate = translate;
                 }
             }
         };

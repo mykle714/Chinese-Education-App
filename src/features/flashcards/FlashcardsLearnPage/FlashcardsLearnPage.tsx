@@ -34,7 +34,9 @@ import GameBreakCard from "./gameBreak/GameBreakCard";
 import GameBreakResultCard from "./gameBreak/GameBreakResultCard";
 import { flpBreakGameFor } from "../../../games/flpBreak";
 import { useWritingFlashcard } from "./useWritingFlashcard";
-import WritingUsedInBubbles, { WritingUsedInBand } from "./WritingUsedInBubbles";
+import HintPawn from "./hintPawn/HintPawn";
+import { pawnHintFor } from "./hintPawn/pawnHints";
+import { useHintPawnEnabled } from "../../../hooks/useHintPawnSetting";
 import CardIconCanvas from "../../../cardIcons/editor/CardIconCanvas";
 import { measureDefaultTextCenters } from "../../../cardIcons/cardTextLayout";
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "../../../cardIcons/editor/CardEditToolbar";
@@ -397,6 +399,18 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     const moreInfoPillRef = useRef<HTMLDivElement | null>(null);
     const cardSlotPad = useCardSlotPadding(cardSlotRef, contentAreaRef, moreInfoPillRef);
 
+    // The card frame goes to the tower (its camera aims at it) AND to the hint pawn, which
+    // clips its bubble to the space below it (docs/HINT_PAWN.md).
+    const cardFrameElRef = useRef<HTMLDivElement | null>(null);
+    const towerCardFrameRef = tower.cardFrameRef;
+    const setCardFrame = useCallback(
+        (el: HTMLDivElement | null) => {
+            cardFrameElRef.current = el;
+            towerCardFrameRef(el);
+        },
+        [towerCardFrameRef]
+    );
+
     const toolbarInset = useToolbarInset(editMode && advMode, cardSlotRef, toolbarRef, cardSlotPad.top);
 
     // Hard-clear the preserved writing-practice draft when a card is marked (which
@@ -445,6 +459,11 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // `chineseVisible` would wrongly count the answer face as "English" here.
     const narrateNow = readingMode ? isFlipped : chineseVisible;
     const breakUp = gameBreak.phase !== "cards";
+    // The hint pawn (docs/HINT_PAWN.md): what it would say about the front card, and the
+    // per-device switch (Settings → Display → Study helper). Memoised on the entry so the
+    // pawn's bubble presence only reconciles when the card changes.
+    const hintPawnEnabled = useHintPawnEnabled();
+    const pawnHint = useMemo(() => pawnHintFor(flpWorld, displayCurrentEntry ?? null), [flpWorld, displayCurrentEntry]);
     useEffect(() => {
         // Parked under the tower: nobody is looking at the card yet. It is narrated when the
         // visit starts (`parked` is a dep).
@@ -775,7 +794,6 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                 arrow first cancels the edit (discarding the draft, unpausing minute points). */}
             {!parked && (
                 <TowerStudyHeader
-                    title={tower.title}
                     lastMarkUndoSnapshot={breakLocksUndo ? null : lastMarkUndoSnapshot}
                     isAnimating={isAnimating}
                     isUndoing={isUndoing}
@@ -907,18 +925,13 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                         pillSx={towerPlatePillSx}
                     />
                 )}
-                {/* USED-IN HINT BUBBLES, part 1 — the spacer that keeps room above the
-                    writing card for the bubbles (overlay mounted after the card, below).
-                    Reserved on every writing card so the card never resizes.
-                    docs/WRITING_PRACTICE_REWORK.md § 3b. */}
-                {writingMode && !editMode && <WritingUsedInBand />}
                 {/* Flashcard fills the rest of the ContentArea. The EIC sheet overlays
                     at the bottom rather than stacking above the flashcard. */}
                 <FlashCardSection
                     slotRef={cardSlotRef}
                     // The stack is the tower's top card (FlpTowerHost).
                     cardsCovered={tower.cardsCovered}
-                    cardFrameRef={tower.cardFrameRef}
+                    cardFrameRef={setCardFrame}
                     pad={cardSlotPad}
                     currentEntry={editingCurrentEntry}
                     // The break's card holds the back position: no word card sits there.
@@ -1009,18 +1022,24 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     toolbarInset={toolbarInset}
                 />
                 {writing.overlays}
-                {/* USED-IN HINT BUBBLES, part 2 — the overlay over ContentArea that floats
-                    the bubbles on the front card's top edge. After FlashCardSection in the
-                    DOM so it paints above the card stack; before the eip so the sheet
-                    still covers it. */}
-                {writingMode && !editMode && (
-                    <WritingUsedInBubbles
-                        entry={displayCurrentEntry ?? null}
-                        cardRef={cardRef}
-                        // Grow in only once the card is actually seen: not parked, under the
-                        // tower's count card, or under the break's card. Skip uncovers it,
-                        // so the bubbles grow in as that card flies off.
-                        unseen={parked || tower.cardsCovered || (breakUp && gameBreak.phase !== "skipping")}
+                {/* THE HINT PAWN — the study helper in the bottom-left corner, which speaks
+                    the front card's hint (docs/HINT_PAWN.md). Mounted in every world; it
+                    arrives only once a hint is due (writing: used-in words; main and reading:
+                    a wrong-streak tip), so a session with no hint-worthy card never shows it.
+                    After FlashCardSection in the DOM so it paints above the card stack;
+                    before the eip so the sheet still covers it. */}
+                {hintPawnEnabled && (
+                    <HintPawn
+                        world={flpWorld}
+                        hint={pawnHint}
+                        // Seen only once the card is: not under the tower's count card, the
+                        // break's card (Skip uncovers it, so it shows as that card flies off),
+                        // or the icon editor.
+                        unseen={tower.cardsCovered || (breakUp && gameBreak.phase !== "skipping") || editMode}
+                        parked={parked}
+                        // Its bubble is clipped to the space below the card (over the pill).
+                        contentRef={contentAreaRef}
+                        cardFrameRef={cardFrameElRef}
                     />
                 )}
                 {/* Centered pill button — ghosted before flip, full opacity after. While

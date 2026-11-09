@@ -91,7 +91,7 @@ const IsoPaperStack: React.FC<IsoPaperStackProps> = ({ rect, sheets, surface, pr
             {/* Its height stated, so a stack only a sheet or two thick gets a sliver to match
                 rather than the full contact lift, which would float it (light.ts → `contactLift`). */}
             <IsoShadow footprint={rect} casterZ={baseZ} casterHeight={height} receiver={surface} className="iso-paper-stack__shadow" />
-            <IsoSolid geometry={body} material={palette.paper} className="iso-paper-stack__body">
+            <IsoSolid geometry={body} material={palette.paper} roundedEdge={palette.edgeLight} className="iso-paper-stack__body">
                 {seams && (
                     <path
                         className="iso-paper-stack__seams"

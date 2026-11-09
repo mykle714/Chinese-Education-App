@@ -12,6 +12,7 @@ import { AUDIO_MODE_ORDER, NARRATION_VOICE_ORDER, type AudioMode, type Narration
 import { useTTS } from '../../hooks/useTTS';
 import { useFlashcardLearnSettings } from '../../hooks/useFlashcardLearnSettings';
 import { useWeatherEffectsSetting, type WeatherEnableError } from '../../hooks/useWeatherEffectsSetting';
+import { setHintPawnEnabled, useHintPawnEnabled } from '../../hooks/useHintPawnSetting';
 import { useTestingFeaturesSwitch } from '../../hooks/useTestingFeatures';
 import { useSoftIntroOverride } from '../../softIntro/useSoftIntro';
 import type { SoftIntroOverride } from '../../softIntro/softIntroStorage';
@@ -200,6 +201,7 @@ function SettingsBody() {
     // default in the DB, so treat "unset" as Chinese.
     const [displaySaving, setDisplaySaving] = useState(false);
     const weather = useWeatherEffectsSetting();
+    const hintPawnEnabled = useHintPawnEnabled();
     const showDisplaySettings = (user?.selectedLanguage ?? 'zh') === 'zh';
 
     const handleToggleSegmentSpaces = async (next: boolean) => {
@@ -506,6 +508,20 @@ function SettingsBody() {
                                 disabled={weather.busy}
                                 onChange={(e) => { void weather.setEnabled(e.target.checked); }}
                                 inputProps={{ 'aria-label': 'Weather effects' }}
+                            />
+                        }
+                    />
+                    {/* The flp's hint pawn (docs/HINT_PAWN.md § "The setting"). Device-local,
+                        like the weather row above (useHintPawnSetting); default on. */}
+                    <SwitchRow
+                        className="settings-page__hint-pawn-row"
+                        title="Study helper"
+                        subtitle="A little pawn that gives hints while you study flashcards."
+                        control={
+                            <Switch
+                                checked={hintPawnEnabled}
+                                onChange={(e) => setHintPawnEnabled(e.target.checked)}
+                                inputProps={{ 'aria-label': 'Study helper' }}
                             />
                         }
                     />

@@ -2926,7 +2926,7 @@ Hydra's pinyin display genuinely is a live toggle.
 
 **Tower look (2026-11-04).** The vet cdp wears td's chrome: the **slab** footer
 (`footerStyle: "slab"` on `/flashcards/card/:id` in `src/routes/routeMeta.ts`, lighting the
-Deck tab), the **Tier 2** time-of-day ground (`useTier2Look`, as on the dictionary cdp),
+Flashcards tab), the **Tier 2** time-of-day ground (`useTier2Look`, as on the dictionary cdp),
 and a hero card printed on the tower's **card stock** (`card/cardStock.ts` →
 `cardStockVars`, `VocabCardDetailPage` → `HERO_CARD_STOCK_VARS`) —
 [TOWER_STYLE_SHIFT.md](./TOWER_STYLE_SHIFT.md) § "Card stock". (The hero card's `•••`

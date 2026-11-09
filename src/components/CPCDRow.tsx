@@ -25,7 +25,7 @@ export interface CPCDRowItem {
     // Draw a MASK — a plain "?" — in place of the glyph, keeping the cell's width and the
     // pinyin above it. `character` stays the real character so the row's measurement is
     // unchanged; it is never shown (or copied). Set via ForeignText's `maskChar`. First
-    // user: the writing flp's used-in bubbles (docs/WRITING_PRACTICE_REWORK.md § 3b).
+    // user: the writing flp's used-in hint, in the hint pawn's bubble (docs/HINT_PAWN.md).
     masked?: boolean;
 }
 

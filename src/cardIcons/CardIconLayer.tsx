@@ -30,6 +30,13 @@ const CardIconLayer: React.FC<{ layout: IconLayoutItem[] }> = ({ layout }) => {
                 // Clipped to the same curve as the card face's inner clip box
                 // (CardFaceSide) — one pixel inside the face hairline.
                 borderRadius: CARD_SURFACE_CLIP_RADIUS,
+                // On a card STOCK (cream rim + printed panel) icons stop at the panel's edge,
+                // not the card's — the same `--card-panel-clip` the big face's inner clip box
+                // and the fie canvas read. Set by `CardFaceSide` (flp/cdp faces) and by
+                // `sortCardStockSx` (stock mini cards, e.g. td's cards page). Unset → `none`,
+                // so a plain card (community view, flat mini) still clips at its own edge.
+                // Docs: docs/TOWER_STYLE_SHIFT.md § "Card stock".
+                clipPath: "var(--card-panel-clip, none)",
                 pointerEvents: "none",
             }}
         >

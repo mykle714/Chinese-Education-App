@@ -18,6 +18,7 @@
  */
 import { apiGet, withFallback } from './http';
 import type { FlpWorld } from '../../server/contracts/studyMode';
+import type { FlpUpcomingRelease } from '../../server/contracts/flpReadiness';
 
 export interface FlpReadyCounts {
     /** Ready-now counts keyed by the requested bar's utcm band (Unfamiliar/Target/Comfortable/Mastered). */
@@ -27,6 +28,12 @@ export interface FlpReadyCounts {
      * (docs/FOCUS_MODE.md § 4). Optional: an older server omits it.
      */
     focusOn?: boolean;
+    /**
+     * The cards still cooling that come off cooldown in the next 24 h, soonest first
+     * (`flpUpcomingReady`), scoped like `counts`. useFlpReadyCounts counts each one in when
+     * its `readyAt` passes. Optional: an older server omits it.
+     */
+    upcoming?: FlpUpcomingRelease[];
 }
 
 /** `world` — the session world the figures describe: core, reading or writing (a Deck Tower world). */

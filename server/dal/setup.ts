@@ -227,7 +227,6 @@ const friendsService = new FriendsService(
 );
 
 // Controller instances
-const userController = new UserController(userService, icons8DAL, nightMarketWorldService);
 const userProfileController = new UserProfileController(userProfileService);
 const vocabEntryController = new VocabEntryController(vocabEntryService, dictionaryService);
 // Focus mode (docs/FOCUS_MODE.md): a per-world daily cap of 25 cards. Its own DAL; the
@@ -236,6 +235,8 @@ const vocabEntryController = new VocabEntryController(vocabEntryService, diction
 const focusModeDAL = new FocusModeDAL();
 const focusModeService = new FocusModeService(focusModeDAL);
 const focusModeController = new FocusModeController(focusModeService);
+// After focusModeService: turning a Reading / Writing goal on may auto-enable focus.
+const userController = new UserController(userService, icons8DAL, nightMarketWorldService, focusModeService);
 const onDeckVocabController = new OnDeckVocabController(
   onDeckVocabService, provisionalCardService, studyChallengeService, focusModeService
 );

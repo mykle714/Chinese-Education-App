@@ -191,7 +191,7 @@ const TOWER_TUCK_OFFSCREEN = "translate(-160%, 2%) rotate(-9deg)";
 const TOWER_TUCK_DEPTH_SCALE = 0.9;
 /**
  * The Deck Tower's correct swipe (direction right): from where the finger let go
- * (`--fly-from`) to off-screen right, on CARD_FLY_OUT_TRANSITION's ease. A keyframe, not a transition, for the reason writingThrowKeyframes
+ * (`--fly-from`) to off-screen right, on CARD_FLY_OUT_TRANSITION's ease. A keyframe, not a transition, for the reason WRITING_THROW_KEYFRAMES
  * gives: the dismiss re-keys the flying slot (`front-N` → `slot-X`), so the wrapper remounts
  * already at its target and a transition has no "from" — the card vanished at release
  * instead of sliding off.
@@ -209,8 +209,9 @@ const TOWER_TUCK_KEYFRAMES = {
 };
 
 /**
- * Writing flp's throw — the card is sent off by the SYSTEM (a tap or a swipe attempt on
- * its graded back), never dragged, so there is no release point to fly from. Instead it
+ * Writing flp's CORRECT throw (off to the right; an incorrect writing card tucks back into
+ * the deck with every tower card — TOWER_TUCK_KEYFRAMES). The card is sent off by the
+ * SYSTEM (a tap or a swipe attempt on its graded back), never dragged, so there is no release point to fly from. Instead it
  * plays a keyframe "grab and throw" (cardThrow.ts → `cardThrowSteps`, the motion itself).
  *
  * A keyframe animation (not a transition) on purpose: on dismiss the flying slot's key
@@ -219,8 +220,8 @@ const TOWER_TUCK_KEYFRAMES = {
  * Total length is CARD_FLY_OUT_MS so the loop's fly-out timeout still lines up.
  * Docs: docs/WRITING_PRACTICE_REWORK.md § 3.
  */
-const writingThrowKeyframes = (sign: 1 | -1) =>
-    Object.fromEntries(cardThrowSteps(sign).map(({ offset, transform, easing }) => [
+const WRITING_THROW_KEYFRAMES =
+    Object.fromEntries(cardThrowSteps(1).map(({ offset, transform, easing }) => [
         `${offset * 100}%`,
         { transform, ...(easing && { animationTimingFunction: easing }) },
     ]));
@@ -612,7 +613,12 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                 const isFront = slot === activeFrontSlot;
                                 const isThisSlotFlyingOut = flyOut?.slot === slot;
                                 // Deck Tower, correct: slides off right (TOWER_FLY_RIGHT_KEYFRAMES).
-                                const towerFlyRight = isThisSlotFlyingOut && flyOut!.direction === 'right';
+                                // Not the writing card: it is sent off by a tap, not a drag, so it
+                                // has no release point to slide from — a correct writing card plays its
+                                // own grab-and-throw (WRITING_THROW_KEYFRAMES) instead. The tower branches
+                                // are checked first below, so without this guard they swallow the throw.
+                                // (An incorrect writing card still tucks back into the deck: towerTuck.)
+                                const towerFlyRight = !writingFace && isThisSlotFlyingOut && flyOut!.direction === 'right';
                                 // This slot shows the DISMISSED card, on the face it was sent off from.
                                 const holdsDismissedCard = isThisSlotFlyingOut && (holdOutgoing || towerFlyRight);
                                 const entry = holdsDismissedCard ? outgoingEntry : slotEntries[slot];
@@ -630,6 +636,8 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
 
                                 // Deck Tower, incorrect: back into the deck (TOWER_TUCK_KEYFRAMES) —
                                 // the keyframes own transform and z-index for the whole fly-out.
+                                // Every card, the writing card included: a wrong answer goes back into
+                                // the deck. From a tap, `--tuck-from` is just the resting pose.
                                 const towerTuck = isThisSlotFlyingOut && flyOut!.direction === 'left';
 
                                 if (towerTuck || towerFlyRight) {
@@ -643,7 +651,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                     const targetRotation = flyOut!.direction === 'right' ? FLY_OUT_ROTATION : -FLY_OUT_ROTATION;
                                     transform = `translate(${targetX}px, 0px) rotate(${targetRotation}deg)`;
                                     // The writing card plays its keyframe throw instead (see
-                                    // writingThrowKeyframes); the transition would only fight it.
+                                    // WRITING_THROW_KEYFRAMES); the transition would only fight it.
                                     transition = writingFace ? 'none' : CARD_FLY_OUT_TRANSITION;
                                     opacity = 1 - Math.abs(dragPosition.x) / 400;
                                 } else if (isFront && isAnimating) {
@@ -721,9 +729,9 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                 animation: `towerFlyRight ${CARD_FLY_OUT_MS}ms ease forwards`,
                                                 "@keyframes towerFlyRight": TOWER_FLY_RIGHT_KEYFRAMES,
                                             } : writingFace && isThisSlotFlyingOut ? {
-                                                animation: `writingThrow${flyOut!.direction === 'right' ? 'Right' : 'Left'} ${CARD_FLY_OUT_MS}ms forwards`,
-                                                "@keyframes writingThrowRight": writingThrowKeyframes(1),
-                                                "@keyframes writingThrowLeft": writingThrowKeyframes(-1),
+                                                // Only a correct writing card reaches here; an incorrect one tucks.
+                                                animation: `writingThrow ${CARD_FLY_OUT_MS}ms forwards`,
+                                                "@keyframes writingThrow": WRITING_THROW_KEYFRAMES,
                                             } : {}),
                                             ...(shakeActive ? {
                                                 animation: "cardShake 0.42s ease-in-out",

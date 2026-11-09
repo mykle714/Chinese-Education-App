@@ -93,7 +93,7 @@ const IsoLever: React.FC<IsoLeverProps> = ({ at, surface, inside, pull, sink, ha
                 const knobPx = KNOB_RADIUS * proj.scaleAt(tipWorld.x, at.y, tipWorld.z);
                 return (
                     <>
-                        <IsoSolid className="iso-lever__base" geometry={prism(proj, base, standZ, baseTop)} material={palette.leverBase} />
+                        <IsoSolid className="iso-lever__base" geometry={prism(proj, base, standZ, baseTop)} material={palette.leverBase} roundedEdge={palette.edgeLight} />
                         {/* The slot the stick pivots in, cut into the base's top. */}
                         <path
                             className="iso-lever__slot"

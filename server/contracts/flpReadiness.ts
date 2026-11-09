@@ -1,6 +1,6 @@
 import type { TypedMarkHistory } from './wire.js';
 import { barCategory } from './mastery.js';
-import { barCooldownRemainingMs } from './cooldown.js';
+import { barCooldownRemainingMs, barReadyAt } from './cooldown.js';
 import type { FlpWorld } from './studyMode.js';
 
 /**
@@ -37,7 +37,8 @@ import type { FlpWorld } from './studyMode.js';
  * `nextFlpReadyMs` (the Review card's "next ready" countdown) was deleted 2026-11-04 with
  * the Review / Challenge study modes (docs/DEFERRED_WORK.md § 31).
  *
- * Referenced by docs/DECK_TOWER.md (the tower's ready counts, via `useFlpReadyCounts`).
+ * Referenced by docs/DECK_TOWER.md (the tower's ready counts, via `useFlpReadyCounts`;
+ * `flpUpcomingReady` → § "Cooldown releases").
  */
 
 /** The minimal shape every function here needs from a card row. */
@@ -98,4 +99,40 @@ export function flpReadyCountsByBand(
     counts[band] = (counts[band] ?? 0) + 1;
   }
   return counts;
+}
+
+/** How far ahead `flpUpcomingReady` looks: covers the Unfamiliar (5 min) and Target (12 h) rests. */
+export const FLP_UPCOMING_HORIZON_MS = 24 * 60 * 60 * 1000;
+
+/** One still-cooling card's release: when it comes off cooldown, and the band it lands in. */
+export interface FlpUpcomingRelease {
+  /** Epoch ms the card's clock releases it (`barReadyAt`). */
+  readyAt: number;
+  /** Its utcm band on the session bar. Bands move only on a mark, so this holds until then. */
+  band: string;
+}
+
+/**
+ * The cards that are cooling now and come off cooldown within `horizonMs`, soonest
+ * first — the Deck Tower's release schedule (docs/DECK_TOWER.md § "Cooldown releases").
+ * The client counts each one into `flpReadyCountsByBand`'s figures when its `readyAt`
+ * passes, so the tower grows the moment a card is dealable, without a re-read.
+ *
+ * Sound because a card's release time and band are functions of its marks alone (the
+ * window is its band's, `barReadyAt`), so the schedule stays true until the next mark;
+ * every mark path re-reads the counts anyway.
+ */
+export function flpUpcomingReady(
+  entries: readonly FlpReadinessCard[],
+  now: number,
+  world: FlpWorld = 'core',
+  horizonMs: number = FLP_UPCOMING_HORIZON_MS
+): FlpUpcomingRelease[] {
+  const upcoming: FlpUpcomingRelease[] = [];
+  for (const entry of entries) {
+    const readyAt = barReadyAt(entry.typedMarkHistory, world, entry.writingMastery);
+    if (readyAt === null || readyAt <= now || readyAt > now + horizonMs) continue;
+    upcoming.push({ readyAt, band: barCategory(entry.typedMarkHistory, world, entry.writingMastery) });
+  }
+  return upcoming.sort((a, b) => a.readyAt - b.readyAt);
 }

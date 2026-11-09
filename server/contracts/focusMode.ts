@@ -82,6 +82,17 @@ export interface FocusStatusResponse {
 }
 
 /**
+ * Extra field on the `PUT /api/users/goals` response (alongside the updated user): the
+ * worlds whose focus mode the server just switched on for the learner because the goal
+ * that opens the world was turned on with the pile already past FOCUS_LEVER_THRESHOLD
+ * (docs/FOCUS_MODE.md § 1a). Usually empty. The client owes an "auto-on" popup for each,
+ * shown on the first visit to the world (src/features/focusMode/autoFocusNotice.ts).
+ */
+export interface GoalsFocusAutoEnabled {
+  focusAutoEnabled: MasteryWorldId[];
+}
+
+/**
  * The fewest focus cards a game needs to be offered in a focused world. A game with a
  * card baseline needs its baseline; one without (Hydra Bubbles, Memory Map, Writing Grid)
  * needs a single card. The games menu refuses a game when `remaining` is below this; an flp

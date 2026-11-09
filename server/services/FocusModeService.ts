@@ -5,6 +5,7 @@ import { lastCorrectOnBar } from '../contracts/cooldown.js';
 import { STUDY_MIX_FILL_ORDER } from '../contracts/studyMix.js';
 import {
   FOCUS_DAILY_CARDS,
+  FOCUS_LEVER_THRESHOLD,
   FOCUS_QUOTAS,
   type FocusStatusResponse,
   type FocusWorldStatus,
@@ -169,6 +170,33 @@ export class FocusModeService {
     // A world switched back on owes no "focus ended" popup any more.
     if (on) await this.focusModeDAL.clearNotices(userId, language, [world]);
     return this.getStatus(userId, language);
+  }
+
+  /**
+   * Switch a world's focus ON on the learner's behalf, if its pile is already past the
+   * lever's threshold (docs/FOCUS_MODE.md § 1a). Called when a Reading / Writing goal is
+   * switched on: the new world opens on every sorted card at once, a giant tower that
+   * would greet the learner on their first visit.
+   *
+   * "Eligible" is the lever's own rule — FOCUS_LEVER_THRESHOLD off-cooldown cards across
+   * all four bands. `listWorldCards` + `selectFocusSet` apply the same sorted-card and
+   * writing-word filters as `OnDeckVocabService.getFlpReadyCounts`, so this total is the
+   * figure the tower would stand.
+   *
+   * Returns true only when this call turned focus on. A world already focused is left
+   * alone (false). The snapshot is not taken here; the first focus-aware read takes it.
+   */
+  async autoEnableIfCrowded(userId: string, language: string, world: MasteryWorldId): Promise<boolean> {
+    if (!MASTERY_WORLDS.includes(world)) throw new ValidationError('Unknown world');
+    const state = await this.focusModeDAL.getState(userId, language);
+    if (state.focusWorlds.includes(world)) return false;
+    const cards = await this.focusModeDAL.listWorldCards(userId, language, world);
+    const { offCooldownTotal } = selectFocusSet(cards, this.now(), world);
+    if (offCooldownTotal < FOCUS_LEVER_THRESHOLD) return false;
+    await this.focusModeDAL.setWorldOn(userId, language, world, true);
+    // Same as the lever's turn-on: a world switched back on owes no "focus ended" popup.
+    await this.focusModeDAL.clearNotices(userId, language, [world]);
+    return true;
   }
 
   /** The client showed these worlds' "focus ended" popups. */

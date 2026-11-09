@@ -2718,8 +2718,8 @@ drift differed.
   also clips vertically), `beginner-keyboard__hint-layer`
 - `src/features/beginnerKeyboard/HintBubble.tsx` — the bk wrapper: positions the bubble
   over its chip and commits on tap. The look and the grow / pop / ring keyframes live in
-  the shared `src/components/hintBubble/HintBubbleSurface.tsx`, which the writing flp's
-  used-in bubbles also use (`docs/WRITING_PRACTICE_REWORK.md` § 3b)
+  the shared `src/components/hintBubble/HintBubbleSurface.tsx`, which the flp hint pawn's
+  speech bubble also uses (`docs/HINT_PAWN.md`)
 - `src/components/hintBubble/useHintBubblePresence.ts` → `reconcilePresence`
   (pure enter/pop/revive rules), `useHintBubblePresence` (the removal timers)
 - `src/components/hintBubble/hintMotion.ts` → `HINT_MOTION`
@@ -3126,7 +3126,7 @@ pages").
 
 **Code:** `src/features/beginnerKeyboard/keyboardColors.ts` → `KEYBOARD_COLORS`;
 `BeginnerKeyboard.tsx` → `inkKeySx`; `KeyboardSwitchBar.tsx`; `ComponentBuffer.tsx`;
-`PinyinToneKeyboard.tsx` → `utilityKeySx`, `keycapShadow`, `keyPressSx` (→ `src/theme/keycapPress.ts`);
+`PinyinToneKeyboard.tsx` → `utilityKeySx`, `keycapShadow` (outline ring + the straight-lip rounded edge, docs/designGuidelines.md § "The rounded edge"), `keyPressSx` (→ `src/theme/keycapPress.ts`);
 `src/timeOfDay/tier2Chrome.ts`. **Docs:** docs/SHELF_REDESIGN.md § 7b "Time of day".
 
 ## 7. Outstanding before we can build

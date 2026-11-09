@@ -77,13 +77,9 @@ export interface KeycapPressOptions {
      * (sortCardStock.ts) — so the face sinks along its own wall onto the ground.
      */
     pressedX?: number;
-    /**
-     * Drive the press through the CSS `translate` property instead of `transform`. For a
-     * key that something else writes an INLINE `transform` on — useScrollStretch's track
-     * elements (MiniVocabCardGrid's cards) — where an inline transform would override the
-     * press, while `translate` composes with it. `baseTransform` is ignored in this mode.
-     */
-    viaTranslate?: boolean;
+    // The press always moves through `transform`. That channel is free on
+    // useScrollStretch's track elements (td's cards-page mini cards): the stretch writes
+    // the separate `translate` property, which composes with it.
 }
 
 /**
@@ -100,13 +96,11 @@ export function keycapPressSx({
     restX = 0,
     baseTransform = "",
     pressedX = 0,
-    viaTranslate = false,
 }: KeycapPressOptions) {
-    // The key's offset at rest or held, on whichever channel the key moves through.
-    const at = (x: number, y: number) =>
-        viaTranslate
-            ? { translate: `${x}px ${y}px` }
-            : { transform: `${baseTransform} ${x ? `translate(${x}px, ${y}px)` : `translateY(${y}px)`}`.trim() };
+    // The key's offset at rest or held.
+    const at = (x: number, y: number) => ({
+        transform: `${baseTransform} ${x ? `translate(${x}px, ${y}px)` : `translateY(${y}px)`}`.trim(),
+    });
     const pressed = {
         ...at(pressedX, pressedY),
         boxShadow: pressedShadow,

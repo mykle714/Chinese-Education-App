@@ -32,7 +32,7 @@ import LookalikeNotice from "./LookalikeNotice";
  *          cell wiggles the card and flashes every empty cell (`flashNonce`). An EMPTY or written cell
  *          previews what the editor will first show at this level (`levelPreview`):
  *          the outline for Snap / Trace / Step Through, the first region for
- *          Quarters / Sixths, nothing for Memorize / Blank / Timed (Memorize's outline is
+ *          Thirds / Quarters, nothing for Memorize / Blank / Timed (Memorize's outline is
  *          the editor's study phase, never previewed).
  *   BACK   the same layout; each cell shows the learner's ink over the WHOLE outline
  *          with its ✓ / ✗, and the bottom line says "Tap the card to continue". When a

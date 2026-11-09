@@ -32,6 +32,34 @@ pile the feature exists to keep from overwhelming them.
 
 *Code: `server/contracts/focusMode.ts` (numbers + wire shapes).*
 
+### 1a. Auto-on when a Reading / Writing goal is switched on
+
+Switching on a goal opens its world with every sorted card ready at once, because none has
+a mark on that bar yet. That is a giant tower to meet on a first visit. So when a goal goes
+**off → on** and the new world is already **lever-eligible** (`FOCUS_LEVER_THRESHOLD`,
+counted with the lever's own rule), the server switches that world's focus on in the
+account's selected language. The main world has no goal toggle, so it is never auto-enabled.
+
+| Step | Layer | Code |
+|---|---|---|
+| Detect the flip (a re-send of an already-on goal is not one) | service | `UserService.updateGoals` → `enabledWorlds` |
+| Check eligibility, switch on, clear any owed "ended" notice | service | `FocusModeService.autoEnableIfCrowded` (`listWorldCards` + `selectFocusSet` → `offCooldownTotal`, the same filters as `getFlpReadyCounts`) |
+| Orchestrate; best-effort (a failure does not fail the goal write) | controller | `UserController.updateGoals` → response `focusAutoEnabled` (`GoalsFocusAutoEnabled`) |
+| Owe the popup / forgive it when the goal goes back off | client page | `AccountPane` → `handleToggleGoal`; `src/features/focusMode/autoFocusNotice.ts` |
+| Re-read the world's counts when its goal turns on (td stays mounted under the AccountSheet) | client page | `DeckTowerPage` → `goalsBefore` effect |
+| Show the "auto-on" popup on the first settled visit with focus on | client page logic | `useFocusLever` (`onScreen`), `FocusDialog` kind `auto-on` |
+
+Rules:
+* **Every** off → on flip re-arms it: a goal turned off and on again auto-enables again
+  (if eligible and focus is off) and owes the popup again.
+* A world already focused is left alone and owes nothing.
+* The popup debt is in **localStorage on the device that flipped the goal**
+  (`focusAutoOnNotice:<userId>:<language>`), not a column: another device never shows it.
+* The popup ("Focus mode is on", one "Got it" button) waits for a settled visit: the world on
+  screen, no swap / pan / resize / study running, and the counts reporting `focusOn`. A debt
+  that never meets focus on (e.g. auto-off before the visit) stays dormant and is forgiven
+  the next time the lever is flipped by hand.
+
 ## 2. Data model (migration 176)
 
 | Object | Holds |
@@ -145,7 +173,8 @@ Search's raw fetch calls it itself).
 | Lever motion | `src/features/deckTower/useLeverMotion.ts`, `usePopUpMotion.ts` | `pull` tween; `sink` / `hatch` / sky fall from `usePopUpMotion` |
 | Lever logic | `src/features/deckTower/useFocusLever.tsx` | when it shows, taps, its popups; one per world in `DeckTowerPage`. `onRecount` fires just before a flip's re-read, so the page holds the tower and resizes it when the new figure lands (`useTowerResize`, DECK_TOWER.md § Tower resizes) |
 | Placement | `towerPlatforms.ts` → `leverAt` (1.2, 9.85) | the floor's left corner on screen (low x, high y), beside the floor plate's near end; its hatch is a pawn obstacle drawn after the stack |
-| Popups | `src/features/focusMode/FocusDialog.tsx` | turn-on / turn-off / ended / game-blocked |
+| Popups | `src/features/focusMode/FocusDialog.tsx` | turn-on / turn-off / auto-on (§ 1a) / ended / game-blocked |
+| Auto-on debt | `src/features/focusMode/autoFocusNotice.ts` | per-device localStorage list of worlds owed the auto-on popup (§ 1a) |
 | Auto-off popup | `src/features/focusMode/FocusEndedNoticeHost.tsx` (mounted in `App.tsx`) | checks `GET /api/focus` on sign-in and on every `focus-mode-ended` event; dismiss acknowledges |
 | Games menu | `src/features/focusMode/FocusGameGuard.tsx`, wrapping every game route in `src/routes/registry.ts` | refuses a launch with the game-blocked popup, then returns to the menu |
 | flp breaks | `useGameBreak` | drops break candidates that `breakCards` (outside cards + remaining, § 6) cannot fill; none left → the break is skipped |
@@ -156,6 +185,10 @@ Search's raw fetch calls it itself).
   on its lift, which stops flush with the floor. The floor under a standing lever is solid, with no seam.
   Sunk and shut, the hatch is not drawn at all: the corner is plain, flush floor, and the flaps
   appear only while they swing (`IsoLever` → `flapsShown`).
+  The rise marks the deck **growing past the threshold while the learner is on the page**. Arriving
+  at the Deck Tower (it remounts on every return to `/`), the counts' first landing puts a lever
+  that should stand up already standing, unanimated (`useFocusLever` → `firstLoad`, passed as
+  `useLeverMotion` `instant`; `usePopUpMotion` → `snap` carries a one-render `instant` to the tweens).
 * **Deck swaps** (the trap door, [DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md)): the
   lever never animates on an open door. Leaving Learning, a standing lever stays up and falls
   off the screen with the old tower (`DeckTowerPlatform` wraps it in `fallSx`; its hatch, lift
@@ -197,6 +230,7 @@ break in a tower session needs 7 (`src/games/flpBreak/wordSearchBreak.ts`).
 | `GET /api/focus` | — | `FocusStatusResponse`: per world `{ on, remaining, breakCards }` + `endedNotices` |
 | `POST /api/focus` | `{ world, on }` | the new `FocusStatusResponse` |
 | `POST /api/focus/notices/ack` | `{ worlds }` | 204 |
+| `PUT /api/users/goals` (not a focus route) | `{ readingGoal?, writingGoal? }` | the updated user + `focusAutoEnabled: MasteryWorldId[]` (§ 1a) |
 
 The language is always the account's selected one. Turning a world back on clears its owed
 notice. Turning focus off does **not** delete the day's snapshot, so switching off and on again

@@ -77,6 +77,7 @@ names (`onAddToLibrary`, `totalLibraryCards`, `flashcards-decks__library-*`) rem
 
 ## Buttons & cards
 Every tappable button and card entity (game cards and their option tiles, the tip box, resume tiles, etc.) carries the app's outline: `border: 1px solid ${COLORS.border}` (--line2). Exceptions: Bento tiles/sub-tiles (large pastel tiles separated by their drop shadow — see docs/BENTO_SYSTEM.md), the Word Search game card's outer frame (`GameCardData.outlined: false` in `buildWordSearchCard`; its resume tile stays outlined), solid-ink controls (e.g. the round play button), and selected tiles that already show a stronger ink ring. Small content-free pastel marks keep the separate inset `COLORS.markOutline` ring.
+Every rectangular raised object (keycaps, plates, cards, slabs, iso solids) also draws the hairline **rounded edge** (`src/theme/roundedEdge.ts`) → see [docs/designGuidelines.md](./docs/designGuidelines.md) § "The rounded edge".
 
 ## Writing .md files
 Do not write content descibing what you just completed; you should write the status/structure of the service/code. The files are meant to be for future AI  agents.

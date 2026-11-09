@@ -48,6 +48,7 @@ import { FLP_CARD_PANEL_RADIUS_RATIO, FLP_CARD_STOCK_INSET_RATIO } from "../flas
 import { LEARNING_COLORS, MASTERY_BAR_COLORS } from "../../utils/categoryColors";
 import { FONTS } from "../../theme/fonts";
 import { keycapPressSx } from "../../theme/keycapPress";
+import { roundedEdgeFilletDown, roundedEdgeRimLightTop } from "../../theme/roundedEdge";
 import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
 import MiniCard from "../../components/MiniCard";
 import { MINI_CARD_DIMENSIONS, type MiniCardSize } from "../../components/miniCardFace";
@@ -172,12 +173,17 @@ const SortToolbar = styled(Box)({
 const KEYCAP_LIP_PX = 3;
 
 /**
- * The keycap's lip under its face, then its cast shadow on the ground. `sunk` px pressed:
- * the lip shrinks by that much, and since the cast shadow stays put on the ground while
- * the key moves down, its offset from the key shrinks by the same amount.
+ * The keycap's hairline rounded edge (theme/roundedEdge.ts, straight-lip form — inside the
+ * CSS border, so no ring offset), its lip under its face, then its cast shadow on the
+ * ground. `sunk` px pressed: the lip shrinks by that much (the fillet goes with it once
+ * flush), and since the cast shadow stays put on the ground while the key moves down, its
+ * offset from the key shrinks by the same amount.
  */
-const keycapShadow = (look: SortLook, sunk: number) =>
-    `0 ${KEYCAP_LIP_PX - sunk}px 0 ${look.keyWall}, 4px ${7 - sunk}px 0 ${look.groundShadow}`;
+const keycapShadow = (look: SortLook, sunk: number) => {
+    const lip = KEYCAP_LIP_PX - sunk;
+    const fillet = lip > 0 ? `${roundedEdgeFilletDown(look.keyFace, look.keyWall)}, ` : "";
+    return `${roundedEdgeRimLightTop(look.keyFace)}, ${fillet}0 ${lip}px 0 ${look.keyWall}, 4px ${7 - sunk}px 0 ${look.groundShadow}`;
+};
 
 /**
  * A keycap on the ground (the artboard's `.kc` / `.pill.dd`): the look's key face on its
@@ -1457,7 +1463,7 @@ const AddCardsPage: React.FC = () => {
             ? navigate(launchExit.path, { state: launchExit.state })
             : navigate("/", { state: { towerWorld: "core" } });
     // Opened from the Deck Tower's platform (the only launch carrying `exitTo`), the footer's
-    // Deck tab leads back to the same place as Back, so a tap on it plays Back too — the
+    // Flashcards tab leads back to the same place as Back, so a tap on it plays Back too — the
     // circle closing onto the platform — rather than the footer's plain jump (NodePage
     // `backOnFooterTab`, components/footerTabOverride.ts).
     const backOnFooterTab = launchExit ? ("deck" as const) : undefined;

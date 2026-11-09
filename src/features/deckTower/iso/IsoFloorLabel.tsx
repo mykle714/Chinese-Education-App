@@ -121,6 +121,24 @@ const IsoFloorLabel: React.FC<IsoFloorLabelProps> = ({
     // Cancels the platform's decal transform (the door's plane map at the hinge's height),
     // so the swung slab and face below are drawn in plain screen space.
     const unswing = swung ? affineToSvg(invertAffine(hingedPlaneAffine(proj, swung.z, swung))) : undefined;
+    // The plate's printed face: on the slab's top when raised, straight on the surface when flat.
+    const plateFace = (
+        <g className="iso-floor-label__face" transform={transform} fontFamily={FONTS.cjk}>
+            <path className="iso-floor-label__plate" d={plate} fill={shaded ? shadowTone(bandFill) : bandFill} />
+            <IsoSpacedText
+                className="iso-floor-label__text"
+                x={rect.x + rect.w / 2}
+                y={rect.y + rect.d / 2}
+                fontSize={fontSize}
+                fontWeight={WEIGHT.bold}
+                letterSpacing={0.06}
+                textAnchor="middle"
+                fill={shaded ? shadowTone(palette.ink) : palette.ink}
+            >
+                {text}
+            </IsoSpacedText>
+        </g>
+    );
     return (
         <g className={shaded ? "iso-floor-label iso-floor-label--shaded" : "iso-floor-label"}>
             {/* The shaded copy (inside a pawn's shadow) skips the contact shadow: the pawn's
@@ -131,22 +149,16 @@ const IsoFloorLabel: React.FC<IsoFloorLabelProps> = ({
                 </g>
             )}
             <g className="iso-floor-label__body" transform={unswing}>
-                {slab && <IsoSolid className="iso-floor-label__slab" geometry={slab} material={plateMaterial(bandFill, shaded, wallSteps)} />}
-                <g className="iso-floor-label__face" transform={transform} fontFamily={FONTS.cjk}>
-                    <path className="iso-floor-label__plate" d={plate} fill={shaded ? shadowTone(bandFill) : bandFill} />
-                    <IsoSpacedText
-                        className="iso-floor-label__text"
-                        x={rect.x + rect.w / 2}
-                        y={rect.y + rect.d / 2}
-                        fontSize={fontSize}
-                        fontWeight={WEIGHT.bold}
-                        letterSpacing={0.06}
-                        textAnchor="middle"
-                        fill={shaded ? shadowTone(palette.ink) : palette.ink}
-                    >
-                        {text}
-                    </IsoSpacedText>
-                </g>
+                {/* A raised plate's face prints over the slab's whole top, so it goes INSIDE the
+                    slab's IsoSolid: the rounded edge's rim light paints over the children
+                    (IsoSolid → `roundedEdge`). A flat plate has no wall, so no edge. */}
+                {slab ? (
+                    <IsoSolid className="iso-floor-label__slab" geometry={slab} material={plateMaterial(bandFill, shaded, wallSteps)} roundedEdge={shaded ? shadowTone(palette.edgeLight) : palette.edgeLight}>
+                        {plateFace}
+                    </IsoSolid>
+                ) : (
+                    plateFace
+                )}
             </g>
         </g>
     );

@@ -141,13 +141,6 @@ export const MARK_TYPE_COLORS: Record<MarkType, string> = {
  */
 export const MASTERY_READY_COLOR = COLORS.successInk;
 
-export const MARK_TYPE_LABELS: Record<MarkType, string> = {
-  recognition: "Recognition",
-  production: "Production",
-  reading: "Reading",
-  writing: "Writing",
-};
-
 /**
  * User-facing names for the three mastery bars (migration 143).
  *

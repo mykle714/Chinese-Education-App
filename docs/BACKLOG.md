@@ -34,33 +34,19 @@ reading of a one-line prompt — correct it rather than trusting it.*
 
 ### 1. Beginner writing keyboard
 
-**What.** A character-entry surface for learners who cannot yet type Chinese. Today the
-only way a learner produces a character in the app is by **drawing** it
-([PRACTICE_WRITING.md](./PRACTICE_WRITING.md) — Hanzi Writer guide + Google Input Tools
-recognition, `zh` only, 1–4 characters). Nothing lets them *assemble* or *pick* one. A
-"beginner keyboard" would be a third input mode sitting beside drawing: pinyin-with-training-wheels,
-or component-based assembly, or a small candidate palette.
-
-**Why.** Drawing tests recall of stroke order, which is the hardest skill and the last
-one a beginner acquires. A learner who recognizes 想 and knows it is *xiǎng* has no way
-to demonstrate that. It is also the missing input for any future "type your answer"
-production drill — every production surface today is multiple-choice.
-
-**Open questions.**
-- Is this an **input method** (produce a character to submit as an answer) or a
-  **teaching drill** in its own right, like Practice Writing's four levels?
-- Pinyin-based (type `xiang`, pick from candidates), component-based (tap 木 + 目 + 心 —
-  `dictionaryentries_zh.components` already exists, migration 125), or both?
-- Does it replace the OS IME anywhere, or only appear inside drills?
-- Spanish: accented-character entry is the analogous problem. In scope or not?
-- Does it emit `production` or `writing` marks ([MASTERY_REWORK.md](./MASTERY_REWORK.md) § 1)?
+→ **Promoted and BUILT 2026-09-07: [BEGINNER_KEYBOARD.md](./BEGINNER_KEYBOARD.md)** (bk).
+It is an app-wide component-assembly IME in `src/features/beginnerKeyboard/`. Open work
+lives in that doc's question log.
 
 ---
 
 ### 2. AI-powered immersive mode
 
-→ **Now has a doc: [IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md)** (abbrev **iw**), `STATUS: DESIGN /
-DRAFT`. The open question this file used to hold — *what is a session?* — is answered one
+→ **Now has a doc: [IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md)** (abbrev **iw**). ⚠️ **The rest
+of this entry is stale as of 2026-11-08:** phase 1 is built (migrations 158/159,
+`src/features/immersiveworld/`, `server/services/iw/`), the § 14 question log is closed,
+and the feature sits behind `FEATURE_FLAGS.immersiveWorld` (currently off). This entry
+should be deleted in favour of the link. The open question this file used to hold — *what is a session?* — is answered one
 way there: **an objective-driven scene with model-driven NPCs**, built on the night market
 engine, where the learner's only inputs are one action button and a word palette whose
 contents are emitted into the world as speech. Nothing built, no migration, no tables
@@ -194,7 +180,11 @@ Practice Writing, a future typed-answer drill). Related but NOT the same as
 reach — or the cap may make the weighting unnecessary. Decide that before building
 either.
 
-**(b) Stop surfacing Recognition vs Production.** The two tracks stay exactly as they
+**(b) Stop surfacing Recognition vs Production.** ⚠️ **Mostly done 2026-09-25 ("the know
+merge", [MASTERY_REWORK.md](./MASTERY_REWORK.md)):** `MARK_TYPE_COLORS` paints both tracks the
+same grey, and the Account and Word Search copy is gone. The last leak, the mini card strip's hover
+`title`, was removed 2026-11-08 together with `MARK_TYPE_LABELS`. **No learner-facing
+surface names the split any more.** The paragraph below is the original want. The two tracks stay exactly as they
 are on the backend — `MarkType`, `WORLD_MARK_TYPES`, the per-type 8-windows, the per-type
 cooldowns, `compute_type_category()` — because the flp's face steering, the games'
 pool selection (§ 7) and the cooldown queue all read them. What goes away is every

@@ -10,10 +10,10 @@ import type { LastMarkUndoSnapshot } from "../types";
  *
  * Its controls — back, undo, the narration chip, and the minute-points flame PageHeader
  * always draws — are in the Deck Tower's own header style: the
- * shelf-redesign PageHeader with no bar, its title and back arrow in white so they read
- * on the sky and on space (`titleColor`), like the tower page's own header. The title
- * names the deck being studied rather than a category: a tower session is always the
- * world's whole Learning deck.
+ * shelf-redesign PageHeader with no bar, its back arrow in white so it reads on the sky
+ * and on space (`titleColor`), like the tower page's own header. It has NO TITLE
+ * (dropped 2026-11-08; it named the world — "Flashcards" / "Reading" / "Writing"): the
+ * row's width is kept for the session's controls.
  *
  * Its AUDIO CHIP is the shared AudioModeChip's `outlined` skin in white: no fill, its glyph
  * and label in plain white, the same in every audio mode — the label carries the state —
@@ -29,7 +29,6 @@ import type { LastMarkUndoSnapshot } from "../types";
  * Layer: feature view (src/features/flashcards). Rendered by FlashcardsLearnPage.
  */
 interface TowerStudyHeaderProps {
-    title: string;
     lastMarkUndoSnapshot: LastMarkUndoSnapshot | null;
     isAnimating: boolean;
     isUndoing: boolean;
@@ -43,7 +42,6 @@ interface TowerStudyHeaderProps {
 const ON_SKY_INK = COLORS.white;
 
 const TowerStudyHeader: React.FC<TowerStudyHeaderProps> = ({
-    title,
     lastMarkUndoSnapshot,
     isAnimating,
     isUndoing,
@@ -52,7 +50,6 @@ const TowerStudyHeader: React.FC<TowerStudyHeaderProps> = ({
     editMode,
 }) => (
     <PageHeader
-        title={title}
         onBack={onBack}
         // A lateral arrow, not the drill-in chevron: the learner is still on the tower
         // page, and back flies the camera out rather than closing a page.

@@ -22,7 +22,7 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    Add Cards (acp, `/discover/sort/:language` — the `/discover/` prefix is kept so
    existing links work) is a **Deck drill-in**: reached from the main world's sort
    platform on td (`DeckTowerPage` → `sortPath` with `state.exitTo` = `SORT_EXIT`), it
-   lights the Deck tab and its Back returns to `/` (main world)
+   lights the Flashcards tab and its Back returns to `/` (main world)
    ([DISCOVER_FLOW.md](./DISCOVER_FLOW.md)). Quick Mark has no route of its own — it
    is a panel inside the sort page ([QUICK_MARK.md](./QUICK_MARK.md)).
 

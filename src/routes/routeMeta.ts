@@ -112,7 +112,7 @@ export interface RouteMeta {
 
 /** Every non-game route. Order is irrelevant — React Router ranks by specificity. */
 const PAGE_ROUTES: RouteMeta[] = [
-  // ── Footer-tab destinations ── (left to right: Deck · Menu · Arena · Dictionary)
+  // ── Footer-tab destinations ── (left to right: Flashcards · Arena · Dictionary · Menu)
   {
     path: "/",
     access: "any",
@@ -187,7 +187,7 @@ const PAGE_ROUTES: RouteMeta[] = [
   { path: "/dictionary/card/:word", access: "any", shell: "frame", chrome: "node", footerTab: "dictionary", footerStyle: "slab" },
 
   // Add Cards — the Discover hub (`/discover`) was deleted 2026-10-17, so acp is a
-  // drill-in from the Deck Tower (the main world's sort platform) and lights the Deck tab. The
+  // drill-in from the Deck Tower (the main world's sort platform) and lights the Flashcards tab. The
   // `/discover/` URL prefix is kept so existing links (?set=provisional offers) work.
   // Wears the floating `slab` footer since its Tower Tier 2 re-skin (2026-10-29): the page
   // is a tier-2 ground under the Deck Tower, and the slab casts its shadow on that ground

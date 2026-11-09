@@ -5,6 +5,9 @@ import { shadowFootprint, type IsoSurface } from "./light";
 import { useIsoPalette, useIsoProjector } from "./sceneContext";
 import { EMOTE_GAP, HEAD_RADIUS } from "./pawnFigure";
 import { prefersReducedMotion } from "./skyTraffic";
+import PawnAirRing from "./PawnAirRing";
+import PawnIdleProps from "./PawnIdleProps";
+import type { PawnIdleCue } from "./pawnIdles";
 import {
     EMOTE_DRAW_SCALE,
     EMOTE_MS,
@@ -13,7 +16,9 @@ import {
     usePawnMotion,
     type PawnEntranceCue,
     type PawnRoam,
+    type PawnStretchCue,
     type PawnStep,
+    type PawnTapReaction,
 } from "./usePawnMotion";
 import { FONTS } from "../../../theme/fonts";
 import { WEIGHT } from "../../../theme/scale";
@@ -44,6 +49,15 @@ import { WEIGHT } from "../../../theme/scale";
  * pops the bubble as it starts to (no lean, no leap). With `entrance` it first ARRIVES
  * (pawnEntrances.ts — e.g. dropping out of the sky), timed so it lands at a given moment.
  * With `tappable`, a tap pops the bubble and it jumps on the spot (usePawnMotion's POKE).
+ * Each new `stretch` cue plays a back stretch at the cue's time (usePawnMotion's STRETCH —
+ * the flp's hint pawn, on each new speech bubble).
+ *
+ * IDLES AND TAPS (usePawnMotion's IDLE ANIMATIONS / TAP REACTION / AIR RING): each new
+ * `idle` cue plays a sneeze, a song, a doze or knitting, with its marks drawn round the
+ * head (PawnIdleProps) for as long as the pose plays; a lasting one holds until the cue is
+ * withdrawn. `onTap` lets the page answer a tap with a flinch instead of a jump (and
+ * silences the "!"). A jump chained in mid-air leaves a light-blue double ring where the
+ * feet kicked off (PawnAirRing) — on every pawn, the Deck Tower's included.
  *
  * LIGHTNING (docs/DECK_TOWER.md § "Weather" → "Lightning strikes"): each change of
  * `shockId` is a strike landing on it. It freezes (usePawnMotion's SHOCK) while its body
@@ -106,6 +120,42 @@ interface IsoPawnProps {
     shockId?: number;
     /** Smoulders — the crispy look, smoke wisps off its head (hidden while a shock is playing). */
     crispy?: boolean;
+    /**
+     * Draws its floor shadow (default true). False for a pawn on a small slab where the
+     * shadow clashes with the platform's own shading (the flp's hint pawn, HintPawn.tsx).
+     * The shadow's motion refs stay mounted (empty), so usePawnMotion is unchanged.
+     */
+    castsShadow?: boolean;
+    /**
+     * Plays a back stretch for each new cue id, starting at the cue's `at`
+     * (usePawnMotion's STRETCH). The flp's hint pawn sends one per new speech bubble.
+     */
+    stretch?: PawnStretchCue | null;
+    /**
+     * Wears an open hi-viz safety vest — two reflective stripes, a gap down the front, arm holes it has no arms for — (pawnFigure.ts → `pawnVest`),
+     * redrawn with the body every frame and clipped to it. The flp's hint pawn puts it on
+     * at night (HintPawn.tsx, docs/HINT_PAWN.md § "Night vest"). Default false: a pawn
+     * without one never computes the vest's geometry.
+     */
+    vest?: boolean;
+    /**
+     * Degrees the pawn faces off the camera, + toward screen-right. Default 0, facing the
+     * viewer. Turns the vest (pawnFigure.ts → `pawnVest`: its open front and arm holes turn
+     * with it) and aims the back stretch, which curls away from it (usePawnMotion's
+     * STRETCH). The hint pawn faces its speech bubble.
+     */
+    facing?: number;
+    /**
+     * Plays an idle animation for each new cue id (pawnIdles.ts); null withdraws a lasting
+     * one (doze, knit), which eases back to standing. The flp's hint pawn sends one a minute.
+     */
+    idle?: PawnIdleCue | null;
+    /**
+     * With `tappable`: picks each tap's reaction — "jump" or "flinch" — and replaces the "!"
+     * (the page answers in its own way, e.g. the hint pawn's "ouch" bubble). Told whether
+     * the feet are in the air; a tap there always jumps. Omitted: every tap jumps with the "!".
+     */
+    onTap?: (tap: { airborne: boolean }) => PawnTapReaction;
 }
 
 /**
@@ -260,13 +310,21 @@ const IsoPawn: React.FC<IsoPawnProps> = ({
     floorSpot,
     shockId,
     crispy = false,
+    castsShadow = true,
+    stretch,
+    vest = false,
+    facing = 0,
+    idle,
+    onTap,
 }) => {
     const proj = useIsoProjector();
     const palette = useIsoPalette();
     // `url(#…)` needs a plain id; React's useId wraps its ids in colons.
     const uid = React.useId().replace(/[^a-zA-Z0-9_-]/g, "");
     const decalClipId = `iso-pawn-decal-clip-${uid}`;
-    const { refs, emote, poke } = usePawnMotion({
+    const bodyId = `iso-pawn-body-${uid}`;
+    const vestClipId = `iso-pawn-vest-clip-${uid}`;
+    const { refs, emote, poke, activeIdle, airRings, dropAirRing } = usePawnMotion({
         proj,
         at,
         startled,
@@ -281,6 +339,10 @@ const IsoPawn: React.FC<IsoPawnProps> = ({
         surfaceZ: surface.z,
         floorSpot,
         shockId,
+        stretch,
+        facing,
+        idle,
+        onTap,
     });
     // The shock plays for SHOCK_MS from a change of `shockId` (not its mount value: a pawn
     // remounting in a world it was struck in is already crispy, not being struck again).
@@ -332,11 +394,13 @@ const IsoPawn: React.FC<IsoPawnProps> = ({
                 <g className="iso-pawn__travel" ref={refs.travel}>
                     <g className="iso-pawn__shadow-hop" ref={refs.shadow}>
                         <g className="iso-pawn__floor-shadow" ref={refs.floorShadow}>
-                            <IsoShadow footprint={footprint} casterZ={surface.z} receiver={surface} className="iso-pawn__shadow" />
+                            {castsShadow && (
+                                <IsoShadow footprint={footprint} casterZ={surface.z} receiver={surface} className="iso-pawn__shadow" />
+                            )}
                         </g>
                         {/* The same shadow as a glaze, so the summit's print shows through it;
                             usePawnMotion swaps the two. */}
-                        {hasSummit && (
+                        {castsShadow && hasSummit && (
                             <g className="iso-pawn__summit-shadow" ref={refs.summitShadow} style={{ visibility: "hidden" }}>
                                 <IsoShadow
                                     footprint={footprint}
@@ -366,6 +430,11 @@ const IsoPawn: React.FC<IsoPawnProps> = ({
                         </g>
                     )}
                 </g>
+                {/* Mid-air jumps' kick-off rings: in absolute screen space (they stay where they
+                    were kicked off), behind the figure. */}
+                {airRings.map((ring) => (
+                    <PawnAirRing key={ring.id} ring={ring} onDone={() => dropAirRing(ring.id)} />
+                ))}
                 {/* The 3D figure, in absolute screen space: usePawnMotion writes the body's `d`
                     and the head's cx/cy/r every frame (iso/pawnFigure.ts). The head is drawn
                     last: it is the nearest part to any camera looking down. The tap target
@@ -382,13 +451,31 @@ const IsoPawn: React.FC<IsoPawnProps> = ({
                         } as React.CSSProperties
                     }
                 >
-                    <path className="iso-pawn__body" ref={refs.body} fill={palette.ink} />
+                    <path className="iso-pawn__body" id={bodyId} ref={refs.body} fill={palette.ink} />
+                    {/* The night vest, painted ON the body: clipped to the body's live outline
+                        (a <use> of the body path, so it follows every frame's rewrite);
+                        usePawnMotion writes both paths. Before the head, which covers its top. */}
+                    {vest && (
+                        <g className="iso-pawn__vest" clipPath={`url(#${vestClipId})`}>
+                            <clipPath id={vestClipId} className="iso-pawn__vest-clip">
+                                <use href={`#${bodyId}`} />
+                            </clipPath>
+                            <path className="iso-pawn__vest-cloth" ref={refs.vest} fill={palette.vest} />
+                            <path className="iso-pawn__vest-stripes" ref={refs.vestStripes} fill={palette.vestStripe} />
+                            {/* An open vest: the gap down its front and its two (unused) arm holes,
+                                in the body's ink over the cloth — reads as cut out of it. */}
+                            <path className="iso-pawn__vest-openings" ref={refs.vestOpenings} fill={palette.ink} />
+                        </g>
+                    )}
                     <circle className="iso-pawn__head" ref={refs.head} fill={palette.ink} />
                     {tappable && <circle className="iso-pawn__hit" ref={refs.hit} fill="transparent" />}
                 </g>
                 {/* A billboard over the head, placed and scaled by usePawnMotion. Keyed per
                     startle so the CSS pop replays. */}
                 <g className="iso-pawn__emote-anchor" ref={refs.emoteAnchor}>
+                    {/* An idle's marks (z's, notes, the sneeze puff, the knitting), keyed per idle
+                        so their CSS restarts. */}
+                    {activeIdle && <PawnIdleProps key={activeIdle.id} kind={activeIdle.kind} ending={activeIdle.ending} />}
                     {/* Lightning: sparks while shocked, then the crispy smoke. */}
                     {shocking && <PawnShockSparks color={palette.white} />}
                     {crispy && !shocking && <PawnCrispySmoke smoke={palette.white} />}

@@ -445,7 +445,8 @@ export function masteredAtForBar(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mark-history maintenance (server-side writers)
+// Mark-history maintenance (server-side writers; appendTypedMark is also mirrored on the
+// client by useWorkingLoop.ts so an in-session miss is visible before the next deal)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** How many most-recent marks each type retains. Mirrors MARK_WINDOW_SIZE in wire.ts. */

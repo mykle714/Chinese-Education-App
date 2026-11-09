@@ -108,7 +108,7 @@ export function struckPawn(at: Pt, pawns: readonly { key: number; spot: Pt | nul
 /**
  * `world` after a strike at `strike.at` that hit `pawnKey` (or nobody). It leaves a burn only
  * where the whole scorch fits (`scorchFits`): a random strike always does, but a tester's
- * "Strike pawn" aims at wherever the pawn stands, which may be nearer an object than a scorch
+ * "⚡ Pawn" aims at wherever the pawn stands, which may be nearer an object than a scorch
  * allows — it still shocks him, and leaves no mark.
  */
 export function withStrike(world: WorldLightning, strike: TowerStrike, pawnKey: number | null): WorldLightning {

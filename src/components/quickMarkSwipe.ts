@@ -78,7 +78,7 @@ export function paintQuickMarkDrag(card: HTMLElement, dx: number | null): void {
 // two rows past the screen painted), so nothing ever appears or fades in mid-slide.
 //
 // Positions are read with offsetLeft/offsetTop (LAYOUT boxes), on purpose: the outer
-// card carries `useScrollStretch`'s transform and the swipe layer may carry a drag, and
+// card carries `useScrollStretch`'s translate and the swipe layer may carry a drag, and
 // neither may leak into the measurement. The slide itself is drawn on the swipe layer,
 // the one element whose transform this file already owns.
 

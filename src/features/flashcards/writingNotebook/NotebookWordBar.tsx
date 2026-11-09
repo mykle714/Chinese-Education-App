@@ -8,7 +8,7 @@ import { NOTEBOOK_CELL_BORDER, WORD_BAR_CELLS_PER_ROW, notebookGeometry } from "
 import { COLORS } from "../../../theme/colors";
 
 /**
- * NotebookWordBar — the sheet's word, drawn under the Writing Notebook's header
+ * NotebookWordBar — the sheet's word, drawn under the Writing Notebook's toolbar
  * (docs/WRITING_NOTEBOOK.md § "Page anatomy") as its WRITING SHADOWS — each character's
  * stroke shape in a replica sheet cell (`ShadowCell`), no pinyin.
  *

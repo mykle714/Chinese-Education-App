@@ -13,6 +13,7 @@ import { useCategoryCounts } from "../../hooks/useCategoryCounts";
 import { useVelocity } from "../../hooks/useVelocity";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
+import { forgiveAutoFocusNotice, oweAutoFocusNotice } from "../../features/focusMode/autoFocusNotice";
 
 /**
  * AccountPane — the AccountSheet's Account tab: artboard 5 of the shelf redesign
@@ -55,7 +56,14 @@ function AccountPane({ onClose }: AccountPaneProps) {
     const handleToggleGoal = async (which: "reading" | "writing", next: boolean) => {
         setGoalSaving(which);
         try {
-            await updateGoals(which === "reading" ? { readingGoal: next } : { writingGoal: next });
+            const focusAutoEnabled = await updateGoals(which === "reading" ? { readingGoal: next } : { writingGoal: next });
+            // A goal turned on may have opened a crowded world with focus mode switched on
+            // for the learner; its explaining popup is owed until their first visit there.
+            // Turning the goal back off forgives an unshown one (docs/FOCUS_MODE.md § 1a).
+            if (user?.selectedLanguage) {
+                if (next) oweAutoFocusNotice(user.id, user.selectedLanguage, focusAutoEnabled);
+                else forgiveAutoFocusNotice(user.id, user.selectedLanguage, which);
+            }
         } catch {
             /* AuthContext surfaces the error; local switch reverts via user state */
         } finally {

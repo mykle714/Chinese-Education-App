@@ -17,7 +17,6 @@ export { default as IsoSpacedText } from "./IsoSpacedText";
 
 // Objects
 export { default as IsoPlatform, RIM_WIDTH } from "./IsoPlatform";
-export { default as IsoCarpet } from "./IsoCarpet";
 export { default as IsoCard } from "./IsoCard";
 export { default as IsoCardStack } from "./IsoCardStack";
 export { default as IsoCardImprint } from "./IsoCardImprint";
@@ -29,23 +28,31 @@ export { PAPER_SHEET_THICKNESS, paperStackHeight } from "./paperStackMetrics";
 export { default as IsoFloorLabel, RAISED_HEIGHT } from "./IsoFloorLabel";
 export { default as IsoLever } from "./IsoLever";
 export { default as IsoHatch } from "./IsoHatch";
-export { default as IsoModeSwitch } from "./IsoModeSwitch";
 export {
     hatchFootprint,
     leverFootprint,
-    modeSwitchFootprint,
     openingSweepPath,
     LEVER_HOLE,
-    MODE_SWITCH_HOLE,
 } from "./hatchGeometry";
 export { default as IsoCardRuns } from "./IsoCardRuns";
 export { default as IsoSmokePuff } from "./IsoSmokePuff";
 export { default as IsoPawn } from "./IsoPawn";
 export { default as IsoPawnStill } from "./IsoPawnStill";
-export { backToFront, depthRankAmong, PLATE_LAUNCH_APEX_MS, type PawnRoam, type PawnEntranceCue, type PawnStep } from "./usePawnMotion";
+export {
+    backToFront,
+    depthRankAmong,
+    PLATE_LAUNCH_APEX_MS,
+    type PawnRoam,
+    type PawnEntranceCue,
+    type PawnStretchCue,
+    type PawnStep,
+    type PawnTapReaction,
+} from "./usePawnMotion";
+export { LASTING_IDLES, type PawnIdleCue, type PawnIdleKind } from "./pawnIdles";
 export {
     PAWN_ENTRANCES,
     FALL_FROM_SKY,
+    fallFromHeight,
     pickPawnEntrance,
     entranceStartFor,
     type PawnEntrance,

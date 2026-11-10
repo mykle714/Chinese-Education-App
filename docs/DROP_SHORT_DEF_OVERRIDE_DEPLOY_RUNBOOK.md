@@ -56,8 +56,7 @@ SELECT count(*) FROM information_schema.columns
  WHERE column_name = 'shortDefinitionPronunciationOverride';                    -- 0
 ```
 Then open the dictionary search for 行 and confirm it returns results (a 500 here means the
-old code is still running against the dropped column — see Rollback). In an IW scene, a line
-containing 行 should show `xíng`.
+old code is still running against the dropped column — see Rollback).
 
 ## Rollback
 
@@ -74,5 +73,5 @@ containing 行 should show `xíng`.
 ## User-visible change
 
 Heteronyms with no chosen sense now show their most common sense's reading on every surface
-(IW bubbles, Reader, dictionary search, synonyms, Word Search bonus words, Speed Reading
+(Reader, dictionary search, synonyms, Word Search bonus words, Speed Reading
 audio). 着 reads `zhe` via its top cluster rather than via the dropped override.

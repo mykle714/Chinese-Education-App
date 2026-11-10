@@ -345,7 +345,7 @@ users join**:
 | Deck bucket counts | `OnDeckVocabService.getCategoryCounts` |
 | flp working-loop quotas (which utcm bucket a card counts toward) | `OnDeckVocabService`, Section 6 |
 | Level estimate | `StarterPacksService.estimateLevel` |
-| Night Market community **Learning** feed (a word drops out when core is Mastered) | `CommunityLayoutDAL.ts`, [COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md) |
+| Community **Learning** feed (a word drops out when core is Mastered) | `CommunityLayoutDAL.ts`, [COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md) |
 | The `category` field on the wire | `VocabEntryBase.category` |
 
 ⚠️ **One deliberate exception: the flp's cooldown window.** Bucket *quotas* (which utcm
@@ -384,9 +384,15 @@ still means core everywhere, exactly as this section says.
 ### Declaring a card already known — core only
 
 The discover/sort flows let a learner say "I already know this word" (the
-`already-learned` bucket, `StarterPacksService.addCardToLibrary`). That seeds
+`already-learned` bucket, `StarterPacksService.sortCard`). That seeds
 `coreMasteredTypedMarkHistory()`: **the core bar's two tracks at 8/8, reading and
 writing left empty.**
+
+acp's other two above-Unfamiliar bins use the same rule at lower counts
+(`coreSeededTypedMarkHistory(n)`, `SORT_BUCKET_CORE_POSITIVES` in
+`server/contracts/mastery.ts`): `target` seeds 3/3 (pbh 4.0, Target) and `comfortable`
+5/5 (pbh 6.67, Comfortable), both core tracks equal, reading/writing empty. See
+SORT_CARDS_REQUIREMENTS.md § 5.
 
 - **Both core tracks**, because the pbh first term is capped at 6 — seeding
   recognition alone would land on Comfortable, not the Mastered the learner asked for.
@@ -901,7 +907,7 @@ and this decides which cards fill them. The assembled loop is then shuffled
 least-overdue.
 
 Because ranking needs `typedMarkHistory`, it is computed in app code and the candidate
-query (`fetchFlpCandidates`) is deliberately **unlimited** — a partial scan would rank a
+query (`OnDeckVocabService.fetchFlpCandidates` → `OnDeckVocabDAL.findFlpCandidates`, which holds the SQL) is deliberately **unlimited** — a partial scan would rank a
 random subset and return the wrong card. The working-loop deal reads it **once**, for every
 band (`OnDeckVocabService.loadFlpDealPool`), bands the rows in app code with `barCategory`
 (the TS mirror of `barCategoryExpr`) and ranks each band once; its quota, top-up and cooled

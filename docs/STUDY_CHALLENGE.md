@@ -1126,7 +1126,7 @@ Three consequences to hold in mind:
 * **The words outlive the challenge.** The cards stay in the learner's library forever.
   That is the intended lasting value of a challenge.
 * **They leave the discover supply.** A sorted row is excluded from
-  `StarterPacksService._fetchSupplyRows`, so a contested word is never also offered as a
+  `StarterPacksDAL.findSupplyRows`, so a contested word is never also offered as a
   fresh sort card. Good: no double-offering.
 * ⚠️ **Level feedback loop.** `estimateLevel` reads SORTED rows, so ten new library
   cards nudge a player's estimated level, which is the input to the *next* challenge's
@@ -2148,8 +2148,8 @@ matters for the rest of the payload and for the opponent's side.
 **The crown on the friend's row is the entire prize.** No bonus minute points, no Night
 Market payout, no leaderboard entry, no tdp strip. Three reasons, in order of weight:
 
-1. **Minute points are the economy.** They drive the streak, the inactivity penalty
-   cron, and Night Market occupancy. Any challenge-conditional payout is farmable by two
+1. **Minute points are the economy.** They drive the streak and the inactivity penalty
+   cron (and, until its removal on 2026-11-09, Night Market occupancy). Any challenge-conditional payout is farmable by two
    colluding friends trading wins every week, and the fix for that (throttles, anti-abuse
    heuristics) costs far more than the incentive is worth.
 2. **The round already pays.** Challenge rounds are normal play (§ 5.7) — normal typed

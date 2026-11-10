@@ -316,8 +316,8 @@ hosts `FlashcardsDecksPage.tsx` and `CollectionViewPage.tsx` are deleted),
 `DictionaryPage.tsx`, `CommunityPage.tsx`,
 `useMinutePoints.ts` (reads `tokenRef.current`). Driver callbacks moved to
 `authHeader()`: `useLeaderboard.ts`, `useCalendarMinutePoints.ts`
-(`useNightMarket.ts` was also on this list; the hook has since been deleted along
-with the retired unlock economy — `useMarketWorld.ts` follows the same rule).
+(`useNightMarket.ts` and later `useMarketWorld.ts` followed the same rule; both were
+deleted with the Night Market on 2026-11-09).
 
 ## Future enhancements
 1. Proactive refresh (decode `exp`, refresh just before expiry) in addition to the

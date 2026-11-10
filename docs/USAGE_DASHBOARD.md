@@ -13,7 +13,6 @@ Parent: [NAVIGATION.md § Tester Dashboard](./NAVIGATION.md#tester-dashboard).
 |---|---|---|
 | `isValidator` | 104 | curate dictionary data (data validation only) |
 | `isFeatureTester` | 178 | feature-testing tools; reaches the tester dashboard |
-| `isTemplateAuthor` | 115 | author Night Market / Immersive World content |
 | **`isAdmin`** | **168** | see cross-user operator views (this dashboard) |
 
 `isAdmin` is its own flag because neither older grant should imply "may see other
@@ -77,7 +76,6 @@ there must gate on `isAdmin` inside its service.
 | Cards added | `vocabentries_zh` ∪ `vocabentries_es` | `vetSortedClause()` (`'library'`) rows by `createdAt`; lent provisional cards excluded |
 | Game wins (+ per game) | `wins` | by `"wonAt"` |
 | Writing practice | `writing_practice_completions` | by `"completedAt"` |
-| Immersive World runs | `iw_scene_runs` | by `"startedAt"` (started, not necessarily completed) |
 | AI dictionary lookups | `dictionary_ai_usage` | `SUM(count)` by `"usageDate"` |
 | Recent learners | `users` ⋈ `refresh_tokens` ⋈ `userminutepoints` | one row per learner with a session **or** > 0 minutes in the window — see § 4a |
 
@@ -120,8 +118,6 @@ boundary. `email` is deliberately **not** returned — it is private to the acco
     filter as [VELOCITY.md § 2a](./VELOCITY.md). ⚠️ Measured over the **selected
     window** (UTC days), not the learner-facing card's sliding 7 days — on 30D / 90D /
     ALL it is a larger number than the learner sees.
-  - `iwRuns` — Immersive World runs **started** (`iw_scene_runs."startedAt"`). A true
-    play count: the row is written when a run begins.
   - `gameWins` — `[{ game, wins }]` from `wins`, most-won first. ⚠️ **Wins, not
     plays.** No table records a game round being started or lost: `wins` is written
     only on a win (`src/hooks/useGameWins.ts` → `recordWin`), Match Speed writes one
@@ -151,7 +147,7 @@ ALL), then six `SectionCard`s:
 3. **In this window** — minutes, studied, opened the app, sign-ins, new accounts.
 4. **Recent learners** — `UsageRecentUsers`: name + relative "last seen", a muted detail line
    (days studied / opened, languages), then a four-cell figure strip: sign-ins · min
-   studied · cards sorted · velocity, and a play line (Immersive World runs + wins per
+   studied · cards sorted · velocity, and a play line (wins per
    game). Game keys are humanised by `usageFormat.ts` → `gameLabel` (also used by the
    Feature usage card).
 5. **By language** — minutes per language with a meter against the top language.

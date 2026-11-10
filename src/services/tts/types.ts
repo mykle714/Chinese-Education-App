@@ -12,8 +12,9 @@ export type TTSLang = 'zh-CN' | 'zh-TW' | 'es-US' | 'en-US' | 'en';
  * `server/services/TTSService.ts`, which owns the role → provider-voice-name mapping; the
  * name itself is never sent over the wire (see that type's doc for why).
  *
- * Used by Immersive World to give a male NPC a male voice (docs/IMMERSIVE_WORLD.md § 6.4a).
- * Flashcard narration omits it and gets 'default'.
+ * Set by the learner's `/settings` Voice choice; a caller may also name one per utterance
+ * (Immersive World did, for its NPCs — removed 2026-11-09, docs/ARCHIVED_FEATURES.md). Flashcard narration
+ * otherwise gets 'default'.
  */
 export type TTSVoice = 'default' | 'male' | 'female';
 
@@ -30,9 +31,8 @@ export interface TTSRequest {
     /**
      * Whether the server may stamp `det."ttsVoice"` on a cache miss. Default true.
      *
-     * Set false for text that is NOT a headword — an Immersive World NPC's line, say — where
-     * the stamp is a guaranteed-zero-row UPDATE on every miss
-     * (docs/IMMERSIVE_WORLD.md § 6.4's code note).
+     * Set false for text that is NOT a headword — a spoken sentence, say — where the stamp is
+     * a guaranteed-zero-row UPDATE on every miss.
      */
     stamp?: boolean;
     /**
@@ -41,7 +41,7 @@ export interface TTSRequest {
      *
      * ⚠️ Part of the provider's cache key. `prepare` and the `speak` that follows it MUST pass
      * the same value, or the duration measured on one clip paces the reveal of another — the
-     * one thing Immersive World's audio-as-clock contract cannot survive.
+     * one thing an audio-as-clock caller cannot survive.
      */
     voice?: TTSVoice;
 }
@@ -58,9 +58,9 @@ export interface TTSProvider {
      * Fetch and decode WITHOUT playing, resolving with the clip's duration in ms — or null
      * when this provider cannot know it ahead of time.
      *
-     * It exists for one caller: Immersive World, where **the audio is the clock**
-     * (docs/IMMERSIVE_WORLD.md § 6.4) and the typewriter cannot start until the line's
-     * duration is known. Every other narration site plays and forgets, and should keep using
+     * It was built for one caller — Immersive World (removed 2026-11-09, docs/ARCHIVED_FEATURES.md), where
+     * **the audio was the clock** and the typewriter could not start until the line's
+     * duration was known. No caller today. Every other narration site plays and forgets, and should keep using
      * `speak`.
      *
      * A subsequent `speak` for the same text is served from this provider's own caches, so

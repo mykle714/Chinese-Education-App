@@ -188,7 +188,7 @@ const MenuPopover: React.FC<MenuPopoverProps> = ({ open, onClose, footerClearanc
     }, [open, onClose]);
 
     // The current page is the MOST SPECIFIC matching destination, so
-    // `/night-market/template-editor` lights Template Editor, not Night Market as well.
+    // a nested route lights only its own row, not its parent's as well.
     const currentKey = [...main, ...gated]
         .filter((d) => isCurrentDestination(d, pathname))
         .sort((a, b) => b.route.length - a.route.length)[0]?.key;

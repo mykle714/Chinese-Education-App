@@ -143,8 +143,8 @@ function wrongStreakHint(world: FlpWorld, entry: VocabEntry): WrongStreakPawnHin
 /**
  * The writing card's used-in hint, or null when it has no words.
  *
- * Data: `entry.writingUsedIn` (OnDeckVocabService.enrichWithUsedIn, writing bar only, from
- * VocabEntryDAL.findWritingUsedInForCharacter) — the learner's sorted words first, then
+ * Data: `entry.writingUsedIn` (OnDeckVocabService.enrichMultipleWithUsedIn, writing bar only, from
+ * VocabEntryDAL.findWritingUsedInForCharacters) — the learner's sorted words first, then
  * dictionary words at frequencyScore 4–5; single-character zh cards only.
  */
 function usedInHint(entry: VocabEntry): UsedInPawnHint | null {

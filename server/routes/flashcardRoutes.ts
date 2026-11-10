@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
-import { onDeckVocabService, flashcardMarkService, focusModeService } from '../dal/setup.js';
+import { onDeckVocabService, flashcardMarkService, focusModeService, cardAudioService } from '../dal/setup.js';
 import { FOCUS_ENDED_HEADER } from '../contracts/focusMode.js';
 import { parseFlpWorld, type CollectionFilter } from '../services/OnDeckVocabService.js';
 import { ReviewMark, MarkType, MARK_TYPES } from '../types/index.js';
@@ -166,7 +166,7 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
   // cache hit on the client's follow-up /api/tts/synthesize call. Same graceful-degrade
   // semantics as the working-loop endpoint: a cold cache costs latency, not the card.
   try {
-    await onDeckVocabService.prewarmAudio([newCard]);
+    await cardAudioService.prewarm([newCard]);
   } catch (prewarmError) {
     console.error(`TTS pre-warm failed for replacement card ${newCard.id}:`, prewarmError);
   }

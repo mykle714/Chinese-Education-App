@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mixHex, prefersReducedMotion } from "./iso";
 import { WORLD_ORDER, type TowerWorldId } from "./towerWorlds";
+import { DASH_MOTION } from "../../utils/pageTransition";
 
 /**
  * useWorldPan — the Deck Tower's camera dash from one world to the next
@@ -45,12 +46,14 @@ export interface WorldPalette {
     aurora: number;
 }
 
+// The timeline is DASH_MOTION (pageTransition.ts), shared with the route dash between the
+// sort platform and Add Cards (src/hooks/pageDash.ts), so the two read as one move.
 /** The scene whipping off screen from rest (shorter when a swipe carries it part-way). */
-const OUT_MS = 260;
+const OUT_MS = DASH_MOTION.outMs;
 /** Empty sky racing past while it turns the new world's colour. */
-const CRUISE_MS = 260;
+const CRUISE_MS = DASH_MOTION.cruiseMs;
 /** The new world's scene sliding in and settling. */
-const IN_MS = 300;
+const IN_MS = DASH_MOTION.inMs;
 
 export interface WorldPanView {
     /** The world drawn now. Switches mid-pan, while the scene is off screen. */

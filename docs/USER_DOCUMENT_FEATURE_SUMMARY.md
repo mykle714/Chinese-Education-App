@@ -40,12 +40,10 @@ used them — see [DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md).
 | Route | `server/routes/textRoutes.ts` | registration only |
 | Controller | `server/controllers/TextController.ts` | request parsing, status codes |
 | Service | `server/services/TextService.ts` | ownership checks, limits, sanitizing, title derivation |
+| DAL | `server/dal/implementations/TextDAL.ts` (`ITextDAL`) | the `texts` table: one statement per method |
 | Utility | `server/utils/documentTitle.ts` | pure title rule (`deriveDocumentTitle`) |
 
-> ⚠️ Layering: `TextService` issues its `texts` SQL directly rather than through a
-> DAL — an exception to "a service does not write SQL"
-> ([BACKEND_LAYERING.md](./BACKEND_LAYERING.md)). Title derivation does go through
-> `IDictionaryDAL.findMultipleByWord1`.
+Title derivation reads det through `IDictionaryDAL.findMultipleByWord1`.
 
 ### Endpoints
 

@@ -20,9 +20,10 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { REPO_ROOT } from '../shared/lib/repoRoot.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+// Host vs container layout: see shared/lib/repoRoot.js.
 const HANZI_DATA_DIR = path.join(REPO_ROOT, 'node_modules', 'hanzi-writer-data');
 const OUT_FILE = path.join(__dirname, 'lib', 'hanziStrokeCounts.json');
 

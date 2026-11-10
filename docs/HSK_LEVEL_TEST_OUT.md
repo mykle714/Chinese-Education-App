@@ -59,7 +59,7 @@ Depends on: [BENTO_SYSTEM.md](./BENTO_SYSTEM.md) (tile weights, ramp hues),
 
 The level integer is `dictionaryentries_*.difficulty`, 1–6, and it **is** the HSK level
 for zh only; for es it is a plain acquisition score with no external syllabus behind it
-(`StarterPacksService._levelConfig`, `server/contracts/wire.ts`). The mechanic is
+(`StarterPacksService.MAX_LEVEL`, `server/contracts/wire.ts`). The mechanic is
 language-agnostic, but the *claim* "you know HSK 4" is not.
 
 **Proposal: ship zh-only, keep the code language-parameterised.** The es copy would be
@@ -249,7 +249,7 @@ level, enforced by the DB rather than by the service.
 `StarterPackBucket`, `CARD_BASELINES`) · `server/dal/shared/vetTable.ts`
 (`vetTableForLanguage`, `coreCategoryExpr`, `vetSortedClause`) ·
 `server/services/VocabEntryService.ts` (`addToLibrary` — the single-card analogue of
-§ 6.1) · `server/services/StarterPacksService.ts` (`estimateLevel`, `_levelConfig`) ·
+§ 6.1) · `server/services/StarterPacksService.ts` (`estimateLevel`, `MAX_LEVEL`) ·
 `server/services/FlashcardMarkService.ts` (the mark path this one deliberately bypasses) ·
 `ddCollisionKey` (gloss guard).
 

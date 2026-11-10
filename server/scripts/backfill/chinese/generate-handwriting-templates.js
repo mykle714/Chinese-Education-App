@@ -94,24 +94,12 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { REPO_ROOT } from '../shared/lib/repoRoot.js';
 import db from '../../../db.js';
 import { loadDecompositionEntries, componentStrokesOf } from './lib/decompose.js';
 import { cutComponents, selectVariants } from './lib/componentVariants.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// chinese/ is at server/scripts/backfill/chinese → server/ is three levels up.
-const SERVER_DIR = path.resolve(__dirname, '..', '..', '..');
-
-// ⚠️ PATHS DIFFER BETWEEN HOST AND CONTAINER. These scripts normally run via
-// `docker exec cow-backend`, where server/ is mounted at /app and the REPO
-// ROOT is mounted separately at /app/project-root — so /app/.. is `/`, not the
-// repo. Probe for the container layout first, fall back to the host layout.
-// (Same rule as generate-component-font.js.)
-const CONTAINER_REPO_ROOT = '/app/project-root';
-const REPO_ROOT = fs.existsSync(CONTAINER_REPO_ROOT)
-  ? CONTAINER_REPO_ROOT
-  : path.resolve(SERVER_DIR, '..');
+// Host vs container layout (repo root mounted at /app/project-root): shared/lib/repoRoot.js.
 
 const HANZI_DATA_DIR = path.join(REPO_ROOT, 'node_modules', 'hanzi-writer-data');
 const OUTPUT_DIR = path.join(REPO_ROOT, 'src', 'assets', 'handwriting');

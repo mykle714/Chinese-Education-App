@@ -9,8 +9,8 @@
 
     /* Bundler mode */
     "moduleResolution": "bundler",
-    /* src/engine/market/lumeishManifest.json is imported directly by lumeishTileset.ts.
-       Vite already bundles JSON natively; this only lets tsc type-check that import. */
+    /* Lets tsc type-check direct `.json` imports (Vite bundles JSON natively). Its first
+       user, the Night Market's lumeish manifest, was removed 2026-11-09. */
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,

@@ -19,12 +19,9 @@ compare sheet, `src/components/CompareSheet.tsx`), and the own bodies of `Accoun
 last of its rows moved out — see [AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md).
 
 **Mount sites.** The eip sheet is not flp-private: the sort cards page (acp), the
-saved-card cdp and the immersive-world play page all mount the same `InfoCardSection`, and
+saved-card cdp and the Dictionary all mount the same `InfoCardSection`, and
 acp brings the `EipTabStrip` + `useEipTabs` trio with it from each on-deck card's info button
-([SORT_CARDS_REQUIREMENTS.md §4.7](./SORT_CARDS_REQUIREMENTS.md)). `IWPlayPage` mounts the
-same trio from a tapped word in a speech bubble, and is the only host that takes a **hold on
-the page behind it** for the sheet's lifetime — a scene keeps running otherwise, and would
-replace the line being read ([IMMERSIVE_WORLD.md § 5.3c](./IMMERSIVE_WORLD.md)). Everything on this
+([SORT_CARDS_REQUIREMENTS.md §4.7](./SORT_CARDS_REQUIREMENTS.md)). Everything on this
 page applies to all of them, and to the compare sheet, which is a plain `SheetPanel`
 host of its own ([WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md)) — the first one
 to use `depth` for real, stacking over the cdp's eip.
@@ -130,7 +127,7 @@ sheet passes `min > 0`, which suppresses the dismiss stop (see above).
 `collapseRatio` comes from the **`collapseThresholdRatio`** prop and defaults to
 **0.5**, which is exactly the plain "nearest stop wins" midpoint rule. **The eip itself
 passes 0.25** (`InfoCardSection.tsx` → `EIP_COLLAPSE_THRESHOLD_RATIO`, every eip host: flp/td,
-cdp, Dictionary, acp, IW), so a short upward pull from the open height
+cdp, Dictionary, acp), so a short upward pull from the open height
 maximizes — at the default 0.6 open height the flip point is 0.7 of the screen. A smaller value
 moves the collapse point **down**, so the sheet springs back open from heights that
 used to close it — a partial pull-down no longer counts as "close it". Note this only decides between the two upper stops; a
@@ -507,7 +504,7 @@ at its right end (`+ Add` on a 5px lip, lifted 1px; held, it sinks 4px and loses
 optimistic: Add ⇄ Added! flips on the tap and the request follows after paint, so the key is
 never disabled waiting on the network (LEAF_NODE_PAGES.md § "Read-only dictionary cdp"). **No glow** —
 the dictionary cdp keeps its glowing `LearningToggle` under the header speaker. Adding a word
-is a Dictionary-flow action only: no other eip host (flp, acp, saved-card cdp, iw) offers one —
+is a Dictionary-flow action only: no other eip host (flp, acp, saved-card cdp) offers one —
 the flp's old add-only "+" for drilled-in words was removed 2026-10-29.
 
 **Both eip keycaps carry the straight-lip rounded edge** (a 1px top rim light just inside the
@@ -1030,8 +1027,7 @@ Code: `src/components/OverlayScrollbar.tsx` → `OverlayScrollbar`,
   det-lookup-and-adapt every eip host goes through
 - `src/features/flashcards/FlashcardsLearnPage/EipSheet.tsx` — the shared non-flp mount
   (`InfoCardSection` + `EipTabStrip` + `TooManyTabsSnackbar`), used by
-  `src/features/discover/AddCardsPage.tsx` (`handleOpenCardInfo`),
-  `src/features/immersiveworld/play/IWPlayPage.tsx` (`handleSegmentOpen`) and
+  `src/features/discover/AddCardsPage.tsx` (`handleOpenCardInfo`) and
   `src/features/dictionary/DictionaryPage.tsx` (`handleEntryClick` — the only host that
   passes `showSynonymsRelated`, `showWordTools` and `showLearning`). `depth` (default 0) is
   forwarded to SheetPanel; acp passes 1 while its hidden skipped-cards sheet

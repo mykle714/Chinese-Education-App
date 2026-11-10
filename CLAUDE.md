@@ -13,17 +13,13 @@ st = synonyms tab (in the extra info card)
 bt = breakdown tab (in the extra info card)
 est = example sentence tab (in the extra info card)
 et = expansion tab (in the extra info card)
-mdp = mobile demo page
 flp = the flashcard study session (`FlashcardsLearnPage`), run in place inside the Deck Tower — no route of its own since 2026-11-04
 gsa = greedy segmentation algorithm
 acp = add cards page (formerly ancp "add new cards page" → renamed 2026-11-05; before that scp, renamed 2026-11-04) — the drag-to-sort page at `/discover/sort/:language` (reached from the Deck Tower's sort platform; Back returns to `/`, main world — the `/discover` hub was deleted 2026-10-17)
-hp = hub menu page — the Menu bento at `/menu` (`src/pages/MenuPage.tsx`; Games, Reader, Friends, Night Market, Tester Dashboard, …); footer Menu tab. `/` (footer Deck tab) is the Deck Tower (td)
+hp = hub menu — the Menu popover (`src/components/menuPopover/MenuPopover.tsx`; Reader, Tester Dashboard, …) raised by the footer Menu tab; there is no `/menu` route (the bento page was deleted 2026-11-06). `/` (footer Flashcards tab) is the Deck Tower (td)
 tdp = tester dashboard page — `/tester-dashboard` (former landing content: study time, streak, calendar, leaderboard)
 cdp = card detail page
 pct = particles and classifiers table
-nmp = night market page
-ped = pedestrian
-poi = point of interest
 cdet = chinese dictionary entries table
 sdet = spanish dictionary entries table
 cvet = chinese vocab entries table
@@ -34,8 +30,6 @@ ddt = display definition transformation
 utcm = mastery progress (unfamiliar, target, comfortable, mastered)
 mdp = mark discoverable pipeline (refers to the skill)
 pbh = progress bar height
-nme = night market editor
-nms = night market sandbox
 bk = beginner keyboard
 shp = SteppedHelpPopup
 rflp = reading flp (the td reading world's study session)
@@ -68,9 +62,6 @@ the name; say which one when it matters:
 status. Client-side names use `learning` (`LEARNING_HUE`, `LearningToggle`,
 `useLearningToggle`, `learningCount`, `.learning-toggle`); some older `library` client
 names (`onAddToLibrary`, `totalLibraryCards`, `flashcards-decks__library-*`) remain.
-
-## Night Market Coordinate System
-→ Moved to the Coordinate System section of [docs/NIGHT_MARKET_FEATURE.md](./docs/NIGHT_MARKET_FEATURE.md) — asset coordinates are always isometric grid units (isoX, isoY); assets live in `src/assets/` (not `public/assets/`).
 
 ## Touch & Scroll (mobile)
 → Moved to [docs/UX_AND_NAVIGATION.md](./docs/UX_AND_NAVIGATION.md) — default components to `touchAction: "none"` (scrolling is opt-in per page via an inner container); the app shell never scrolls; text is app-wide `user-select: none` (cpcd is the desktop-only exception); every game page must call `useBlockEdgeSwipe(true)`.
@@ -192,7 +183,7 @@ For adding a completely new language:
 → See [docs/MINUTE_POINTS_SYSTEM.md](./docs/MINUTE_POINTS_SYSTEM.md)
 
 #### Inactivity penalty cron (PPE only)
-An hourly Postgres cron on the PPE server. For each **(user, language)** balance that has gone a full local day below the 3-minute threshold, it breaks that language's streak and debits an **escalating** penalty by consecutive missed day (`3, 15, 30, 60, 90, 120`, then the remainder at day 7+), floored at the balance's **24-hour checkpoint** (a penalty never carries a balance across a multiple of 1440 minute points; under 1440 it can still reach 0), and decays the user's Night Market occupants to match. The streak breaks on a missed day even when the checkpoint absorbs the whole penalty. Penalties are per language (migration 130): keeping up Chinese does not shield neglected Spanish. Never touches `lifetimeMinutesEarned` (gross is monotonic). Not installed on dev.
+An hourly Postgres cron on the PPE server. For each **(user, language)** balance that has gone a full local day below the 3-minute threshold, it breaks that language's streak and debits an **escalating** penalty by consecutive missed day (`3, 15, 30, 60, 90, 120`, then the remainder at day 7+), floored at the balance's **24-hour checkpoint** (a penalty never carries a balance across a multiple of 1440 minute points; under 1440 it can still reach 0). The streak breaks on a missed day even when the checkpoint absorbs the whole penalty. Penalties are per language (migration 130): keeping up Chinese does not shield neglected Spanish. Never touches `lifetimeMinutesEarned` (gross is monotonic). Not installed on dev.
 → See [docs/STREAK_EXPIRATION_CRON.md](./docs/STREAK_EXPIRATION_CRON.md)
 
 ### Flashcards & Review History
@@ -218,20 +209,14 @@ An hourly Postgres cron on the PPE server. For each **(user, language)** balance
 ### Data Validation System
 → See [docs/DATA_VALIDATION_SYSTEM.md](./docs/DATA_VALIDATION_SYSTEM.md) — validator accounts (`users.isValidator`, migration 104) Approve or Flag one field of one discoverable det entry via inline buttons on the est/definition/meta-chip UI (the Reader document queue was removed by migration 183); outcomes go to the dedicated `validations` table (per entry+field, keyed by det id — survives det data deploys) with the server-composed `content` stored on approve, and backfills skip human-reviewed fields via `validatedClause`.
 
-### Night Market
-→ See [docs/NIGHT_MARKET_FEATURE.md](./docs/NIGHT_MARKET_FEATURE.md)
-→ Templates (layout authoring/tiling): [docs/NIGHT_MARKET_TEMPLATES.md](./docs/NIGHT_MARKET_TEMPLATES.md)
-→ Pedestrian movement: [docs/PEDESTRIAN_WALKING_ALGORITHM.md](./docs/PEDESTRIAN_WALKING_ALGORITHM.md)
-→ Tile/street graph invariants: [docs/NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./docs/NIGHT_MARKET_GRAPH_ASSUMPTIONS.md)
-
 ### UX & Navigation
-→ See [docs/UX_AND_NAVIGATION.md](./docs/UX_AND_NAVIGATION.md) — umbrella for navigation + the mobile shell: app navigation structure (footer tabs Deck · Menu · Arena · Dictionary; `/` = the Deck Tower; back-arrow drill-ins), the `MobileTabScreen` scroll-away-header layout, the **Leaf**/**Node** drill-in archetypes, and the global touch/scroll/selection rules.
+→ See [docs/UX_AND_NAVIGATION.md](./docs/UX_AND_NAVIGATION.md) — umbrella for navigation + the mobile shell: app navigation structure (footer tabs Flashcards · Arena · Dictionary · Menu; `/` = the Deck Tower; Menu raises a popover, not a page; back-arrow drill-ins), the `MobileTabScreen` scroll-away-header layout, the **Leaf**/**Node** drill-in archetypes, and the global touch/scroll/selection rules.
 
 ### Bento System
-→ See [docs/BENTO_SYSTEM.md](./docs/BENTO_SYSTEM.md) — the shared `Bento`/`BentoTile`/`BentoStrip` primitive behind the Menu/Games hubs: the 2-column mosaic, the hero/base/low tile weights, ramp-hue tiles (`RAMP`, hue keys not hex), the ghost glyph, and the Bento-vs-Shelf choice rule. Replaced `HubMenu` (deleted 2026-08-21) — the old `docs/HUB_MENU_SYSTEM.md` was renamed into this file.
+→ See [docs/BENTO_SYSTEM.md](./docs/BENTO_SYSTEM.md) — the shared `Bento`/`BentoTile`/`BentoStrip` primitive, whose one live caller is the AccountSheet's Friends tab (`FriendsBody`; the Menu/Games hub pages built on it were deleted 2026-11-06): the 2-column mosaic, the hero/base/low tile weights, ramp-hue tiles (`RAMP`, hue keys not hex), the ghost glyph, and the Bento-vs-Shelf choice rule. Replaced `HubMenu` (deleted 2026-08-21) — the old `docs/HUB_MENU_SYSTEM.md` was renamed into this file.
 
 ### Feature Flags
-→ See [docs/FEATURE_FLAGS.md](./docs/FEATURE_FLAGS.md) — the app's one on/off registry, `FEATURE_FLAGS` + `GAME_FLAGS` in `server/contracts/featureFlags.ts`, read by BOTH halves (the server declines to mount a router; the client drops the route from `ROUTE_META` and hides its entry points). Covers the per-feature flags, the per-game flags, the chokepoint checklist — and specifically **the second entry point each feature leaks through**, which is the part that gets missed (community is also served by `GET /api/users/:userId/designs` in `userRoutes.ts`; a challenge board is also served by `?challengeId=` on `/api/onDeck/*`) — why DI wiring in `dal/setup.ts` is deliberately never gated, and why a flip needs BOTH containers rebuilt. **Study Challenge, Community, Night Market and Immersive World are currently the only flags switched OFF.**
+→ See [docs/FEATURE_FLAGS.md](./docs/FEATURE_FLAGS.md) — the app's one on/off registry, `FEATURE_FLAGS` + `GAME_FLAGS` in `server/contracts/featureFlags.ts`, read by BOTH halves (the server declines to mount a router; the client drops the route from `ROUTE_META` and hides its entry points). Covers the per-feature flags, the per-game flags, the chokepoint checklist — and specifically **the second entry point each feature leaks through**, which is the part that gets missed (community is also served by `GET /api/users/:userId/designs` in `userRoutes.ts`; a challenge board is also served by `?challengeId=` on `/api/onDeck/*`) — why DI wiring in `dal/setup.ts` is deliberately never gated, and why a flip needs BOTH containers rebuilt. **Study Challenge, Community and `standaloneGames` are currently the only flags switched OFF.**
 
 ### Games
 → See [docs/GAMES_FEATURE.md](./docs/GAMES_FEATURE.md)
@@ -359,6 +344,12 @@ explicitly postponed decisions. Add an item here rather than leaving a `⚠️` 
 doc that nobody re-reads. **Not** for bugs, and not for feature design questions (those
 belong in the owning doc's question log).
 
+### Archived features (removed from main, code kept on a branch)
+→ See [docs/ARCHIVED_FEATURES.md](./docs/ARCHIVED_FEATURES.md) — features deleted from `main` with
+their code, docs and schema frozen on an `archive/*` git branch for a quick revival. Currently
+**Night Market + Immersive World** (removed 2026-11-09; tables dropped by migration 185). Do not
+reintroduce their names, tables or routes piecemeal — revive from the branch's `archive/REVIVAL.md`.
+
 ### Data Sync (refreshing a dev box from PPE)
 PPE is the **source of truth** for the det/reference tables; there is no dev → PPE
 push any more (the `/data-deploy` skill was deleted). Use the `/data-ppe-to-dev` skill
@@ -374,7 +365,7 @@ the freshly-computed groups with PPE's copy of what dev just sent.
 rows were repaired to satisfy `frequencyScore == MAX(definitionClusters[*].frequencyScore)`
 (430 zh + 562 es rows). As of the 2026-09-28 pull PPE's **zh is consistent** but **es still
 drifts (521 rows)**, so a pull re-imports the es drift.
-Either run `scripts/backfill/shared/repair-frequency-score-drift.js` against PPE first, or
+Either run `server/scripts/backfill/shared/repair-frequency-score-drift.js` against PPE first, or
 re-run it on dev after the pull — it is deterministic, costs nothing and is idempotent.
 **Delete this note once PPE has been repaired.**
 → Retired push flow, kept for the `icons8` FK rule + the 2026-07-02 incident: [docs/DATA_DEPLOYMENT_GUIDE.md](./docs/DATA_DEPLOYMENT_GUIDE.md)

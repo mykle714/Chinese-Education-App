@@ -16,7 +16,8 @@
  * correctly on its own — the caret is scrolled into view and nothing is lost.
  *
  * The pages that need this are the ones with something PINNED to the bottom that
- * scrolling cannot reveal: the immersive-world composer is the motivating case.
+ * scrolling cannot reveal. The motivating case was Immersive World's composer (removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md);
+ * no page opts in today.
  * Making every page reserve the space would leave a band of dead layout under
  * surfaces that never needed it.
  *

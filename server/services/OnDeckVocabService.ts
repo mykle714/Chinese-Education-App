@@ -1,21 +1,18 @@
-import { PoolClient } from 'pg';
-import { VocabEntry, TypedMarkHistory, MarkType, DefinitionCluster } from '../types/index.js';
+import { VocabEntry, MarkType, UsedInItem } from '../types/index.js';
 import { WORD_SEARCH_BOARDS, type MasteryWorldId, type WordSearchBoardId } from '../contracts/wire.js';
 import { isFlpOnlyMark, FLP_ONLY_CORE_PBH, barProgressBarHeight, barCategory, worldForMarkType } from '../contracts/mastery.js';
 import { STUDY_MIX_QUOTAS, STUDY_MIX_FILL_ORDER } from '../contracts/studyMix.js';
 import type { FlpWorld } from '../contracts/studyMode.js';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
+import type { IOnDeckVocabDAL, CollectionFilter } from '../dal/interfaces/IOnDeckVocabDAL.js';
 import { DictionaryService } from './DictionaryService.js';
 import { StarterPacksService } from './StarterPacksService.js';
 import { ValidationError } from '../types/dal.js';
-import db from '../db.js';
-import { dictTableForLanguage } from '../dal/shared/dictTable.js';
-import { vetTableForLanguage, vetReadFrom, CORE_CATEGORY_EXPR, CORE_CATEGORY_SELECT, barCategoryExpr, masteredBarClause, builtinCollectionClause, type BuiltinCollectionId, typeCategoryExpr, vetSortedClause, WRITING_MASTERY_SELECT, WRITING_FLP_WORD_CLAUSE } from '../dal/shared/vetTable.js';
+import type { BuiltinCollectionId } from '../dal/shared/vetTable.js';
 import { computeTypeCategory } from '../utils/masteryCompute.js';
 import { flpReadyCountsByBand, flpUpcomingReady, type FlpUpcomingRelease } from '../contracts/flpReadiness.js';
 import { rankCardQueue, rankCardQueueCooled, isMarkOnCooldown } from './cardQueueRanking.js';
-import { DICT_COLS, DICT_JOIN } from '../dal/shared/dictJoin.js';
-import type { TTSService } from './TTSService.js';
+import type { CardAudioService } from './CardAudioService.js';
 import type { ProvisionalCardService } from './ProvisionalCardService.js';
 import {
   generateWordSearchGrid,
@@ -33,41 +30,9 @@ import type { DictionaryEntry } from '../types/index.js';
 // queue and cooldown are read off. Every session is Study Mix.
 export { parseFlpWorld, type FlpWorld } from '../contracts/studyMode.js';
 
-/**
- * The scope a game/flp round is narrowed to, or `undefined`/null for an ordinary round.
- *
- * Only FOCUS MODE produces one now. Until 2026-11-04 the slot also carried a
- * user-authored deck (`?deck=`) and a built-in collection (`?collection=`); both launch
- * paths were removed with the Decks feature and the collection pages. The slot keeps its
- * `collection` name throughout this service because "a named set the round must stay
- * inside" is still exactly what it means — and every lend tier still checks it
- * (`canLendProvisional`, the game pool's `!opts.collection` gate).
- */
-export type CollectionFilter =
-  /**
-   * FOCUS MODE (docs/FOCUS_MODE.md § 4): the cards still playable today in a focused
-   * world — the daily snapshot minus those already marked correct. Never sent by the
-   * client: OnDeckVocabController / flashcardRoutes substitute it for an UNRESTRICTED
-   * launch when the round's world is focused. Riding this slot is what makes
-   * a focused round behave like a named set everywhere at once: every candidate query
-   * narrows to `ids`, and every lend tier is skipped (`canLendProvisional`, the game
-   * pool's `!opts.collection` gate), so nothing outside the day's set can appear.
-   */
-  | { kind: 'focus'; ids: number[] }
-  /**
-   * FOCUS MODE, flp game break (docs/FOCUS_MODE.md § 4a): a break is a change of scene
-   * from the day's set, so it draws from every card OUTSIDE today's snapshot and falls
-   * back to the remaining set only when those run out. Also server-substituted, never
-   * sent by the client.
-   *
-   *   setIds       — the whole snapshot, cards already marked correct today included:
-   *                  those are gone from the set, not "outside" it.
-   *   remainingIds — the fallback. `getGameVocabPool` deals them through its seed tiers,
-   *                  after the fresh outside cards.
-   *
-   * Rides this slot for the same reason as `focus`: no lend tier can fire.
-   */
-  | { kind: 'outside-focus'; setIds: number[]; remainingIds: number[] };
+// The round-scope type lives on the DAL interface (the DAL turns it into SQL, and a DAL
+// must not import from a service); re-exported so importers keep using this module.
+export type { CollectionFilter } from '../dal/interfaces/IOnDeckVocabDAL.js';
 
 /**
  * The working-loop deal's candidates, read once and banded in memory
@@ -124,13 +89,16 @@ function shuffleInPlace<T>(items: T[]): void {
 export class OnDeckVocabService {
   constructor(
     private vocabEntryDAL: IVocabEntryDAL,
+    // Every card read this service makes (candidates, decks, counts, Word Search det
+    // reads). The service holds the selection policy; the DAL holds the SQL.
+    private onDeckVocabDAL: IOnDeckVocabDAL,
     private dictionaryService: DictionaryService,
     // Used only by Word Search, to bound the filler pool to the user's estimated
     // difficulty level (and below) — see getWordSearchGrid.
     private starterPacksService: StarterPacksService,
     // Card audio pre-warm (see the hasAudio field on VocabEntry). Injected rather
     // than imported as a singleton so the composition root owns its lifetime.
-    private ttsService: TTSService,
+    private cardAudioService: CardAudioService,
     // Lends cards when the flp working loop cannot be filled from cards that are off
     // cooldown. Injected here rather than driven from the controller because the
     // decision is made mid-algorithm, once the shortfall is known — and the refill
@@ -278,13 +246,8 @@ export class OnDeckVocabService {
   ): Promise<number[]> {
     if (seedIds.length === 0) return [];
     const now = Date.now();
-    const client = await db.getClient();
-    try {
-      const rows = await this.fetchRowsByIds(client, userId, language, seedIds, markType, now, undefined, true);
-      return rows.filter((row) => this.isBreakSeedPlayable(row, markType, now)).map((row) => row.id);
-    } finally {
-      client.release();
-    }
+    const rows = await this.fetchRowsByIds(userId, language, seedIds, markType, now, undefined, true);
+    return rows.filter((row) => this.isBreakSeedPlayable(row, markType, now)).map((row) => row.id);
   }
 
   /**
@@ -316,7 +279,6 @@ export class OnDeckVocabService {
    * player failed to match, so those must not come back as replacements).
    */
   private async fetchGameCandidates(
-    client: PoolClient,
     userId: string,
     language: string,
     categories: string[],
@@ -334,43 +296,15 @@ export class OnDeckVocabService {
   ): Promise<{ eligible: Record<string, VocabEntry[]>; cooled: Record<string, VocabEntry[]> }> {
     const eligible: Record<string, VocabEntry[]> = {};
     const cooled: Record<string, VocabEntry[]> = {};
-    // Optional focus-mode scope (docs/FOCUS_MODE.md § 4). $8 is the next free
-    // placeholder after the seven bound below.
-    const scope = this.focusPlayFilter(collection, 8);
-    // maxEntryKeyLen is a caller-supplied constant (never user input); coerce to a
-    // safe integer before inlining, since it isn't a bind param.
-    const lenClause = maxEntryKeyLen != null
-      ? `AND LENGTH(ve."entryKey") <= ${Math.max(0, Math.floor(maxEntryKeyLen))}`
-      : '';
     for (const category of categories) {
-      const result = await client.query<VocabEntry>(`
-        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}, ${CORE_CATEGORY_SELECT}
-        FROM ${vetReadFrom(language)} ${DICT_JOIN}
-        WHERE ve."userId" = $1
-        AND ve."language" = $4
-        -- SORTED ONLY: a lent card is not an ordinary candidate. It is never on
-        -- cooldown and always bands Unfamiliar, so leaving it in this query let the
-        -- lent rows out-compete the learner's own deck in every round. Lending is now
-        -- the LAST fill tier and hands its rows back by id (docs/PROVISIONAL_CARDS.md
-        -- § 4b, fetchRowsByIds).
-        AND (${vetSortedClause()} OR ve.id = ANY($7::int[]))
-        AND ${typeCategoryExpr('$5')} = $2
-        AND NOT (ve.id = ANY($6::int[]))
-        ${lenClause}
-        ${scope.clause}
-        -- THE LEARNER'S OWN CARDS FIRST, then lent ones, then random within each.
-        -- Without this the two are shuffled together, so a round that had to borrow
-        -- could leave the learner's own cards on the bench in favour of words they
-        -- never chose — the exact outcome the sorted-only selection rule exists to
-        -- prevent (docs/PROVISIONAL_CARDS.md § 4b). Only matters when lentIds is
-        -- non-empty; otherwise every row is sorted and the first key is constant.
-        ORDER BY (ve."starterPackBucket" = 'provisional') ASC, RANDOM()
-        LIMIT $3
-      `, [userId, category, cap, language, markType, excludeIds, lentIds, ...scope.params]);
+      const rows = await this.onDeckVocabDAL.findGameCandidatesInCategory(
+        userId, language, category, markType, cap,
+        { maxEntryKeyLen, excludeIds, lentIds, scope: collection }
+      );
 
       const fresh: VocabEntry[] = [];
       const stale: VocabEntry[] = [];
-      for (const row of result.rows) {
+      for (const row of rows) {
         // Stamp the row with the bucket it was actually drawn from. The loop key is
         // the per-mark-type game category (Unfamiliar/Target/Comfortable/Mastered) —
         // distinct from the row's `category`, which CORE_CATEGORY_SELECT fills with
@@ -414,7 +348,6 @@ export class OnDeckVocabService {
    * code rather than SQL because this query is addressing specific ids, not searching.
    */
   private async fetchRowsByIds(
-    client: PoolClient,
     userId: string,
     language: string,
     ids: number[],
@@ -438,15 +371,8 @@ export class OnDeckVocabService {
   ): Promise<VocabEntry[]> {
     if (ids.length === 0) return [];
 
-    const result = await client.query<VocabEntry>(`
-      SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}, ${CORE_CATEGORY_SELECT}
-      FROM ${vetReadFrom(language)} ${DICT_JOIN}
-      WHERE ve."userId" = $1
-      AND ve."language" = $2
-      AND ve.id = ANY($3::int[])
-    `, [userId, language, ids]);
-
-    const byId = new Map(result.rows.map((row) => [row.id, row]));
+    const rows = await this.onDeckVocabDAL.findRowsByIds(userId, language, ids);
+    const byId = new Map(rows.map((row) => [row.id, row]));
     const ordered: VocabEntry[] = [];
     for (const id of ids) {
       const row = byId.get(id);
@@ -479,7 +405,6 @@ export class OnDeckVocabService {
    * `ddCollisionKey`).
    */
   private async fetchDdKeys(
-    client: PoolClient,
     userId: string,
     language: string,
     ids: number[]
@@ -487,15 +412,8 @@ export class OnDeckVocabService {
     const keys = new Set<string>();
     if (ids.length === 0) return keys;
 
-    const result = await client.query<VocabEntry>(`
-      SELECT ve.id, ve."selectedSense", ${DICT_COLS}
-      FROM ${vetReadFrom(language)} ${DICT_JOIN}
-      WHERE ve."userId" = $1
-      AND ve."language" = $2
-      AND ve.id = ANY($3::int[])
-    `, [userId, language, ids]);
-
-    for (const row of result.rows) {
+    const rows = await this.onDeckVocabDAL.findDdRowsByIds(userId, language, ids);
+    for (const row of rows) {
       const key = ddCollisionKey(row);
       if (key) keys.add(key);
     }
@@ -512,20 +430,13 @@ export class OnDeckVocabService {
    * (exact-dd only) behavior for any word the offline pipeline hasn't reached yet.
    */
   private async fetchGroupIds(
-    client: PoolClient,
     glossKeys: string[]
   ): Promise<Map<string, number>> {
     const map = new Map<string, number>();
     const unique = Array.from(new Set(glossKeys.filter((key): key is string => Boolean(key))));
     if (unique.length === 0) return map;
 
-    const result = await client.query<{ glossKey: string; meaningGroupId: number }>(`
-      SELECT "glossKey", "meaningGroupId"
-      FROM gloss_meaning_groups
-      WHERE "glossKey" = ANY($1::text[])
-    `, [unique]);
-
-    for (const row of result.rows) {
+    for (const row of await this.onDeckVocabDAL.findMeaningGroupIds(unique)) {
       map.set(row.glossKey, row.meaningGroupId);
     }
     return map;
@@ -547,7 +458,6 @@ export class OnDeckVocabService {
    * short board is always the correct answer, never a refusal.
    */
   private async lendGameCandidates(
-    client: PoolClient,
     userId: string,
     language: string,
     need: number,
@@ -568,71 +478,73 @@ export class OnDeckVocabService {
     const { lentIds } = await this.provisionalCardService.acquireLentCards(
       userId, language, need, 'default', { level, excludeIds }
     );
-    return this.fetchRowsByIds(client, userId, language, lentIds, markType, now, maxEntryKeyLen);
+    return this.fetchRowsByIds(userId, language, lentIds, markType, now, maxEntryKeyLen);
   }
 
   /**
-   * Enrich a vocab entry with related words that share characters.
-   * Only applies to Chinese words.
-   */
-  private async enrichWithRelatedWords(userId: string, entry: VocabEntry): Promise<VocabEntry> {
-    if (entry.language !== 'zh') {
-      return entry;
-    }
-
-    try {
-      const relatedWords = await this.vocabEntryDAL.findRelatedBySharedCharacters(
-        userId,
-        entry.entryKey,
-        entry.language,
-        4
-      );
-
-      return {
-        ...entry,
-        relatedWords
-      };
-    } catch (error) {
-      console.error(`Failed to find related words for "${entry.entryKey}":`, error);
-      return entry;
-    }
-  }
-
-  /**
-   * Enrich multiple vocab entries with related words.
+   * Attach `relatedWords` — up to 4 of the user's own sorted words sharing a character —
+   * to every zh entry. Non-zh entries pass through untouched.
+   *
+   * ONE query for the whole batch (`findRelatedBySharedCharactersForWords`), so a deal
+   * holds one pool client here rather than one per card (docs/DEFERRED_WORK.md, scaling
+   * table item 2). Best-effort like the per-card form it replaced: if the read fails the
+   * cards ship without related words rather than failing the deal.
    */
   private async enrichMultipleWithRelatedWords(userId: string, entries: VocabEntry[]): Promise<VocabEntry[]> {
-    return Promise.all(entries.map(entry => this.enrichWithRelatedWords(userId, entry)));
+    const zhWords = entries.filter(e => e.language === 'zh').map(e => e.entryKey);
+    if (zhWords.length === 0) return entries;
+
+    let byWord: Map<string, Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>>;
+    try {
+      byWord = await this.vocabEntryDAL.findRelatedBySharedCharactersForWords(userId, zhWords, 'zh', 4);
+    } catch (error) {
+      console.error(`Failed to find related words for ${zhWords.length} cards:`, error);
+      return entries;
+    }
+    return entries.map(entry => {
+      if (entry.language !== 'zh') return entry;
+      const relatedWords = byWord.get(entry.entryKey.trim());
+      return relatedWords ? { ...entry, relatedWords } : entry;
+    });
   }
 
   /**
-   * For a single-character zh entry, attach up to 4 multi-char words containing this
-   * character (user's vet first, then det fallback) as `usedIn`. On the WRITING bar it
-   * also attaches `writingUsedIn` — up to 2: saved words (ungated) then frequency-4–5
-   * dictionary words — for the writing card's hint bubbles (docs/WRITING_PRACTICE_REWORK.md § 3). No-op for
-   * multi-char or non-zh entries — those continue to use the precomputed `breakdown`
-   * map for the bt tab.
+   * For every single-character zh entry, attach up to 4 multi-char words containing the
+   * character (user's vet first, then det fallback) as `usedIn`. On the WRITING bar also
+   * attach `writingUsedIn` — up to 2: saved words (ungated) then frequency-4–5 dictionary
+   * words — for the writing card's hint bubbles (docs/WRITING_PRACTICE_REWORK.md § 3).
+   * Multi-char and non-zh entries pass through: they use the precomputed `breakdown` map
+   * for the bt tab.
+   *
+   * One query per list for the whole batch (`findUsedInForCharacters` /
+   * `findWritingUsedInForCharacters`), so a deal holds at most two pool clients here
+   * rather than up to two per card (docs/DEFERRED_WORK.md, scaling table item 2).
+   * Best-effort: a failed read ships the cards without the list.
    */
-  private async enrichWithUsedIn(userId: string, entry: VocabEntry, world: MasteryWorldId = 'core'): Promise<VocabEntry> {
-    if (entry.language !== 'zh') return entry;
-    if ([...entry.entryKey].length !== 1) return entry;
+  private async enrichMultipleWithUsedIn(userId: string, entries: VocabEntry[], world: MasteryWorldId = 'core'): Promise<VocabEntry[]> {
+    const isSingleZhChar = (e: VocabEntry) => e.language === 'zh' && [...e.entryKey].length === 1;
+    const chars = entries.filter(isSingleZhChar).map(e => e.entryKey);
+    if (chars.length === 0) return entries;
 
+    let usedInByChar: Map<string, UsedInItem[]>;
+    let writingByChar: Map<string, UsedInItem[]> | undefined;
     try {
-      const [usedIn, writingUsedIn] = await Promise.all([
-        this.vocabEntryDAL.findUsedInForCharacter(userId, entry.entryKey, entry.language, 4),
+      [usedInByChar, writingByChar] = await Promise.all([
+        this.vocabEntryDAL.findUsedInForCharacters(userId, chars, 'zh', 4),
         world === 'writing'
-          ? this.vocabEntryDAL.findWritingUsedInForCharacter(userId, entry.entryKey, entry.language, 2)
+          ? this.vocabEntryDAL.findWritingUsedInForCharacters(userId, chars, 'zh', 2)
           : Promise.resolve(undefined),
       ]);
-      return writingUsedIn ? { ...entry, usedIn, writingUsedIn } : { ...entry, usedIn };
     } catch (error) {
-      console.error(`Failed to find usedIn for "${entry.entryKey}":`, error);
-      return entry;
+      console.error(`Failed to find usedIn for ${chars.length} cards:`, error);
+      return entries;
     }
-  }
-
-  private async enrichMultipleWithUsedIn(userId: string, entries: VocabEntry[], world: MasteryWorldId = 'core'): Promise<VocabEntry[]> {
-    return Promise.all(entries.map(entry => this.enrichWithUsedIn(userId, entry, world)));
+    return entries.map(entry => {
+      if (!isSingleZhChar(entry)) return entry;
+      const usedIn = usedInByChar.get(entry.entryKey) ?? [];
+      const writingUsedIn = writingByChar?.get(entry.entryKey);
+      return writingUsedIn ? { ...entry, usedIn, writingUsedIn } : { ...entry, usedIn };
+    });
   }
 
   /**
@@ -655,49 +567,8 @@ export class OnDeckVocabService {
       throw new ValidationError('User ID is required');
     }
 
-    const client = await db.getClient();
-    try {
-      const result = await client.query<VocabEntry>(`
-        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}, ${CORE_CATEGORY_SELECT}
-        FROM ${vetReadFrom(language)} ${DICT_JOIN}
-        WHERE ve."userId" = $1
-        AND ve."language" = $2
-        -- SORTED: this is the deck the user built, not what a game may serve.
-        AND ${vetSortedClause()}
-        ORDER BY ve."createdAt" DESC
-      `, [userId, language]);
-
-      return await this.enrichEntriesPipeline(result.rows, language);
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
-   * WHERE fragment restricting a PLAYABLE read to a focus-mode scope
-   * (docs/FOCUS_MODE.md § 4 / § 4a), or the empty string for an ordinary round.
-   *
-   * The id list is bound as one int[] parameter, never interpolated (only the `$n`
-   * placeholder position is, and that is computed from the caller's own parameter list).
-   *
-   * Until 2026-11-04 this also narrowed a round to a user-authored deck (`?deck=`) or a
-   * built-in collection (`?collection=`); both launch paths were removed with the Decks
-   * feature, leaving focus mode as the only scope a round can carry.
-   */
-  private focusPlayFilter(
-    collection: CollectionFilter | null | undefined,
-    nextParamIndex: number
-  ): { clause: string; params: Array<number[]> } {
-    if (collection == null) return { clause: '', params: [] };
-
-    if (collection.kind === 'focus') {
-      // Strict membership, no provisional escape hatch: a focused round never lends,
-      // so there is no lent card it would need to admit.
-      return { clause: `AND ve.id = ANY($${nextParamIndex}::int[])`, params: [collection.ids] };
-    }
-
-    // 'outside-focus' — an flp break draws from everything but today's snapshot.
-    return { clause: `AND NOT (ve.id = ANY($${nextParamIndex}::int[]))`, params: [collection.setIds] };
+    const rows = await this.onDeckVocabDAL.findSortedCards(userId, language);
+    return await this.enrichEntriesPipeline(rows, language);
   }
 
   /**
@@ -719,30 +590,7 @@ export class OnDeckVocabService {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
-    const client = await db.getClient();
-    try {
-      const result = await client.query<{ core: number; reading: number; writing: number }>(`
-        SELECT
-          COUNT(*) FILTER (WHERE ${masteredBarClause('core')})::int    AS core,
-          COUNT(*) FILTER (WHERE ${masteredBarClause('reading')})::int AS reading,
-          COUNT(*) FILTER (WHERE ${masteredBarClause('writing')})::int AS writing
-        FROM ${vetTableForLanguage(language)} ve
-        WHERE ve."userId" = $1
-        AND ve."language" = $2
-        -- SORTED: these are deck sizes shown to the user, so a lent card must not
-        -- inflate them (same rule as getCategoryCounts).
-        AND ${vetSortedClause()}
-      `, [userId, language]);
-
-      const row = result.rows[0];
-      return {
-        core: row?.core ?? 0,
-        reading: row?.reading ?? 0,
-        writing: row?.writing ?? 0,
-      };
-    } finally {
-      client.release();
-    }
+    return await this.onDeckVocabDAL.countMasteredByWorld(userId, language);
   }
 
   /**
@@ -778,32 +626,16 @@ export class OnDeckVocabService {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
-    const client = await db.getClient();
-    try {
-      const result = await client.query<{ id: number; typedMarkHistory: TypedMarkHistory | null; writingMastery: number | null }>(`
-        SELECT ve.id, ve."typedMarkHistory", ${WRITING_MASTERY_SELECT}
-        FROM ${vetReadFrom(language)}
-        WHERE ve."userId" = $1
-        AND ve."language" = $2
-        ${world === 'writing' ? WRITING_FLP_WORD_CLAUSE : ''}
-        -- SORTED: deck read, same rule as getMasteredCountsByWorld — a lent provisional
-        -- card must not inflate a figure the learner reads as "my deck".
-        AND ${vetSortedClause()}
-        ${onlyIds ? 'AND ve.id = ANY($3::int[])' : ''}
-      `, onlyIds ? [userId, language, onlyIds] : [userId, language]);
-
-      const rows = result.rows.map((row) => ({
-        typedMarkHistory: row.typedMarkHistory ?? undefined,
-        writingMastery: row.writingMastery,
-      }));
-      const now = Date.now();
-      // `upcoming`: the cooling cards' release schedule, from the same rows, so the Deck
-      // Tower can grow card by card as each comes off cooldown (docs/DECK_TOWER.md §
-      // "Cooldown releases") without polling this endpoint.
-      return { counts: flpReadyCountsByBand(rows, now, world), upcoming: flpUpcomingReady(rows, now, world) };
-    } finally {
-      client.release();
-    }
+    const readiness = await this.onDeckVocabDAL.findReadinessRows(userId, language, world, onlyIds);
+    const rows = readiness.map((row) => ({
+      typedMarkHistory: row.typedMarkHistory ?? undefined,
+      writingMastery: row.writingMastery,
+    }));
+    const now = Date.now();
+    // `upcoming`: the cooling cards' release schedule, from the same rows, so the Deck
+    // Tower can grow card by card as each comes off cooldown (docs/DECK_TOWER.md §
+    // "Cooldown releases") without polling this endpoint.
+    return { counts: flpReadyCountsByBand(rows, now, world), upcoming: flpUpcomingReady(rows, now, world) };
   }
 
   /**
@@ -845,23 +677,8 @@ export class OnDeckVocabService {
       throw new ValidationError('User ID is required');
     }
 
-    const client = await db.getClient();
-    try {
-      const result = await client.query<VocabEntry>(`
-        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}, ${CORE_CATEGORY_SELECT}
-        FROM ${vetReadFrom(language)} ${DICT_JOIN}
-        WHERE ve."userId" = $1
-        AND ve."language" = $2
-        -- SORTED: deck read.
-        AND ${vetSortedClause()}
-        AND ${builtinCollectionClause(collection)}
-        ORDER BY ve."createdAt" DESC
-      `, [userId, language]);
-
-      return await this.enrichEntriesPipeline(result.rows, language);
-    } finally {
-      client.release();
-    }
+    const rows = await this.onDeckVocabDAL.findBuiltinCollectionCards(userId, language, collection);
+    return await this.enrichEntriesPipeline(rows, language);
   }
 
   /**
@@ -880,7 +697,6 @@ export class OnDeckVocabService {
    * for its whole pool rather than one per band and tier.
    */
   private async fetchFlpCandidates(
-    client: PoolClient,
     userId: string,
     /**
      * The band to read, on `world`'s bar. `null` reads EVERY band in one pass — the
@@ -897,37 +713,9 @@ export class OnDeckVocabService {
     /** The bar whose band `category` is read off — core except for the reading flp. */
     world: MasteryWorldId = OnDeckVocabService.FLP_WORLD
   ): Promise<VocabEntry[]> {
-    // Fixed placeholders: $1 user, $2 excluded ids, $3 language, $4 lent ids. The band
-    // ($5, when one is asked for) and the focus scope take the next free ones. Numbered
-    // as they are added, because an unreferenced placeholder is a Postgres error
-    // ("could not determine data type of parameter").
-    const params: unknown[] = [userId, excludeIds, language, lentIds];
-    let bandClause = '';
-    if (category !== null) {
-      params.push(category);
-      bandClause = `AND ${barCategoryExpr(world)} = $${params.length}`;
-    }
-    const scope = this.focusPlayFilter(collection, params.length + 1);
-    params.push(...scope.params);
-    const result = await client.query<VocabEntry>(`
-      SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}, ${CORE_CATEGORY_SELECT}
-      FROM ${vetReadFrom(language)} ${DICT_JOIN}
-      WHERE ve."userId" = $1
-      AND ve."language" = $3
-      -- SORTED ONLY: same rule as the game pools — a lent card enters a round only
-      -- through the last-resort lend tier, by id (docs/PROVISIONAL_CARDS.md § 4b).
-      AND (${vetSortedClause()} OR ve.id = ANY($4::int[]))
-      ${bandClause}
-      AND ve.id != ALL($2::int[])
-      ${world === 'writing' ? WRITING_FLP_WORD_CLAUSE : ''}
-      ${scope.clause}
-      -- Stable tiebreak only; the real ordering is rankFlpEligible in app code, which
-      -- also puts own cards before lent ones in its stale tier. The tie is REAL for
-      -- stale cards of equal ease, which keep this order — own-first is repeated here
-      -- so the tiebreak agrees with the ranker.
-      ORDER BY (ve."starterPackBucket" = 'provisional') ASC, ve."createdAt" DESC
-    `, params);
-    return result.rows;
+    return this.onDeckVocabDAL.findFlpCandidates(userId, language, {
+      category, world, excludeIds, lentIds, scope: collection,
+    });
   }
 
   /**
@@ -987,81 +775,76 @@ export class OnDeckVocabService {
     const borrowOrder = fallbackBase.filter(cat => cat !== preferredCategory);
 
     const now = Date.now();
-    const client = await db.getClient();
-    try {
-      let winner: VocabEntry | null = null;
+    let winner: VocabEntry | null = null;
 
-      // Take the head of the first category queue that has an eligible card.
-      const serveFrom = async (categories: string[]): Promise<VocabEntry | null> => {
-        for (const category of categories) {
-          const cards = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, [], world);
-          if (cards.length === 0) continue;
-          const ranked = this.rankFlpEligible(cards, now, world);
-          if (ranked.length > 0) return ranked[0];
-        }
-        return null;
-      };
-
-      // Take the nearest-to-ready COOLING card from the first category that has one.
-      // These are the learner's own cards, re-shown early; the mark they earn is
-      // dropped at POST /api/flashcards/mark, which is what the cooldown means.
-      const serveCooled = async (categories: string[]): Promise<VocabEntry | null> => {
-        for (const category of categories) {
-          const cards = await this.fetchFlpCandidates(client, userId, category, language, excludeIds, collection, [], world);
-          const resting = rankCardQueueCooled(cards, now, { world });
-          if (resting.length > 0) return resting[0];
-        }
-        return null;
-      };
-
-      // Lend one card and serve it. Policy (re-lend before minting) lives in
-      // ProvisionalCardService; the row comes back by id, so it is re-queried with
-      // `lentIds` — the ordinary candidate path is sorted-only. Returns null when
-      // dictionary supply is exhausted.
-      const serveLent = async (): Promise<VocabEntry | null> => {
-        const { lentIds } = await this.provisionalCardService.acquireLentCards(
-          userId, language, 1, 'default', { excludeIds }
-        );
-        if (lentIds.length === 0) return null;
-        for (const category of fallbackBase) {
-          const lent = await this.fetchFlpCandidates(
-            client, userId, category, language, excludeIds, collection, lentIds, world
-          );
-          const ranked = this.rankFlpEligible(lent.filter((card) => lentIds.includes(card.id)), now, world);
-          if (ranked.length > 0) return ranked[0];
-        }
-        return null;
-      };
-
-      // 1. The category the caller actually asked for.
-      winner = await serveFrom(preferredFirst);
-
-      // 2. Borrow a FRESH card from the remaining categories.
-      if (!winner) winner = await serveFrom(borrowOrder);
-
-      // 3. Nothing is off cooldown anywhere — re-serve the card closest to ready,
-      //    preferred category first (2026-08-20). This tier used to be a LEND, sitting
-      //    both here and above the borrow pass, which minted a card on every correct
-      //    mark once the answered card's own category ran dry: 14 lends in a single
-      //    dev session, and a bucket that grew without bound.
-      if (!winner) winner = await serveCooled([...preferredFirst, ...borrowOrder]);
-
-      // 4. Genuinely nothing to serve — the learner has too few cards. Lend one, if
-      //    this session is allowed to show a lent card at all.
-      if (!winner && this.canLendProvisional(collection)) {
-        winner = await serveLent();
+    // Take the head of the first category queue that has an eligible card.
+    const serveFrom = async (categories: string[]): Promise<VocabEntry | null> => {
+      for (const category of categories) {
+        const cards = await this.fetchFlpCandidates(userId, category, language, excludeIds, collection, [], world);
+        if (cards.length === 0) continue;
+        const ranked = this.rankFlpEligible(cards, now, world);
+        if (ranked.length > 0) return ranked[0];
       }
+      return null;
+    };
 
-      if (!winner) return null;
+    // Take the nearest-to-ready COOLING card from the first category that has one.
+    // These are the learner's own cards, re-shown early; the mark they earn is
+    // dropped at POST /api/flashcards/mark, which is what the cooldown means.
+    const serveCooled = async (categories: string[]): Promise<VocabEntry | null> => {
+      for (const category of categories) {
+        const cards = await this.fetchFlpCandidates(userId, category, language, excludeIds, collection, [], world);
+        const resting = rankCardQueueCooled(cards, now, { world });
+        if (resting.length > 0) return resting[0];
+      }
+      return null;
+    };
 
-      // Enrich only the chosen card (candidates were fetched un-enriched).
-      const enriched = await this.enrichEntriesPipeline([winner], language);
-      const withRelated = await this.enrichMultipleWithRelatedWords(userId, enriched);
-      const withUsedIn = await this.enrichMultipleWithUsedIn(userId, withRelated, world);
-      return withUsedIn[0];
-    } finally {
-      client.release();
+    // Lend one card and serve it. Policy (re-lend before minting) lives in
+    // ProvisionalCardService; the row comes back by id, so it is re-queried with
+    // `lentIds` — the ordinary candidate path is sorted-only. Returns null when
+    // dictionary supply is exhausted.
+    const serveLent = async (): Promise<VocabEntry | null> => {
+      const { lentIds } = await this.provisionalCardService.acquireLentCards(
+        userId, language, 1, 'default', { excludeIds }
+      );
+      if (lentIds.length === 0) return null;
+      for (const category of fallbackBase) {
+        const lent = await this.fetchFlpCandidates(
+          userId, category, language, excludeIds, collection, lentIds, world
+        );
+        const ranked = this.rankFlpEligible(lent.filter((card) => lentIds.includes(card.id)), now, world);
+        if (ranked.length > 0) return ranked[0];
+      }
+      return null;
+    };
+
+    // 1. The category the caller actually asked for.
+    winner = await serveFrom(preferredFirst);
+
+    // 2. Borrow a FRESH card from the remaining categories.
+    if (!winner) winner = await serveFrom(borrowOrder);
+
+    // 3. Nothing is off cooldown anywhere — re-serve the card closest to ready,
+    //    preferred category first (2026-08-20). This tier used to be a LEND, sitting
+    //    both here and above the borrow pass, which minted a card on every correct
+    //    mark once the answered card's own category ran dry: 14 lends in a single
+    //    dev session, and a bucket that grew without bound.
+    if (!winner) winner = await serveCooled([...preferredFirst, ...borrowOrder]);
+
+    // 4. Genuinely nothing to serve — the learner has too few cards. Lend one, if
+    //    this session is allowed to show a lent card at all.
+    if (!winner && this.canLendProvisional(collection)) {
+      winner = await serveLent();
     }
+
+    if (!winner) return null;
+
+    // Enrich only the chosen card (candidates were fetched un-enriched).
+    const enriched = await this.enrichEntriesPipeline([winner], language);
+    const withRelated = await this.enrichMultipleWithRelatedWords(userId, enriched);
+    const withUsedIn = await this.enrichMultipleWithUsedIn(userId, withRelated, world);
+    return withUsedIn[0];
   }
 
   /**
@@ -1088,15 +871,9 @@ export class OnDeckVocabService {
     world: MasteryWorldId
   ): Promise<VocabEntry[]> {
     if (replacedIds.length === 0) return [];
-    const client = await db.getClient();
-    let replaced: VocabEntry[];
-    try {
-      // `markType` is only used for freshness, which `ignoreCooldown` skips, and for the
-      // `gameCategory` stamp, which is not read here.
-      replaced = await this.fetchRowsByIds(client, userId, language, replacedIds, 'recognition', Date.now(), undefined, true);
-    } finally {
-      client.release();
-    }
+    // `markType` is only used for freshness, which `ignoreCooldown` skips, and for the
+    // `gameCategory` stamp, which is not read here.
+    const replaced = await this.fetchRowsByIds(userId, language, replacedIds, 'recognition', Date.now(), undefined, true);
 
     const exclude = new Set([...excludeIds, ...replacedIds]);
     const winners: VocabEntry[] = [];
@@ -1134,7 +911,6 @@ export class OnDeckVocabService {
    * docs/DEFERRED_WORK.md (the scaling table's refill row).
    */
   private async loadFlpDealPool(
-    client: PoolClient,
     userId: string,
     language: string,
     now: number,
@@ -1142,7 +918,7 @@ export class OnDeckVocabService {
     lentIds: number[],
     world: MasteryWorldId
   ): Promise<FlpDealPool> {
-    const rows = await this.fetchFlpCandidates(client, userId, null, language, [], collection, lentIds, world);
+    const rows = await this.fetchFlpCandidates(userId, null, language, [], collection, lentIds, world);
     const byBand = new Map<string, VocabEntry[]>();
     for (const card of rows) {
       const band = barCategory(card.typedMarkHistory, world, card.writingMastery);
@@ -1202,7 +978,6 @@ export class OnDeckVocabService {
    * short, or empty, rather than breaking the cooldown.
    */
   private async lendIntoLoop(
-    client: PoolClient,
     userId: string,
     language: string,
     need: number,
@@ -1233,7 +1008,7 @@ export class OnDeckVocabService {
     for (const category of ['Unfamiliar', 'Target', 'Comfortable', 'Mastered']) {
       if (rows.length >= need) break;
       const candidates = await this.fetchFlpCandidates(
-        client, userId, category, language, excludeIds, collection, lentIds, world
+        userId, category, language, excludeIds, collection, lentIds, world
       );
       const ranked = this.rankFlpEligible(candidates.filter((card) => lent.has(card.id)), now, world);
       rows.push(...ranked.slice(0, need - rows.length));
@@ -1300,86 +1075,81 @@ export class OnDeckVocabService {
     }
 
     const now = Date.now();
-    const client = await db.getClient();
-    try {
-      // Study Mix: fetch each quota in order, then top up to WORKING_LOOP_SIZE in the
-      // fill order. Mix may draw from all four bands, and walks its cooled tier in the
-      // same TCUM order it borrows in.
-      const config = DEFAULT_LOOP_CONFIG;
-      const loopCategories: string[] = [...STUDY_MIX_FILL_ORDER];
-      const workingLoop: VocabEntry[] = [];
+    // Study Mix: fetch each quota in order, then top up to WORKING_LOOP_SIZE in the
+    // fill order. Mix may draw from all four bands, and walks its cooled tier in the
+    // same TCUM order it borrows in.
+    const config = DEFAULT_LOOP_CONFIG;
+    const loopCategories: string[] = [...STUDY_MIX_FILL_ORDER];
+    const workingLoop: VocabEntry[] = [];
 
-      // One read of every candidate, banded and ranked in memory (loadFlpDealPool).
-      const pool = await this.loadFlpDealPool(client, userId, language, now, collection, lentIds, world);
+    // One read of every candidate, banded and ranked in memory (loadFlpDealPool).
+    const pool = await this.loadFlpDealPool(userId, language, now, collection, lentIds, world);
 
-      // Initial quotas (eligibility-filtered).
-      for (const { category, count } of config.quotas) {
-        workingLoop.push(...pool.eligible(category, count, workingLoop));
-      }
-
-      // The cross-category top-up runs below, as tier 1 of the shared fill ladder.
-      const fillOrder = config.fillOrder;
-
-      // FILL ORDER: BORROW → COOL → LEND (2026-08-20, replacing "lend first, borrow
-      // second" of 2026-08-17).
-      //
-      // A quota its own category could not fill is covered, in this order:
-      //   1. FRESH cards borrowed from the other categories;
-      //   2. COOLING cards — the learner's own words, shown again early. They earn
-      //      nothing (the mark is dropped at POST /api/flashcards/mark), which is
-      //      exactly what a cooldown means;
-      //   3. LENT cards, and only here.
-      //
-      // The old ordering minted a card whenever a quota underfilled, and a quota
-      // underfills constantly for an ordinary learner — the Mix loop asks for 1
-      // Mastered + 2 Comfortable that a young deck simply does not have. Lending is
-      // for a learner who has not sorted enough cards, not for one whose cards are
-      // merely resting or unevenly distributed.
-      //
-      // A focused session never lends: it plays the day's set and nothing else. It
-      // comes back short on purpose — but it DOES reach tier 2.
-      // See canLendProvisional and docs/PROVISIONAL_CARDS.md.
-      for (const category of fillOrder) {
-        if (workingLoop.length >= WORKING_LOOP_SIZE) break;
-        workingLoop.push(...pool.eligible(category, WORKING_LOOP_SIZE - workingLoop.length, workingLoop));
-      }
-
-      // 2. COOLING cards, nearest-to-ready first, across every category this loop may
-      //    draw from.
-      for (const category of loopCategories) {
-        if (workingLoop.length >= WORKING_LOOP_SIZE) break;
-        workingLoop.push(...pool.cooled(category, WORKING_LOOP_SIZE - workingLoop.length, workingLoop));
-      }
-
-      // 3. LEND — the learner really is short of cards.
-      if (workingLoop.length < WORKING_LOOP_SIZE && this.canLendProvisional(collection)) {
-        const lent = await this.lendIntoLoop(
-          client, userId, language, WORKING_LOOP_SIZE - workingLoop.length,
-          workingLoop.map(c => c.id), now, collection, world
-        );
-        workingLoop.push(...lent);
-      }
-
-      // Randomize play order. The ranking above chose WHICH cards are in the loop;
-      // the order they're played in is deliberately not the ranking, so a session
-      // doesn't march predictably from most- to least-recently-rested.
-      shuffleInPlace(workingLoop);
-
-      // Run the three-stage enrichment pipeline, then add related words + single-char usedIn
-      const enriched = await this.enrichEntriesPipeline(workingLoop, language);
-      const withRelated = await this.enrichMultipleWithRelatedWords(userId, enriched);
-      const withUsedIn = await this.enrichMultipleWithUsedIn(userId, withRelated, world);
-
-      // Pre-warm the TTS disk cache for every card before responding. The client
-      // still fetches MP3s via /api/tts/synthesize after this returns, but those
-      // calls are now guaranteed cache hits (~1ms each) so the speaker button
-      // and auto-play feel instant. Per-entry failures degrade gracefully:
-      // hasAudio=false signals the client to fall back to Web Speech for that
-      // card. We don't fail the whole loop if Google has a hiccup on one entry.
-      return await this.prewarmAudio(withUsedIn);
-    } finally {
-      client.release();
+    // Initial quotas (eligibility-filtered).
+    for (const { category, count } of config.quotas) {
+      workingLoop.push(...pool.eligible(category, count, workingLoop));
     }
+
+    // The cross-category top-up runs below, as tier 1 of the shared fill ladder.
+    const fillOrder = config.fillOrder;
+
+    // FILL ORDER: BORROW → COOL → LEND (2026-08-20, replacing "lend first, borrow
+    // second" of 2026-08-17).
+    //
+    // A quota its own category could not fill is covered, in this order:
+    //   1. FRESH cards borrowed from the other categories;
+    //   2. COOLING cards — the learner's own words, shown again early. They earn
+    //      nothing (the mark is dropped at POST /api/flashcards/mark), which is
+    //      exactly what a cooldown means;
+    //   3. LENT cards, and only here.
+    //
+    // The old ordering minted a card whenever a quota underfilled, and a quota
+    // underfills constantly for an ordinary learner — the Mix loop asks for 1
+    // Mastered + 2 Comfortable that a young deck simply does not have. Lending is
+    // for a learner who has not sorted enough cards, not for one whose cards are
+    // merely resting or unevenly distributed.
+    //
+    // A focused session never lends: it plays the day's set and nothing else. It
+    // comes back short on purpose — but it DOES reach tier 2.
+    // See canLendProvisional and docs/PROVISIONAL_CARDS.md.
+    for (const category of fillOrder) {
+      if (workingLoop.length >= WORKING_LOOP_SIZE) break;
+      workingLoop.push(...pool.eligible(category, WORKING_LOOP_SIZE - workingLoop.length, workingLoop));
+    }
+
+    // 2. COOLING cards, nearest-to-ready first, across every category this loop may
+    //    draw from.
+    for (const category of loopCategories) {
+      if (workingLoop.length >= WORKING_LOOP_SIZE) break;
+      workingLoop.push(...pool.cooled(category, WORKING_LOOP_SIZE - workingLoop.length, workingLoop));
+    }
+
+    // 3. LEND — the learner really is short of cards.
+    if (workingLoop.length < WORKING_LOOP_SIZE && this.canLendProvisional(collection)) {
+      const lent = await this.lendIntoLoop(
+        userId, language, WORKING_LOOP_SIZE - workingLoop.length,
+        workingLoop.map(c => c.id), now, collection, world
+      );
+      workingLoop.push(...lent);
+    }
+
+    // Randomize play order. The ranking above chose WHICH cards are in the loop;
+    // the order they're played in is deliberately not the ranking, so a session
+    // doesn't march predictably from most- to least-recently-rested.
+    shuffleInPlace(workingLoop);
+
+    // Run the three-stage enrichment pipeline, then add related words + single-char usedIn
+    const enriched = await this.enrichEntriesPipeline(workingLoop, language);
+    const withRelated = await this.enrichMultipleWithRelatedWords(userId, enriched);
+    const withUsedIn = await this.enrichMultipleWithUsedIn(userId, withRelated, world);
+
+    // Pre-warm the TTS disk cache for every card before responding. The client
+    // still fetches MP3s via /api/tts/synthesize after this returns, but those
+    // calls are now guaranteed cache hits (~1ms each) so the speaker button
+    // and auto-play feel instant. Per-entry failures degrade gracefully:
+    // hasAudio=false signals the client to fall back to Web Speech for that
+    // card. We don't fail the whole loop if Google has a hiccup on one entry.
+    return await this.cardAudioService.prewarm(withUsedIn);
   }
 
   /**
@@ -1416,34 +1186,12 @@ export class OnDeckVocabService {
     // Which bar the four bands are read off. `core` for every historical caller —
     // deck sizes, the level estimate, the account page. The card library
     // (src/features/flashcards/useCardLibrary.ts) passes its lens's bar, so its band
-    // figures count the skill being viewed. `bar` is a validated union value,
-    // so `barCategoryExpr` can only produce one of three fixed SQL fragments.
-    const categoryExpr = barCategoryExpr(world);
-    const client = await db.getClient();
-    try {
-      // category is computed per row from typedMarkHistory (migration 143), so we
-      // group by the derived expression. `ve` alias is required by
-      // barCategoryExpr's default. No users join: no bar depends on the goal flags.
-      const result = await client.query<{ category: string; n: number }>(`
-        SELECT ${categoryExpr} AS category, COUNT(*)::int AS n
-        FROM ${vetTableForLanguage(language)} ve
-        WHERE ve."userId" = $1
-        AND ve."language" = $3
-        -- SORTED: these counts are the deck sizes shown on the decks page. They must
-        -- NOT count provisional cards, or the page would claim cards the user has not
-        -- sorted. Games no longer use these counts to gate entry.
-        AND ${vetSortedClause()}
-        AND ${categoryExpr} = ANY($2::text[])
-        GROUP BY ${categoryExpr}
-      `, [userId, categories, language]);
-
-      const counts: Record<string, number> = {};
-      for (const cat of categories) counts[cat] = 0;
-      for (const row of result.rows) counts[row.category] = row.n;
-      return counts;
-    } finally {
-      client.release();
-    }
+    // figures count the skill being viewed.
+    const rows = await this.onDeckVocabDAL.countByBand(userId, language, categories, world);
+    const counts: Record<string, number> = {};
+    for (const cat of categories) counts[cat] = 0;
+    for (const row of rows) counts[row.category] = row.n;
+    return counts;
   }
 
   // Fallback buckets (in priority order) used to top the game pool up to its
@@ -1527,56 +1275,51 @@ export class OnDeckVocabService {
       userId, language, OnDeckVocabService.GAME_FALLBACK_ORDER
     );
 
-    const client = await db.getClient();
-    try {
-      const contestedIds = opts.includeContested
-        ? opts.contestedIds.filter((id) => !excluded.has(id))
-        : [];
-      const contested = await this.fetchRowsByIds(
-        client, userId, language, contestedIds, gameMarkType, now, opts.maxEntryKeyLen,
-        true // obligation, not preference — see fetchRowsByIds
-      );
+    const contestedIds = opts.includeContested
+      ? opts.contestedIds.filter((id) => !excluded.has(id))
+      : [];
+    const contested = await this.fetchRowsByIds(
+      userId, language, contestedIds, gameMarkType, now, opts.maxEntryKeyLen,
+      true // obligation, not preference — see fetchRowsByIds
+    );
 
-      // Filler tops the board up to `need`. The contested WORDS are excluded by word
-      // rather than by id so a second vet row for the same word (a language switch,
-      // a re-materialised card) cannot slip in as its own filler.
-      // ⚠️ THE EXCLUSION GOES INTO THE LADDER, NOT AFTER IT. The ladder is
-      // deterministic (band descent, then commonality), so filtering its RESULT would
-      // hand a mid-run top-up exactly the rows the opening deal already took — the
-      // refill would come back empty and a rolling-buffer game would run dry
-      // mid-round. Measured, and fixed, on 2026-08-22.
-      const fillerIds = await this.provisionalCardService.getFillerPool(
-        userId, language, Math.max(0, need - contested.length), opts.contestedWords,
-        [...excluded, ...opts.contestedIds]
-      );
-      const filler = await this.fetchRowsByIds(
-        client, userId, language,
-        fillerIds.filter((id) => !excluded.has(id) && !contestedIds.includes(id)),
-        gameMarkType, now, opts.maxEntryKeyLen,
-        // The ladder's top rungs are the player's MASTERED cards, which are the most
-        // likely of all to be resting. Filtering them would empty the filler pool for
-        // exactly the learners the ladder was written for.
-        true
-      );
+    // Filler tops the board up to `need`. The contested WORDS are excluded by word
+    // rather than by id so a second vet row for the same word (a language switch,
+    // a re-materialised card) cannot slip in as its own filler.
+    // ⚠️ THE EXCLUSION GOES INTO THE LADDER, NOT AFTER IT. The ladder is
+    // deterministic (band descent, then commonality), so filtering its RESULT would
+    // hand a mid-run top-up exactly the rows the opening deal already took — the
+    // refill would come back empty and a rolling-buffer game would run dry
+    // mid-round. Measured, and fixed, on 2026-08-22.
+    const fillerIds = await this.provisionalCardService.getFillerPool(
+      userId, language, Math.max(0, need - contested.length), opts.contestedWords,
+      [...excluded, ...opts.contestedIds]
+    );
+    const filler = await this.fetchRowsByIds(
+      userId, language,
+      fillerIds.filter((id) => !excluded.has(id) && !contestedIds.includes(id)),
+      gameMarkType, now, opts.maxEntryKeyLen,
+      // The ladder's top rungs are the player's MASTERED cards, which are the most
+      // likely of all to be resting. Filtering them would empty the filler pool for
+      // exactly the learners the ladder was written for.
+      true
+    );
 
-      const cards = this.shuffleCards([...contested, ...filler]).slice(0, need);
-      const enriched = await this.enrichEntriesPipeline(cards, language);
-      const withAudio = await this.prewarmAudio(enriched);
+    const cards = this.shuffleCards([...contested, ...filler]).slice(0, need);
+    const enriched = await this.enrichEntriesPipeline(cards, language);
+    const withAudio = await this.cardAudioService.prewarm(enriched);
 
-      return {
-        cards: withAudio,
-        // A challenge board asks for no bands at all: the set IS the request.
-        requested: {},
-        available,
-        total: need,
-        needed: need,
-        // Short only when the player's whole library AND the dictionary are
-        // exhausted. A short board still plays — it is never a refusal (§ 5.2).
-        sufficient: withAudio.length >= need,
-      };
-    } finally {
-      client.release();
-    }
+    return {
+      cards: withAudio,
+      // A challenge board asks for no bands at all: the set IS the request.
+      requested: {},
+      available,
+      total: need,
+      needed: need,
+      // Short only when the player's whole library AND the dictionary are
+      // exhausted. A short board still plays — it is never a refusal (§ 5.2).
+      sufficient: withAudio.length >= need,
+    };
   }
 
   /** Fisher-Yates over a copy — see the Q74 note on `getChallengeGamePool`. */
@@ -1707,289 +1450,284 @@ export class OnDeckVocabService {
     );
     const available = await this.getCategoryCounts(userId, language, countCategories);
 
-    const client = await db.getClient();
-    try {
-      // SEED (docs/FLP_GAME_BREAKS.md § 4). Loaded with `ignoreCooldown` so every seed
-      // comes back, then split by `partitionBreakSeeds` — an unfocused break keeps only
-      // the seeds whose mark counts and that sit under pbh 6 on the game's bar. Seeds that
-      // are already excluded (on the caller's board) are dropped — exclude always wins.
-      //
-      // A FOCUSED BREAK SWAPS THE SEED (docs/FOCUS_MODE.md § 4a). The caller's seed is the
-      // working loop, which is exactly the set the break is meant to get away from, so it
-      // is replaced by the day's remaining cards and dealt AFTER the outside cards.
-      const focusBreak = opts.collection?.kind === 'outside-focus' ? opts.collection : null;
-      const excludeSet = new Set(excludeIds);
-      const seedIds = (focusBreak ? focusBreak.remainingIds : opts.seedIds ?? [])
-        .filter((id) => !excludeSet.has(id));
-      const seedRows = await this.fetchRowsByIds(
-        client, userId, language, seedIds, gameMarkType, now, undefined, true
-      );
-      const { markable: seedMarkable, fallback: seedFallback } =
-        this.partitionBreakSeeds(seedRows, gameMarkType, now, focusBreak !== null);
+    // SEED (docs/FLP_GAME_BREAKS.md § 4). Loaded with `ignoreCooldown` so every seed
+    // comes back, then split by `partitionBreakSeeds` — an unfocused break keeps only
+    // the seeds whose mark counts and that sit under pbh 6 on the game's bar. Seeds that
+    // are already excluded (on the caller's board) are dropped — exclude always wins.
+    //
+    // A FOCUSED BREAK SWAPS THE SEED (docs/FOCUS_MODE.md § 4a). The caller's seed is the
+    // working loop, which is exactly the set the break is meant to get away from, so it
+    // is replaced by the day's remaining cards and dealt AFTER the outside cards.
+    const focusBreak = opts.collection?.kind === 'outside-focus' ? opts.collection : null;
+    const excludeSet = new Set(excludeIds);
+    const seedIds = (focusBreak ? focusBreak.remainingIds : opts.seedIds ?? [])
+      .filter((id) => !excludeSet.has(id));
+    const seedRows = await this.fetchRowsByIds(
+      userId, language, seedIds, gameMarkType, now, undefined, true
+    );
+    const { markable: seedMarkable, fallback: seedFallback } =
+      this.partitionBreakSeeds(seedRows, gameMarkType, now, focusBreak !== null);
 
-      // Per-category candidates split fresh (game type off cooldown) vs cooled. The
-      // seed ids are kept OUT of this query so a seed can only enter through its own
-      // tier below — otherwise an ineligible seed would ride in on the cooled tier
-      // ahead of its fallback position, or a markable one be counted twice.
-      const { eligible, cooled } = await this.fetchGameCandidates(
-        client, userId, language, countCategories, gameMarkType, now,
-        OnDeckVocabService.GAME_CANDIDATE_CAP, undefined, [...excludeIds, ...seedIds], opts.collection,
-        opts.lentIds ?? []
-      );
+    // Per-category candidates split fresh (game type off cooldown) vs cooled. The
+    // seed ids are kept OUT of this query so a seed can only enter through its own
+    // tier below — otherwise an ineligible seed would ride in on the cooled tier
+    // ahead of its fallback position, or a markable one be counted twice.
+    const { eligible, cooled } = await this.fetchGameCandidates(
+      userId, language, countCategories, gameMarkType, now,
+      OnDeckVocabService.GAME_CANDIDATE_CAP, undefined, [...excludeIds, ...seedIds], opts.collection,
+      opts.lentIds ?? []
+    );
 
-      // Soft-avoid: pull just-cleared cards out of BOTH tiers into a third,
-      // strictly-last tier. It has to be its own tier rather than the back of the
-      // matching category's `cooled` queue: the fill loops iterate category-by-
-      // category, so a demoted card sitting in (say) the Unfamiliar cooled queue
-      // would still be drawn ahead of every Mastered cooled card — which is
-      // exactly how a refill ended up handing back the cards just cleared.
-      const avoidIds = new Set(opts.avoidIds ?? []);
-      const avoided: Record<string, VocabEntry[]> = {};
-      if (avoidIds.size > 0) {
-        for (const category of countCategories) {
-          const fresh = eligible[category] ?? [];
-          const rested = cooled[category] ?? [];
-          eligible[category] = fresh.filter((c) => !avoidIds.has(c.id));
-          cooled[category] = rested.filter((c) => !avoidIds.has(c.id));
-          avoided[category] = [
-            ...fresh.filter((c) => avoidIds.has(c.id)),
-            ...rested.filter((c) => avoidIds.has(c.id)),
-          ];
-        }
+    // Soft-avoid: pull just-cleared cards out of BOTH tiers into a third,
+    // strictly-last tier. It has to be its own tier rather than the back of the
+    // matching category's `cooled` queue: the fill loops iterate category-by-
+    // category, so a demoted card sitting in (say) the Unfamiliar cooled queue
+    // would still be drawn ahead of every Mastered cooled card — which is
+    // exactly how a refill ended up handing back the cards just cleared.
+    const avoidIds = new Set(opts.avoidIds ?? []);
+    const avoided: Record<string, VocabEntry[]> = {};
+    if (avoidIds.size > 0) {
+      for (const category of countCategories) {
+        const fresh = eligible[category] ?? [];
+        const rested = cooled[category] ?? [];
+        eligible[category] = fresh.filter((c) => !avoidIds.has(c.id));
+        cooled[category] = rested.filter((c) => !avoidIds.has(c.id));
+        avoided[category] = [
+          ...fresh.filter((c) => avoidIds.has(c.id)),
+          ...rested.filter((c) => avoidIds.has(c.id)),
+        ];
       }
-
-      const selectedIds = new Set<number>();
-      const cards: VocabEntry[] = [];
-      // NO TWO CARDS IN ONE ROUND MAY READ THE SAME (2026-08-22).
-      //
-      // Distinct entries routinely resolve to the SAME dd — 高兴 / 开心 both "happy",
-      // any two measure words both "measure word". Every game shows its cards at once,
-      // so two same-dd cards on one board give a prompt two correct-looking answers of
-      // which only one scores. The pool is the single place all four gamePool games
-      // (Bubble Match, Match Speed, Speed Reading, Hydra) get their cards, so the guard
-      // lives here rather than four times over on the client.
-      // See docs/GAMES_FEATURE.md § "No two cards may share a dd in one round".
-      //
-      // SEEDED with the dds of the cards the caller is KEEPING (`excludeIds` = on the
-      // board or in the buffer, for a partial refill), so a replacement can't collide
-      // with a bubble already on screen — the exact same reason `excludeIds` itself
-      // exists, one level up from identity.
-      const takenDds = await this.fetchDdKeys(client, userId, language, excludeIds);
-
-      // PHASE 2 NEAR-MISS GUARD (docs/GLOSS_CONFUSABILITY.md § 6). Resolve every
-      // candidate's dd key to its precomputed `meaningGroupId` in one batch — the
-      // same offline clustering `ddCollisionKey` glossKeys are looked up against —
-      // then walk `takenGroups` alongside `takenDds` in `drain()` below. A key with
-      // no row in `gloss_meaning_groups` is simply absent from the map (see
-      // `fetchGroupIds`), so words the pipeline hasn't clustered yet never block.
-      const candidateDdKeys = [
-        ...takenDds,
-        ...Object.values(eligible).flat().map(ddCollisionKey),
-        ...Object.values(cooled).flat().map(ddCollisionKey),
-        ...Object.values(avoided).flat().map(ddCollisionKey),
-        ...seedRows.map(ddCollisionKey),
-      ];
-      const glossKeyToGroup = await this.fetchGroupIds(client, candidateDdKeys);
-      const takenGroups = new Set<number>();
-      for (const key of takenDds) {
-        const groupId = glossKeyToGroup.get(key);
-        if (groupId !== undefined) takenGroups.add(groupId);
-      }
-
-      // HARD everywhere except the two cases lending itself can't run — must mirror
-      // `mayLend` exactly (declared again, unchanged, at tier 5 below) so the two can
-      // never drift apart: a focus-scoped round, and a partial refill that
-      // isn't a rolling-supply surface, both have no fallback to grow into if the
-      // near-miss guard shortens the board, so those two admit a same-meaning-group
-      // card rather than come back short. Exact-dd collisions (`takenDds` above) stay
-      // hard in both cases — identical strings collide regardless.
-      const mayLend = opts.need === undefined || opts.lendOnRefill === true;
-      const groupGuardHard = !opts.collection && mayLend;
-
-      // Pop up to `limit` not-yet-selected cards off one category queue.
-      const drain = (queue: VocabEntry[], limit: number): void => {
-        while (limit > 0 && queue.length > 0) {
-          const card = queue.shift()!;
-          if (selectedIds.has(card.id)) continue;
-          // A colliding card is DISCARDED, not deferred: the key it clashes with is
-          // held for the whole round, so this card could never become admissible later.
-          // An empty key means "no dd to confuse anyone with" and never collides.
-          const ddKey = ddCollisionKey(card);
-          if (ddKey && takenDds.has(ddKey)) continue;
-          const groupId = ddKey ? glossKeyToGroup.get(ddKey) : undefined;
-          if (groupGuardHard && groupId !== undefined && takenGroups.has(groupId)) continue;
-          if (ddKey) takenDds.add(ddKey);
-          if (groupId !== undefined) takenGroups.add(groupId);
-          selectedIds.add(card.id);
-          cards.push(card);
-          limit--;
-        }
-      };
-
-      // 0. SEED → markable seeds first (docs/FLP_GAME_BREAKS.md § 4), still through
-      //    `drain` so the dd / meaning-group guard applies to them like any card. Each
-      //    seed placed is charged to its bucket's quota, so the requested difficulty
-      //    mix still shapes what the top-up adds rather than being overfilled on top.
-      const quotaLeft: Record<string, number> = { ...scaled };
-      const beforeSeed = cards.length;
-      // A focused break holds its markable seeds back to tier 2a.
-      if (!focusBreak) drain(seedMarkable, target);
-      for (const card of cards.slice(beforeSeed)) {
-        const bucket = card.gameCategory;
-        if (bucket && quotaLeft[bucket] !== undefined) quotaLeft[bucket] = Math.max(0, quotaLeft[bucket] - 1);
-      }
-
-      // 1. Fill each requested bucket up to its (target-scaled, seed-charged) quota
-      //    from FRESH cards, never overshooting the target.
-      for (const [category, count] of Object.entries(quotaLeft)) {
-        if (cards.length >= target) break;
-        drain(eligible[category] ?? [], Math.min(count, target - cards.length));
-      }
-      // STRICT-BUCKET REQUESTS NEVER SUBSTITUTE A BUCKET (2026-08-18; made explicit
-      // 2026-08-21).
-      //
-      // A caller can ask for a set of categories in one of two spirits. Usually it is
-      // describing a difficulty MIX it would like, and topping one quota up from a
-      // neighbouring bucket is exactly the best-effort fill it wants. But Hydra
-      // Bubbles rolls a COLOR, requests the bands that color is made of, and pays the
-      // player according to that color (docs/HYDRA_BUBBLES.md § 2, § 5) — for it the
-      // request is a question whose answer is the bucket itself, and a card from
-      // outside the set is one the caller then misreports to the player and misprices.
-      // `strictBuckets` collapses the fallback ORDER to the requested buckets alone:
-      // such a caller would rather come back SHORT — it can wait or skip the slot —
-      // than come back WRONG.
-      //
-      // ⚠️ IT IS A FLAG NOW, NOT AN INFERENCE, and that is the point. This used to be
-      // inferred as `requested.length === 1`, which worked only while Hydra asked for
-      // exactly one band per color. Hydra's two-color rework asks for TWO bands per
-      // color (BUCKETS_BY_COLOR, src/games/hydra-bubbles/constants.ts), which the old
-      // inference would have read as "a mix, please substitute freely" — silently
-      // reintroducing the mispricing it was written to stop. An intent this load-
-      // bearing has to be stated by the caller, not guessed from the shape of what it
-      // asked for.
-      //
-      // THE FLAG IS THE ONLY WAY IN (2026-09-13). A length-1 inference used to sit
-      // underneath as a "backstop" for single-bucket callers, and it turned out to have
-      // a real, unintended caller: Match Speed's buffer top-up omits every bucket that
-      // is already full (`topUpQuery`), so a learner with one Unfamiliar card routinely
-      // sent `?Unfamiliar=5` alone. The backstop read that as strict, skipped tier 2 and
-      // the fallback half of tiers 3–4, came back short, and fell straight through to
-      // tier 5 — LENDING to an account with ~700 sorted cards it could have borrowed
-      // from. The rule is: a non-strict request borrows across buckets before it lends,
-      // however many buckets it happened to name.
-      const requested = Object.keys(distribution);
-      const substituting = !opts.strictBuckets;
-      const fallbackOrder = substituting ? OnDeckVocabService.GAME_FALLBACK_ORDER : requested;
-      const lastResortOrder = substituting
-        ? [...requested, ...OnDeckVocabService.GAME_FALLBACK_ORDER]
-        : requested;
-
-      // 2. Still short → top up to `target` with FRESH cards from the fallback
-      //    buckets (Target → Comfortable → Unfamiliar → Mastered).
-      for (const category of fallbackOrder) {
-        if (cards.length >= target) break;
-        drain(eligible[category] ?? [], target - cards.length);
-      }
-      // 2a. FOCUSED BREAK ONLY: the outside cards ran out → the day's remaining focus
-      //     cards. Ahead of the cooling tier on purpose: a focus card takes the game's
-      //     marks, and a mark on a cooling outside card would be dropped.
-      if (focusBreak && cards.length < target) drain(seedMarkable, target - cards.length);
-      // 2b. FOCUSED BREAK ONLY (empty otherwise — `partitionBreakSeeds`): the remaining
-      //     focus cards that cannot take the game's marks. Every fresh card has been
-      //     tried, so nothing markable is being displaced. Not bucket-restricted: the
-      //     seed is the caller's own set, not a band request.
-      if (cards.length < target) drain(seedFallback, target - cards.length);
-      // 3. Still short → COOLING cards (requested buckets first, then fallback), so a
-      //    just-played library still assembles a full board.
-      //
-      //    For a single-bucket caller this is the tier that MATTERS, and it is
-      //    deliberately allowed to break the cooldown: a genuinely Mastered
-      //    card that is merely resting is a truthful `bloom` bubble (Hydra's +1 tier),
-      //    whereas a minted HSK-1 word placed in that tier by its lend level is not.
-      //    Note the consequence —
-      //    a mark on a still-cooling card is dropped by the guard at
-      //    POST /api/flashcards/mark (docs/HYDRA_BUBBLES.md § 8), so these cards are
-      //    playable but do not advance mastery. That is the accepted trade: the
-      //    cooldown exists precisely so re-answering a Mastered card inside its
-      //    window earns nothing.
-      for (const category of lastResortOrder) {
-        if (cards.length >= target) break;
-        drain(cooled[category] ?? [], target - cards.length);
-      }
-      // 4. Then → AVOIDED cards (just cleared by the caller). Only reached when the
-      //    library is too small to fill the board without reusing them; a roomy
-      //    library never gets here.
-      for (const category of lastResortOrder) {
-        if (cards.length >= target) break;
-        drain(avoided[category] ?? [], target - cards.length);
-      }
-
-      // 5. ABSOLUTE last resort → LEND (2026-08-20, replacing the 2026-08-17
-      //    "lend before borrowing" rule and its 2026-08-19 narrowing).
-      //
-      //    LENDING IS NOW THE BOTTOM OF THE LADDER, BELOW COOLING CARDS. The rule it
-      //    implements: lending exists to get a learner started who has not sorted
-      //    enough cards, and for nothing else (docs/PROVISIONAL_CARDS.md § 4b). A
-      //    learner with a real library whose cards are merely RESTING is not short of
-      //    cards, so tier 3 re-serves those instead. The cost is that a mark on a
-      //    still-cooling card is dropped at POST /api/flashcards/mark, so those cards
-      //    play but do not advance mastery — the accepted trade, and a far better one
-      //    than growing the learner's deck with words they never chose.
-      //
-      //    Why the old ordering was wrong, concretely: Speed Reading buckets by
-      //    READING, where a typical learner is ~100% Unfamiliar, so its
-      //    Target/Comfortable/Mastered quotas (18 of 20) are unfillable no matter how
-      //    large the library is — and a minted row is itself Unfamiliar, so lending
-      //    could never close them. Every load lent another ~18 cards, forever.
-      //
-      //    In practice this tier is reached by exactly two callers: a genuinely
-      //    under-supplied learner whose baseline top-up could not cover the board
-      //    (dictionary exhausted), and Hydra Bubbles, whose every spawn is a refill and
-      //    whose colour ladder is built on lending (docs/HYDRA_BUBBLES.md § 6.2).
-      //    Hydra now pulls cooling cards before it lends, like everything else.
-      //
-      //    Two sessions never reach it at all:
-      //      * a FOCUS-scoped pool (docs/FOCUS_MODE.md § 4) — a focused round padded
-      //        with words outside the day's set is not that set (same rule as
-      //        canLendProvisional);
-      //      * a PARTIAL REFILL (`opts.need`) — Bubble Match's Play Again is mid-session
-      //        with a board in hand, and lending there would grow the player's deck on
-      //        every tap. EXCEPT for a rolling-supply surface (`opts.lendOnRefill`),
-      //        whose every spawn is a refill and which would otherwise never lend at
-      //        all. See ROLLING_SUPPLY_SURFACES in contracts/wire.ts.
-      //
-      //    The focus exemption has NO opt-out: a scoped round plays its set, rolling
-      //    supply or not (docs/HYDRA_BUBBLES.md § 6.3).
-      //    (`mayLend` declared once, above — see the near-miss guard comment there.)
-      if (cards.length < target && !opts.collection && mayLend) {
-        const lent = await this.lendGameCandidates(
-          client, userId, language, target - cards.length, gameMarkType, now,
-          undefined, [...excludeIds, ...selectedIds], opts.lendLevelOffset
-        );
-        // The re-query is unaware of the soft-avoid tier, so filter those back out.
-        drain(lent.filter((card) => !avoidIds.has(card.id)), target - cards.length);
-      }
-
-      const sufficient = cards.length >= target;
-
-      // Enrich (long defs / parts of speech etc.) then pre-warm audio. We skip
-      // the related-words / used-in passes the EIC needs — the game only renders
-      // the word, its pinyin, and the flashcard definition.
-      const enriched = await this.enrichEntriesPipeline(cards, language);
-      const withAudio = await this.prewarmAudio(enriched);
-      // Tell the Stage which cards are not on the focused tower, so clearing one drops
-      // nothing (docs/FLP_GAME_BREAKS.md § 6). Every card that is not a seed is outside.
-      const seedSet = new Set(seedIds);
-      const dealt = focusBreak
-        ? withAudio.map((card) => (seedSet.has(card.id) ? card : { ...card, outsideFocus: true }))
-        : withAudio;
-
-      // `total` stays the full board size (what the client's "you need N Learn
-      // Now cards" message quotes); `needed` is what THIS call had to return.
-      return { cards: dealt, requested: { ...scaled }, available, total, needed: target, sufficient };
-    } finally {
-      client.release();
     }
+
+    const selectedIds = new Set<number>();
+    const cards: VocabEntry[] = [];
+    // NO TWO CARDS IN ONE ROUND MAY READ THE SAME (2026-08-22).
+    //
+    // Distinct entries routinely resolve to the SAME dd — 高兴 / 开心 both "happy",
+    // any two measure words both "measure word". Every game shows its cards at once,
+    // so two same-dd cards on one board give a prompt two correct-looking answers of
+    // which only one scores. The pool is the single place all four gamePool games
+    // (Bubble Match, Match Speed, Speed Reading, Hydra) get their cards, so the guard
+    // lives here rather than four times over on the client.
+    // See docs/GAMES_FEATURE.md § "No two cards may share a dd in one round".
+    //
+    // SEEDED with the dds of the cards the caller is KEEPING (`excludeIds` = on the
+    // board or in the buffer, for a partial refill), so a replacement can't collide
+    // with a bubble already on screen — the exact same reason `excludeIds` itself
+    // exists, one level up from identity.
+    const takenDds = await this.fetchDdKeys(userId, language, excludeIds);
+
+    // PHASE 2 NEAR-MISS GUARD (docs/GLOSS_CONFUSABILITY.md § 6). Resolve every
+    // candidate's dd key to its precomputed `meaningGroupId` in one batch — the
+    // same offline clustering `ddCollisionKey` glossKeys are looked up against —
+    // then walk `takenGroups` alongside `takenDds` in `drain()` below. A key with
+    // no row in `gloss_meaning_groups` is simply absent from the map (see
+    // `fetchGroupIds`), so words the pipeline hasn't clustered yet never block.
+    const candidateDdKeys = [
+      ...takenDds,
+      ...Object.values(eligible).flat().map(ddCollisionKey),
+      ...Object.values(cooled).flat().map(ddCollisionKey),
+      ...Object.values(avoided).flat().map(ddCollisionKey),
+      ...seedRows.map(ddCollisionKey),
+    ];
+    const glossKeyToGroup = await this.fetchGroupIds(candidateDdKeys);
+    const takenGroups = new Set<number>();
+    for (const key of takenDds) {
+      const groupId = glossKeyToGroup.get(key);
+      if (groupId !== undefined) takenGroups.add(groupId);
+    }
+
+    // HARD everywhere except the two cases lending itself can't run — must mirror
+    // `mayLend` exactly (declared again, unchanged, at tier 5 below) so the two can
+    // never drift apart: a focus-scoped round, and a partial refill that
+    // isn't a rolling-supply surface, both have no fallback to grow into if the
+    // near-miss guard shortens the board, so those two admit a same-meaning-group
+    // card rather than come back short. Exact-dd collisions (`takenDds` above) stay
+    // hard in both cases — identical strings collide regardless.
+    const mayLend = opts.need === undefined || opts.lendOnRefill === true;
+    const groupGuardHard = !opts.collection && mayLend;
+
+    // Pop up to `limit` not-yet-selected cards off one category queue.
+    const drain = (queue: VocabEntry[], limit: number): void => {
+      while (limit > 0 && queue.length > 0) {
+        const card = queue.shift()!;
+        if (selectedIds.has(card.id)) continue;
+        // A colliding card is DISCARDED, not deferred: the key it clashes with is
+        // held for the whole round, so this card could never become admissible later.
+        // An empty key means "no dd to confuse anyone with" and never collides.
+        const ddKey = ddCollisionKey(card);
+        if (ddKey && takenDds.has(ddKey)) continue;
+        const groupId = ddKey ? glossKeyToGroup.get(ddKey) : undefined;
+        if (groupGuardHard && groupId !== undefined && takenGroups.has(groupId)) continue;
+        if (ddKey) takenDds.add(ddKey);
+        if (groupId !== undefined) takenGroups.add(groupId);
+        selectedIds.add(card.id);
+        cards.push(card);
+        limit--;
+      }
+    };
+
+    // 0. SEED → markable seeds first (docs/FLP_GAME_BREAKS.md § 4), still through
+    //    `drain` so the dd / meaning-group guard applies to them like any card. Each
+    //    seed placed is charged to its bucket's quota, so the requested difficulty
+    //    mix still shapes what the top-up adds rather than being overfilled on top.
+    const quotaLeft: Record<string, number> = { ...scaled };
+    const beforeSeed = cards.length;
+    // A focused break holds its markable seeds back to tier 2a.
+    if (!focusBreak) drain(seedMarkable, target);
+    for (const card of cards.slice(beforeSeed)) {
+      const bucket = card.gameCategory;
+      if (bucket && quotaLeft[bucket] !== undefined) quotaLeft[bucket] = Math.max(0, quotaLeft[bucket] - 1);
+    }
+
+    // 1. Fill each requested bucket up to its (target-scaled, seed-charged) quota
+    //    from FRESH cards, never overshooting the target.
+    for (const [category, count] of Object.entries(quotaLeft)) {
+      if (cards.length >= target) break;
+      drain(eligible[category] ?? [], Math.min(count, target - cards.length));
+    }
+    // STRICT-BUCKET REQUESTS NEVER SUBSTITUTE A BUCKET (2026-08-18; made explicit
+    // 2026-08-21).
+    //
+    // A caller can ask for a set of categories in one of two spirits. Usually it is
+    // describing a difficulty MIX it would like, and topping one quota up from a
+    // neighbouring bucket is exactly the best-effort fill it wants. But Hydra
+    // Bubbles rolls a COLOR, requests the bands that color is made of, and pays the
+    // player according to that color (docs/HYDRA_BUBBLES.md § 2, § 5) — for it the
+    // request is a question whose answer is the bucket itself, and a card from
+    // outside the set is one the caller then misreports to the player and misprices.
+    // `strictBuckets` collapses the fallback ORDER to the requested buckets alone:
+    // such a caller would rather come back SHORT — it can wait or skip the slot —
+    // than come back WRONG.
+    //
+    // ⚠️ IT IS A FLAG NOW, NOT AN INFERENCE, and that is the point. This used to be
+    // inferred as `requested.length === 1`, which worked only while Hydra asked for
+    // exactly one band per color. Hydra's two-color rework asks for TWO bands per
+    // color (BUCKETS_BY_COLOR, src/games/hydra-bubbles/constants.ts), which the old
+    // inference would have read as "a mix, please substitute freely" — silently
+    // reintroducing the mispricing it was written to stop. An intent this load-
+    // bearing has to be stated by the caller, not guessed from the shape of what it
+    // asked for.
+    //
+    // THE FLAG IS THE ONLY WAY IN (2026-09-13). A length-1 inference used to sit
+    // underneath as a "backstop" for single-bucket callers, and it turned out to have
+    // a real, unintended caller: Match Speed's buffer top-up omits every bucket that
+    // is already full (`topUpQuery`), so a learner with one Unfamiliar card routinely
+    // sent `?Unfamiliar=5` alone. The backstop read that as strict, skipped tier 2 and
+    // the fallback half of tiers 3–4, came back short, and fell straight through to
+    // tier 5 — LENDING to an account with ~700 sorted cards it could have borrowed
+    // from. The rule is: a non-strict request borrows across buckets before it lends,
+    // however many buckets it happened to name.
+    const requested = Object.keys(distribution);
+    const substituting = !opts.strictBuckets;
+    const fallbackOrder = substituting ? OnDeckVocabService.GAME_FALLBACK_ORDER : requested;
+    const lastResortOrder = substituting
+      ? [...requested, ...OnDeckVocabService.GAME_FALLBACK_ORDER]
+      : requested;
+
+    // 2. Still short → top up to `target` with FRESH cards from the fallback
+    //    buckets (Target → Comfortable → Unfamiliar → Mastered).
+    for (const category of fallbackOrder) {
+      if (cards.length >= target) break;
+      drain(eligible[category] ?? [], target - cards.length);
+    }
+    // 2a. FOCUSED BREAK ONLY: the outside cards ran out → the day's remaining focus
+    //     cards. Ahead of the cooling tier on purpose: a focus card takes the game's
+    //     marks, and a mark on a cooling outside card would be dropped.
+    if (focusBreak && cards.length < target) drain(seedMarkable, target - cards.length);
+    // 2b. FOCUSED BREAK ONLY (empty otherwise — `partitionBreakSeeds`): the remaining
+    //     focus cards that cannot take the game's marks. Every fresh card has been
+    //     tried, so nothing markable is being displaced. Not bucket-restricted: the
+    //     seed is the caller's own set, not a band request.
+    if (cards.length < target) drain(seedFallback, target - cards.length);
+    // 3. Still short → COOLING cards (requested buckets first, then fallback), so a
+    //    just-played library still assembles a full board.
+    //
+    //    For a single-bucket caller this is the tier that MATTERS, and it is
+    //    deliberately allowed to break the cooldown: a genuinely Mastered
+    //    card that is merely resting is a truthful `bloom` bubble (Hydra's +1 tier),
+    //    whereas a minted HSK-1 word placed in that tier by its lend level is not.
+    //    Note the consequence —
+    //    a mark on a still-cooling card is dropped by the guard at
+    //    POST /api/flashcards/mark (docs/HYDRA_BUBBLES.md § 8), so these cards are
+    //    playable but do not advance mastery. That is the accepted trade: the
+    //    cooldown exists precisely so re-answering a Mastered card inside its
+    //    window earns nothing.
+    for (const category of lastResortOrder) {
+      if (cards.length >= target) break;
+      drain(cooled[category] ?? [], target - cards.length);
+    }
+    // 4. Then → AVOIDED cards (just cleared by the caller). Only reached when the
+    //    library is too small to fill the board without reusing them; a roomy
+    //    library never gets here.
+    for (const category of lastResortOrder) {
+      if (cards.length >= target) break;
+      drain(avoided[category] ?? [], target - cards.length);
+    }
+
+    // 5. ABSOLUTE last resort → LEND (2026-08-20, replacing the 2026-08-17
+    //    "lend before borrowing" rule and its 2026-08-19 narrowing).
+    //
+    //    LENDING IS NOW THE BOTTOM OF THE LADDER, BELOW COOLING CARDS. The rule it
+    //    implements: lending exists to get a learner started who has not sorted
+    //    enough cards, and for nothing else (docs/PROVISIONAL_CARDS.md § 4b). A
+    //    learner with a real library whose cards are merely RESTING is not short of
+    //    cards, so tier 3 re-serves those instead. The cost is that a mark on a
+    //    still-cooling card is dropped at POST /api/flashcards/mark, so those cards
+    //    play but do not advance mastery — the accepted trade, and a far better one
+    //    than growing the learner's deck with words they never chose.
+    //
+    //    Why the old ordering was wrong, concretely: Speed Reading buckets by
+    //    READING, where a typical learner is ~100% Unfamiliar, so its
+    //    Target/Comfortable/Mastered quotas (18 of 20) are unfillable no matter how
+    //    large the library is — and a minted row is itself Unfamiliar, so lending
+    //    could never close them. Every load lent another ~18 cards, forever.
+    //
+    //    In practice this tier is reached by exactly two callers: a genuinely
+    //    under-supplied learner whose baseline top-up could not cover the board
+    //    (dictionary exhausted), and Hydra Bubbles, whose every spawn is a refill and
+    //    whose colour ladder is built on lending (docs/HYDRA_BUBBLES.md § 6.2).
+    //    Hydra now pulls cooling cards before it lends, like everything else.
+    //
+    //    Two sessions never reach it at all:
+    //      * a FOCUS-scoped pool (docs/FOCUS_MODE.md § 4) — a focused round padded
+    //        with words outside the day's set is not that set (same rule as
+    //        canLendProvisional);
+    //      * a PARTIAL REFILL (`opts.need`) — Bubble Match's Play Again is mid-session
+    //        with a board in hand, and lending there would grow the player's deck on
+    //        every tap. EXCEPT for a rolling-supply surface (`opts.lendOnRefill`),
+    //        whose every spawn is a refill and which would otherwise never lend at
+    //        all. See ROLLING_SUPPLY_SURFACES in contracts/wire.ts.
+    //
+    //    The focus exemption has NO opt-out: a scoped round plays its set, rolling
+    //    supply or not (docs/HYDRA_BUBBLES.md § 6.3).
+    //    (`mayLend` declared once, above — see the near-miss guard comment there.)
+    if (cards.length < target && !opts.collection && mayLend) {
+      const lent = await this.lendGameCandidates(
+        userId, language, target - cards.length, gameMarkType, now,
+        undefined, [...excludeIds, ...selectedIds], opts.lendLevelOffset
+      );
+      // The re-query is unaware of the soft-avoid tier, so filter those back out.
+      drain(lent.filter((card) => !avoidIds.has(card.id)), target - cards.length);
+    }
+
+    const sufficient = cards.length >= target;
+
+    // Enrich (long defs / parts of speech etc.) then pre-warm audio. We skip
+    // the related-words / used-in passes the EIC needs — the game only renders
+    // the word, its pinyin, and the flashcard definition.
+    const enriched = await this.enrichEntriesPipeline(cards, language);
+    const withAudio = await this.cardAudioService.prewarm(enriched);
+    // Tell the Stage which cards are not on the focused tower, so clearing one drops
+    // nothing (docs/FLP_GAME_BREAKS.md § 6). Every card that is not a seed is outside.
+    const seedSet = new Set(seedIds);
+    const dealt = focusBreak
+      ? withAudio.map((card) => (seedSet.has(card.id) ? card : { ...card, outsideFocus: true }))
+      : withAudio;
+
+    // `total` stays the full board size (what the client's "you need N Learn
+    // Now cards" message quotes); `needed` is what THIS call had to return.
+    return { cards: dealt, requested: { ...scaled }, available, total, needed: target, sufficient };
   }
 
   // ---- Word Search game ----------------------------------------------------
@@ -2124,535 +1862,435 @@ export class OnDeckVocabService {
       return { ...emptyResult, sufficient: false, reason: 'language' };
     }
 
-    const client = await db.getClient();
-    try {
-      const now = Date.now();
-      // SEED (docs/FLP_GAME_BREAKS.md § 4), split by `partitionBreakSeeds` as in
-      // `getGameVocabPool`. A focused break swaps the seed for the day's remaining
-      // cards, dealt after the outside cards (docs/FOCUS_MODE.md § 4a). Words over 4
-      // characters are dropped: the grid cannot place them.
-      const focusBreak = collection?.kind === 'outside-focus' ? collection : null;
-      const seedPool = challenge ? [] : focusBreak ? focusBreak.remainingIds : seedIds;
-      const seedRows = await this.fetchRowsByIds(
-        client, userId, language, seedPool, gameMarkType, now, 4, true
+    const now = Date.now();
+    // SEED (docs/FLP_GAME_BREAKS.md § 4), split by `partitionBreakSeeds` as in
+    // `getGameVocabPool`. A focused break swaps the seed for the day's remaining
+    // cards, dealt after the outside cards (docs/FOCUS_MODE.md § 4a). Words over 4
+    // characters are dropped: the grid cannot place them.
+    const focusBreak = collection?.kind === 'outside-focus' ? collection : null;
+    const seedPool = challenge ? [] : focusBreak ? focusBreak.remainingIds : seedIds;
+    const seedRows = await this.fetchRowsByIds(
+      userId, language, seedPool, gameMarkType, now, 4, true
+    );
+    const { markable: seedMarkable, fallback: seedFallback } =
+      this.partitionBreakSeeds(seedRows, gameMarkType, now, focusBreak !== null);
+
+    // Per-category candidates split fresh (mode's mark type off cooldown) vs
+    // cooled, capped to short (<= 4 char) words the grid can place. We pop from
+    // these both for the initial selection and for substring replacements, so a
+    // card is never reused across passes. Seeds stay out of this query so they can
+    // only enter through their own tiers below.
+    const { eligible, cooled } = await this.fetchGameCandidates(
+      userId, language, countCategories, gameMarkType, now,
+      OnDeckVocabService.WORD_SEARCH_CANDIDATE_CAP, 4, seedPool, collection, lentIds
+    );
+
+    const selectedIds = new Set<number>();
+    const selected: VocabEntry[] = [];
+    // NO TWO WORDS ON ONE GRID MAY READ THE SAME — the same rule the game pool
+    // enforces (see `takenDds` in getGameVocabPool), and the word list makes it even
+    // more visible here: ten glosses printed in a column, two of them identical, with
+    // no way for the player to know which grid word they are being asked to find.
+    // See docs/GAMES_FEATURE.md § "No two cards may share a dd in one round".
+    //
+    // Unseeded (a grid is always built from scratch — there is no refill path) and
+    // released on eviction, unlike the pool's: the substring de-dup loop below drops
+    // words back out of `selected`, and a dropped word's dd must become available
+    // again or the replacement pass would be excluding a gloss nothing is showing.
+    const takenDds = new Set<string>();
+
+    // PHASE 2 NEAR-MISS GUARD (docs/GLOSS_CONFUSABILITY.md § 6), mirroring
+    // `getGameVocabPool`'s `takenGroups`/`glossKeyToGroup`. Word Search has no
+    // `need`/`lendOnRefill` split — a focus-scoped grid is the only round
+    // that never lends — so the guard is hard unless `collection` is set. Unlike
+    // `takenDds`, `glossKeyToGroup` grows over the method's lifetime: challenge
+    // filler and lent rows are fetched AFTER this initial batch (below), so
+    // `loadGroupsFor` re-queries for any new key not already resolved.
+    const glossKeyToGroup = new Map<string, number>();
+    const loadGroupsFor = async (rows: VocabEntry[]): Promise<void> => {
+      const keys = rows.map(ddCollisionKey).filter((key): key is string => Boolean(key));
+      const missing = keys.filter((key) => !glossKeyToGroup.has(key));
+      if (missing.length === 0) return;
+      const found = await this.fetchGroupIds(missing);
+      for (const [key, groupId] of found) glossKeyToGroup.set(key, groupId);
+    };
+    await loadGroupsFor([...Object.values(eligible).flat(), ...Object.values(cooled).flat(), ...seedRows]);
+    const takenGroups = new Set<number>();
+    const groupGuardHard = !collection;
+
+    // Pop up to `limit` unused cards from one queue into `selected`.
+    const drain = (queue: VocabEntry[], limit: number): void => {
+      while (limit > 0 && queue.length > 0) {
+        const card = queue.shift()!;
+        if (selectedIds.has(card.id)) continue;
+        const ddKey = ddCollisionKey(card);
+        if (ddKey && takenDds.has(ddKey)) continue;
+        const groupId = ddKey ? glossKeyToGroup.get(ddKey) : undefined;
+        if (groupGuardHard && groupId !== undefined && takenGroups.has(groupId)) continue;
+        if (ddKey) takenDds.add(ddKey);
+        if (groupId !== undefined) takenGroups.add(groupId);
+        selectedIds.add(card.id);
+        selected.push(card);
+        limit--;
+      }
+    };
+
+    // One card off one queue into `selected`, or null if the queue gave none.
+    const takeOne = (queue: VocabEntry[]): VocabEntry | null => {
+      const before = selected.length;
+      drain(queue, 1);
+      return selected.length > before ? selected[selected.length - 1] : null;
+    };
+
+    // Pull ONE replacement for a dropped word, in the order the board itself fills:
+    // markable seeds (a focused break holds them until the fresh cards are spent),
+    // FRESH cards (preferred category → fallback order), a focused break's unmarkable
+    // seeds (none on an unfocused break — `partitionBreakSeeds`), then
+    // COOLED cards (same order) only if nothing else is left. Returns the added
+    // card, or null if the whole library is exhausted.
+    const pullReplacement = (preferredCategory: string): VocabEntry | null => {
+      const order = [preferredCategory, ...OnDeckVocabService.GAME_FALLBACK_ORDER];
+      const fromBuckets = (source: Record<string, VocabEntry[]>): VocabEntry | null => {
+        for (const category of order) {
+          const card = takeOne(source[category] ?? []);
+          if (card) return card;
+        }
+        return null;
+      };
+      return (focusBreak ? null : takeOne(seedMarkable))
+        ?? fromBuckets(eligible)
+        ?? (focusBreak ? takeOne(seedMarkable) : null)
+        ?? takeOne(seedFallback)
+        ?? fromBuckets(cooled);
+    };
+
+    // ── CHALLENGE SELECTION (§ 5.2) ──
+    // The contested words go in first, whole, cooldown ignored — they are an
+    // obligation, not a preference. The `mastered-first` filler is then pushed
+    // onto a FRESH queue rather than into `selected`, so the substring-de-dup loop
+    // below can draw replacements from it: an arbitrary set of nine words will
+    // not reliably have mutually distinct characters, and when one has to be
+    // dropped a filler word takes its place. That substitution is exactly why Word
+    // Search scores contested and filler differently (§ 5.4) rather than a flat 100.
+    if (challenge) {
+      const contestedRows = await this.fetchRowsByIds(
+        userId, language, challenge.contestedIds, gameMarkType, now, 4, true
       );
-      const { markable: seedMarkable, fallback: seedFallback } =
-        this.partitionBreakSeeds(seedRows, gameMarkType, now, focusBreak !== null);
-
-      // Per-category candidates split fresh (mode's mark type off cooldown) vs
-      // cooled, capped to short (<= 4 char) words the grid can place. We pop from
-      // these both for the initial selection and for substring replacements, so a
-      // card is never reused across passes. Seeds stay out of this query so they can
-      // only enter through their own tiers below.
-      const { eligible, cooled } = await this.fetchGameCandidates(
-        client, userId, language, countCategories, gameMarkType, now,
-        OnDeckVocabService.WORD_SEARCH_CANDIDATE_CAP, 4, seedPool, collection, lentIds
+      drain(contestedRows, contestedRows.length);
+      // At least twice the board, because this queue serves TWO jobs: topping the
+      // target list up to `total`, and feeding the de-dup loop's replacements. A
+      // queue sized exactly to the board leaves nothing to substitute WITH, and the
+      // grid then fails as `insufficient-distinct` — which for a challenge round is
+      // a round the player cannot play at all. Doubling only reduces the odds of
+      // that rather than eliminating them, so the controller escalates
+      // `fillerMultiplier` and retries when it still isn't enough.
+      const fillerIds = await this.provisionalCardService.getFillerPool(
+        userId, language, total * (challenge.fillerMultiplier ?? 2),
+        challenge.contestedWords, challenge.contestedIds
       );
-
-      const selectedIds = new Set<number>();
-      const selected: VocabEntry[] = [];
-      // NO TWO WORDS ON ONE GRID MAY READ THE SAME — the same rule the game pool
-      // enforces (see `takenDds` in getGameVocabPool), and the word list makes it even
-      // more visible here: ten glosses printed in a column, two of them identical, with
-      // no way for the player to know which grid word they are being asked to find.
-      // See docs/GAMES_FEATURE.md § "No two cards may share a dd in one round".
-      //
-      // Unseeded (a grid is always built from scratch — there is no refill path) and
-      // released on eviction, unlike the pool's: the substring de-dup loop below drops
-      // words back out of `selected`, and a dropped word's dd must become available
-      // again or the replacement pass would be excluding a gloss nothing is showing.
-      const takenDds = new Set<string>();
-
-      // PHASE 2 NEAR-MISS GUARD (docs/GLOSS_CONFUSABILITY.md § 6), mirroring
-      // `getGameVocabPool`'s `takenGroups`/`glossKeyToGroup`. Word Search has no
-      // `need`/`lendOnRefill` split — a focus-scoped grid is the only round
-      // that never lends — so the guard is hard unless `collection` is set. Unlike
-      // `takenDds`, `glossKeyToGroup` grows over the method's lifetime: challenge
-      // filler and lent rows are fetched AFTER this initial batch (below), so
-      // `loadGroupsFor` re-queries for any new key not already resolved.
-      const glossKeyToGroup = new Map<string, number>();
-      const loadGroupsFor = async (rows: VocabEntry[]): Promise<void> => {
-        const keys = rows.map(ddCollisionKey).filter((key): key is string => Boolean(key));
-        const missing = keys.filter((key) => !glossKeyToGroup.has(key));
-        if (missing.length === 0) return;
-        const found = await this.fetchGroupIds(client, missing);
-        for (const [key, groupId] of found) glossKeyToGroup.set(key, groupId);
-      };
-      await loadGroupsFor([...Object.values(eligible).flat(), ...Object.values(cooled).flat(), ...seedRows]);
-      const takenGroups = new Set<number>();
-      const groupGuardHard = !collection;
-
-      // Pop up to `limit` unused cards from one queue into `selected`.
-      const drain = (queue: VocabEntry[], limit: number): void => {
-        while (limit > 0 && queue.length > 0) {
-          const card = queue.shift()!;
-          if (selectedIds.has(card.id)) continue;
-          const ddKey = ddCollisionKey(card);
-          if (ddKey && takenDds.has(ddKey)) continue;
-          const groupId = ddKey ? glossKeyToGroup.get(ddKey) : undefined;
-          if (groupGuardHard && groupId !== undefined && takenGroups.has(groupId)) continue;
-          if (ddKey) takenDds.add(ddKey);
-          if (groupId !== undefined) takenGroups.add(groupId);
-          selectedIds.add(card.id);
-          selected.push(card);
-          limit--;
-        }
-      };
-
-      // One card off one queue into `selected`, or null if the queue gave none.
-      const takeOne = (queue: VocabEntry[]): VocabEntry | null => {
-        const before = selected.length;
-        drain(queue, 1);
-        return selected.length > before ? selected[selected.length - 1] : null;
-      };
-
-      // Pull ONE replacement for a dropped word, in the order the board itself fills:
-      // markable seeds (a focused break holds them until the fresh cards are spent),
-      // FRESH cards (preferred category → fallback order), a focused break's unmarkable
-      // seeds (none on an unfocused break — `partitionBreakSeeds`), then
-      // COOLED cards (same order) only if nothing else is left. Returns the added
-      // card, or null if the whole library is exhausted.
-      const pullReplacement = (preferredCategory: string): VocabEntry | null => {
-        const order = [preferredCategory, ...OnDeckVocabService.GAME_FALLBACK_ORDER];
-        const fromBuckets = (source: Record<string, VocabEntry[]>): VocabEntry | null => {
-          for (const category of order) {
-            const card = takeOne(source[category] ?? []);
-            if (card) return card;
-          }
-          return null;
-        };
-        return (focusBreak ? null : takeOne(seedMarkable))
-          ?? fromBuckets(eligible)
-          ?? (focusBreak ? takeOne(seedMarkable) : null)
-          ?? takeOne(seedFallback)
-          ?? fromBuckets(cooled);
-      };
-
-      // ── CHALLENGE SELECTION (§ 5.2) ──
-      // The contested words go in first, whole, cooldown ignored — they are an
-      // obligation, not a preference. The `mastered-first` filler is then pushed
-      // onto a FRESH queue rather than into `selected`, so the substring-de-dup loop
-      // below can draw replacements from it: an arbitrary set of nine words will
-      // not reliably have mutually distinct characters, and when one has to be
-      // dropped a filler word takes its place. That substitution is exactly why Word
-      // Search scores contested and filler differently (§ 5.4) rather than a flat 100.
-      if (challenge) {
-        const contestedRows = await this.fetchRowsByIds(
-          client, userId, language, challenge.contestedIds, gameMarkType, now, 4, true
-        );
-        drain(contestedRows, contestedRows.length);
-        // At least twice the board, because this queue serves TWO jobs: topping the
-        // target list up to `total`, and feeding the de-dup loop's replacements. A
-        // queue sized exactly to the board leaves nothing to substitute WITH, and the
-        // grid then fails as `insufficient-distinct` — which for a challenge round is
-        // a round the player cannot play at all. Doubling only reduces the odds of
-        // that rather than eliminating them, so the controller escalates
-        // `fillerMultiplier` and retries when it still isn't enough.
-        const fillerIds = await this.provisionalCardService.getFillerPool(
-          userId, language, total * (challenge.fillerMultiplier ?? 2),
-          challenge.contestedWords, challenge.contestedIds
-        );
-        const fillerRows = await this.fetchRowsByIds(
-          client, userId, language, fillerIds, gameMarkType, now, 4, true
-        );
-        (eligible['Target'] ??= []).push(...fillerRows.filter((row) => !selectedIds.has(row.id)));
-        await loadGroupsFor(fillerRows);
-        // Top up to `total` from that same filler queue when contested words were
-        // dropped for length (> 4 characters cannot be placed) or have no vet row.
-        drain(eligible['Target'], Math.max(0, total - selected.length));
-      }
-
-      // 1. Fill each requested bucket up to its quota from FRESH cards, then
-      //    2. top up to `total` with FRESH fallback cards, then 3. backfill with
-      //    COOLED cards (requested buckets → fallback), and only then 4. LEND.
-      //    Markable seeds go first, each charged to its bucket's quota, so the mix still
-      //    shapes what the top-up adds.
-      if (!challenge) {
-        if (!focusBreak) drain(seedMarkable, total);
-        const quotaLeft: Record<string, number> = { ...distribution };
-        for (const card of selected) {
-          const bucket = card.gameCategory;
-          if (bucket && quotaLeft[bucket] !== undefined) quotaLeft[bucket] = Math.max(0, quotaLeft[bucket] - 1);
-        }
-        for (const [category, count] of Object.entries(quotaLeft)) {
-          drain(eligible[category] ?? [], Math.min(count, total - selected.length));
-        }
-      }
-
-      for (const category of OnDeckVocabService.GAME_FALLBACK_ORDER) {
-        if (selected.length >= total) break;
-        drain(eligible[category] ?? [], total - selected.length);
-      }
-      // Seed tiers 2a + 2b of `getGameVocabPool` — both focused-break only: the remaining
-      // set, then its unmarkable cards, ahead of any cooling card.
-      if (focusBreak && selected.length < total) drain(seedMarkable, total - selected.length);
-      if (selected.length < total) drain(seedFallback, total - selected.length);
-      for (const category of [...Object.keys(distribution), ...OnDeckVocabService.GAME_FALLBACK_ORDER]) {
-        if (selected.length >= total) break;
-        drain(cooled[category] ?? [], total - selected.length);
-      }
-
-      // 4. LAST → LEND (2026-08-20). Same ladder as the game pool: fresh cards of the
-      //    requested buckets, then fresh borrowed ones, then COOLING cards, and only
-      //    then words the learner has never chosen. A learner whose grid words are
-      //    merely resting is not short of cards (docs/PROVISIONAL_CARDS.md § 4b).
-      //
-      // The lent rows are pushed onto the Unfamiliar FRESH queue rather than drained
-      // straight into `selected`, so the substring-dedup replacement loop below can
-      // draw on them too — otherwise a lent word dropped as a substring could not be
-      // replaced by another lent word. A focus-scoped grid never lends.
-      //
-      // NOTE the grid's extra constraint: `total` distinct-charactered words. Under-
-      // lending here is safe because the controller's PROVISION_RETRY_FACTOR loop
-      // re-enters with an escalated baseline when the de-dup pass still comes up short.
-      if (selected.length < total && !collection && !challenge) {
-        const lent = await this.lendGameCandidates(
-          client, userId, language, total - selected.length, gameMarkType, now,
-          4, [...selectedIds], undefined
-        );
-        // Unshift: freshly lent words go to the FRONT of the Unfamiliar queue, ahead
-        // of any Unfamiliar card the quota pass left behind.
-        (eligible['Unfamiliar'] ??= []).unshift(...lent);
-        await loadGroupsFor(lent);
-        drain(eligible['Unfamiliar'], total - selected.length);
-      }
-
-      // 3. Substring de-dup. Find any pair where one entryKey is contained in the
-      //    other, drop the shorter (substring) word, and replace it. Re-scan until
-      //    clean or no replacement is available. The iteration cap is a safety net;
-      //    the natural terminator is the queues emptying.
-      const findSubstringVictim = (): number => {
-        for (let i = 0; i < selected.length; i++) {
-          for (let j = 0; j < selected.length; j++) {
-            if (i === j) continue;
-            // selected[i] is contained in selected[j] → drop i (the shorter/equal one).
-            if (selected[j].entryKey.includes(selected[i].entryKey)) return i;
-          }
-        }
-        return -1;
-      };
-
-      let iterations = 0;
-      const MAX_DEDUP_ITERATIONS = 1000;
-      while (iterations++ < MAX_DEDUP_ITERATIONS) {
-        const victimIdx = findSubstringVictim();
-        if (victimIdx === -1) break; // clean set
-
-        const victim = selected[victimIdx];
-        selected.splice(victimIdx, 1);
-        selectedIds.delete(victim.id);
-        // Release the evicted word's dd so a replacement may legitimately reuse it.
-        const victimDd = ddCollisionKey(victim);
-        if (victimDd) takenDds.delete(victimDd);
-        // Same release for its near-miss group (§ 6) — correct under the hard guard,
-        // where at most one selected card can ever hold a given group id at once, so
-        // there is nothing else still relying on the group being held.
-        const victimGroupId = victimDd ? glossKeyToGroup.get(victimDd) : undefined;
-        if (victimGroupId !== undefined) takenGroups.delete(victimGroupId);
-
-        // The bucket the victim was drawn from, on this game's track, so the replacement
-        // keeps the board's mix. `category` is the core bar's band, a different question.
-        const replacement = pullReplacement(victim.gameCategory ?? victim.category);
-        if (!replacement) break; // library exhausted — can't reach a clean `total`
-      }
-
-      const clean = findSubstringVictim() === -1;
-      if (!clean || selected.length < total) {
-        return { ...emptyResult, sufficient: false, reason: 'insufficient-distinct' };
-      }
-
-      // Enrich + prewarm audio for the final set (found-word narration is instant).
-      const enriched = await this.enrichEntriesPipeline(selected.slice(0, total), language);
-      const withAudio = await this.prewarmAudio(enriched);
-
-      // Filler pool: characters harvested from real words at or below the user's
-      // estimated difficulty level, so the noise stays level-appropriate (a
-      // beginner never sees advanced characters as filler). We pull whole words
-      // (single- AND multi-character) with difficulty <= the estimate and break
-      // each into its component characters, keeping duplicates so frequent
-      // characters naturally recur (reads as authentic filler). We deliberately
-      // discard the source word's `pronunciation` here — a character's reading
-      // inside a specific word can be a context-specific tone-sandhi/erhua/neutral-
-      // tone variant, not the character's own standalone reading. Pinyin is
-      // resolved in a second pass below by looking each unique character back up
-      // in `dictionaryentries_zh` as its own headword, so filler always shows the
-      // character's most common reading.
-      const wordChars = withAudio.reduce((sum, w) => sum + [...w.entryKey].length, 0);
-      const fillerNeeded = rows * cols - wordChars;
-      const level = await this.starterPacksService.estimateLevel(userId, language);
-
-      // Break a batch of level-bounded words into a char-only bag (no pinyin yet).
-      const harvestFillerChars = (wordRows: { word1: string }[]): string[] => {
-        const bag: string[] = [];
-        for (const row of wordRows) {
-          bag.push(...[...row.word1]);
-        }
-        return bag;
-      };
-
-      // Pull generously so the bag has variety even after the char split; each
-      // word yields >= 1 character, so this comfortably covers `fillerNeeded`.
-      const fillerWordResult = await client.query<{ word1: string }>(`
-        SELECT word1
-        FROM dictionaryentries_zh
-        WHERE language = 'zh' AND difficulty BETWEEN 1 AND $1
-        ORDER BY RANDOM()
-        LIMIT $2
-      `, [level, Math.max(fillerNeeded, 100)]);
-      let fillerChars = harvestFillerChars(fillerWordResult.rows);
-
-      // Fallback: if no level-tagged words exist (e.g. difficulty un-backfilled),
-      // fall back to any single-character rows so the grid can still be built.
-      if (fillerChars.length === 0) {
-        const fallback = await client.query<{ word1: string }>(`
-          SELECT word1
-          FROM dictionaryentries_zh
-          WHERE language = 'zh' AND char_length(word1) = 1
-          ORDER BY RANDOM()
-          LIMIT $1
-        `, [Math.max(fillerNeeded, 50)]);
-        fillerChars = harvestFillerChars(fallback.rows);
-      }
-      if (fillerChars.length === 0) {
-        // Nothing to draw from at all — can't build a grid.
-        return { ...emptyResult, sufficient: false, reason: 'no-filler' };
-      }
-
-      // Resolve each unique harvested character's own canonical pinyin by
-      // looking it up as a standalone headword (word1 = char), rather than
-      // reusing the pronunciation it happened to carry inside its source word.
-      const uniqueChars = [...new Set(fillerChars)];
-      const charPinyinResult = await client.query<{ word1: string; pronunciation: string | null }>(`
-        SELECT word1, pronunciation
-        FROM dictionaryentries_zh
-        WHERE language = 'zh' AND word1 = ANY($1)
-      `, [uniqueChars]);
-      const charPinyinMap = new Map<string, string>();
-      for (const row of charPinyinResult.rows) {
-        if (!charPinyinMap.has(row.word1)) {
-          charPinyinMap.set(row.word1, (row.pronunciation ?? '').trim().split(/\s+/)[0] ?? '');
-        }
-      }
-
-      // Drop any harvested character with no standalone det entry (no pinyin to
-      // show), then build the final GridCell bag.
-      const fillerPool: GridCell[] = fillerChars
-        .filter((char) => charPinyinMap.has(char))
-        .map((char) => ({ char, pinyin: charPinyinMap.get(char)! }));
-
-      if (fillerPool.length === 0) {
-        return { ...emptyResult, sufficient: false, reason: 'no-filler' };
-      }
-
-      // Per-character context-correct senses for the target words. A character's
-      // gloss inside a specific word is the ddt of THAT character's own det cluster
-      // keyed by the word's stored `breakdown[char].sense` label (backfill-breakdown-
-      // senses.js). We resolve it live from each character's definitionClusters so a
-      // tap on a placed character shows its meaning IN THIS WORD, not its generic
-      // standalone gloss. One batched clusters query over every distinct target
-      // component character; fall back to the char's stored breakdown definition when
-      // the row/label doesn't resolve.
-      // The same pass also collects each character's `components` (migration 125) — the
-      // sub-character visual parts the No Pinyin hint ladder reveals one at a time. It
-      // rides this existing query rather than adding a round trip, since both are
-      // per-target-character facts keyed by the same word1 list.
-      //
-      // The same query is ALSO widened from the single characters to every <=4-char
-      // SUBSTRING of every target word, so it can build each word's tap-to-drill chain
-      // (docs/SEGMENT_DRILL_DOWN.md): tapping a found 中国人 narrows to 中国 before it
-      // narrows to a character. Widening this existing round trip is what keeps the
-      // feature free here — est and long definitions already load the same substring set
-      // for their segmenter, but a word-search grid never had a reason to.
-      const targetChars = [...new Set(withAudio.flatMap((w) => [...w.entryKey]))];
-      const drillCandidates = [...new Set(withAudio.flatMap((w) => getAllSubstrings(w.entryKey)))];
-      const charClusters = new Map<string, Array<{ sense?: string | null; glosses?: string[] | null }>>();
-      const charComponentsMap = new Map<string, string[]>();
-      const drillByWord = new Map<string, SegmentDrillRung[]>();
-      if (targetChars.length > 0) {
-        const clustersResult = await client.query<{
-          word1: string;
-          definitionClusters: unknown;
-          components: unknown;
-        }>(`
-          SELECT word1, pronunciation, definitions, "definitionClusters", components,
-                 "matchException", "frequencyScore", "exampleSentenceDefinitionPronunciationOverride",
-                 -- The target word's own breakdown, so a single-character drill rung is
-                 -- glossed with the sense that character carries IN THIS WORD (the same
-                 -- answer the bt gives). The client prefers the grid cell's definition for
-                 -- that rung, which resolves identically; this keeps the shipped rung list
-                 -- self-consistent for the cell-less fallback path.
-                 breakdown
-          FROM dictionaryentries_zh
-          WHERE language = 'zh' AND word1 = ANY($1)
-        `, [drillCandidates]);
-
-        // Rungs are resolved with the shared builder so the word-search chain and the
-        // example-sentence chain can never drift apart. No English context exists here
-        // (a grid is a word list, not prose), so rung glosses are the entry's lead sense.
-        const drillEntries = clustersResult.rows as unknown as DictionaryEntry[];
-        const drillDictMap = buildDictMap(drillEntries);
-        const drillExcludeTokens = buildExcludeSet(drillEntries);
-        for (const w of withAudio) {
-          if (drillByWord.has(w.entryKey)) continue;
-          const rungs = buildDrillRungs(w.entryKey, drillDictMap, { excludeTokens: drillExcludeTokens });
-          if (rungs.length > 0) drillByWord.set(w.entryKey, rungs);
-        }
-
-        for (const row of clustersResult.rows) {
-          if (!charClusters.has(row.word1) && Array.isArray(row.definitionClusters)) {
-            charClusters.set(row.word1, row.definitionClusters as Array<{ sense?: string | null; glosses?: string[] | null }>);
-          }
-          // NULL (never backfilled) and [] (verified atomic) both mean "no parts to
-          // reveal" to the client, so both collapse to an empty array here.
-          if (!charComponentsMap.has(row.word1) && Array.isArray(row.components)) {
-            charComponentsMap.set(
-              row.word1,
-              (row.components as unknown[]).filter((c): c is string => typeof c === 'string')
-            );
-          }
-        }
-      }
-
-      const inputs: WordSearchInput[] = withAudio.map((w) => {
-        const breakdown = w.breakdown ?? null;
-        const charSenses = [...w.entryKey].map((char) => {
-          const sense = breakdown?.[char]?.sense ?? null;
-          // Live-resolve ddt from the char's own clusters keyed by sense; fall back
-          // to the (already sense-resolved) stored breakdown definition.
-          const definition = resolveSenseGloss(charClusters.get(char), sense) ?? breakdown?.[char]?.definition ?? null;
-          return { sense, definition };
-        });
-        return {
-          id: w.id,
-          entryKey: w.entryKey,
-          // Sense-resolved alongside the definition below — the grid's pinyin must be the
-          // chosen sense's reading, not whichever one the det column happens to hold.
-          pinyin: resolveDisplayPronunciation(w) ?? '',
-          // The word list is a dd surface for a SAVED card, so it must honor the learner's
-          // per-card sense pick (vet.selectedSense) exactly as the flashcard face does. The
-          // clusters don't travel in the grid payload, so the resolution happens here.
-          // See docs/DEFINITION_CLUSTERS.md.
-          definition: resolveDisplayDefinition(w),
-          charSenses,
-          charComponents: [...w.entryKey].map((char) => charComponentsMap.get(char) ?? []),
-          drill: drillByWord.get(w.entryKey),
-        };
-      });
-      const generated = generateWordSearchGrid(inputs, fillerPool, rows, cols);
-
-      // Bonus words: every det headword whose ENTIRE character sequence is
-      // drawn exclusively from characters that appear somewhere on the
-      // finished grid (the `^[...]+$` regex anchors both ends, so a word with
-      // even one character outside the grid's set is excluded — it is not
-      // enough for a word to merely contain a grid character). Sent so the
-      // client can recognize when a player traces a real dictionary word that
-      // isn't one of the 10 targets (§4 blue-highlight review popup); the
-      // client still verifies the player's actual dragged path spells the
-      // word, since this list makes no claim about adjacency/traceability.
-      const gridChars = Array.from(new Set(generated.grid.flatMap((row) => row.map((cell) => cell.char))));
-      // Escape regex metacharacters that would be meaningful inside a `[...]`
-      // class, in case a future filler source ever contains one — none of the
-      // Chinese characters we use today need it, so this is purely defensive.
-      const charClass = gridChars.map((ch) => ch.replace(/[\^\]\\-]/g, '\\$&')).join('');
-      // `definitionClusters` rides along so the pinyin can be the default sense's reading
-      // (resolveDefaultPronunciation — the row shows the flat definitions->>0, not one
-      // sense's gloss) rather than the raw, unreviewed column.
-      const bonusWordsResult = await client.query<{ word1: string; pronunciation: string | null; definition: string | null; definitionClusters: DefinitionCluster[] | null }>(`
-        SELECT word1, pronunciation, definitions->>0 AS definition, "definitionClusters"
-        FROM dictionaryentries_zh
-        WHERE language = 'zh'
-          AND word1 ~ ('^[' || $1 || ']+$')
-        -- Safety net, not a product requirement: bounds the payload if the
-        -- grid's character set happens to match an unusually large number of
-        -- headwords (e.g. it's dominated by very common characters).
-        LIMIT 1000
-      `, [charClass]);
-      const bonusWords = bonusWordsResult.rows
-        .filter((r) => !!r.definition)
-        .map((r) => ({ entryKey: r.word1, pinyin: resolveDefaultPronunciation(r) ?? '', definition: r.definition! }));
-
-      return {
-        grid: generated.grid,
-        words: generated.words,
-        bonusWords,
-        rows,
-        cols,
-        total,
-        available,
-        sufficient: true,
-        templateIndex: generated.templateIndex,
-        // Which of the grid's words were LENT to reach the baseline rather than sorted
-        // by the player (docs/PROVISIONAL_CARDS.md). Reported as a flat word list
-        // rather than a flag on each PlacedWord so it doesn't have to be threaded
-        // through the grid generator, which has no business knowing about buckets.
-        provisionalWords: withAudio
-          .filter((card) => card.starterPackBucket === 'provisional')
-          .map((card) => card.entryKey),
-        // Same flat form, same reason. Every word that is not a seed is outside the set.
-        ...(focusBreak && {
-          outsideFocusWords: withAudio
-            .filter((card) => !seedPool.includes(card.id))
-            .map((card) => card.entryKey),
-        }),
-      };
-    } finally {
-      client.release();
+      const fillerRows = await this.fetchRowsByIds(
+        userId, language, fillerIds, gameMarkType, now, 4, true
+      );
+      (eligible['Target'] ??= []).push(...fillerRows.filter((row) => !selectedIds.has(row.id)));
+      await loadGroupsFor(fillerRows);
+      // Top up to `total` from that same filler queue when contested words were
+      // dropped for length (> 4 characters cannot be placed) or have no vet row.
+      drain(eligible['Target'], Math.max(0, total - selected.length));
     }
-  }
 
-  /**
-   * Awaits TTS synthesis for each entry's entryKey in parallel, stamping
-   * `hasAudio` on the result. Used to pre-warm both the working-loop endpoint
-   * and the mark endpoint's replacement card.
-   *
-   * Also stamps `dictionaryentries_zh.ttsVoice` so the column accurately reflects
-   * "this row has cached audio". The UPDATE is gated by `ttsVoice IS NULL` so
-   * already-stamped rows are no-ops; this single path handles fresh synths,
-   * cache hits whose column was never written (legacy gap), and is cheap
-   * enough to run unconditionally in parallel with the synth call.
-   */
-  async prewarmAudio<T extends {
-    entryKey: string; language?: string; pronunciation?: string | null; hasAudio?: boolean;
-    definitionClusters?: DefinitionCluster[] | null; selectedSense?: string | null;
-  }>(
-    entries: T[]
-  ): Promise<T[]> {
-    await Promise.all(entries.map(async entry => {
-      const lang = entry.language || 'zh';
-      const ttsLang = lang === 'zh' ? 'zh-CN' : lang;
-      try {
-        // Pass tone-marked pinyin so the audio matches the displayed pronunciation
-        // (and polyphones cache separately). buildPinyinSsml inside TTSService
-        // gracefully falls back to plain text if the pinyin doesn't align.
-        // Resolved through the same sense-aware rule the client's useTTS applies before it
-        // requests audio, so the pre-warmed cache key (text + pinyin) is the one the client
-        // actually hits — and a heteronym is voiced as its chosen/default sense, not as the
-        // raw column's reading.
-        const result = await this.ttsService.synthesize(entry.entryKey, ttsLang, resolveDisplayPronunciation(entry));
-        entry.hasAudio = true;
-        // Stamp the column when it's still NULL — covers new synths and any
-        // pre-existing disk-cached rows that never went through the controller.
-        // Stored language is the short code (e.g. 'zh') to match how the rest
-        // of the schema references languages. Route to the per-language det
-        // table so Spanish rows (dictionaryentries_es) actually get stamped
-        // instead of silently no-op'ing against the Chinese table.
-        const detTable = dictTableForLanguage(lang);
-        const c = await db.getClient();
-        try {
-          await c.query(
-            `UPDATE ${detTable} SET "ttsVoice" = $1 WHERE word1 = $2 AND language = $3 AND "ttsVoice" IS NULL`,
-            [result.voice, entry.entryKey, lang]
-          );
-        } catch (stampErr) {
-          console.warn(`[OnDeckVocabService.prewarmAudio] failed to stamp ttsVoice for "${entry.entryKey}":`, stampErr);
-        } finally {
-          c.release();
-        }
-      } catch (err) {
-        console.warn(`[OnDeckVocabService.prewarmAudio] synthesis failed for "${entry.entryKey}":`, err);
-        entry.hasAudio = false;
+    // 1. Fill each requested bucket up to its quota from FRESH cards, then
+    //    2. top up to `total` with FRESH fallback cards, then 3. backfill with
+    //    COOLED cards (requested buckets → fallback), and only then 4. LEND.
+    //    Markable seeds go first, each charged to its bucket's quota, so the mix still
+    //    shapes what the top-up adds.
+    if (!challenge) {
+      if (!focusBreak) drain(seedMarkable, total);
+      const quotaLeft: Record<string, number> = { ...distribution };
+      for (const card of selected) {
+        const bucket = card.gameCategory;
+        if (bucket && quotaLeft[bucket] !== undefined) quotaLeft[bucket] = Math.max(0, quotaLeft[bucket] - 1);
       }
-    }));
-    return entries;
+      for (const [category, count] of Object.entries(quotaLeft)) {
+        drain(eligible[category] ?? [], Math.min(count, total - selected.length));
+      }
+    }
+
+    for (const category of OnDeckVocabService.GAME_FALLBACK_ORDER) {
+      if (selected.length >= total) break;
+      drain(eligible[category] ?? [], total - selected.length);
+    }
+    // Seed tiers 2a + 2b of `getGameVocabPool` — both focused-break only: the remaining
+    // set, then its unmarkable cards, ahead of any cooling card.
+    if (focusBreak && selected.length < total) drain(seedMarkable, total - selected.length);
+    if (selected.length < total) drain(seedFallback, total - selected.length);
+    for (const category of [...Object.keys(distribution), ...OnDeckVocabService.GAME_FALLBACK_ORDER]) {
+      if (selected.length >= total) break;
+      drain(cooled[category] ?? [], total - selected.length);
+    }
+
+    // 4. LAST → LEND (2026-08-20). Same ladder as the game pool: fresh cards of the
+    //    requested buckets, then fresh borrowed ones, then COOLING cards, and only
+    //    then words the learner has never chosen. A learner whose grid words are
+    //    merely resting is not short of cards (docs/PROVISIONAL_CARDS.md § 4b).
+    //
+    // The lent rows are pushed onto the Unfamiliar FRESH queue rather than drained
+    // straight into `selected`, so the substring-dedup replacement loop below can
+    // draw on them too — otherwise a lent word dropped as a substring could not be
+    // replaced by another lent word. A focus-scoped grid never lends.
+    //
+    // NOTE the grid's extra constraint: `total` distinct-charactered words. Under-
+    // lending here is safe because the controller's PROVISION_RETRY_FACTOR loop
+    // re-enters with an escalated baseline when the de-dup pass still comes up short.
+    if (selected.length < total && !collection && !challenge) {
+      const lent = await this.lendGameCandidates(
+        userId, language, total - selected.length, gameMarkType, now,
+        4, [...selectedIds], undefined
+      );
+      // Unshift: freshly lent words go to the FRONT of the Unfamiliar queue, ahead
+      // of any Unfamiliar card the quota pass left behind.
+      (eligible['Unfamiliar'] ??= []).unshift(...lent);
+      await loadGroupsFor(lent);
+      drain(eligible['Unfamiliar'], total - selected.length);
+    }
+
+    // 3. Substring de-dup. Find any pair where one entryKey is contained in the
+    //    other, drop the shorter (substring) word, and replace it. Re-scan until
+    //    clean or no replacement is available. The iteration cap is a safety net;
+    //    the natural terminator is the queues emptying.
+    const findSubstringVictim = (): number => {
+      for (let i = 0; i < selected.length; i++) {
+        for (let j = 0; j < selected.length; j++) {
+          if (i === j) continue;
+          // selected[i] is contained in selected[j] → drop i (the shorter/equal one).
+          if (selected[j].entryKey.includes(selected[i].entryKey)) return i;
+        }
+      }
+      return -1;
+    };
+
+    let iterations = 0;
+    const MAX_DEDUP_ITERATIONS = 1000;
+    while (iterations++ < MAX_DEDUP_ITERATIONS) {
+      const victimIdx = findSubstringVictim();
+      if (victimIdx === -1) break; // clean set
+
+      const victim = selected[victimIdx];
+      selected.splice(victimIdx, 1);
+      selectedIds.delete(victim.id);
+      // Release the evicted word's dd so a replacement may legitimately reuse it.
+      const victimDd = ddCollisionKey(victim);
+      if (victimDd) takenDds.delete(victimDd);
+      // Same release for its near-miss group (§ 6) — correct under the hard guard,
+      // where at most one selected card can ever hold a given group id at once, so
+      // there is nothing else still relying on the group being held.
+      const victimGroupId = victimDd ? glossKeyToGroup.get(victimDd) : undefined;
+      if (victimGroupId !== undefined) takenGroups.delete(victimGroupId);
+
+      // The bucket the victim was drawn from, on this game's track, so the replacement
+      // keeps the board's mix. `category` is the core bar's band, a different question.
+      const replacement = pullReplacement(victim.gameCategory ?? victim.category);
+      if (!replacement) break; // library exhausted — can't reach a clean `total`
+    }
+
+    const clean = findSubstringVictim() === -1;
+    if (!clean || selected.length < total) {
+      return { ...emptyResult, sufficient: false, reason: 'insufficient-distinct' };
+    }
+
+    // Enrich + prewarm audio for the final set (found-word narration is instant).
+    const enriched = await this.enrichEntriesPipeline(selected.slice(0, total), language);
+    const withAudio = await this.cardAudioService.prewarm(enriched);
+
+    // Filler pool: characters harvested from real words at or below the user's
+    // estimated difficulty level, so the noise stays level-appropriate (a
+    // beginner never sees advanced characters as filler). We pull whole words
+    // (single- AND multi-character) with difficulty <= the estimate and break
+    // each into its component characters, keeping duplicates so frequent
+    // characters naturally recur (reads as authentic filler). We deliberately
+    // discard the source word's `pronunciation` here — a character's reading
+    // inside a specific word can be a context-specific tone-sandhi/erhua/neutral-
+    // tone variant, not the character's own standalone reading. Pinyin is
+    // resolved in a second pass below by looking each unique character back up
+    // in `dictionaryentries_zh` as its own headword, so filler always shows the
+    // character's most common reading.
+    const wordChars = withAudio.reduce((sum, w) => sum + [...w.entryKey].length, 0);
+    const fillerNeeded = rows * cols - wordChars;
+    const level = await this.starterPacksService.estimateLevel(userId, language);
+
+    // Break a batch of level-bounded words into a char-only bag (no pinyin yet).
+    const harvestFillerChars = (words: string[]): string[] => {
+      const bag: string[] = [];
+      for (const word of words) {
+        bag.push(...[...word]);
+      }
+      return bag;
+    };
+
+    // Pull generously so the bag has variety even after the char split; each
+    // word yields >= 1 character, so this comfortably covers `fillerNeeded`.
+    let fillerChars = harvestFillerChars(
+      await this.onDeckVocabDAL.findFillerWords(level, Math.max(fillerNeeded, 100))
+    );
+
+    // Fallback: if no level-tagged words exist (e.g. difficulty un-backfilled),
+    // fall back to any single-character rows so the grid can still be built.
+    if (fillerChars.length === 0) {
+      fillerChars = harvestFillerChars(
+        await this.onDeckVocabDAL.findSingleCharWords(Math.max(fillerNeeded, 50))
+      );
+    }
+    if (fillerChars.length === 0) {
+      // Nothing to draw from at all — can't build a grid.
+      return { ...emptyResult, sufficient: false, reason: 'no-filler' };
+    }
+
+    // Resolve each unique harvested character's own canonical pinyin by
+    // looking it up as a standalone headword (word1 = char), rather than
+    // reusing the pronunciation it happened to carry inside its source word.
+    const uniqueChars = [...new Set(fillerChars)];
+    const charPinyinRows = await this.onDeckVocabDAL.findHeadwordPronunciations(uniqueChars);
+    const charPinyinMap = new Map<string, string>();
+    for (const row of charPinyinRows) {
+      if (!charPinyinMap.has(row.word1)) {
+        charPinyinMap.set(row.word1, (row.pronunciation ?? '').trim().split(/\s+/)[0] ?? '');
+      }
+    }
+
+    // Drop any harvested character with no standalone det entry (no pinyin to
+    // show), then build the final GridCell bag.
+    const fillerPool: GridCell[] = fillerChars
+      .filter((char) => charPinyinMap.has(char))
+      .map((char) => ({ char, pinyin: charPinyinMap.get(char)! }));
+
+    if (fillerPool.length === 0) {
+      return { ...emptyResult, sufficient: false, reason: 'no-filler' };
+    }
+
+    // Per-character context-correct senses for the target words. A character's
+    // gloss inside a specific word is the ddt of THAT character's own det cluster
+    // keyed by the word's stored `breakdown[char].sense` label (backfill-breakdown-
+    // senses.js). We resolve it live from each character's definitionClusters so a
+    // tap on a placed character shows its meaning IN THIS WORD, not its generic
+    // standalone gloss. One batched clusters query over every distinct target
+    // component character; fall back to the char's stored breakdown definition when
+    // the row/label doesn't resolve.
+    // The same pass also collects each character's `components` (migration 125) — the
+    // sub-character visual parts the No Pinyin hint ladder reveals one at a time. It
+    // rides this existing query rather than adding a round trip, since both are
+    // per-target-character facts keyed by the same word1 list.
+    //
+    // The same query is ALSO widened from the single characters to every <=4-char
+    // SUBSTRING of every target word, so it can build each word's tap-to-drill chain
+    // (docs/SEGMENT_DRILL_DOWN.md): tapping a found 中国人 narrows to 中国 before it
+    // narrows to a character. Widening this existing round trip is what keeps the
+    // feature free here — est and long definitions already load the same substring set
+    // for their segmenter, but a word-search grid never had a reason to.
+    const targetChars = [...new Set(withAudio.flatMap((w) => [...w.entryKey]))];
+    const drillCandidates = [...new Set(withAudio.flatMap((w) => getAllSubstrings(w.entryKey)))];
+    const charClusters = new Map<string, Array<{ sense?: string | null; glosses?: string[] | null }>>();
+    const charComponentsMap = new Map<string, string[]>();
+    const drillByWord = new Map<string, SegmentDrillRung[]>();
+    if (targetChars.length > 0) {
+      const drillRows = await this.onDeckVocabDAL.findDrillEntries(drillCandidates);
+
+      // Rungs are resolved with the shared builder so the word-search chain and the
+      // example-sentence chain can never drift apart. No English context exists here
+      // (a grid is a word list, not prose), so rung glosses are the entry's lead sense.
+      const drillEntries = drillRows as unknown as DictionaryEntry[];
+      const drillDictMap = buildDictMap(drillEntries);
+      const drillExcludeTokens = buildExcludeSet(drillEntries);
+      for (const w of withAudio) {
+        if (drillByWord.has(w.entryKey)) continue;
+        const rungs = buildDrillRungs(w.entryKey, drillDictMap, { excludeTokens: drillExcludeTokens });
+        if (rungs.length > 0) drillByWord.set(w.entryKey, rungs);
+      }
+
+      for (const row of drillRows) {
+        if (!charClusters.has(row.word1) && Array.isArray(row.definitionClusters)) {
+          charClusters.set(row.word1, row.definitionClusters as Array<{ sense?: string | null; glosses?: string[] | null }>);
+        }
+        // NULL (never backfilled) and [] (verified atomic) both mean "no parts to
+        // reveal" to the client, so both collapse to an empty array here.
+        if (!charComponentsMap.has(row.word1) && Array.isArray(row.components)) {
+          charComponentsMap.set(
+            row.word1,
+            (row.components as unknown[]).filter((c): c is string => typeof c === 'string')
+          );
+        }
+      }
+    }
+
+    const inputs: WordSearchInput[] = withAudio.map((w) => {
+      const breakdown = w.breakdown ?? null;
+      const charSenses = [...w.entryKey].map((char) => {
+        const sense = breakdown?.[char]?.sense ?? null;
+        // Live-resolve ddt from the char's own clusters keyed by sense; fall back
+        // to the (already sense-resolved) stored breakdown definition.
+        const definition = resolveSenseGloss(charClusters.get(char), sense) ?? breakdown?.[char]?.definition ?? null;
+        return { sense, definition };
+      });
+      return {
+        id: w.id,
+        entryKey: w.entryKey,
+        // Sense-resolved alongside the definition below — the grid's pinyin must be the
+        // chosen sense's reading, not whichever one the det column happens to hold.
+        pinyin: resolveDisplayPronunciation(w) ?? '',
+        // The word list is a dd surface for a SAVED card, so it must honor the learner's
+        // per-card sense pick (vet.selectedSense) exactly as the flashcard face does. The
+        // clusters don't travel in the grid payload, so the resolution happens here.
+        // See docs/DEFINITION_CLUSTERS.md.
+        definition: resolveDisplayDefinition(w),
+        charSenses,
+        charComponents: [...w.entryKey].map((char) => charComponentsMap.get(char) ?? []),
+        drill: drillByWord.get(w.entryKey),
+      };
+    });
+    const generated = generateWordSearchGrid(inputs, fillerPool, rows, cols);
+
+    // Bonus words: every det headword whose ENTIRE character sequence is
+    // drawn exclusively from characters that appear somewhere on the
+    // finished grid (the `^[...]+$` regex anchors both ends, so a word with
+    // even one character outside the grid's set is excluded — it is not
+    // enough for a word to merely contain a grid character). Sent so the
+    // client can recognize when a player traces a real dictionary word that
+    // isn't one of the 10 targets (§4 blue-highlight review popup); the
+    // client still verifies the player's actual dragged path spells the
+    // word, since this list makes no claim about adjacency/traceability.
+    const gridChars = Array.from(new Set(generated.grid.flatMap((row) => row.map((cell) => cell.char))));
+    // `definitionClusters` rides along so the pinyin can be the default sense's reading
+    // (resolveDefaultPronunciation — the row shows the flat definitions->>0, not one
+    // sense's gloss) rather than the raw, unreviewed column. The LIMIT is a safety net,
+    // not a product requirement: it bounds the payload if the grid's character set
+    // happens to match an unusually large number of headwords (e.g. it's dominated by
+    // very common characters).
+    const bonusRows = await this.onDeckVocabDAL.findWordsSpelledFrom(gridChars, 1000);
+    const bonusWords = bonusRows
+      .filter((r) => !!r.definition)
+      .map((r) => ({ entryKey: r.word1, pinyin: resolveDefaultPronunciation(r) ?? '', definition: r.definition! }));
+
+    return {
+      grid: generated.grid,
+      words: generated.words,
+      bonusWords,
+      rows,
+      cols,
+      total,
+      available,
+      sufficient: true,
+      templateIndex: generated.templateIndex,
+      // Which of the grid's words were LENT to reach the baseline rather than sorted
+      // by the player (docs/PROVISIONAL_CARDS.md). Reported as a flat word list
+      // rather than a flag on each PlacedWord so it doesn't have to be threaded
+      // through the grid generator, which has no business knowing about buckets.
+      provisionalWords: withAudio
+        .filter((card) => card.starterPackBucket === 'provisional')
+        .map((card) => card.entryKey),
+      // Same flat form, same reason. Every word that is not a seed is outside the set.
+      ...(focusBreak && {
+        outsideFocusWords: withAudio
+          .filter((card) => !seedPool.includes(card.id))
+          .map((card) => card.entryKey),
+      }),
+    };
   }
 }

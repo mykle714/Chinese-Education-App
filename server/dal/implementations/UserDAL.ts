@@ -19,7 +19,7 @@ import { ValidationError } from '../../types/dal.js';
  * because other DATE columns (`user_languages."lastStreakDate"`, `userworkpoints.date`) have
  * readers written against the Date behaviour.
  *
- * Referenced by: docs/IMMERSIVE_WORLD.md § 5.5 (the learner description).
+ * (Its first reader, Immersive World's learner description, is removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md.)
  */
 function withIsoBirthDate<T extends User | null | undefined>(user: T): T {
   if (!user) return user;
@@ -120,13 +120,12 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     // answer). The arena and the streak read the column in SQL and were unaffected,
     // which is why the bug was confined to Study Challenge.
     const result = await this.dbManager.executeQuery<User>(async (client) => {
-      return await client.query('SELECT id, email, name, "isPublic", "isValidator", "isFeatureTester", "isTemplateAuthor", "isAdmin", "avatarIconId", "selectedLanguage", "readingGoal", "writingGoal", "showSegmentSpaces", "chineseFont", "gender", "birthDate", "arenaMessage", "timezone", "lastMinutePointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
+      return await client.query('SELECT id, email, name, "isPublic", "isValidator", "isFeatureTester", "isAdmin", "avatarIconId", "selectedLanguage", "readingGoal", "writingGoal", "showSegmentSpaces", "chineseFont", "gender", "birthDate", "arenaMessage", "timezone", "lastMinutePointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
     });
 
     // ⚠️ "gender" and "birthDate" (migration 164) are PRIVATE to the account, as are email and
     // timezone. Every client path through this read is the caller's OWN row (/api/auth/me,
-    // GET /api/users/:id — self-only, see UserController.getUserById — and the iw learner
-    // lookup). Never return this row for ANOTHER user; public profile reads select their own
+    // GET /api/users/:id — self-only, see UserController.getUserById). Never return this row for ANOTHER user; public profile reads select their own
     // columns (UserDAL.findPublicProfileById).
     return withIsoBirthDate(result.recordset[0] || null);
   }

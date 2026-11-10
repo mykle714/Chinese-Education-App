@@ -1,5 +1,6 @@
 import { FONTS } from "../theme/fonts";
 import { WEIGHT } from "../theme/scale";
+import { HEADER_FIRE_GLYPH_PX } from "../minutePoints/FireCount";
 
 /**
  * The page header's back-arrow geometry, for a surface that must draw the same arrow in the
@@ -39,15 +40,19 @@ export const HUB_HEADER_TITLE_TRACKING = "-0.025em";
 /** The gap between the back arrow and the title it is grouped with, px. */
 export const BACK_GROUP_GAP_PX = 9;
 
-/** The outlined audio chip's glyph and vertical padding, px (`AudioModeChip`). */
-export const OUTLINED_CHIP_ICON_PX = 17;
-export const OUTLINED_CHIP_PAD_Y_PX = 5;
+/**
+ * The outlined audio chip's glyph and vertical padding, px (`AudioModeChip`). Deliberately
+ * NOT part of the 2026-11-05 ~15% header scale-up (PageHeader.tsx § SCALE): it was 17/5 for a
+ * few days and read too heavy next to the bare icons, so it went back to its pre-scale size.
+ */
+export const OUTLINED_CHIP_ICON_PX = 15;
+export const OUTLINED_CHIP_PAD_Y_PX = 4;
 
 /**
  * The outlined chip's label type, px — a step up from the filled header chip's 11.5 px now
  * that there is no fill to carry it.
  */
-export const OUTLINED_CHIP_TEXT_PX = 14;
+export const OUTLINED_CHIP_TEXT_PX = 12;
 
 /**
  * The outlined chip's pill: a 1px outline in the chip's own `ink` (not `COLORS.border` —
@@ -70,13 +75,18 @@ export const outlinedChipSx = (ink: string) =>
         fontSize: OUTLINED_CHIP_TEXT_PX,
     }) as const;
 
+/** The outlined chip's box height: glyph + vertical padding + a 1px outline each way. */
+const OUTLINED_CHIP_HEIGHT_PX = OUTLINED_CHIP_ICON_PX + 2 * OUTLINED_CHIP_PAD_Y_PX + 2;
+
 /**
- * The tower study header's row height. Its tallest child is the outlined audio chip (glyph +
- * padding + a 1px outline each way), which beats the flame (26) and the title (25.2). The
- * row centres the arrow, so a taller chip would move the header's arrow: this derivation is
- * what keeps a game break's arrow on top of it.
+ * The tower study header's row height = its TALLEST child, which is either the outlined
+ * audio chip or the minute-points flame (`HEADER_FIRE_GLYPH_PX`). The header has no title
+ * (TowerStudyHeader). Which one wins has flipped with retunes (chip 25 vs flame 26 today),
+ * hence the max rather than a hard-coded pick. The row centres the arrow, so the
+ * tallest child sets where the arrow sits: this derivation is what keeps a game break's
+ * arrow (GameFrame) on top of it.
  */
-export const TOWER_STUDY_ROW_PX = OUTLINED_CHIP_ICON_PX + 2 * OUTLINED_CHIP_PAD_Y_PX + 2;
+export const TOWER_STUDY_ROW_PX = Math.max(OUTLINED_CHIP_HEIGHT_PX, HEADER_FIRE_GLYPH_PX);
 
 /** The tower study header's bottom edge, below the status bar. */
 export const TOWER_STUDY_HEADER_BOTTOM_PX = DENSE_HEADER_PAD_TOP_PX + TOWER_STUDY_ROW_PX;

@@ -6,8 +6,8 @@
  * through `cycleChipWidthCh` to be measured, so callers import them directly, and a
  * file that exports both components and helpers loses fast refresh.
  *
- * Used by: PageHeader.tsx (HeaderCycleChip), AudioModeChip.tsx. (The immersive-world
- * volume chip was the other caller until § 4c was withdrawn, 2026-09-23.)
+ * Used by: PageHeader.tsx (HeaderCycleChip), AudioModeChip.tsx. (The Immersive World
+ * volume chip was the other caller until it was withdrawn, 2026-09-23.)
  * Documented in: docs/AUDIO_PLAYBACK.md.
  */
 

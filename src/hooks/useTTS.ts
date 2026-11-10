@@ -59,9 +59,9 @@ export function useTTS() {
     // The language to narrate in, derived from the user's current study language.
     const ttsLang = toTTSLang(user?.selectedLanguage);
     // The voice to narrate in — the learner's `/settings` → Narration → Voice choice. It is
-    // the DEFAULT for every call, not a floor: a caller that names a voice (only Immersive
-    // World does, per speaking character) overrides it, because an NPC's voice belongs to the
-    // character rather than to the learner's reading preference.
+    // the DEFAULT for every call, not a floor: a caller that names a voice overrides it (no
+    // caller does today; Immersive World did, per speaking character — removed 2026-11-09,
+    // archived in docs/ARCHIVED_FEATURES.md).
     const settingsVoice = settings.voice;
     // The text currently being narrated, or null when idle. Buttons compare
     // their target text to this to decide whether to show the loading spinner,
@@ -207,9 +207,9 @@ export function useTTS() {
     // buildSentencePronunciation. Server-side cache is keyed on text+pinyin+voice
     // so repeat plays of the same sentence reuse the same cached MP3.
     //
-    // `voice` picks which voice within the language, and exists for Immersive World, where the
-    // speaker is a character with a gender rather than the app reading a card
-    // (docs/IMMERSIVE_WORLD.md § 6.4a). Omit it everywhere else.
+    // `voice` picks which voice within the language, for a speaker that is a character with a
+    // gender rather than the app reading a card. Its only caller was Immersive World
+    // (removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md); omit it everywhere else.
     const speakSentence = useCallback(async (text: string, pronunciation?: string, voice?: TTSVoice) => {
         await speakText(text, pronunciation, 'manual', voice);
     }, [speakText]);
@@ -223,24 +223,23 @@ export function useTTS() {
      * Synthesize a sentence WITHOUT playing it and report how long it will take to say, in ms
      * — or null when there will be no audio to pace against.
      *
-     * ⚠️ **THIS EXISTS FOR ONE CALLER**: Immersive World, where the audio is the clock
-     * (docs/IMMERSIVE_WORLD.md § 6.4) and the typewriter cannot start until the duration is
-     * known. Every other narration site should keep calling `autoSpeakSentence` and forget.
+     * ⚠️ **BUILT FOR ONE CALLER, WHICH NO LONGER EXISTS**: Immersive World (removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md),
+     * where the audio was the clock and the typewriter could not start until the duration was
+     * known. No caller today. Every other narration site should keep calling `autoSpeakSentence` and forget.
      *
-     * It returns null — meaning "pace it on a timer instead" (§ 5.3a) — in exactly the three
-     * ordinary situations that doc lists, and this hook is where two of them are decided:
+     * It returns null — meaning "pace it on a timer instead" — in exactly three ordinary
+     * situations, and this hook is where two of them are decided:
      *
      *   1. **Autoplay is off.** An automatic utterance stays silent, so there is no clock.
      *   2. **Cloud TTS failed on the `media` route.** The browser voice is not a legal
      *      fallback for automatic narration there (see the hook doc's fallback rule), and it
      *      could not report a duration anyway.
-     *   3. A deadline the CALLER imposes — § 6.4 rule 4's ~400 ms — which is not enforced
-     *      here because "how long may this line wait" is the scene's decision, not the
+     *   3. A deadline the CALLER imposes (Immersive World used ~400 ms), which is not enforced
+     *      here because "how long may this line wait" is the caller's decision, not the
      *      provider's. Race this promise; a late answer is dropped, not awaited.
      *
-     * `stamp: false` is passed for the same reason iw is the only caller: an NPC line is a
-     * sentence, not a headword, and the server's `det."ttsVoice"` stamp would be a
-     * guaranteed-zero-row UPDATE on every cache miss (§ 6.4's code note).
+     * `stamp: false` is passed because a paced line is a sentence, not a headword, and the
+     * server's `det."ttsVoice"` stamp would be a guaranteed-zero-row UPDATE on every cache miss.
      *
      * ⚠️ **Pass the same `voice` to the following `autoSpeakSentence`.** The voice is part of
      * the provider's cache key, so a mismatch measures one clip and plays another — the reveal
@@ -322,7 +321,7 @@ export function useTTS() {
         cancel,
         prefetch,
         prefetchSentence,
-        /** iw only — synthesize ahead of time and report the clip's duration. See above. */
+        /** Synthesize ahead of time and report the clip's duration (no caller today). See above. */
         prepareSentence,
         unlockAudio,
         isSpeaking,

@@ -67,7 +67,7 @@ export interface DemographicsPatch {
  * CHECK), and not in the future. The future rule lives here rather than in a CHECK because a
  * constraint on CURRENT_DATE is only evaluated at write time and can fail a later restore.
  *
- * Referenced by: docs/IMMERSIVE_WORLD.md § 5.5.
+ * (Collected for Immersive World (removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md).)
  */
 export function validateDemographics(patch: DemographicsPatch, now: Date = new Date()): DemographicsPatch {
   const out: DemographicsPatch = {};
@@ -541,10 +541,11 @@ export class UserService {
   /**
    * Set or clear the learner's gender / date of birth (migration 164) — the Settings half of the
    * question signup asks. Deliberately NOT part of `updateDisplaySettings`: these change how the
-   * app treats the learner (the iw body, how NPCs address them), not how anything is drawn.
+   * app treats the learner (Immersive World's body and NPC address, now archived), not how
+   * anything is drawn.
    *
    * Every key is optional; `null` is a real value ("Prefer not to answer"). At least one key
-   * must be present. See docs/IMMERSIVE_WORLD.md § 5.5.
+   * must be present.
    */
   async updateDemographics(userId: string, patch: DemographicsPatch): Promise<User> {
     if (!userId) {

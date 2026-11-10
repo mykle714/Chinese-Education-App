@@ -1,13 +1,14 @@
 /**
  * skyCueFloat — the shared float clock of td's white sky cues: the two WorldIndicators
  * (drifting outward) and the CardsCue (bobbing down). One period, one page clock, so
- * every cue moves in step however far apart they mounted.
+ * every cue moves in step however far apart they mounted (the home screen's enter cue too).
  *
  * Lives in its own module so WorldIndicator.tsx and CardsCue.tsx export only components
  * (react-refresh/only-export-components).
  *
- * Depended on by: WorldIndicator.tsx, CardsCue.tsx. Docs: docs/DECK_TOWER.md § "Worlds",
- * § "The cards page" → "The cards cue".
+ * Depended on by: WorldIndicator.tsx, CardsCue.tsx, home/HomeButtons.tsx (the "Swipe down to
+ * enter" cue). Docs: docs/DECK_TOWER.md § "Worlds", § "The cards page" → "The cards cue";
+ * docs/HOME_SCREEN.md § "The buttons".
  */
 
 /** One full drift out (or down) and back, ms. */

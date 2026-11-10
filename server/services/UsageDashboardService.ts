@@ -15,7 +15,6 @@ const FEATURE_LABELS: Record<UsageFeatureRow['key'], string> = {
   cardsAdded: 'Cards added',
   gameWins: 'Game wins',
   writingPractice: 'Writing practice',
-  immersiveWorld: 'Immersive World runs',
   aiDictionary: 'AI dictionary lookups',
 };
 

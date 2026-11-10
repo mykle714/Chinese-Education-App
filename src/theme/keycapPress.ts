@@ -13,7 +13,8 @@
 // Consumers: towerPlate.ts → `towerPlatePressSx` (the flp's tower plates), the eip's
 // keycaps — EipEntryHeader (the headword tile) and EipAddKey — acp's toolbar keycaps
 // (features/discover/AddCardsPage.tsx → `keycapSx`), td's cards-page filter keys
-// (features/deckTower/TowerFilterKeys.tsx — diagonal, `restX`/`pressedX`), the Dictionary page's keycaps
+// (features/deckTower/TowerFilterKeys.tsx — diagonal, `restX`/`pressedX`), the home screen's two keys
+// (features/deckTower/home/HomeButtons.tsx — the same diagonal keycap), the Dictionary page's keycaps
 // (features/dictionary/DictionaryPageParts.tsx → `Keycap`), the beginner keyboard's
 // keys (features/beginnerKeyboard/PinyinToneKeyboard.tsx → `keyPressSx`) and Match Speed's
 // cards (games/match-speed/MatchSpeedCard.tsx → `cardKeySx`), and td's cards-page mini

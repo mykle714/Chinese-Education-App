@@ -832,7 +832,7 @@ the shelf row has no width arithmetic to get wrong.
 The desktop BACKDROP behind the phone card is MUI's
 `palette.background.default` = `#ffffff` (`ThemeContext`), one percentage point
 off `--paper`. Fixing it would also re-ground every **non-frame** page (Reader,
-Night Market, Settings, auth), none of which is converted yet, so it is left for
+Settings, auth), none of which is converted yet, so it is left for
 the entry that converts them rather than changed blind here.
 
 **Code:** `src/components/phoneGeometry.ts` (new) → `PHONE_WIDTH`, `PHONE_HEIGHT`,
@@ -2496,7 +2496,7 @@ pastels.
 **Since the redesign:** two "About you" cards — **Gender** and **Date of birth** (migration
 164, each with "Prefer not to answer") — sit between Learning Language and Narration. They are a
 separate component, `src/pages/settings/AboutYouSections.tsx`, because the page was already past
-~600 lines. Why they exist: docs/IMMERSIVE_WORLD.md § 5.5a.
+~600 lines. They were added for Immersive World (removed 2026-11-09 — docs/ARCHIVED_FEATURES.md).
 
 **Before the redesign.** One 674-line `SettingsPage` inside `LeafPage`, built from stacked MUI
 `Paper`/`Card` blocks: theme (four full `Radio` option cards), learning language,
@@ -3101,8 +3101,7 @@ this list is the inventory.
 - **Memory Map** has **no play-surface artboard** (it is a break-only game since
   2026-11-04, played inside the flp, with no route or hub tile). The CSS anticipates it (`.mapw`, `.isl`, `.wd`)
   without an artboard using it. **A2/A6 chrome only** — leave the play surface alone.
-- **Night Market** is the Menu hub's hero but has no artboard — a Pixi engine surface that
-  sits outside this system. **A2 chrome only**; flag before touching anything inside.
+- ~~**Night Market**~~ — removed from the app 2026-11-09 (docs/ARCHIVED_FEATURES.md).
 - ~~**flp** (`/flashcards/learn`)~~ — **REMOVED from this list 2026-08-24.** It has an
   entry (19–25) and it is built. It was never undesigned; this bullet predated the
   artboards.
@@ -3354,10 +3353,10 @@ reads, to be confirmed as each is built:
 | Reader document page | leaf `.lhd` + body type from A1 |
 | Login / Register | `.field` + `.btn2` |
 | Study Challenge pages | Bento + `.bd` board |
-| Night Market · Memory Map | canvas surfaces — **A2 chrome only**, interiors untouched |
+| Memory Map | canvas surface — **A2 chrome only**, interior untouched |
 
-Where a surface has real design weight and the primitives don't obviously answer it
-(Night Market especially), stop and flag rather than inventing. Record whatever is
+Where a surface has real design weight and the primitives don't obviously answer it,
+stop and flag rather than inventing. Record whatever is
 chosen back into this entry so the next agent inherits the decision instead of
 re-deriving it.
 
@@ -3418,7 +3417,7 @@ and the fie's two canvas layers (`CardIconCanvas`).
 width, so its corners match the Deck Tower's card, which the study camera lays exactly over
 it (docs/DECK_TOWER.md § "Studying the tower"); ≈ 28px at the nominal 295px width. Every
 Since 2026-11-04 the cdp hero sets it too (`cardStockVars`), so both vet card surfaces
-share the tower card's corner ratio; the IW intro card sets no variable and keeps 15px.
+share the tower card's corner ratio; no other card surface sets it.
 Surfaces that are NOT cards keep their own radii: the eip `InfoCard` and the cdp's `SectionCard` stay 12/16px.
 
 ### D13 · Elevation is the design's shadow system, and it lives in one token file

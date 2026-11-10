@@ -15,8 +15,7 @@ clears decision gate 1. What the records mean:
 > [`/data-ppe-to-dev`](./data-ppe-to-dev.md)'s `pg_dump` machinery does not reach any of it.
 > Reaching for that skill here is the most likely mistake.
 
-Like [`/data-ppe-to-dev`](./data-ppe-to-dev.md) and [`/template-pull`](./template-pull.md),
-the transport is a **git commit**, because there is no cross-machine SSH on this
+Like [`/data-ppe-to-dev`](./data-ppe-to-dev.md), the transport is a **git commit**, because there is no cross-machine SSH on this
 project. That constraint is what forces the scrubbing step below.
 
 ---
@@ -131,12 +130,6 @@ contaminated with laptop timings.
 ⚠️ **Check the date range before trusting any `%` column.** Records written before
 the tap-census change are threshold-filtered and skew percentages upward — see
 CLIENT_PERF_DIAGNOSTICS.md.
-
-⚠️ **This data cannot answer the scale question.** No real user has 1,000
-pedestrians, so PPE telemetry says nothing about the Night Market target. That
-needs the **dev load test** — REACT_NATIVE_MIGRATION.md action item 4a — to be run
-once this pipeline is confirmed live, so both data sets share one analyzer and one
-metric shape.
 
 ---
 

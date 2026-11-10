@@ -371,8 +371,8 @@ export type BreakdownMap = Record<
  *                       then the ladder resumes. Without it
  *                       a term with dozens of exact glosses fills a short strip entirely with
  *                       bucket 0 and the learner never sees that a complete pinyin reading
- *                       exists. Used only by the iw composer's hint tray
- *                       (docs/IMMERSIVE_WORLD.md § 9a). Pure re-ordering: same rows, same total,
+ *                       exists. Built for Immersive World's composer hint tray
+ *                       (removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md); no caller today. Pure re-ordering: same rows, same total,
  *                       nothing dropped or repeated across pages. See `HINT_HEAD_PER_BUCKET`.
  *
  * Implemented by `DictionaryDAL.searchByWord1`; see docs/DICTIONARY_AI_FALLBACK_SEARCH.md for
@@ -777,11 +777,10 @@ export interface UserProfile {
   /**
    * May use feature-testing tools — Study Challenge "Allow anytime", soft-intro override,
    * banking always-play, the tester dashboard, the arena manual tick (migration 178).
-   * Distinct from isValidator, isTemplateAuthor and isAdmin.
+   * Distinct from isValidator and isAdmin. Also gates the Beginner Keyboard recognizer
+   * debug dump (docs/BEGINNER_KEYBOARD.md).
    */
   isFeatureTester?: boolean;
-  /** May author Night Market templates (migration 115). Distinct from isValidator. */
-  isTemplateAuthor?: boolean;
   /**
    * May open cross-user operator views — the User Usage section of the tester dashboard
    * (migration 168, docs/USAGE_DASHBOARD.md). Distinct from isValidator.
@@ -802,16 +801,15 @@ export interface UserProfile {
   chineseFont?: string;
   /**
    * The learner's gender, or null when not told ("Prefer not to answer", or an account
-   * predating migration 164). Picks the Immersive World body (`iwPlayerAvatar` in
-   * contracts/iw.ts) and is described to NPCs so they address the learner naturally
-   * (docs/IMMERSIVE_WORLD.md § 5.5).
+   * predating migration 164). Collected for Immersive World (its NPCs and learner body)
+   * (removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md); no server feature reads it today.
    */
   gender?: UserGender | null;
   /**
    * The learner's date of birth as `YYYY-MM-DD`, or null when not told (migration 164).
    *
    * ⚠️ PRIVATE. Only ever returned to the account itself; an NPC is told a coarse age band
-   * derived from it (`server/services/iw/learnerProfile.ts`), never the date. A string, not a
+   * derived from it (Immersive World's learner profile, now archived), never the date. A string, not a
    * Date: a calendar date has no time zone, and a JS Date re-reads it as a UTC instant that can
    * render as the previous day. `UserDAL` normalizes pg's DATE into this form.
    */
@@ -1389,8 +1387,17 @@ export interface MemoryMapGraduateResponse {
   replacement: MemoryMapWord | null;
 }
 
-/** The bucket NAMES the discover sort endpoint accepts as input (not all of them persist). */
-export type DiscoverSortBucket = 'library' | 'skip' | 'already-learned';
+/**
+ * The bucket NAMES the discover sort endpoint accepts as input (not all of them persist).
+ * The four card buckets are acp's four bins, one per utcm band (each persists as a
+ * `'library'` vet row, seeded per `SORT_BUCKET_CORE_POSITIVES` in contracts/mastery.ts):
+ * `library` = Unfamiliar, `target`, `comfortable`, `already-learned` = Mastered.
+ * `skip` writes no vet row. Validated against `DISCOVER_SORT_BUCKETS`.
+ */
+export type DiscoverSortBucket = 'library' | 'target' | 'comfortable' | 'already-learned' | 'skip';
+
+/** Every `DiscoverSortBucket` value — the controller's and service's validation list. */
+export const DISCOVER_SORT_BUCKETS: readonly DiscoverSortBucket[] = ['library', 'target', 'comfortable', 'already-learned', 'skip'];
 
 /**
  * Used-in item: a multi-char word that contains a given single character.

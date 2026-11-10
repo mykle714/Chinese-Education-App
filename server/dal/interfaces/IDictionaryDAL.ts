@@ -119,8 +119,7 @@ export interface IDictionaryDAL {
    *
    * Batched: one dictionary query serves every text in the array.
    *
-   * Used by Immersive World to make spoken NPC dialogue tappable
-   * (docs/IMMERSIVE_WORLD.md § 5.3b). Non-`zh` languages have no segmentation and come back
+   * Built for Immersive World's tappable NPC dialogue (removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md). Non-`zh` languages have no segmentation and come back
    * as a single text part.
    */
   segmentTexts(texts: string[], language: string): Promise<(LongDefinitionPart[] | null)[]>;
@@ -172,4 +171,15 @@ export interface IDictionaryDAL {
     word1?: string;
     entryKey?: string;
   }>(entries: T[], language?: string): Promise<Array<T & EntryApprovalFlags>>;
+
+  /**
+   * Stamp `"ttsVoice"` on the (word1, language) det row(s). See DictionaryDAL.stampTtsVoice.
+   */
+  stampTtsVoice(word1: string, language: string, voice: string): Promise<void>;
+
+  /**
+   * Discoverable zh headword that the backfill manifest still considers incomplete.
+   * See DictionaryDAL.isLazyEnrichmentCandidate.
+   */
+  isLazyEnrichmentCandidate(word1: string): Promise<boolean>;
 }

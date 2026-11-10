@@ -50,8 +50,7 @@ import { useSoftIntro } from "../../../../softIntro/useSoftIntro";
  * A tap on the pawn (IsoPawn `tappable` + `onTap`) is answered one of two ways: 4 in 5 a
  * flinch and a short "ouch" line in its own bubble up and to the right of its head, over
  * the card (PawnOuchBubble, usePawnOuch); 1 in 5 (PAWN_TAP_JUMP_SHARE) the tower's jump. A
- * tap while it is still in the air always jumps again — chained jumps climb, and each one
- * kicks off a light-blue double ring (IsoPawn's PawnAirRing). No "!" here: the ouch replaces it.
+ * tap while it is still in the air always jumps again — chained jumps climb. No "!" here: the ouch replaces it.
  *
  * ── Dismissing ───────────────────────────────────────────────────────────────
  * A swipe LEFT on the platform or the pawn throws the platform off the screen's left edge

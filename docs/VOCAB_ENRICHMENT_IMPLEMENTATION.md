@@ -75,8 +75,7 @@ When creating new Chinese vocab entries, automatically generates and stores:
 **File**: `server/services/OnDeckVocabService.ts`
 
 **New Methods**:
-- `enrichWithRelatedWords(userId, entry)` - Adds related words to a single entry
-- `enrichMultipleWithRelatedWords(userId, entries)` - Enriches multiple entries
+- `enrichMultipleWithRelatedWords(userId, entries)` - Adds related words to every zh entry in one query (`VocabEntryDAL.findRelatedBySharedCharactersForWords`)
 
 **Modified Method**:
 - `getDistributedWorkingLoop()` - Now enriches all returned cards with related words before returning

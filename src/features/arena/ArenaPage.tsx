@@ -124,7 +124,7 @@ function ArenaPage() {
     const { user, isAuthenticated } = useAuth();
     // The app has no LanguageContext; the selected language lives on the user.
     // /arena follows it rather than offering a combined view (settled as Q17),
-    // exactly as decks, minute points and night markets do.
+    // exactly as decks and minute points do.
     const language = user?.selectedLanguage ?? "zh";
 
     const [board, setBoard] = useState<ArenaBoardResponse | null>(null);

@@ -282,7 +282,8 @@ function decodeSseFrame(frame: string): SseEvent | null {
  * every failure into `new Error(message)`, which silently discarded `status` and
  * `response.data` — everything in the error body except the one `error` string. Any caller
  * that reads a STRUCTURED error body therefore got nothing, and the symptom was remote from
- * the cause: the iw scene editor's `problemsFromError` reads `response.data.problems`, so a
+ * the cause: the (since removed) Immersive World scene editor's `problemsFromError` read
+ * `response.data.problems`, so a
  * refused save reported the server's one-line summary ("This scene has problems…") and
  * never the per-field list, defeating the whole point of validating every field at once.
  * A `status` check (`err.status === 409`) would have failed the same way.

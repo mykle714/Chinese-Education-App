@@ -13,8 +13,6 @@ import vocabEntryRoutes from './routes/vocabEntryRoutes.js';
 import flashcardRoutes from './routes/flashcardRoutes.js';
 import textRoutes from './routes/textRoutes.js';
 import validationRoutes from './routes/validationRoutes.js';
-import nightMarketTemplateRoutes from './routes/nightMarketTemplateRoutes.js';
-import nightMarketSandboxRoutes from './routes/nightMarketSandboxRoutes.js';
 import onDeckRoutes from './routes/onDeckRoutes.js';
 import writingGridRoutes from './routes/writingGridRoutes.js';
 import superpositionRoutes from './routes/superpositionRoutes.js';
@@ -25,7 +23,6 @@ import gamesRoutes from './routes/gamesRoutes.js';
 import speedReadingRoutes from './routes/speedReadingRoutes.js';
 import memoryMapRoutes from './routes/memoryMapRoutes.js';
 import focusModeRoutes from './routes/focusModeRoutes.js';
-import nightMarketRoutes from './routes/nightMarketRoutes.js';
 import communityRoutes from './routes/communityRoutes.js';
 import leaderboardRoutes from './routes/leaderboardRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
@@ -37,10 +34,7 @@ import mediaRoutes from './routes/mediaRoutes.js';
 import handwritingRoutes from './routes/handwritingRoutes.js';
 import diagnosticsRoutes from './routes/diagnosticsRoutes.js';
 import metaRoutes from './routes/metaRoutes.js';
-import immersiveWorldRoutes from './routes/immersiveWorldRoutes.js';
 import { isFeatureEnabled, isGameEnabled } from './contracts/featureFlags.js';
-import { immersiveWorldDAL } from './dal/setup.js';
-import { validateStoredNpcIds } from './services/iw/validateStoredNpcIds.js';
 import { writeLimiter } from './middleware/rateLimits.js';
 
 // Load environment variables
@@ -122,15 +116,6 @@ app.use(vocabEntryRoutes);
 app.use(flashcardRoutes);
 app.use(textRoutes);
 app.use(validationRoutes);
-// Night Market is flagged (server/contracts/featureFlags.ts). The feature owns THREE
-// routers rather than one — the market, the template library and the sandbox — so the
-// gate has to be repeated; they are flagged together because the two authoring
-// namespaces exist only to produce content for the market itself. The third mount is
-// further down, where the original path-ordering comment puts it.
-if (isFeatureEnabled('nightMarket')) {
-  app.use(nightMarketTemplateRoutes);
-  app.use(nightMarketSandboxRoutes);
-}
 app.use(onDeckRoutes);
 // Focus mode (docs/FOCUS_MODE.md) — /api/focus/*.
 app.use(focusModeRoutes);
@@ -147,7 +132,6 @@ if (isGameEnabled('superposition')) app.use(superpositionRoutes);
 // Writing Notebook (docs/WRITING_NOTEBOOK.md) — a page, not a game, so a FEATURE flag.
 if (isFeatureEnabled('writingNotebook')) app.use(writingNotebookRoutes);
 app.use(gamesRoutes);
-if (isFeatureEnabled('nightMarket')) app.use(nightMarketRoutes);
 // Community is flagged (server/contracts/featureFlags.ts). Not mounting the router IS
 // the gate: every /api/community/* path then 404s like any unknown route. The second
 // half of the gate is GET /api/users/:userId/designs, which serves the same designs
@@ -172,21 +156,6 @@ app.use(mediaRoutes);
 app.use(handwritingRoutes);
 app.use(diagnosticsRoutes);
 app.use(metaRoutes);
-// Immersive World is flagged (server/contracts/featureFlags.ts). One mount covers both
-// halves of the feature — the phase-1 authoring endpoints and the phase-2 learner
-// runtime share this router (see immersiveWorldRoutes.ts) — and it has no endpoint
-// outside it, so this is the whole server gate.
-if (isFeatureEnabled('immersiveWorld')) app.use(immersiveWorldRoutes);
-
-// iw's startup validation pass (docs/IMMERSIVE_WORLD.md § 12 phase 1a): every NPC id
-// stored in the iw_* tables is TEXT pointing at a code constant, so the database cannot
-// enforce it and only a boot-time sweep can find a reference an NPC deletion orphaned.
-// Fire-and-forget with a .catch(): it must never delay or block the listen, and it
-// warns rather than throwing (see the function's header for why).
-void validateStoredNpcIds(immersiveWorldDAL).catch((err) =>
-  console.error('[iw] NPC-id validation pass crashed:', err),
-);
-
 // Start the server - bind to 0.0.0.0 to accept connections from all interfaces (required for Docker networking)
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT} on all interfaces (0.0.0.0)`);

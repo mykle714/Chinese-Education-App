@@ -2,8 +2,8 @@ import { Language } from '../types/index.js';
 
 /**
  * Request-language coercion, shared by every controller that scopes a response to one
- * language. Extracted from UserMinutePointsController when migration 130 made the night-market
- * layout per-language too and a second copy would have appeared.
+ * language. Extracted from UserMinutePointsController when migration 130 made a second controller
+ * (the since-removed Night Market layout) per-language and a second copy would have appeared.
  *
  * LAYER: controller util (HTTP edge). Services below this line always receive an
  * already-validated language and never re-parse request input.

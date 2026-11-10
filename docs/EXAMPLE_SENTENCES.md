@@ -493,13 +493,12 @@ segmenter and the popup component — on text that is not an example sentence at
 for the second kind is that they must not fork either: a second segmenter means the same word
 splits two ways in two places, and a second popup means the same gloss is styled two ways.
 `DictionaryDAL.segmentTexts` exists to be that shared entry point (it was the private
-`segmentLongDefinitionTexts` until iw needed it, which is why its name no longer mentions long
+`segmentLongDefinitionTexts` until Immersive World — since removed — needed it, which is why its name no longer mentions long
 definitions).
 
 | Surface | What it uses | Where |
 |---|---|---|
 | **Speed Reading finale** (round 20, the last of a run) | `foreignText` (both options are that sentence, one character apart), `english` (the prompt's translation line), and `_segments` + `segmentMetadata` via `buildSentencePronunciation` (the prompt's pinyin line **and** the TTS pinyin hint) | [SPEED_READING_GAME.md § The last round is a sentence](./SPEED_READING_GAME.md#the-last-round-is-a-sentence), `src/games/speed-reading/buildRound.ts`, `src/games/speed-reading/roundPrompt.ts` |
-| **Immersive World speech bubbles** (2026-09-07) | Not `exampleSentences` at all — the **component and the segmenter**. An NPC's spoken line is rendered by `SegmentedSentenceDisplay` from segments built by `DictionaryDAL.segmentTexts`, so a word tapped in a bubble opens the same popup and the same drill chain as the same word tapped here | [IMMERSIVE_WORLD.md § 5.3b](./IMMERSIVE_WORLD.md), `server/services/iw/lineSegments.ts`, `src/features/immersiveworld/play/IWSpeechBubbles.tsx` |
 
 Two consequences for this pipeline: a sentence is only usable there if it
 **literally contains its entry's headword** (the round alters one character of the

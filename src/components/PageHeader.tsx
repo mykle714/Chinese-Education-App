@@ -48,6 +48,8 @@ import { SAFE_TOP } from "../theme/safeArea";
 // chips, meta label, avatar, flame) was scaled up ~15% together from the design's
 // 24/21/18/17 so the header reads larger without changing its hierarchy. Keep the
 // ratios when retuning — the title steps and the control sizes were moved as one.
+// EXCEPTION: the outlined chips (audio chip, HeaderActionChip) were scaled up with the
+// rest, then put back to their pre-scale 15px glyph / 4px pad / 12px type (pageHeaderSizing.ts).
 //
 // `dense` is the one that must be asked for. The other three fall out of props the
 // caller is already passing (see `resolvedSize`), because they follow from the

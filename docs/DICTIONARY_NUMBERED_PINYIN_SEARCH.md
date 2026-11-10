@@ -56,7 +56,7 @@ either way, so it can never surface or hide a row that the other ranking would n
 | Value | Ordering | Used by |
 |---|---|---|
 | `relevance` (default) | the shared bucket ladder | the dictionary page, the Community search bar |
-| `english-first` | the same ladder **plus an interleaved head** | the iw composer's hint tray ([IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 9a) |
+| `english-first` | the same ladder **plus an interleaved head** | **no caller today** — built for the Immersive World composer's hint tray, removed 2026-11-09 ([ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)) |
 
 A search is never *only* an English one or *only* a pinyin one — the query above ORs the
 headword prefix, the pinyin regexes and the gloss regex together, so an ambiguous Latin term
@@ -169,8 +169,7 @@ a **different** sense, the search response names it, and the row shows that sens
   (the matched cluster's reading via `clusterReadingOrColumn`, else `resolveDefaultPronunciation`)
   and its sense list (each sense's dd, as the eip's Definition-tab sense list shows it, with the matched cluster's dd
   moved to the front; the plain dd when there is no choice of sense). Used by `src/components/DictionaryEntryRow.tsx` (dictionary page
-  and Compare slot B), `src/features/community/CommunitySearchBar.tsx` and
-  `src/features/immersiveworld/play/IWLookupResults.tsx`.
+  and Compare slot B) and `src/features/community/CommunitySearchBar.tsx`.
 - **Click-through.** `DictionaryPage` → `handleEntryClick` looks the word up and opens the eip
   sheet with `selectedSense` overridden to the hit's `matchedSense`, so `useEipTabs.openForRoot`
   seeds the root tab's sense from it (outranking the requester's saved pick) through
@@ -242,7 +241,7 @@ It is a **pure re-ordering** — same rows, same `total`, and paging stays coher
 paging the full result set for `long` (539), `men` (157) and `eat` (86): every row appears
 exactly once and the id set is identical to `relevance`'s.
 
-**The head is the ONLY difference between the iw tray and every other surface**, and that is
+**The head is the ONLY difference between `english-first` and `relevance`**, and that is
 verified rather than asserted: paging both rankings end-to-end for zh `long`/`me`/`eat`/`men`/`shi`
 and es `casa`/`perro`/`house`/`libro`, `english-first` comes out as exactly its own 8 head rows
 followed by `relevance`'s order with those rows removed (10 head rows since the 2026-10-29
@@ -295,10 +294,8 @@ surfaces as a broken request rather than quietly-wrong ordering.
   `generateShortDefinition`.
 - CJK-segment mode (the other branch `useDictionarySearch` can take): `GET
   /api/dictionary/segment`, [greedySegmentation.md](./greedySegmentation.md).
-- Consumers: `src/features/dictionary/DictionaryPage.tsx`, `src/features/community/CommunitySearchBar.tsx`
-  (see [COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md)), and
-  `src/features/immersiveworld/play/IWComposer.tsx` — which does NOT use
-  `useDictionarySearch` (it never takes the CJK-segment branch, and it pages a horizontal chip
-  strip rather than a list), and is the only caller passing `rankBy=english-first`.
+- Consumers: `src/features/dictionary/DictionaryPage.tsx` and `src/features/community/CommunitySearchBar.tsx`
+  (see [COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md)). No client passes `rankBy=english-first`
+  today (its only caller, the Immersive World composer, was removed 2026-11-09).
 - Spaceless-pinyin + AI synthetic-entry fallback that builds on this matcher (design):
   [DICTIONARY_AI_FALLBACK_SEARCH.md](./DICTIONARY_AI_FALLBACK_SEARCH.md).

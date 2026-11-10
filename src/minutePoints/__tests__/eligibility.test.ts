@@ -5,7 +5,7 @@ import { isMinutePointsAutoActivePath, isMinutePointsEligiblePath } from '../eli
  * Minute-point route eligibility.
  *
  * Worth a suite because both failure directions are SILENT: a study surface that quietly earns
- * nothing (the immersive world, until 2026-09-07) and a menu that quietly farms points look
+ * nothing and a menu that quietly farms points look
  * identical from the screen — the header flame is the only tell, and it is easy to read as
  * "not interacting yet".
  */
@@ -34,32 +34,11 @@ describe('isMinutePointsEligiblePath', () => {
     expect(isMinutePointsEligiblePath('/flashcards/collection/3')).toBe(false);
   });
 
-  describe('the immersive world (2026-09-07)', () => {
-    it('earns inside a scene', () => {
-      // The play surface is `/immersive-world/:sceneId`, so only a PREFIX can admit it.
-      expect(isMinutePointsEligiblePath('/immersive-world/dc16dd0e-98e9-421c-a9ff-5e30b942b539')).toBe(true);
-    });
-
-    it('does not earn on the scene list or in the editor', () => {
-      // The two siblings that same prefix sweeps in — a hub you pick from, and an authoring
-      // surface an author could leave open all afternoon.
-      expect(isMinutePointsEligiblePath('/immersive-world')).toBe(false);
-      expect(isMinutePointsEligiblePath('/immersive-world/scene-editor')).toBe(false);
-    });
-
-    it('excludes by EXACT path, so a child of the editor is judged on its own', () => {
-      // The exclusion must not become a second, invisible prefix list.
-      expect(isMinutePointsEligiblePath('/immersive-world/scene-editor/preview')).toBe(true);
-    });
-  });
 });
 
 describe('isMinutePointsAutoActivePath', () => {
   it('is games and only games', () => {
     expect(isMinutePointsAutoActivePath('/games/hydra-bubbles')).toBe(true);
-    // A scene needs a real interaction before it earns, like every non-game surface: it is
-    // read for a long time, and the composer makes the learner's involvement explicit.
-    expect(isMinutePointsAutoActivePath('/immersive-world/abc')).toBe(false);
     expect(isMinutePointsAutoActivePath('/flashcards/card/7')).toBe(false);
   });
 });

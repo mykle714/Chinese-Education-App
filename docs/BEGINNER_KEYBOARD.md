@@ -1000,7 +1000,8 @@ requirement, not a nicety — the bar re-renders on every component submit.
 > actually overflows, and each greys out (stays mounted, `opacity: 0.25`, so the
 > chips do not shift) at its end of the travel.
 >
-> **Extracted and shared, same day.** The iw composer's hint tray needed the
+> **Extracted and shared, same day.** The Immersive World composer's hint tray (removed
+> 2026-11-09 — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)) needed the
 > identical control, so the behaviour moved out of `CandidateRow` into
 > `src/hooks/useHorizontalScrollArrows.ts` (the desktop gate, the overflow
 > measuring, the paging scroll, and an optional end-of-travel callback the tray
@@ -1009,7 +1010,7 @@ requirement, not a nicety — the bar re-renders on every component submit.
 > passes `candidates` as the re-measure trigger. Behaviour here is unchanged.
 > Code: `src/hooks/useHorizontalScrollArrows.ts` → `useHorizontalScrollArrows`;
 > `src/components/ScrollArrow.tsx`; `src/features/beginnerKeyboard/CandidateRow.tsx`
-> → `arrow`. See also [IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 9a.
+> → `arrow`. `CandidateRow` is the hook's only caller today.
 
 **4. It will fight the edge-swipe guard.** A horizontal scroller spanning the
 full width sits directly under the iOS back-swipe gesture zone. Every game page
@@ -1282,7 +1283,7 @@ straight run of undos; a clear itself is not undoable. The keys split the column
 width equally (`flex: 1`, tight padding) because the column can be as narrow as
 ~40% of a phone's width.
 
-For template authors the § 6w debug chips (dump, 🎯 target) sit on their **own row
+For feature testers the § 6w debug chips (dump, 🎯 target) sit on their **own row
 inside the controls section, directly above** the ink keys
 (`.beginner-keyboard__debug-row`), so the ink keys stay in the same place for every
 account.
@@ -2003,10 +2004,10 @@ it from a description of what happened. The dump closes that gap: it is **the
 exact ink**, so `matchGlyphs` can be re-run against it offline and the ranking
 inspected.
 
-**The gate is `users.isTemplateAuthor`** (migration 115) — the same grant as the
-night-market and iw editors. It is decided in `BeginnerKeyboardProvider` (the only
+**The gate is `users.isFeatureTester`** (migration 178; until migration 185 dropped it, the
+gate was `users.isTemplateAuthor`). It is decided in `BeginnerKeyboardProvider` (the only
 layer in the feature holding auth) and passed down as `debug`. Like every other
-client-side `isTemplateAuthor` check it is **UX only**: nothing here is
+client-side `isFeatureTester` check it is **UX only**: nothing here is
 privileged, there is no server call behind it, and the same payload is derivable
 from the console. The gate exists so the button is not in everyone's way.
 
@@ -2257,8 +2258,7 @@ is now a **trigger** rather than the thing that holds it open.
 Code: `BeginnerKeyboardProvider` (the whole dismissal model),
 `BeginnerKeyboardHost` (the transition and the close chevron),
 `eligibility.ts` → `KEEP_OPEN_VALUE`, `isKeepOpenTarget`,
-`transition.ts` → `useBeginnerKeyboardTransition`,
-`IWPlayPage` (the one page that reserves space).
+`transition.ts` → `useBeginnerKeyboardTransition`.
 
 ### The bug this fixes
 
@@ -2314,17 +2314,17 @@ moments: *may this field raise the keyboard*, and *may this element dismiss it*.
 | `off` | never raise the keyboard on this field or anything inside it (§ 7a) |
 | `keep` | interacting here does not dismiss an open keyboard (this section) |
 
-Both are inherited from any ancestor. The only `keep` region today is the whole
-`iw-composer` (`src/features/immersiveworld/play/IWComposer.tsx`) — marked on the
-composer root rather than on its four buttons individually, so a control added to
-that row later inherits it.
+Both are inherited from any ancestor. **No `keep` region exists today**: the only one was
+the Immersive World composer root (removed 2026-11-09), marked on the root rather than on
+its buttons so a control added to the row later inherited it. The value stays supported
+for the next composer-shaped page.
 
 **Nearest declaration wins (2026-09-20).** The two values nest and shadow each
 other: `attributeInForce` in `eligibility.ts` resolves the single closest element
 carrying the attribute and reads its value, rather than each value looking for its
 own nearest region. Both `isKeepOpenTarget` and `traitsOf`'s `optedOut` go through
-it. The case that forced it was inside that one `keep` region — the iw composer's
-quick-dictionary field (`iw-composer__lookup`) was marked `off`, and with
+it. The case that forced it was inside that one `keep` region — the Immersive World
+composer's quick-dictionary field was marked `off`, and with
 per-value `closest()` the outer `keep` was found regardless of the inner `off`.
 **That marking was removed 2026-09-24** (see *Known gap* below), so no `off`-inside-
 `keep` exists today; the nearest-wins rule stays because it is the correct
@@ -2376,24 +2376,12 @@ It returns `'none'` under reduced motion.
 The durations and curves (`BEGINNER_KEYBOARD_SLIDE_MS`, `BEGINNER_KEYBOARD_EASING`
 — matched to the MUI transition tokens `Slide` uses by default) live in that one
 module because the host, the provider and every reserving page must agree on them.
-`IWPlayPage` is the only consumer today.
+No page consumes it today — its only consumer was Immersive World's play page (removed
+2026-11-09).
 
 `transitionForInset(inset, property)` is the pure function underneath; the two
 hooks (`useBeginnerKeyboardTransition`, `useKeyboardTransition`) are that function
 plus a source, so the timings cannot drift apart between them.
-
-### The iw quick-dictionary field is eligible — on purpose
-
-The composer's quick-dictionary lookup input (`iw-composer__lookup`) is usually
-queried in **English or pinyin**, but it is an ordinary eligible field: focusing it
-brings up whichever keyboard the session is on (§ 6z-3), and the learner reaches
-the latin keyboard **manually** with the switch bar's `ABC`.
-
-It was marked `data-beginner-keyboard="off"` from 2026-09-20 to 2026-09-24, which
-forced the OS keyboard up on every open of the tray and — because an `off` field
-gets no switch bar — left no way back to handwriting from it. Reversed 2026-09-24
-so the latin keyboard is the learner's choice rather than the field's. Code:
-`src/features/immersiveworld/play/IWComposer.tsx` → the `lookupRef` focus effect.
 
 ## 6z-2. BUILT 2026-09-21 — the switch bar
 
@@ -2442,9 +2430,7 @@ up in **both** states — over our keyboard, and perched on the OS keyboard afte
 ⚠️ **A field that declines the keyboard gets no bar.** On
 `data-beginner-keyboard="off"` the OS keyboard comes up bare, because there is no
 second keyboard to switch to there — offering a Chinese IME over a field that has
-declined it would be advertising a door into a wall. Same for a Spanish learner and
-for the two authoring routes. (The iw quick-dictionary tray was the one `off` field
-until 2026-09-24; it is now eligible and gets the bar like any other field.)
+declined it would be advertising a door into a wall. Same for a Spanish learner.
 
 ### The motion — trailing stagger, NOT the keyboard's timing
 
@@ -2500,7 +2486,7 @@ keyboard at all the perch is 0 and the bar sits at the bottom of the app frame.
 
 A reserving page (§ 7a) now clears the bar as well: in handwriting mode the
 measured surface **is** bar + keyboard, and in `ABC` mode the host reports the
-bar's height plus the perch. `IWPlayPage` needed no change — it reserves off
+bar's height plus the perch. A reserving page needs no change — it reserves off
 `useKeyboardInset()`, which is a `Math.max` over both answers.
 
 ## 6z-3. BUILT 2026-09-24 — the switch choice is a session preference
@@ -2987,7 +2973,7 @@ canvas and components in the buffer carry over to the new field; they are
 cleared only when the keyboard actually closes, or by a commit.
 
 **Found by** the iw quick dictionary: a learner stuck mid-character opens it,
-which FOCUSES its lookup field (`IWComposer.tsx` → the `lookupRef` focus effect)
+which FOCUSES its lookup field (in the since-removed Immersive World composer)
 — and everything they had drawn and locked in vanished at the exact moment they
 reached for help.
 
@@ -3188,24 +3174,13 @@ DOM read resolves the attribute by nearest declaration, so an `off` region insid
 `keep` region (and vice versa) behaves the way the markup reads — see *`data-beginner-keyboard`
 now has two values*.
 
-#### Which routes — a second, wholesale gate (added 2026-09-09)
+#### No route gate
 
-Two pages switch the keyboard off entirely, by path rather than per field:
-`/night-market/template-editor` and `/immersive-world/scene-editor`. Both are the
-desktop-only, template-author-only authoring surfaces, and every field on them
-holds authoring metadata (a scene name, a tile id, a numeric size) typed in ASCII —
-a handwriting bar over a dense three-column tool is pure obstruction.
-
-It is a PATH exclusion rather than the `off` attribute because both pages open MUI
-dialogs and menus, which portal into `document.body` and so escape the attribute's
-`closest()` inheritance — one entry per page beats chasing every portal. The list
-is `DISABLED_PATHS` / `isKeyboardDisabledPath` in `eligibility.ts`, and
-`BeginnerKeyboardProvider` folds it into the same `enabled` flag as the `zh` gate,
-so on those routes the document listeners are never registered at all.
-
-⚠️ `/night-market/template-sandbox` is deliberately **not** in the list — only the
-two editors were asked for. Add it here if the sandbox grows text fields worth
-protecting.
+The keyboard is gated wholesale only by the account's language (`zh`). A second, path-based
+gate (`DISABLED_PATHS` / `isKeyboardDisabledPath`) once switched it off on the desktop Night
+Market template editor and Immersive World scene editor; it was deleted with those
+features on 2026-11-09. Per-field opt-out (`data-beginner-keyboard="off"`) is the only
+remaining exclusion.
 
 #### Giving up space — `useBeginnerKeyboardInset()`
 
@@ -3228,9 +3203,9 @@ keyboard slides away. (`useHideFooter` would also be unreachable here:
 `MobileDemoFrame`.) Code: `BeginnerKeyboardHost.tsx` → the `host` memo.
 
 Pages with something **pinned** to the bottom that scrolling cannot reveal must
-opt in. `IWPlayPage` is the motivating case: the stage is a fixed viewport with
-the composer pinned under it, so it reserves the inset as `paddingBottom`, which
-shrinks the `flex: 1` stage and carries the composer above the keyboard.
+opt in. The motivating case was Immersive World's play page (removed 2026-11-09): a fixed
+viewport with a composer pinned under it, which reserved the inset as `paddingBottom`.
+No page opts in today.
 
 The height is **measured** off the live surface (a `ResizeObserver`), not computed
 from a nominal keyboard height — that is the only number that stays correct

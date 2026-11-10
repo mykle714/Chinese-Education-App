@@ -20,6 +20,7 @@ import {
     shadowFootprint,
     type CloudSky,
     type IsoRainFall,
+    type IsoSnowFall,
     type WindSky,
     blendWash,
     NO_WASH,
@@ -46,7 +47,7 @@ import { SkyTrafficCloudShadows, SkyTrafficLayer, SkyTrafficSource } from "./Sky
 import { useSkyTrafficStore } from "./skyTrafficStore";
 import DeckTowerPlatform, { type PlateFace } from "./DeckTowerPlatform";
 import { useDeckSwap } from "./useDeckSwap";
-import { useBuildProgress } from "./useBuildProgress";
+import { useBuildProgress, useFixtureGrow } from "./useBuildProgress";
 import { useTowerResize } from "./useTowerResize";
 import { pickTowerGrow, pickTowerShrink } from "./towerResizes";
 import { TOWER_MODES, bandTotal } from "./towerModes";
@@ -58,7 +59,12 @@ import { litWorld } from "./timeOfDay";
 import { useHintPawnVisit } from "../flashcards/FlashcardsLearnPage/hintPawn/hintPawnVisit";
 import { useTimeOfDay } from "./useTimeOfDay";
 import { useTowerWeather } from "./useTowerWeather";
-import { RAIN_ALPHA, RAIN_LEAN, RAIN_STROKE_PX, isEffectless, weatherCloudCount, weatherEffect } from "./towerWeather";
+import { RAIN_ALPHA, RAIN_LEAN, RAIN_STROKE_PX, SNOW_ALPHA, SNOW_R, SNOW_SPEED, SNOW_SWAY, SNOW_SWAY_RATE, isEffectless, weatherCloudCount, weatherEffect } from "./towerWeather";
+import { useTowerSnow } from "./useTowerSnow";
+import { SNOW_COMPONENTS, type SnowComponent } from "./towerSnow";
+import SnowResetChip from "./SnowResetChip";
+import { useSoftIntro } from "../../softIntro/useSoftIntro";
+import { useWeatherEffectsEnabled } from "../../hooks/useWeatherEffectsSetting";
 import WeatherToggle from "./WeatherToggle";
 import LightningStrikeChips from "./LightningStrikeChips";
 import { useLightningFlashes } from "./useLightningFlashes";
@@ -94,6 +100,11 @@ import type { GameExit } from "../../games/runtime/gameExit";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { useClaimStudySurface } from "../../minutePoints/studySurface";
 import TowerCardsPage from "./TowerCardsPage";
+import HomeStage from "./home/HomeStage";
+import { useHomeEntrance } from "./home/useHomeEntrance";
+import { useHomePull } from "./home/useHomePull";
+import { homeDueOnLaunch, markHomeTaken } from "./home/homeLaunch";
+import type { ScreenPoint } from "../../utils/pageTransition";
 import { TOWER_SCENE_CLASS, TOWER_SECTION_CLASS, heightAbovePlatform, platformScrollTop, towerSceneOf, useTowerCardsScroll } from "./towerScroll";
 import { withLens } from "../flashcards/collectionRef";
 import type { VocabEntry } from "../../types";
@@ -582,6 +593,22 @@ const DeckTowerPage: React.FC = () => {
                 : undefined,
         [observedWeatherFx],
     );
+    // The same snow in iso space: flakes falling in front of the tower and settling on the
+    // platform (DeckTowerPlatform → IsoSnow), with the sky's flake look (towerWeather.ts SNOW_*).
+    const snowFall = useMemo<IsoSnowFall | undefined>(
+        () =>
+            observedWeatherFx && observedWeatherFx.snowDensity > 0
+                ? {
+                      density: observedWeatherFx.snowDensity,
+                      alpha: SNOW_ALPHA,
+                      radius: SNOW_R,
+                      speed: SNOW_SPEED,
+                      sway: SNOW_SWAY,
+                      swayRate: SNOW_SWAY_RATE,
+                  }
+                : undefined,
+        [observedWeatherFx],
+    );
     // The worlds as the sky sees them: main's day sky follows the weather. Memoised on the
     // hex, because `light.skyOf` caches per world object.
     const mainDaySky = weatherDaySky(weather);
@@ -641,7 +668,7 @@ const DeckTowerPage: React.FC = () => {
     // The flp hint pawn's visit scope (docs/HINT_PAWN.md § "Dismissing"): a swipe-away
     // lasts until td is left, across every session and world, so the visit starts here.
     useHintPawnVisit();
-    useHideFooter(study.active);
+    // (The footer's hide — `useHideFooter` — is with the home stage below: it hides for both.)
     useBlockEdgeSwipe(study.active);
     useClaimStudySurface(study.phase === "studying");
     // A world's two decks, read through its own bar: Learning = that bar's OFF-COOLDOWN
@@ -661,6 +688,8 @@ const DeckTowerPage: React.FC = () => {
     });
 
     const world = useMemo(() => litWorld(skyWorlds[worldId], light), [skyWorlds, worldId, light]);
+    // The home screen's platform always stands in the MAIN world's colours, lit for the hour.
+    const homeWorld = useMemo(() => litWorld(skyWorlds.core, light), [skyWorlds, light]);
     const worldIndex = shownWorlds.indexOf(worldId);
     const leftWorld = worldIndex > 0 ? shownWorlds[worldIndex - 1] : undefined;
     const rightWorld = worldIndex < shownWorlds.length - 1 ? shownWorlds[worldIndex + 1] : undefined;
@@ -672,14 +701,25 @@ const DeckTowerPage: React.FC = () => {
         writing: useDeckSwap(),
     };
     const swap = swaps[worldId];
+    // Mid-swap, the old tower has cleared (`outgoing` gone) but the new tower's sky drop has
+    // not started playing yet: the platform is empty. See `towerCountFor`.
+    const swapDropPending = (id: TowerWorldId) => swaps[id].busy && swaps[id].outgoing === null && resizes[id].toCards === null;
     // The deck each tower is fitted to — the old one until it has fallen clear, then the new.
     // While a resize plays (or holds), the Learning tower keeps the height it had at the
     // tap, so the build-up never sees the count change mid-animation.
+    //
+    // A swap's new tower arrives as a SKY DROP (docs/DECK_TOWER_TRANSITIONS.md § "The new
+    // tower's sky drop"), not a build-up: from the old tower clearing until the drop is
+    // planned at `readyMs` the platform stands empty (`swapDropPending` → 0 cards), and the
+    // drop's resize then holds it at 0 (`heldCards`) until the new cards have landed.
+    // `heldCards` applies on either deck: a hold or resize only exists on Mastered through
+    // that swap drop (the plate is off while one is held, and every other hold is Learning's).
     const towerCountFor = (id: TowerWorldId): number | undefined => {
         // Being studied: the tower loses a card per correct mark (useTowerStudy).
         if (studying(id)) return study.cards;
+        if (swapDropPending(id)) return 0;
         const held = resizes[id].heldCards;
-        return held !== null && swaps[id].towerDeck === "learn-now" ? held : deckCountsFor(id)[swaps[id].towerDeck];
+        return held !== null ? held : deckCountsFor(id)[swaps[id].towerDeck];
     };
     const towerCounts: Record<TowerWorldId, number | undefined> = {
         core: towerCountFor("core"),
@@ -689,34 +729,118 @@ const DeckTowerPage: React.FC = () => {
     // A tower may grow once its counts are in and its swap's platform is not empty.
     const mayGrow = (id: TowerWorldId) => towerCounts[id] !== undefined && swaps[id].towerOnStage;
     // Every world keeps its tower built, on screen or not, so arriving shows it standing.
-    // Every tower appears at full height (no build-up) and only grows after a deck swap
-    // there (`animate` = mid-swap). Main used to build up on page load; since 2026-10-24 it
-    // opens at the height it last stood at and plays a tower resize to today's figure
-    // (§ "Opening at the last height"), or — with nothing stored — simply stands.
+    // Every tower appears at full height: nothing builds up any more (`animate` false). Main
+    // used to build up on page load; since 2026-10-24 it opens at the height it last stood
+    // at and plays a tower resize to today's figure (§ "Opening at the last height"), or —
+    // with nothing stored — simply stands. A deck swap's new tower used to build up too;
+    // since 2026-11-09 it falls in as a sky drop (`startSwapDrop`).
     const progress: Record<TowerWorldId, number> = {
-        core: useBuildProgress(mayGrow("core"), towerCounts.core ?? 0, swaps.core.busy),
-        reading: useBuildProgress(mayGrow("reading"), towerCounts.reading ?? 0, swaps.reading.busy),
-        writing: useBuildProgress(mayGrow("writing"), towerCounts.writing ?? 0, swaps.writing.busy),
+        core: useBuildProgress(mayGrow("core"), towerCounts.core ?? 0, false),
+        reading: useBuildProgress(mayGrow("reading"), towerCounts.reading ?? 0, false),
+        writing: useBuildProgress(mayGrow("writing"), towerCounts.writing ?? 0, false),
     };
 
     // The stack is drawn: the old tower as it stood at the tap while it falls, nothing while
     // the platform is empty mid-swap, then the build-up (from 0 cards until counts arrive).
     const stackDrawn = swap.outgoing !== null || swap.towerOnStage;
     const stackProgress = swap.outgoing?.frozenProgress ?? progress[worldId];
+    // The corner fixtures (notebook stack, sort platform) grow in on their own clock after a
+    // swap lands on Learning — the tower itself sky-drops in, so there is no build-up for
+    // them to ride. Only the world on screen draws fixtures, so one clock serves every world.
+    // Leaving Learning they fall at full height (towerOnStage stays true until `clearedMs`).
+    const fixtureProgress = useFixtureGrow(mayGrow(worldId), swap.busy);
     const towerCount = towerCounts[worldId] ?? 0;
     // This world's tower resize. While a resize plays, the scene is fitted to the TALLER of
     // its two heights: a shrink starts from it, and a grow needs its sky to fall through.
     const resize = resizes[worldId];
     // Where the pawn stands on the tower's top: the count card carries it off from there.
     const summitSpot = useRef<{ x: number; y: number } | null>(null);
+
+    // ── Snow (docs/TOWER_SNOW.md) ─────────────────────────────────────────────────
+    // Snow settles on each world's components ONLY ON PAGE ENTRY — when it is snowing then
+    // and a component was last cleared 6 h ago or more — and stays until cleared (useTowerSnow,
+    // towerSnow.ts). Shown with the weather: the Settings switch on, or a tester's pin.
+    const weatherEffectsOn = useWeatherEffectsEnabled();
+    const towerSnow = useTowerSnow({
+        shown: weatherEffectsOn || (testingFeatures && towerWeather.override !== "auto"),
+        entry: { ready: towerWeather.settled, snowing: weather?.kind === "snow" },
+        towerCards: towerCounts,
+        cloudBaseCards: CLOUD_BAND_CARDS.from,
+    });
+    // Until this si graduates (1 day, 4 visits) snow never covers text (docs/TOWER_SNOW.md
+    // § "Covering text"). Counted on every visit, snowy or not.
+    const snowCoverText = useSoftIntro("towerSnowCover") === "graduated";
+    // The trap door drops everything on the platform, snow and all: when a world's swap ENDS
+    // (the door shut, the new deck standing) every one of its components is cleared — no
+    // brush-off, the snow has already left with its object (the floor's slid off the door).
+    // Under reduced motion a swap is instant (never busy), so a deck change seen while idle
+    // counts as a swap's end too.
+    // A LAYOUT effect: the render where the swap ends (door shut, the platform's slide-off
+    // reset) still has the old covers, and a passive effect's clear landed a frame later — the
+    // floor's snow flashed back on for that painted frame. Cleared here, React re-renders
+    // with the cleared covers before the browser paints.
+    const swapBefore = useRef<Record<TowerWorldId, { busy: boolean; deck: TowerDeckId }>>({
+        core: { busy: false, deck: swaps.core.towerDeck },
+        reading: { busy: false, deck: swaps.reading.towerDeck },
+        writing: { busy: false, deck: swaps.writing.towerDeck },
+    });
+    const swapKey = WORLD_ORDER.map((id) => `${swaps[id].busy ? 1 : 0}${swaps[id].towerDeck}`).join(",");
+    useLayoutEffect(() => {
+        for (const id of WORLD_ORDER) {
+            const { busy, towerDeck } = swaps[id];
+            const before = swapBefore.current[id];
+            if (!busy && (before.busy || before.deck !== towerDeck)) towerSnow.clear(id, SNOW_COMPONENTS);
+            swapBefore.current[id] = { busy, deck: towerDeck };
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [swapKey]);
+    // A study: the snowy top card rides the count card off the deck (TowerCoverCard); once the
+    // session is up the tower's snow is cleared, so the card comes back bare.
+    const studyWorld = study.world;
+    useEffect(() => {
+        if (study.phase === "studying" && studyWorld) towerSnow.clear(studyWorld, "tower");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [study.phase, studyWorld]);
+    // A sky drop (a grow: cards off cooldown, focus off, opening above the last height) lands
+    // on the top card and knocks its snow off — brushed off on the impact. This is also why a
+    // tower growing into the clouds never keeps a cap there.
+    const dropLandedKey = WORLD_ORDER.map((id) => (resizes[id].dropLanded ? 1 : 0)).join("");
+    useEffect(() => {
+        for (const id of WORLD_ORDER) if (resizes[id].dropLanded) towerSnow.clear(id, "tower", { brush: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dropLandedKey]);
+    // The covers DeckTowerPlatform draws for the world on screen. The tower's only while the
+    // Learning deck stands (the Mastered tower is only ever reached through a trap door, which
+    // clears) and while the scene's top card is the one showing — not while the count card
+    // is its own layer or off the deck.
+    const snowCover = (c: SnowComponent) => towerSnow.cover(worldId, c);
+    const platformSnow = {
+        covers: {
+            floor: snowCover("floor"),
+            plate: snowCover("plate"),
+            tower: swap.towerDeck === "learn-now" && study.towerPrintShown ? snowCover("tower") : undefined,
+            lever: snowCover("lever"),
+            sortBin: snowCover("sortBin"),
+            notebook: snowCover("notebook"),
+        },
+        coverText: snowCoverText,
+        trail: towerSnow.trail(worldId, "floor"),
+        towerTrail: towerSnow.trail(worldId, "tower"),
+        swapping: swap.busy,
+    };
     // Cards standing on the tower. A sky drop counts from its IMPACT (not the resize's end,
     // IMPACT_MS later), so a total crossing STARTLE_AT_CARDS startles the pawn as it lands.
     const cardsOnTower = !stackDrawn ? 0 : resize.dropLanded && resize.toCards !== null ? resize.toCards : Math.round(towerCount * stackProgress);
     // While a session is up the scene stays fitted to the tower as it stood at the tap: the
     // camera aims through this frame, and a refit would move the svg under it.
+    // Mid-swap, from the old tower clearing until its sky drop starts, the platform stands
+    // empty but the scene is already fitted to the new deck's tower (refit at `clearedMs`, as
+    // the drop it is about to receive needs), so the drop's start causes no second refit.
     const fitCount = studying(worldId)
         ? study.fitCards
-        : resize.toCards !== null
+        : swapDropPending(worldId)
+          ? (deckCountsFor(worldId)[swap.towerDeck] ?? 0)
+          : resize.toCards !== null
           ? Math.max(towerCount, resize.toCards)
           : towerCount;
 
@@ -856,6 +980,96 @@ const DeckTowerPage: React.FC = () => {
     // The scrollTop the page itself last set: the scroll event that echoes it (or the
     // browser's clamp of it) is not the learner moving, so it must not overwrite `climb`.
     const placedScrollTop = useRef<number | null>(null);
+
+    // ── The home screen (docs/HOME_SCREEN.md) ─────────────────────────────────────
+    // The HOME STAGE (home/HomeStage.tsx) stands ABOVE the tower: its own platform and pawn
+    // over td's sky, with Dictionary and Enter under it. The app opens on it once per launch;
+    // Enter takes the camera down to the deck's top and scrolls on down to the platform, and a
+    // fresh pull past the deck's top takes it back up (home/useHomeEntrance.ts,
+    // home/useHomePull.ts). While it is up: no header, no footer, no world swipe, and the
+    // tower's own events (the opening grow, cooldown drops, the banking run) WAIT, so they play
+    // once the learner can see them.
+    const [homeOnLaunch] = useState(homeDueOnLaunch);
+    useEffect(() => {
+        if (homeOnLaunch) markHomeTaken();
+    }, [homeOnLaunch]);
+    // The sky's altitude through a shift's cruise, as viewBox y's (SpaceBackdrop `altitudeY`):
+    // from where the shift left to where it lands. Measured by `onCruise`.
+    const homeAltitudes = useRef<{ from: number; to: number } | null>(null);
+    // Set while a shift holds the scroller at the tower's top (a refit must keep it there):
+    // from Enter's cruise to its landing, and from a return's start to its cruise.
+    const homeAtTop = useRef(false);
+    /** viewBox y at the middle of the view for a given scrollTop — SpaceBackdrop's own altitude
+     * formula. Both rects carry the scroller's shift transform, so it cancels. */
+    const altitudeAt = (el: HTMLDivElement): ((top: number) => number) | null => {
+        const svg = towerSceneOf(el);
+        if (!svg) return null;
+        const svgRect = svg.getBoundingClientRect();
+        const scale = svgRect.width / scene.width;
+        const svgContentTop = svgRect.top - el.getBoundingClientRect().top + el.scrollTop;
+        const viewH = el.clientHeight - footerPx();
+        return (top) => scene.minY + (top + viewH / 2 - svgContentTop) / scale;
+    };
+    const home = useHomeEntrance({
+        shown: homeOnLaunch,
+        scrollerRef,
+        // Nothing is on screen: move the scroller to where the shift lands, and blend the sky there.
+        onCruise: (direction) => {
+            const el = scrollerRef.current;
+            if (!el) return;
+            cardsScroll.cancelGlide();
+            const midAt = altitudeAt(el);
+            // Enter lands on the tower's top; a return parks the scroller on the platform line,
+            // where it stands under the home (the launch's own state).
+            const to = direction === "enter" ? 0 : platformScrollTop(el);
+            homeAltitudes.current = midAt ? { from: midAt(el.scrollTop), to: midAt(to) } : null;
+            el.scrollTop = to;
+            placedScrollTop.current = el.scrollTop;
+            climb.current = heightAbovePlatform(el);
+            homeAtTop.current = direction === "enter";
+        },
+        descentTarget: () => (scrollerRef.current ? platformScrollTop(scrollerRef.current) : 0),
+        onPlaced: (top) => {
+            placedScrollTop.current = top;
+        },
+        onLanded: () => {
+            homeAtTop.current = false;
+            homeAltitudes.current = null;
+            const el = scrollerRef.current;
+            if (el) {
+                el.scrollTop = platformScrollTop(el);
+                placedScrollTop.current = el.scrollTop;
+            }
+            climb.current = 0;
+            cardsScroll.syncHeader();
+        },
+        onHome: () => {
+            homeAtTop.current = false;
+            homeAltitudes.current = null;
+        },
+    });
+    const homeUp = home.phase !== "done";
+    const homeShifting = home.phase === "enter" || home.phase === "return";
+    // The home stage itself is on screen (at rest and through both shifts; not the descent).
+    const homeStageShown = home.phase === "home" || homeShifting;
+    const homePhaseRef = useRef(home.phase);
+    homePhaseRef.current = home.phase;
+    // The footer slides back in as the descent starts, and away as a return starts; a study hides it too.
+    useHideFooter(study.active || homeStageShown);
+    // The sky's altitude override through a shift, once its cruise has measured it (null = follow the scroll).
+    const homeAltitudeY =
+        homeShifting && homeAltitudes.current
+            ? homeAltitudes.current.from + (homeAltitudes.current.to - homeAltitudes.current.from) * home.frame.altitudeT
+            : null;
+    // The banking run is held only until the learner first leaves the home: a later return home
+    // must not cancel a run already playing (it is stamped seen as it starts).
+    const homeLeftOnce = useRef(!homeOnLaunch);
+    if (!homeUp) homeLeftOnce.current = true;
+    const bankingHeld = homeUp && !homeLeftOnce.current;
+    // Dictionary from home: the circle grows out of the key; its Back comes to td (the home
+    // screen is spent by then), closing the circle onto the same point (DictionaryPage → `homeBack`).
+    const openDictionaryFromHome = (at: ScreenPoint) =>
+        slideNavigate("/dictionary", { circleFrom: at, state: { circleFrom: at, homeBack: true } });
     // ── The cards page under the platform (§ "The cards page") ────────────────────
     // Its root (the header hand-off measures its top; a world swipe slides it with the
     // scene) and the page header's layer, which its title row pushes off. The platform stop
@@ -875,10 +1089,10 @@ const DeckTowerPage: React.FC = () => {
             const el = scrollerRef.current;
             climb.current = el ? heightAbovePlatform(el) : 0;
         },
-        enabled: !study.active,
+        enabled: !study.active && !homeUp,
         // The snap stays out of the way of the page's own camera moves (the same set that
         // blocks a pan — `panBlocked` below, which is declared after this hook).
-        snapEnabled: !(pan.busy || swap.busy || resize.busy || study.active),
+        snapEnabled: !(pan.busy || swap.busy || resize.busy || study.active || homeUp),
     });
     // The header layer remounts when a session's camera comes back up: re-apply the push.
     useLayoutEffect(() => {
@@ -910,6 +1124,14 @@ const DeckTowerPage: React.FC = () => {
     useLayoutEffect(() => {
         const el = scrollerRef.current;
         if (!el) return;
+        // The home move owns the scroller: through the shift it stands at the tower's top, and
+        // the descent reads the platform line live every frame (useHomeEntrance).
+        if (homePhaseRef.current === "descend") return;
+        if ((homePhaseRef.current === "enter" || homePhaseRef.current === "return") && homeAtTop.current) {
+            el.scrollTop = 0;
+            placedScrollTop.current = el.scrollTop;
+            return;
+        }
         const keepClimb = keepClimbFor.current === scene.viewBox;
         keepClimbFor.current = null;
         // A refit places the scroller itself: a glide still running would drag it off.
@@ -1004,7 +1226,9 @@ const DeckTowerPage: React.FC = () => {
         keepClimbFor.current = toScene.viewBox !== scene.viewBox ? toScene.viewBox : null;
         return toScene;
     };
-    const startResize = (fromCards: number, toCards: number) => {
+    // `camera: false` drops onto the view as it stands (the deck swap's drop: the scroller is
+    // already snapped to the platform, whose floor is the landing).
+    const startResize = (fromCards: number, toCards: number, opts: { camera?: boolean } = {}) => {
         const toScene = keepClimbThroughRefit(toCards);
         if (toCards <= fromCards) {
             resize.play(pickTowerShrink().plan({ fromCards, toCards }));
@@ -1030,11 +1254,13 @@ const DeckTowerPage: React.FC = () => {
         const landingPx = svgTop + (toScene.axisYAtZ(landingZ) - toScene.minY) * scale;
         const target = Math.min(maxScroll, Math.max(0, landingPx - viewH * LANDING_ON_SCREEN));
         const from = Math.min(maxScroll, Math.max(0, maxScroll - climb.current)); // where the kept altitude puts it
-        const travel = Math.abs(target - from);
-        cameraTarget.current = target;
+        // No camera: the view stays where it is (the camera effect re-asserts the same scrollTop).
+        const end = opts.camera === false ? Math.min(maxScroll, Math.max(0, el.scrollTop)) : target;
+        const travel = opts.camera === false ? 0 : Math.abs(target - from);
+        cameraTarget.current = end;
         // The new cards start with their underside just over the screen's top edge (at the
         // camera's end), so the whole drop falls in from out of sight.
-        const screenTopY = toScene.minY + (target - svgTop) / scale;
+        const screenTopY = toScene.minY + (end - svgTop) / scale;
         const screenTopZ = (toScene.axisYAtZ(FLOOR_Z) - screenTopY) / proj.heightUnit;
         resize.play(
             grow.plan({
@@ -1045,6 +1271,19 @@ const DeckTowerPage: React.FC = () => {
             })
         );
     };
+    // ── A deck swap's new tower (docs/DECK_TOWER_TRANSITIONS.md § "The new tower's sky drop")
+    // At the swap's `readyMs` — the trap door slams and the new pawn lands — the new deck's
+    // tower falls in from above the screen onto the bare floor: a 0 → count SKY_DROP, with
+    // no camera move (the scroller was re-snapped to the platform at `clearedMs`). A LAYOUT
+    // effect, so the frame the platform turns on stage is never painted with the tower at
+    // full height. Only the world on screen can be mid-swap (no pans mid-swap). Under
+    // reduced motion the swap is instant and never pending; an empty deck plays nothing.
+    const swapReadyKey = swap.busy && swap.towerOnStage && swapDropPending(worldId) ? `${worldId}:${swap.towerDeck}` : null;
+    useLayoutEffect(() => {
+        if (swapReadyKey === null) return;
+        startResize(0, deckCountsFor(worldId)[swap.towerDeck] ?? 0, { camera: false });
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once per swap's ready beat
+    }, [swapReadyKey]);
     // The focus lever's re-read landing (its counts' fetch `version` moving past the one its
     // hold was taken at): the held tower shrinks (focus on) or grows (focus off) to the new
     // figure. Off screen, or no longer on Learning, the hold is just let go. Through a ref,
@@ -1067,9 +1306,12 @@ const DeckTowerPage: React.FC = () => {
         }
         startResize(r.heldCards ?? 0, toCards);
     };
+    // Held while the home screen is up: the opening grow plays once the descent has landed,
+    // where it can be seen (docs/HOME_SCREEN.md § "What waits").
     useEffect(() => {
+        if (homeUp) return;
         for (const id of WORLD_ORDER) resolveRecount.current(id);
-    }, [readyCounts.core.version, readyCounts.reading.version, readyCounts.writing.version]);
+    }, [readyCounts.core.version, readyCounts.reading.version, readyCounts.writing.version, homeUp]);
     // ── Cooldown releases (docs/DECK_TOWER.md § "Cooldown releases") ────────────────
     // A card whose cooldown ends while the page is up joins the tower then, as its OWN sky
     // drop: useFlpReadyCounts holds the release schedule and reports cards that came due
@@ -1093,7 +1335,7 @@ const DeckTowerPage: React.FC = () => {
                 continue;
             }
             const fromCards = towerCounts[id];
-            if (pan.busy || fromCards === undefined) continue;
+            if (pan.busy || homeUp || fromCards === undefined) continue;
             startResize(fromCards, fromCards + 1);
             r.applyReleases(1);
         }
@@ -1105,7 +1347,7 @@ const DeckTowerPage: React.FC = () => {
         resizes.core.busy, resizes.reading.busy, resizes.writing.busy,
         swaps.core.busy, swaps.reading.busy, swaps.writing.busy,
         swaps.core.towerDeck, swaps.reading.towerDeck, swaps.writing.towerDeck,
-        pan.busy, study.active, worldId,
+        pan.busy, study.active, worldId, homeUp,
     ]);
     // Back from a hidden tab: re-read every world (timers sleep in the background, and
     // another device may have marked cards meanwhile). The tower shown is held first, so
@@ -1164,7 +1406,10 @@ const DeckTowerPage: React.FC = () => {
 
     // ── Moving between worlds ────────────────────────────────────────────────────
     // Not while this world's deck swap runs: its fall is measured for the scene on screen.
-    const panBlocked = pan.busy || swap.busy || resize.busy || study.active;
+    const panBlocked = pan.busy || swap.busy || resize.busy || study.active || homeUp;
+    // Back up to the home: a FRESH pull past the deck's top (momentum stops there — useHomePull).
+    // Not while anything else is moving the camera (`panBlocked` covers the home move itself).
+    useHomePull({ scrollerRef, enabled: !panBlocked, onPull: home.returnHome });
     const goTo = (to: TowerWorldId | undefined, carry?: PanCarry) => {
         if (to && !panBlocked) pan.go(to, carry);
     };
@@ -1329,7 +1574,8 @@ const DeckTowerPage: React.FC = () => {
     }, [userId, language, coreSettledCount]);
 
     return (
-        <DailyBankingProvider>
+        // The banking run waits for the home screen to go (it is stamped seen as it starts).
+        <DailyBankingProvider held={bankingHeld}>
             <MobileTabScreen
                 // The world's title ("Flashcards", "Reading", "Writing")
                 // is the header's title. It stays put through a pan and swaps text mid-pan,
@@ -1348,7 +1594,15 @@ const DeckTowerPage: React.FC = () => {
                         <Box
                             ref={headerLayerRef}
                             className="deck-tower-page__header-layer"
-                            sx={{ position: "relative", zIndex: 2, ...TOWER_TYPE_SX, opacity: towerUiOpacity, pointerEvents: study.active ? "none" : undefined }}
+                            sx={{
+                                position: "relative",
+                                zIndex: 2,
+                                ...TOWER_TYPE_SX,
+                                // Away while the home stage is up; fades in as the descent starts.
+                                opacity: homeStageShown ? 0 : towerUiOpacity,
+                                transition: homeUp ? "opacity 320ms ease-out" : undefined,
+                                pointerEvents: study.active || homeUp ? "none" : undefined,
+                            }}
                         >
                             {header}
                             {/* Feature-tester chips (docs/DECK_TOWER.md § "Feature-tester rows").
@@ -1364,6 +1618,7 @@ const DeckTowerPage: React.FC = () => {
                                     <WeatherToggle value={towerWeather.override} onChange={towerWeather.setOverride} />
                                     <TesterSharedRow name="actions">
                                         <LightningStrikeChips onStrike={() => forceStrike(false)} onStrikePawn={() => forceStrike(true)} />
+                                        <SnowResetChip onReset={towerSnow.reset} />
                                         <BankingAlwaysPlayToggle />
                                     </TesterSharedRow>
                                     <ForcedBreakPicker world={worldId} language={language as Language} />
@@ -1406,7 +1661,7 @@ const DeckTowerPage: React.FC = () => {
                         // To the screen's bottom edge, not the footer's top: the slab footer
                         // floats, so sky shows in the gaps beside and below it.
                         bottom={0}
-                        altitudeY={studyAltitudeY}
+                        altitudeY={studyAltitudeY ?? homeAltitudeY}
                         scrollerBottomInset={footerSpacerPx}
                     />
 
@@ -1438,9 +1693,16 @@ const DeckTowerPage: React.FC = () => {
                             right: 0,
                             bottom: 0,
                             overflowX: "hidden",
-                            overflowY: study.active ? "hidden" : "auto",
+                            // Locked through a study and the home move (the descent scrolls it itself).
+                            overflowY: study.active || homeUp ? "hidden" : "auto",
                             overscrollBehavior: "contain",
-                            touchAction: study.active ? "none" : "pan-y",
+                            touchAction: study.active || homeUp ? "none" : "pan-y",
+                            // The home stage: the tower is laid out (measurable) but unseen;
+                            // Enter raises it in from below, a return drops it off the bottom
+                            // (`towerY`, stage heights).
+                            visibility: home.phase === "home" ? "hidden" : undefined,
+                            transform: homeShifting ? `translateY(${(home.frame.towerY * 100).toFixed(2)}%)` : undefined,
+                            pointerEvents: homeUp ? "none" : undefined,
                             // No visible scrollbar (desktop draws a chunky grey one over the sky).
                             // Wheel / trackpad / touch scrolling all still work.
                             scrollbarWidth: "none",
@@ -1558,38 +1820,58 @@ const DeckTowerPage: React.FC = () => {
                                     face: faceFor(swap.titleDeck),
                                     ariaLabel: `Show ${TOWER_DECKS[otherTowerDeck(swap.titleDeck)].title}`,
                                     onTap: onPlateTap,
+                                    // Pressing it brushes the snow off it, like the sort platform's tap.
+                                    onPress: () => towerSnow.clear(worldId, "plate", { brush: true }),
                                     busy: swap.busy || pan.busy || resize.busy || study.active,
                                 }}
-                                lever={focusLevers[worldId].lever}
+                                // Pulling the lever brushes the snow off its ball (docs/TOWER_SNOW.md).
+                                lever={{
+                                    ...focusLevers[worldId].lever,
+                                    onTap: () => {
+                                        focusLevers[worldId].lever.onTap();
+                                        towerSnow.clear(worldId, "lever", { brush: true });
+                                    },
+                                }}
                                 notebook={
                                     // Only with the Learning tower drawn: swap.towerDeck is the OLD deck until
                                     // the trap door clears, so leaving Learning it falls with the tower, and
-                                    // arriving it waits off stage, then builds up with the new tower.
+                                    // arriving it waits off stage, then grows in on the slam (`fixtureProgress`).
                                     worldId === "writing" && notebookTotal !== undefined && stackDrawn && swap.towerDeck === "learn-now"
                                         ? {
                                               sheets: notebookSheets(notebookTotal),
-                                              progress: stackProgress,
+                                              progress: fixtureProgress,
                                               ariaLabel: "Open the Writing Notebook",
                                               // In and out with the circle transition, from and back onto the stack
                                               // (`circleFrom` — the notebook reads it back for its Back).
-                                              onTap: (at) =>
-                                                  slideNavigate(NOTEBOOK_PATH, { circleFrom: at, state: { exitTo: NOTEBOOK_EXIT, circleFrom: at } }),
+                                              // Its snow brushes off as the circle opens (concurrent, not before).
+                                              onTap: (at) => {
+                                                  towerSnow.clear(worldId, "notebook", { brush: true });
+                                                  slideNavigate(NOTEBOOK_PATH, { circleFrom: at, state: { exitTo: NOTEBOOK_EXIT, circleFrom: at } });
+                                              },
                                               busy: swap.busy || pan.busy || resize.busy || study.active,
                                           }
                                         : undefined
                                 }
                                 sortBin={
                                     // The notebook's rules, on main: only with the Learning tower drawn,
-                                    // falling and building up with it (docs/DECK_TOWER.md § "The sort platform").
+                                    // falling with it, growing in on the slam (docs/DECK_TOWER.md § "The sort platform").
                                     worldId === "core" && stackDrawn && swap.towerDeck === "learn-now"
                                         ? {
-                                              progress: stackProgress,
+                                              progress: fixtureProgress,
                                               hopping: learningLow,
                                               ariaLabel: "Add cards",
-                                              // In with the circle from the platform; acp's Back closes it onto
-                                              // the same point and returns here (`SORT_EXIT`).
-                                              onTap: (at) =>
-                                                  slideNavigate(sortPath, { circleFrom: at, state: { exitTo: SORT_EXIT, circleFrom: at } }),
+                                              // In with the world pan's dash (src/hooks/pageDash.ts): the camera
+                                              // travels RIGHT onto acp, in this world's washed streaks. The streak
+                                              // colour rides along in `state.dash`, so acp's Back dashes back LEFT
+                                              // and returns here (`SORT_EXIT`).
+                                              onTap: () => {
+                                                  const from = scrollerRef.current;
+                                                  if (!from) return;
+                                                  // Its snow brushes off as the dash leaves (concurrent, not before).
+                                                  towerSnow.clear(worldId, "sortBin", { brush: true });
+                                                  const dash = { lineColor: light.wash(ISO.wind) };
+                                                  slideNavigate(sortPath, { dash: { ...dash, from }, state: { exitTo: SORT_EXIT, dash } });
+                                              },
                                               busy: swap.busy || pan.busy || resize.busy || study.active,
                                           }
                                         : undefined
@@ -1609,6 +1891,9 @@ const DeckTowerPage: React.FC = () => {
                                 rain={study.active || auroraUp ? undefined : rainFall}
                                 rainCeilingY={scene.rainCeilingY}
                                 lightning={platformLightning}
+                                // Not during a study, like the rain.
+                                snowFall={study.active || auroraUp ? undefined : snowFall}
+                                snow={platformSnow}
                             />
                             {/* Over everything: the old tower hitting the floor below the screen. */}
                             {splat && (
@@ -1705,12 +1990,41 @@ const DeckTowerPage: React.FC = () => {
                             deck={TOWER_DECKS[study.world ? swaps[study.world].towerDeck : "learn-now"]}
                             // The scene's own (dive-faded) wash: unwashed while down, like the flp card under it.
                             wash={sceneWash}
+                            // A snowy top card rides off with its snow; it comes back bare (the
+                            // tower's snow is cleared once the session is up).
+                            snow={study.world && study.cover.mode === "lifting" ? towerSnow.cover(study.world, "tower") : undefined}
+                            // Its trail rides off with it (the pawn's channel through the cap).
+                            snowTrail={study.world ? towerSnow.trail(study.world, "tower") : undefined}
                         />
                     )}
 
                     {/* The dash between worlds: streaks racing past, over the (empty) sky. */}
                     {pan.busy && pan.direction !== 0 && (
                         <SpeedLines direction={pan.direction} strength={pan.speed} bottom={0} color={light.wash(ISO.wind)} />
+                    )}
+                    {/* The home shifts: the pan's streaks turned vertical — rising as Enter takes the camera
+                        down, falling as a return takes it back up. */}
+                    {homeShifting && (
+                        <SpeedLines axis="y" direction={home.phase === "return" ? 1 : -1} strength={home.frame.speed} bottom={0} color={light.wash(ISO.wind)} />
+                    )}
+
+                    {/* THE HOME STAGE (docs/HOME_SCREEN.md) — over everything td draws, on td's sky. */}
+                    {homeStageShown && (
+                        <HomeStage
+                            proj={proj}
+                            // td's frame: its width and bottom edge are the same for every tower.
+                            frame={scene}
+                            world={homeWorld}
+                            wash={light.wash}
+                            rain={auroraUp ? undefined : rainFall}
+                            snowFall={auroraUp ? undefined : snowFall}
+                            fog={fogClouds && weatherFx ? { opacity: weatherFx.fog, clouds: fogClouds } : undefined}
+                            sky={pan.palette.sky}
+                            shiftY={homeShifting ? home.frame.homeY : 0}
+                            busy={home.phase !== "home"}
+                            onDictionary={openDictionaryFromHome}
+                            onEnter={home.enter}
+                        />
                     )}
 
                 </Box>

@@ -40,6 +40,8 @@ interface PlatePressOptions {
     enabled: boolean;
     /** Fired on a release over the plate. */
     onRelease: () => void;
+    /** Fired as a press goes down (the Deck Tower brushes the snow off the plate). */
+    onPress?: () => void;
 }
 
 export interface PlatePress {
@@ -58,7 +60,7 @@ export interface PlatePress {
 
 const isActivationKey = (e: React.KeyboardEvent) => e.key === "Enter" || e.key === " ";
 
-export function usePlatePress({ enabled, onRelease }: PlatePressOptions): PlatePress {
+export function usePlatePress({ enabled, onRelease, onPress }: PlatePressOptions): PlatePress {
     const [pressed, setPressed] = useState(false);
     // 'down' = held; 'releasing' = let go over the plate, waiting for it to bottom out
     // before firing. A ref, so the pointerleave that touch fires right after pointerup
@@ -69,6 +71,8 @@ export function usePlatePress({ enabled, onRelease }: PlatePressOptions): PlateP
     // Latest callback, so the handlers never go stale between renders.
     const onReleaseRef = useRef(onRelease);
     onReleaseRef.current = onRelease;
+    const onPressRef = useRef(onPress);
+    onPressRef.current = onPress;
 
     useEffect(() => () => window.clearTimeout(releaseTimer.current), []);
 
@@ -85,6 +89,7 @@ export function usePlatePress({ enabled, onRelease }: PlatePressOptions): PlateP
         phase.current = "down";
         pressedAt.current = performance.now();
         setPressed(true);
+        onPressRef.current?.();
     }, [enabled]);
 
     const cancel = useCallback(() => {

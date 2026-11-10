@@ -1,8 +1,8 @@
 /**
  * ScrollArrow — one paging arrow beside a horizontally-overflowing strip of chips.
  *
- * LAYER: shared presentation (`src/components/`, per FRONTEND_LAYERING.md — two feature
- * importers: the beginner keyboard's candidate row and the iw composer's hint tray).
+ * LAYER: shared presentation (`src/components/`, per FRONTEND_LAYERING.md). Importer today:
+ * the beginner keyboard's candidate row (Immersive World's hint tray was the second, removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md).
  * It renders a button and nothing else; the measuring, the desktop gate and the scrolling
  * all live in `useHorizontalScrollArrows`, which is what decides whether to mount this.
  *

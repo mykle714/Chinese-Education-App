@@ -123,6 +123,6 @@ head -3 ~/vocabulary-app/machineEnvironment.md
 - [`/deploy`](./deploy.md) — the deploy procedure; run it yourself over SSH now rather than
   handing the user a copy-paste block
 - [`/gloss-groups-push`](./gloss-groups-push.md) — needs tunnel mode B (dev + PPE at once)
-- [`/data-ppe-to-dev`](./data-ppe-to-dev.md), [`/template-pull`](./template-pull.md),
+- [`/data-ppe-to-dev`](./data-ppe-to-dev.md),
   [`/diagnostics-pull`](./diagnostics-pull.md) — PPE → dev pulls, all previously
   hand-offs, all now runnable directly

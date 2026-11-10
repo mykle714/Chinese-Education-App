@@ -277,7 +277,10 @@ A **sort pack** is a small group of vocabulary cards shown together:
       becomes a spinner while that card is speaking (`tts.speakingKey === entryKey`). A tap
       **ends** any pack autoplay still in progress (`stopPackAutoplay`) so the next
       autoplay word can't cut the replay off; the eip's speaker buttons do the same
-      (`handleEipSpeak`, `handleEipSpeakSentence`). See AUDIO_PLAYBACK.md § 4.
+      (`handleEipSpeak`, `handleEipSpeakSentence`). Every queued card's audio is
+      prefetched as soon as its pack lands, and refilled packs are pre-warmed on the server,
+      so neither the autoplay nor a tap waits on the network. See AUDIO_PLAYBACK.md § 4
+      ("acp pack audio is fetched ahead, never on its turn").
     - **Info action.** An `info` glyph beside it (`.add-cards__card-info-button`, same
       size) that opens the **eip** for that card — see §4.7.
     - **Empty well.** The card sits in a fixed well the size of its face (`CardWell`,
@@ -288,14 +291,14 @@ A **sort pack** is a small group of vocabulary cards shown together:
       pack exit (§4.1) then carries the whole slot off. Undo re-showing a card in a slot
       that is still on deck pops it back into its well (`DraggableCard` → `settleIn`).
       *Code:* `AddCardsPage.tsx` → `CardWell`, `renderSlotBody`.
-- **Compact dock (4-card packs on narrow screens).** A pack is laid out on regular
-  92×132 MiniCards whenever the whole row fits across the on-deck row at that size, and on
-  the **compact 78×112 face** only when it does not — **fit-to-width**, not a rule keyed
-  on the card count (`dockCardSize`). In practice only a 4-card pack on a phone narrower
-  than ~456px (4 × 92 + 3 × 24 + 16 padding) goes compact; a 1–3-card pack always fits and never shrinks. The decision
-  is made **per pack** from the row's measured width (`onDeckSectionRef`, a
-  ResizeObserver), so a leaving 4-card pack keeps its compact face through its exit while
-  a 3-card replacement rises in at regular size.
+- **Compact dock (narrow screens).** Every pack is laid out at the size a **full 4-card
+  pack** needs (`dockCardSize`, `MAX_PACK_CARDS`): regular 92×132 MiniCards when four fit
+  across the on-deck row at that size, else the **compact 78×112 face** — for **every**
+  pack, 1–3-card packs included. In practice a phone narrower than ~456px (4 × 92 + 3 × 24
+  + 16 padding) is always compact, a wider screen always regular. The size depends on the
+  row's measured width only (`onDeckSectionRef`, a ResizeObserver), never on the pack's
+  count: until 2026-11-09 it was decided per pack, so a 4-card pack's shorter dock let the
+  bins above re-centre between packs (user request: "make all packs the 4-pack size").
     - The compact face is a **real second geometry** of `MiniCard` (`size="compact"`),
       not a CSS scale of the regular one: the icon slot, word and definition re-lay for
       the smaller box and the type steps down one notch on the existing scales (cpcd
@@ -356,7 +359,7 @@ sheet the flp uses** — not a reduced copy of it.
 *Code: `src/features/discover/AddCardsPage.tsx` (`handleOpenCardInfo`, `handleCloseEip`,
 the `<EipSheet>` mount); `src/api/dictionary.ts` (`lookupVocabEntry`);
 `src/features/flashcards/FlashcardsLearnPage/{EipSheet,InfoCardSection,EipTabStrip,useEipTabs}`
-— `EipSheet` is the shared host block acp, iw and the dictionary page all mount.
+— `EipSheet` is the shared host block acp and the dictionary page both mount.
 Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md).*
 
 - **Same components, no fork.** acp mounts `InfoCardSection` + `EipTabStrip` and drives
@@ -468,8 +471,8 @@ only way in.
   edge and opens to the top of the frame, its 20px top corners squaring off and its fill
   shifting from the platform's white to the page ground (`slabFrame` → `PAGE_FRAME`).
   Each pinned card flies from its slot (`CardWell[data-sort-card-id]`) into its cell on
-  a `MorphGhost` (a compact face grows into the regular one), the 4th card of a 4-card
-  pack straight into its row-2 cell (`startExpandFlights`). The rest of the panel's
+  a `MorphGhost` (on a compact dock, the compact face grows into the regular one), the
+  4th card of a 4-card pack straight into its row-2 cell (`startExpandFlights`). The rest of the panel's
   cards **pop in** with the grid's stagger as it grows: the preloaded supply (next
   bullet) — the cards in the grid at mount (`mountCardIdsRef`) — starts with the content
   fade (`SUPPLY_POP_START_MS`) and steps `SUPPLY_POP_STAGGER_MS` per card. Without a
@@ -536,8 +539,9 @@ project "Tower Tier 2 - Time of Day", the three "Sort ·" artboards, built on th
 | Zone | What | Code |
 |---|---|---|
 | Header | NodePage header: back + "Add Cards" in the look's `ink` (white by day, like the tower's sky ink) and the tower's header type (`TOWER_TYPE_SX`, `src/features/deckTower/towerType.ts`, via `wrapHeader`); `AudioModeChip` (the app-wide outlined skin: pill outline + label) in the same ink, the flame | `AddCardsPage` → `groundChrome` (incl. `wrapHeader`), `headerExtraActions` |
-| Bins | The two drop targets as iso decks on floating platforms (§5.3), in the spare height and **pinned to its bottom** (`preserveAspectRatio="xMidYMax meet"`), then lowered a further `BINS_LOWER_PX` (9 viewBox px ≈ screen px) past that bottom edge (the scene is `overflow: visible`), so the platforms sit close above the cards and any extra height opens up under the toolbar | `BinsArea`, `SortBins.tsx` |
-| Toolbar | Level pill · undo · skip, keycaps in a row at the top-right over the bins (Undo moved here from the header) | `SortToolbar`, `keycapSx` |
+| Rating prompt | "Rate each card 1–4 on how well you know it", painted straight on the sky in the look's `ink` (white by day) and the tower's header type at `SIZE.subtitle`, centred horizontally and vertically in the gap between the toolbar's bottom and the bins' scene box. The numbers it names are printed on the platforms (§5.3). Not interactive | `SortPrompt`, `TOOLBAR_TOP_PX` |
+| Bins | The four utcm drop targets as iso decks on floating platforms in a tetromino on the iso grid (§5.3), at the **bottom** of the spare height in a box sized to the scene's aspect (`BinsScene`, `SORT_BINS_ASPECT_RATIO`), so the box's top is the scene's top and the prompt takes the height left above it; on a short screen the box shrinks and the SVG scales down inside it, pinned to its bottom (`preserveAspectRatio="xMidYMax meet"`). The box's bottom edge sits 16 viewBox px below the nearest bin's front corner, so the shadows hang past it (the scene is `overflow: visible`) and the platforms sit close above the cards. The scene's top includes the headroom for a full deck on the farthest bin, so the prompt's gap ends ~40 viewBox px above the empty platforms | `BinsArea`, `BinsScene`, `SortBins.tsx` → `LAYOUT`, `SORT_BINS_ASPECT_RATIO` |
+| Toolbar | Level pill · undo · skip, keycaps in a row at the top-right, above the Mastered bin (Undo moved here from the header). Lettered in 975 Maru SC (`FONTS.cjk`), like the platforms' numbers | `SortToolbar`, `keycapSx` |
 | On deck | The pack's levitating cards (§4.5), their action glyphs sitting right on the slab footer (`ON_DECK_FOOTER_GAP_PX` 0 — the glyphs are inset 4px in their 36px targets; the section's negative margin hands back the ScrollArea's **slab** reservation, `SLAB_FOOTER_TOTAL_CLEARANCE`), `SLOT_ACTIONS_GAP_PX` (12px) below the card | `OnDeckSection` |
 | Footer | The floating **slab** footer (`footerStyle: "slab"` on the route), casting its shadow on the ground | `src/routes/routeMeta.ts`, `setFooterCastShadow` |
 
@@ -559,7 +563,8 @@ project "Tower Tier 2 - Time of Day", the three "Sort ·" artboards, built on th
   `SortLook` (`src/features/discover/sortTimeOfDay.ts` → `sortLookAt`), blending the two
   bracketing phases (day and night) like the tower's sky. Only the **ground**, the
   **shadows cast on it** and the **ink drawn on it** change between them; night also turns
-  the platforms grey and the keycaps slate. The **cards never change** — cream stock in
+  the keycaps slate and lights the band-coloured platforms with the tower's night wash
+  (`SortLook.wash`, §5.3 — the same light as the Deck Tower's Add Cards button). The **cards never change** — cream stock in
   every phase.
 - **Weather: hue, no effects.** acp reads the same observation and tester pin as the tower
   (`useTowerWeather`) and passes main's weather day sky (`weatherDaySky`,
@@ -579,14 +584,13 @@ project "Tower Tier 2 - Time of Day", the three "Sort ·" artboards, built on th
 
   | Phase | Ground | Platforms | Ink on ground | Keycaps |
   |---|---|---|---|---|
-  | Day | main world's weather day sky (`bluMk` `#59BFFF` when clear) | white | white / white (`SKY_INK`; the empty-bin `0` stays dark on its white platform) | cream (`cardFace` / `cardWall`) |
-  | Night | main world's night sky under the weather | `#E4E5E9` | `#EEF0F6` / `#C3C8D6` | `#2A3446` on `#121822` |
+  | Day | main world's weather day sky (`bluMk` `#59BFFF` when clear) | band colours, unwashed | white / white (`SKY_INK`) | cream (`cardFace` / `cardWall`) |
+  | Night | main world's night sky under the weather | band colours through `phaseWash` (7% toward `bluMk`, dimmed 4%) | `#EEF0F6` / `#C3C8D6` | `#2A3446` on `#121822` |
 
   `groundShadow` is the iso shadow rule on the ground (`shadowTone`, one `shadeHex` step).
   The ground also becomes the status-bar `theme-color` (`useThemeColor`), and every branch
   (spinner, set-mode done, no cards) paints it, so the page never flashes paper.
-  ⚠️ **Outside the colour framework:** night's platform and night's slate
-  keycap/ink tones are design-picked hexes that live only in `sortTimeOfDay.ts`.
+  ⚠️ **Outside the colour framework:** night's slate keycap/ink tones are design-picked hexes that live only in `sortTimeOfDay.ts`.
 - **Footer at night.** The slab footer stays **cream** at night, as on the Deck Tower; the
   artboard's night CSS paints it slate, but its own note says the footer keeps its day
   colours, and the slab is shared with the tower.
@@ -598,24 +602,36 @@ project "Tower Tier 2 - Time of Day", the three "Sort ·" artboards, built on th
 
 ## 5. Sort destinations and Skip
 
-Each card is dragged into one of **two** destinations:
+Each card is dragged into one of **four** destinations — one per utcm band, the learner's
+own verdict on how well they know the word (four bins since 2026-11-09; there used to be
+two, To Learn and Already Learned):
 
-| Destination | Meaning | Effect |
-| --- | --- | --- |
-| **Add to Learning** | "I want to learn this" — the user **does not yet know** this card. | Card enters the user's library, and counts as evidence about the user's level (they did not know this card). |
-| **Already Learned** | "I already know this." | Card is **stamped as mastered immediately**, and counts as evidence the user's level is at or above this card. |
+| Destination (bucket) | Bin sentence | Seeded core history | Lands in | Level signal (§6.2) |
+| --- | --- | --- | --- | --- |
+| `library` | "I’ve never seen this word in my life" | none | **Unfamiliar** | −1 |
+| `target` | "This word feels familiar" | 3/3 (pbh 4.0) | **Target** | 0 |
+| `comfortable` | "Pretty sure I could pick this word out in a sentence" | 5/5 (pbh 6.67) | **Comfortable** | +1 |
+| `already-learned` | "Oh yeah I got this" | 8/8 (pbh 8) | **Mastered** | +1 |
+
+Each seed puts the same number of correct marks on **both** core tracks (recognition and
+production), so the card sits mid-band rather than on a cut line and has no lopsided
+"weak track" on day one. *Code:* `server/contracts/mastery.ts` →
+`SORT_BUCKET_CORE_POSITIVES`, `coreSeededTypedMarkHistory`; `server/contracts/wire.ts` →
+`DiscoverSortBucket`, `DISCOVER_SORT_BUCKETS`.
 
 **Skip is no longer a destination** — it is a de-emphasized action (§5.1), deliberately
 removed from the drag targets so the user reaches for a real destination first.
 
-Note that **both** destinations persist identically as `starterPackBucket = 'library'`
+Note that **all four** destinations persist identically as `starterPackBucket = 'library'`
 (`StarterPacksService.sortCard`, `server/services/StarterPacksService.ts`).
-What separates them is that Already Learned *additionally* seeds a typed mark history
-(`coreMasteredTypedMarkHistory`) that resolves the row to **Mastered**. There is no
-`'already-learned'` value stored anywhere — the two destinations are distinguishable
-only by the resulting utcm category.
+What separates them is the typed mark history the three above Unfamiliar *additionally*
+seed (`coreSeededTypedMarkHistory`). No bucket name is stored anywhere — the
+destinations are distinguishable only by the resulting utcm category. The seed
+**replaces** the row's history, so a promoted provisional card (below) sorted into
+Target/Comfortable/Mastered loses the marks it earned while lent (only `library` keeps
+them).
 
-**It masters the CORE bar only** — recognition and production at 8/8, reading and
+**It seeds the CORE bar only** — recognition and production, reading and
 writing left at **0**. Sorting a card as known is a claim about knowing the word, not
 about reading or writing it, and those are separate bars since migration 143. So a
 learner with the writing goal sees such a card in *Mastered* with an empty Write
@@ -640,76 +656,171 @@ replenished** and the page **closes itself** as soon as the queue empties — by
 from the sort handler. See [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) § Set mode.
 
 ### 5.3 Bins and session counts
-The two destinations are **bins**: iso decks of cards standing on floating platforms in
+The four destinations are **bins**: iso decks of cards standing on floating platforms in
 the upper part of the page (`src/features/discover/SortBins.tsx` → `SortBins`, drawn with
-the Deck Tower's iso kit, docs/ISO_ART_FRAMEWORK.md). Learning is on the left, Already
-Learned on the right.
+the Deck Tower's iso kit, docs/ISO_ART_FRAMEWORK.md), laid out as an S tetromino on the **iso grid** (user layout 2026-11-09, given in iso
+coordinates — the project's iso convention (inherited from the archived Night Market):
++isoX is "right", up-right on screen; +isoY is "top", up-left on screen, so −isoY is
+down-right): Target down-right of Unfamiliar, Comfortable up-right of Target, Mastered
+down-right of Comfortable. On screen the bins zigzag left to right high, low, high, low.
 
-| Bin | Deck colour | Counts |
+```
+isoY  0   [ U ]
+isoY −1   [ T ][ C ]
+isoY −2        [ M ]
+     isoX  0    1
+```
+
+In the iso kit's world (+x down-right, +y down-left) a +isoX cell is a step of world −y
+and a +isoY cell a step of world −x, each one platform plus `GRID_GAP` (1.9 units) of
+floor. The group is centred horizontally in the 390 box and the viewBox is derived from
+the cells (`LAYOUT`): from a full deck on the farthest bin down to 16px past the nearest
+bin's front corner. The bins are `BIN_SCALE` (0.7) the size of the artboard's two —
+applied to the projector's `UNIT`, so slab, deck and type all shrink together. At 0.7 /
+1.9 the group spans ~372 of the 390 box (~9px each side), about as large as it can go. Bins are
+painted farthest first (`DRAW_ORDER`, by world x + y) so a nearer bin paints over the
+shadow of the one behind it. The toolbar stays top-right, above the Mastered bin.
+*Code:* `SortBins.tsx` → `BIN_CELLS`, `CELL_WORLD`, `GRID_GAP`, `DRAW_ORDER`, `LAYOUT`,
+`BIN_SCALE`.
+
+| Bin | Platform colour | Deck |
 | --- | --- | --- |
-| **To Learn** (`library`, the Learning collection) | `LEARNING_COLORS.main` (`RAMP[LEARNING_HUE].surface`, yellow) | cards sorted into it **this visit** |
-| **Already Learned** (`already-learned`) | `MASTERY_BAR_COLORS.core.main` (blue) | cards sorted into it **this visit** |
+| Unfamiliar (`library`) | `CATEGORY_COLORS.Unfamiliar` (red surface) | cards sorted into it **this visit** |
+| Target (`target`) | `CATEGORY_COLORS.Target` (yellow surface) | 〃 |
+| Comfortable (`comfortable`) | `CATEGORY_COLORS.Comfortable` (green surface) | 〃 |
+| Mastered (`already-learned`) | `CATEGORY_COLORS.Mastered` (blue surface) | 〃 |
 
-- **One hue per collection.** The deck colours are the Learning and core-Mastered
-  collection colours (`src/utils/categoryColors.ts` → `LEARNING_COLORS`,
-  `MASTERY_BAR_COLORS`), not utcm band colours.
-- **Name under the count.** The bin's name is printed flat on the same face as the count,
-  directly under it, the pair centred on the deck's top (= the platform's centre). The
-  names are **"To Learn"** and **"Already Learned"**. "To Learn" is the learner's verdict
-  on the card, deliberately not the "Learning" collection name (user choice 2026-10-29);
-  the mastered bin was "Already Know" until 2026-11-04 and now uses the bucket's own name. Both names
-  break one word per line ("To / Learn", "Already / Learned") so the pair matches (user
-  request 2026-11-04; "To Learn" used to stay on one line). The name is ≈ 12px (`NAME_SIZE` 0.8 world units, line pitch `NAME_LINE` 0.93; 13px until 2026-11-04). A divergence from the artboard, which draws no label. The group's
-  `aria-label` reads "To Learn: 3". *Code:* `SortBins.tsx` → `COUNT_AT`,
-  `COUNT_NAME_GAP`, `BinPrint`; `AddCardsPage.tsx` → `bins`.
-- **The deck is the count.** Each bin starts as an empty **dashed footprint** on its
-  platform (the bin colour darkened by the look's `footprintShade`: 0.18 by day, 0.45 at
-  night, where the grey night platform washes out the pale yellow) and gains one card layer per card sorted into it this visit (alternating
-  shaded layers under a top card in the bin's colour). The count is printed flat on the
-  top card (or on the platform, greyed, at 0). The deck stops growing at `MAX_LAYERS`
-  (20) so it never reaches the toolbar; the printed count stays exact. Undo takes a
-  layer back off. A skip touches neither bin. *Code:* `AddCardsPage.tsx` →
-  `sessionCounts`, `adjustTally`; `SortBins.tsx` → `SortBin`.
+- **One hue per band.** Each bin is its utcm band's SURFACE tier
+  (`src/utils/categoryColors.ts` → `CATEGORY_COLORS`), on the **platform** — the
+  platforms are no longer white, and the decks on them are cream card stock (below). The
+  platforms — and the number and outline printed on them — go through the **tower's own
+  ambient wash** (`SortLook.wash` = `towerLight(time).wash` = `phaseWash`): the identity by
+  day, night's cool dim light after dark. That is exactly how the Deck Tower's Add Cards
+  button colours its four quadrants (IsoSortPlatform `quadrantColors` =
+  `wash(CATEGORY_COLORS.…)` → `platformTone`), so each band reads the same on the button
+  and on the page, by day and by night (user request 2026-11-09; until then the page
+  darkened its platforms 10% at night with `platformShade`, a step the button did not
+  share). The deck cards are not washed — they stay the dock's cream stock.
+  *Code:* `AddCardsPage.tsx` → `SORT_BINS`; `SortBins.tsx` → `SortBin` (`tone`,
+  `printInk`); `sortTimeOfDay.ts` → `SortLook.wash`.
+- **The sentence is a speech bubble on hover.** A bin's sentence (§5) is **not printed on
+  the platform** (it was until 2026-11-09). While a held card is over a bin (the same
+  highlight that grows it), the bin says its sentence in a **speech bubble** whose
+  tail points down at the bin's top — the back corner of the bare platform, or of the
+  deck's top card once it has one (`bubbleTipFor`), so it climbs with the deck. The tail
+  is `BUBBLE_TAIL_H` (28px, 16px base) and its tip stops `BUBBLE_TIP_GAP` (16px) short
+  of the bin, so the bubble sits ~44px above the bin, mostly clear of the held card
+  (132px tall, held near its middle) and readable mid-drag (user request 2026-11-09). On
+  the farther bins it reaches up into the rating prompt's space, which it covers. It is
+  drawn in its own page-covering SVG **portalled into the page's stacking root**
+  (`stackingRootOf` — the NodePage slide wrapper, transformed by usePageSlide), at
+  `BUBBLE_LAYER_Z` (999), mapped onto the scene by composing the scene's and the layer's
+  screen CTMs (read in a layout effect as it appears; the host is looked up then too, not
+  on mount, because the bins area is itself transformed during its entrance). So it
+  paints over the page header and the toolbar keycaps but **under the held card**
+  (DraggableCard's 1000, same stacking context — user request 2026-11-09). Portalled to
+  `<body>` it covered the card: the page's transform keeps the card's 1000 local to it. Flat white
+  (`COLORS.white`) body and tail, no outline, the sentence in lowercase grey
+  (`PRINT_INK`) at 14px, centred, wrapped at 170px. The bubble is centred over the tip but
+  slid inward to stay 8px inside the scene's width (the edge bins), its tail base sliding
+  with it to keep pointing at the tip (`layoutBubble`). It pops out of the tail's tip
+  (160 ms overshoot, none under reduced motion), is re-keyed per bin so moving to another
+  bin pops a fresh one, ignores the pointer, and goes the moment
+  the card is let go or leaves the bins. Measured on a canvas in the page font, re-laid
+  once web fonts load. Touch has no hover, so the bubble only shows **during a drag**.
+  There is **no "0"** on an empty bin (user request 2026-11-09); its footprint is drawn
+  **dotted** round the number (below). *Code:* `SortBins.tsx` → `SpeechBubble`, `layoutBubble`, `bubbleTipFor`,
+  `BUBBLE_*`, `useFontsLoadedEpoch`.
+- **The deck is the cards themselves; no count (2026-11-09).** Each bin gains one card
+  layer per card sorted into it this visit, in **cream card stock** (`ISO.card`; the
+  layers under the top take `ISO.cardSeam` on their tops so the seams read as lines).
+  The deck's footprint is the mini card's own 92 × 132 proportion and 8px corner
+  (`DECK`), and each card is thick — `LAYER_PITCH` 0.42 / `LAYER_SOLID` 0.34 (was 0.2 /
+  0.15, user request "increase the thickness"). The **top card's face is the real mini
+  preview card** of the last word sorted there — `MiniCard`, the dock's own card, in a
+  `<foreignObject>` mapped flat onto the top layer (`DeckFace`: `faceTransform` composed
+  with the px → world scale `FACE_UNITS_PER_PX`), its tile shadow and pop-in dropped,
+  its hairline ring kept. ⚠️ WebKit has known bugs painting positioned HTML inside a
+  transformed `foreignObject`; verify on iOS. **No count is printed** (user request
+  2026-11-09; it used to sit on a band-coloured top card). The deck stops growing at
+  `MAX_LAYERS` (10, halved with the thicker cards, so a full deck is about as tall as
+  before) — on the iso grid a full deck stays clear of the platform behind it, and the
+  viewBox (`LAYOUT`) makes room for it. The page keeps each bin's **cards** (not a
+  number), oldest first, so Undo can show the face of the card underneath; at zero the
+  number shows again. A skip touches neither bin. *Code:* `AddCardsPage.tsx` →
+  `sessionDecks`, `adjustTally`; `SortBins.tsx` → `SortBin`, `TopCard`, `DeckFace`,
+  `DECK`, `LAYER_PITCH`, `MAX_LAYERS`.
+- **Each platform carries its rating number.** 1 Unfamiliar, 2 Target, 3 Comfortable,
+  4 Mastered (`bins` order + 1) — the numbers the page's rating prompt names (§4.9). The
+  digit is printed **big** (`BIN_NUMBER_SIZE`, 4 units) in **975 Maru SC** (`FONTS.cjk`, the
+  app's rounded face), made heavier than its one weight allows: synthesised bold plus a
+  same-ink stroke round each glyph (`NUMBER_EMBOLDEN`, 0.18 units) in the **middle of the empty
+  platform's top**, inside a **dotted outline of the deck's footprint** in the same grey
+  (`NUMBER_BOX` = `insetRect(DECK, NUMBER_BOX_STROKE / 2 + NUMBER_BOX_CLEARANCE)`: the mini
+  card's own shape and corner, inset by half the 0.12 stroke plus 0.15 so the line lies
+  wholly under the first card (flush, its edge peeked out), its corners rounder than the
+  card's (`NUMBER_BOX_RADIUS` 0.7, which only pulls the line further in); short
+  round-capped dashes, `NUMBER_BOX_DASH` 0.28 + caps on a `NUMBER_BOX_DASH_GAP` 0.42 gap (~0.4 inked, ~0.3 clear), fitted so a whole number of periods runs round the loop
+  (`NUMBER_BOX_DASHES` — otherwise the last dash ran into the first at the top-left, where
+  the rect's stroke starts) (were
+  round dots; "longer dots") — user request 2026-11-09). The first sort covers
+  both completely. The group's `aria-label` reads "1. <sentence>: 3".
+  *Code:* `SortBins.tsx` → `NumberPrint`, `BIN_NUMBER_SIZE`, `NUMBER_BOX`, `NUMBER_BOX_DASH`, `NUMBER_BOX_DASHES`, `NUMBER_BOX_RADIUS`.
+- **All bin text is grey.** The number and the bubble's sentence share
+  one ink, the framework's secondary-text grey `COLORS.textSecondary` (--muted) — user
+  request 2026-11-09; they were `onSurface`. (`greyA` is too light on the pastels.)
+  *Code:* `SortBins.tsx` → `PRINT_INK`.
 - **Session counts, not library totals (changed 2026-10-29).** The bins used to sit under
   a level-bar tally of the account's whole library (Learning = U+T+C, Mastered), fetched
   from `GET /api/onDeck/categoryCounts`. That tally, its "gulp" animation and its
   `useCategoryCounts` fetch were removed with the redesign; the page no longer shows the
   library totals anywhere.
-- **Floating.** Both platforms bob (IsoPlatform `floating`) **in sync**, their
+- **Floating.** All four platforms bob (IsoPlatform `floating`) **in sync**, their
   shadows on the page ground.
 - **Drop-target cue.** While a card is held over a bin that bin **grows** to
   `ACTIVE_SCALE` (1.1, about its own box centre, on the tower plate's overshoot —
   `KEYCAP_POP_TRANSITION`), and settles back the moment the card is let go. The growth never moves the hit test (the rects are snapshotted at drag
-  start, below). **Nothing changes colour** (user request 2026-10-29): the other bin no
-  longer desaturates, and the held card no longer takes a `COLORS.scrim` wash.
+  start, below). **Nothing changes colour** (user request 2026-10-29): the other bins no
+  longer desaturate, and the held card no longer takes a `COLORS.scrim` wash.
   On the held card itself: it lifts once to `HELD_CARD_SCALE` (1.12, Bubble Match's
   `SCALE_HELD`) — **no tilt** (the artboard's −5° `.held` rotate was dropped, user
   request 2026-10-29) — and its **cast shadow grows** as it rises off the ground (`lift`
   0 → 1 eases its offset out to `HELD_SHADOW_GROWTH` × the resting one, ≈ 4.7 → 11.7px;
   back to 0 on a miss). The lift and shadow are
   driven by the card's spring, never React state, because the card must not re-render
-  mid-drag.
-  *Code:* `AddCardsPage.tsx` → `DraggableCard`, `activeBinId`; `SortBins.tsx` →
-  `ACTIVE_SCALE`, `.sort-bins__bin--active`.
-- **Hit test.** Each bin's whole SVG group (platform and deck, including its shadow) is
-  the drop target, registered by `SortBins` (`registerBin`) and snapshotted at drag start
-  (`bucketRectsRef`), so the highlight and the drop share one threshold.
+  mid-drag. **The active bin is SortBins' own state**, not the page's: the drag handler
+  calls `onHighlight` → the page's `highlightBucket` → `SortBinsHitTester.highlight`, so
+  crossing platforms re-renders only the scene, and only the two memoized `SortBin`s
+  whose `active` flipped. (As page state it re-rendered all of AddCardsPage on every
+  crossing, and a quick sweep over several platforms lagged.)
+  *Code:* `AddCardsPage.tsx` → `DraggableCard`, `highlightBucket`; `SortBins.tsx` →
+  `SortBinsHitTester.highlight`, `SortBin` (memo), `ACTIVE_SCALE`, `.sort-bins__bin--active`.
+- **Hit test.** On the diagonal the bins' screen boxes overlap heavily, so the drop test
+  is done on the **iso floor**: SortBins hands the page a `SortBinsHitTester` through
+  `hitTesterRef`; at drag start it snapshots the scene's screen transform (`snapshot`),
+  and each move maps the pointer back onto the world floor (z 0) and picks the platform
+  nearest to it, within `HIT_MARGIN` (2 world units — about the gap, so a drop in a gap
+  lands on the nearer neighbour). A pointer over a tall deck still maps inside that
+  bin's own platform. The highlight and the drop share the one snapshot.
+  *Code:* `SortBins.tsx` → `SortBinsHitTester`, `HIT_MARGIN`, `distanceToRect`;
+  `AddCardsPage.tsx` → `binHitTesterRef`, `snapshotBucketRects`, `checkBucketCollision`.
 - **A drop despawns the card; the deck plays the place animation.** On release over a
   bin the card is sorted **at once** (`DraggableCard` `onDrop` → `handleSortCard`): it is
   resolved and unmounts where it was let go, leaving its well empty, and a
   pack-completing drop starts the pack exit (§4.1) in the same frame. Nothing travels to
   the bin — the dropped card simply vanishes (user request 2026-10-29; a portalled
-  "falling ghost" used to glide it onto the deck). The bin's count rises in the same
-  render, and its new top card (with the count) is **set down onto the deck** from
+  "falling ghost" used to glide it onto the deck). The bin's deck grows in the same
+  render, and its new top card (the dropped word's mini card) is **set down onto the deck** from
   `PLACE_DROP_PX` (28px) above (`sort-bins__placed`, 320 ms after a 120 ms beat (`PLACE_DELAY_MS`), fading in, with a small
   settle bounce; none under reduced motion). Until it lands, the deck under it keeps
-  its OLD top card and number (or the empty footprint and "0"), which the new card then
+  its OLD top card and face (or the bare platform and its number), which the new card then
   covers (`placingFrom`, cleared on the animation's end). **Undo** taking a card back off
-  plays it **backwards**: the old top card, still carrying the old number, lifts off and fades
-  out over the deck as it now stands (`.sort-bins__lifted`, `liftingFrom`). Any other
-  fall in the count (more than one at once) just redraws.
+  plays it **backwards**: the old top card, still showing its word, lifts off and fades
+  out over the deck as it now stands — whose new top card, the one underneath, shows its
+  own face (`.sort-bins__lifted`, `lifted`, which keeps the removed card since `cards` no
+  longer holds it). Any other fall (more than one card at once) just redraws.
   *Code:* `AddCardsPage.tsx` → `DraggableCard`, `handleSortCard`, `adjustTally`;
-  `SortBins.tsx` → `PLACE_DROP_PX`, `PLACE_MS`, `PLACE_DELAY_MS`, `.sort-bins__placed`, `SortBin` (`placingFrom`), `BinPrint`.
+  `SortBins.tsx` → `PLACE_DROP_PX`, `PLACE_MS`, `PLACE_DELAY_MS`, `.sort-bins__placed`, `SortBin` (`placingFrom`, `lifted`).
 
 ### 5.3a Learning supply glow — REMOVED 2026-10-29
 
@@ -814,17 +925,19 @@ the user **chooses** to bring it back, in one of three ways:
 ### 6.2 A SortPack is one signal
 - A **SortPack counts as exactly one signal**, however many of its (up to 4) cards
   get sorted — never one signal per card.
-- The rule is deliberately **naive — no streaks, no thresholds, no counters**:
-  - **Any "Add to Learning" card in the pack** makes the whole pack's signal negative,
-    even if other cards in the same pack were "Already Learned". The target drops to
-    **(that pack's level) − 1**. One unknown word at the level is enough.
-  - A pack where **every** sorted card is "Already Learned" (no "Add to Learning" at
-    all) is positive and raises the target to **(that level) + 1** immediately.
-- There is **no neutral pack**: any pack with at least one sorted card moves the target
-  one way or the other. Only fully-skipped packs carry no signal.
+- The rule is a deliberately **naive ladder — no streaks, no thresholds, no counters** —
+  read from the hardest verdict in the pack down (per-bin scores user-chosen 2026-11-09:
+  Unfamiliar −1, Target 0, Comfortable +1, Mastered +1):
+  - **Any Unfamiliar card in the pack** makes the whole pack's signal negative, whatever
+    else is in it. The target drops to **(that pack's level) − 1**. One unknown word at
+    the level is enough.
+  - Otherwise, **any Target card** makes the pack **neutral**: the level was pitched
+    right, and the target stays where it is.
+  - Otherwise (every sorted card Comfortable or Mastered) the pack is positive and raises
+    the target to **(that level) + 1** immediately.
 - **Skips carry no signal** (§5.1) — a pack that is skipped, or partially skipped
-  with no library/already-learned cards in it, moves the target in neither
-  direction.
+  with no sorted cards in it, moves the target in neither direction.
+- *Code:* `AddCardsPage.tsx` → `applyPackSignal`.
 - The new target is always computed as **(the completing pack's own level) ± 1**,
   never as an increment of whatever the client's current running target happens to
   be — the two can differ because a replacement pack may already be in flight (see
@@ -849,7 +962,7 @@ the user **chooses** to bring it back, in one of three ways:
   - **Fallback singles: colloquial register — highest `frequencyScore` first**
     (natural/colloquial words before literary ones), cards with no score last, ties
     by card id. These are machine-selected words with no curation order to respect,
-    so a derived ordering is the best available. Applied in `_fetchSupplyRows`'s
+    so a derived ordering is the best available. Applied in `StarterPacksDAL.findSupplyRows`'s
     `ORDER BY`.
 
   > Authored packs were briefly re-sorted by mean `frequencyScore` inside
@@ -888,10 +1001,13 @@ the user **chooses** to bring it back, in one of three ways:
   (`COLORS.onSurface`, aria-label from `difficultyAriaLabel`), never as text. The
   "HSK 3" / "Level 3" label was removed 2026-11-07 because `difficulty` is an AI
   estimate, not an HSK-list lookup.
-- A **"DIFFICULTY"** caption under the pill (`add-cards__level-caption`,
-  `LevelCaption`) is a **soft introduction** (si `sortDifficultyCaption`,
+- A **"DIFFICULTY →"** caption to the **left** of the pill, vertically centred on it and
+  pointing at it (`add-cards__level-caption`, `LevelCaption`), is a **soft introduction** (si `sortDifficultyCaption`,
   docs/SOFT_INTRODUCTION.md): shown for a learner's first visits, gone once they have
-  made **7 visits over at least 7 days** — the artboard draws the pill alone.
+  made **7 visits over at least 7 days** — the artboard draws the pill alone. It is drawn
+  like the Deck Tower sort platform's si print ("ADD MORE / CARDS →"): bold caps in
+  `FONTS.cjk`, the look's full `ink`, 9px. Absolutely placed, so it never widens the
+  toolbar or pushes the rating prompt down (it sat under the pill until 2026-11-09).
 - The **Auto** entry always just reads "Auto" — it never shows the live target level
   number, since the target can change every pack and a fluctuating number in the
   dropdown would be noisy rather than informative.
@@ -971,8 +1087,8 @@ API paths are camelCase; they must stay in step with `server/routes/starterPacks
    advances only when all its cards are sorted or it is skipped.
 4. **No wait:** after a pack is finished, the next pack is on screen with no perceptible
    network delay; the client always has ≥1 pack ready behind the on-deck pack.
-5. **Already Learned:** sorting a card as already learned stamps it mastered
-   immediately.
+5. **Band bins:** sorting a card into a bin lands it in that bin's utcm band immediately
+   (Unfamiliar, Target, Comfortable or Mastered on the core bar; reading/writing stay at 0).
 6. **Skip is de-emphasized and signal-free:** Skip is a small keycap in the toolbar
    (not a drag target); pressing it defers all remaining unsorted cards in the pack and never
    changes the user's level estimate, in any quantity.
@@ -981,10 +1097,10 @@ API paths are camelCase; they must stay in step with `server/routes/starterPacks
    sorted is never served.
 8. **Authored-first supply:** at a level, authored packs are served before system
    fallback single-card packs.
-9. **Level adaptation:** a finished pack contributes exactly one signal — any "Add to
-   Learning" card in it drops the target to that pack's level minus 1; an all-"Already
-   Learned" pack raises the target to that level plus 1. There is no streak or threshold
-   to accumulate: one pack, one ±1 move. A skipped (or partially skipped, signal-less)
+9. **Level adaptation:** a finished pack contributes exactly one signal — any Unfamiliar
+   card in it drops the target to that pack's level minus 1; otherwise any Target card
+   holds the target; otherwise (all Comfortable/Mastered) it rises to that level plus 1.
+   There is no streak or threshold to accumulate: one pack, at most one ±1 move. A skipped (or partially skipped, signal-less)
    pack changes
    nothing. The new target is always anchored on the completing pack's own level, not
    an increment of a possibly-stale running target.
@@ -1005,7 +1121,7 @@ API paths are camelCase; they must stay in step with `server/routes/starterPacks
     that level (no drift to adjacent levels, and pack outcomes seen while pinned don't
     feed the auto target) until switched back to Auto; the Auto entry always just reads
     "Auto" — it never displays the target level number.
-17. **Session decks:** both bins start empty (a dashed footprint, "0") on every visit; a
+17. **Session decks:** all four bins start empty (the bare platform with its number) on every visit; a
     drop onto a bin adds one layer to its deck and one to its printed count as the card
     lands, Undo takes one back off, and a skip changes neither.
 18. **Undo/level interaction (known simplification):** undoing a card action does not

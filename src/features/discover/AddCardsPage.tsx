@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback, memo, type ReactNode } from "react";
 import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { readExit } from "../../games/runtime/gameExit";
-import { readCirclePoint } from "../../utils/pageTransition";
+import { readDashLaunch } from "../../utils/pageTransition";
 import { Box, Typography, ButtonBase, CircularProgress, Menu, MenuItem } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { styled, keyframes } from "@mui/material/styles";
@@ -14,7 +14,7 @@ import { CommonalityMeter, DifficultyMeter } from "../../components/ScoreMeters"
 import { difficultyAriaLabel } from "../../components/scoreMeterScale";
 import EipSheet from "../flashcards/FlashcardsLearnPage/EipSheet";
 import SkippedCardsSheet from "./SkippedCardsSheet";
-import SortBins, { type SortBinSpec } from "./SortBins";
+import SortBins, { SORT_BINS_ASPECT_RATIO, type SortBinSpec, type SortBinsHitTester } from "./SortBins";
 import { sortLookAt, type SortLook } from "./sortTimeOfDay";
 import { useTowerWeather } from "../deckTower/useTowerWeather";
 import { weatherDaySky } from "../deckTower/weatherSky";
@@ -45,7 +45,8 @@ import ShootingStars from "../deckTower/ShootingStars";
 import StarField from "../deckTower/StarField";
 import { INVALID_SHAKE_ANIMATION, INVALID_SHAKE_KEYFRAMES } from "../../theme/invalidShake";
 import { FLP_CARD_PANEL_RADIUS_RATIO, FLP_CARD_STOCK_INSET_RATIO } from "../flashcards/constants";
-import { LEARNING_COLORS, MASTERY_BAR_COLORS } from "../../utils/categoryColors";
+import { CATEGORY_COLORS } from "../../utils/categoryColors";
+import type { SortBucket } from "./starterPacksApi";
 import { FONTS } from "../../theme/fonts";
 import { keycapPressSx } from "../../theme/keycapPress";
 import { roundedEdgeFilletDown, roundedEdgeRimLightTop } from "../../theme/roundedEdge";
@@ -88,7 +89,7 @@ const SKIP_BUTTON_RADIUS_PX = TOOLBAR_KEY_HEIGHT_PX / 2;
 interface UndoEntry {
     action: "sort" | "skip";
     cardId: number;
-    bucket: string; // 'library' | 'already-learned' | 'skip'
+    bucket: string; // a SortBucket ('library' | 'target' | 'comfortable' | 'already-learned') or 'skip'
     pack: SortPack;
 }
 
@@ -139,20 +140,76 @@ const ContentArea = styled(Box)({
     touchAction: "none",
 });
 
+// ── The four bins (docs/SORT_CARDS_REQUIREMENTS.md § 5, § 5.3) ───────────────────
+// One bin per utcm band, in band order (SortBins lays them out as an S piece on the ISO
+// grid: Target down-right (−isoY) of Unfamiliar, Comfortable up-right (+isoX) of Target,
+// Mastered down-right of Comfortable). Each is coloured with
+// its band's SURFACE (CATEGORY_COLORS) and its id is the sort API's bucket wire value,
+// which seeds the band's core history server-side (SORT_BUCKET_CORE_POSITIVES).
+// Labels are the user's own learner-voice copy (2026-11-09; were "To Learn" /
+// "Already Learned" on a two-bin layout); each is said in a speech bubble over its bin
+// while a card is held over it (SortBins → `SpeechBubble`).
+const SORT_BINS: readonly SortBinSpec[] = [
+    { id: "library", label: "I’ve never seen this word in my life", color: CATEGORY_COLORS.Unfamiliar },
+    { id: "target", label: "This word feels familiar", color: CATEGORY_COLORS.Target },
+    { id: "comfortable", label: "Pretty sure I could pick this word out in a sentence", color: CATEGORY_COLORS.Comfortable },
+    { id: "already-learned", label: "Oh yeah I got this", color: CATEGORY_COLORS.Mastered },
+] satisfies readonly (SortBinSpec & { id: SortBucket })[];
+/** The bins' ids — the buckets that carry a session count. */
+const SORT_BIN_IDS: readonly string[] = SORT_BINS.map((b) => b.id);
+
 // ── Tower Tier 2 layout (docs/SORT_CARDS_REQUIREMENTS.md § 4.5, § 4.9) ─────────────
 // The page is a tier-2 ground under the Deck Tower (Claude Design "Tower Tier 2 - Time
-// of Day", the "Sort ·" artboards): the two bins float as iso decks in the upper part
-// (SortBins), the toolbar sits top-right over them, and the on-deck pack levitates in a
-// row along the bottom, above the slab footer. Every colour comes from `SortLook`
-// (sortTimeOfDay.ts), so the whole page follows the tower's clock.
+// of Day", the "Sort ·" artboards): the four utcm bins float as iso decks in a stepped
+// tetromino in the upper part (SortBins), the toolbar sits top-right over them, and the
+// on-deck pack levitates in a row along the bottom, above the slab footer. Every colour
+// but the bins' band colours comes from `SortLook` (sortTimeOfDay.ts), so the page
+// follows the tower's clock.
 
-// The bins' scene: absorbs the page's spare height (and gives it back on short screens).
+// The bins' area: absorbs the page's spare height (and gives it back on short screens).
+// A column: the rating prompt takes whatever height the scene leaves over, the scene
+// sits at the bottom just above the on-deck cards, and the toolbar floats over the top.
 const BinsArea = styled(Box)({
     flex: 1,
     minHeight: 0,
     width: "100%",
     position: "relative",
     display: "flex",
+    flexDirection: "column",
+});
+
+// The bins' scene box, sized to the scene's own aspect (SORT_BINS_ASPECT_RATIO) so its top
+// edge is the scene's top and the prompt above it can centre in the true gap. It shrinks
+// on a short screen (the SVG scales down inside it, pinned to the bottom).
+const BinsScene = styled(Box)({
+    width: "100%",
+    aspectRatio: `${SORT_BINS_ASPECT_RATIO}`,
+    flexShrink: 1,
+    minHeight: 0,
+    display: "flex",
+});
+
+// The toolbar's inset from the bins area's top, px (SortToolbar `top`) — with the key
+// height it puts the prompt's box under the toolbar. (The "Difficulty" caption sits beside
+// the pill, so it takes no room below.)
+const TOOLBAR_TOP_PX = 12;
+
+// The rating prompt: white type painted straight on the sky (a game's "tap to start"),
+// centred in the gap between the toolbar and the platforms. Ink on the ground comes from
+// `SortLook.ink` — white by day, the night look's near-white after dark. The sky type
+// (TOWER_TYPE_SX), like the page header. Not interactive: drags pass through it.
+const SortPrompt = styled(Typography)({
+    flex: 1,
+    minHeight: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    paddingLeft: 24,
+    paddingRight: 24,
+    fontSize: SIZE.subtitle,
+    lineHeight: 1.25,
+    pointerEvents: "none",
 });
 
 // Level pill · undo · skip, in a row along the top-right corner over the bins (the
@@ -161,7 +218,7 @@ const BinsArea = styled(Box)({
 // inset reads as even on both sides.
 const SortToolbar = styled(Box)({
     position: "absolute",
-    top: 12,
+    top: TOOLBAR_TOP_PX,
     right: 14,
     zIndex: 2,
     display: "flex",
@@ -202,7 +259,9 @@ const keycapSx = (look: SortLook) => {
         backgroundColor: look.keyFace,
         color: look.keyInk,
         border: `1px solid ${COLORS.border}`,
-        fontFamily: FONTS.sans,
+        // 975 Maru SC, the app's rounded face (FONTS.cjk), like the platforms' rating
+        // numbers (SortBins → NumberPrint) — user request 2026-11-09, was the UI sans.
+        fontFamily: FONTS.cjk,
         fontSize: SIZE.body,
         fontWeight: WEIGHT.semibold,
         lineHeight: 1,
@@ -244,7 +303,7 @@ const OnDeckSection = styled(Box)({
     justifyContent: "center",
 });
 
-// Holds the up-to-4 cards side by side on ONE line — it never wraps. `compact` (a pack
+// Holds the up-to-4 cards side by side on ONE line — it never wraps. `compact` (the dock
 // laid out on compact MiniCards — see `dockCardSize`) also tightens the gap between slots,
 // since a 4-card row is what needs the room. The artboard's 24 / 14.
 //
@@ -283,18 +342,23 @@ const CardsRow = styled(Box, {
     };
 });
 
+/** The most cards a sort pack holds — the row every pack is sized for (dockCardSize). */
+const MAX_PACK_CARDS = 4;
+
 /**
- * The face size a pack of `cardCount` cards is laid out on, given the row's width
- * (docs/SORT_CARDS_REQUIREMENTS.md §4.5 "Compact dock"). Fit-to-width, not a per-count
- * rule: the pack stays on regular 92px cards whenever the whole row fits across at that
- * size, and drops to the compact 78px face only when it doesn't — in practice a 4-card
- * pack on a phone. A 1–3-card pack always fits, so never shrinks. Exact because CardsRow
- * pins every slot to its face width; a row that doesn't fit even at compact clips (never wraps).
+ * The face size EVERY pack is laid out on, given the row's width
+ * (docs/SORT_CARDS_REQUIREMENTS.md §4.5 "Compact dock"): the size a full
+ * `MAX_PACK_CARDS` pack needs — regular 92px cards when four fit across, else the compact
+ * 78px face (in practice: compact on a phone, regular on a wider screen). Sized for the
+ * full pack whatever the pack's own count (user request 2026-11-09): a per-count size
+ * made a 4-card pack's dock shorter than a 3-card one's, so the bins above re-centred
+ * between packs. Exact because CardsRow pins every slot to its face width; a row that
+ * doesn't fit even at compact clips (never wraps).
  * An unmeasured row (`dockWidth` null — the first commit only) reads as regular.
  */
-function dockCardSize(cardCount: number, dockWidth: number | null): MiniCardSize {
-    if (dockWidth == null || cardCount <= 1) return "regular";
-    const regularRowWidth = cardCount * MINI_CARD_DIMENSIONS.regular.width + (cardCount - 1) * CARDS_ROW_GAP.regular;
+function dockCardSize(dockWidth: number | null): MiniCardSize {
+    if (dockWidth == null) return "regular";
+    const regularRowWidth = MAX_PACK_CARDS * MINI_CARD_DIMENSIONS.regular.width + (MAX_PACK_CARDS - 1) * CARDS_ROW_GAP.regular;
     return regularRowWidth <= dockWidth - 2 * CARDS_ROW_INLINE_PADDING ? "regular" : "compact";
 }
 
@@ -363,15 +427,18 @@ const binInFromLeftKeyframes = keyframes`
 const dockSlideIn = (delayMs: number, frames: ReturnType<typeof keyframes> = dockInKeyframes) =>
     `${frames} ${DOCK_SLIDE_MS}ms cubic-bezier(0.22, 1, 0.36, 1) ${delayMs}ms backwards`;
 // The page chrome's own entrance (docs/SORT_CARDS_REQUIREMENTS.md §4.1 "Chrome entrance"):
-// each platform slides in separately from the LEFT — the right one leads (it has the
-// farthest to go, the mirror of the cards' leftmost-first), the left one a stagger step
-// behind — while the toolbar comes from the right one step behind the first card.
+// each platform slides in separately from the LEFT, rightmost first on screen (it has
+// the farthest to go, the mirror of the cards' leftmost-first): Mastered, Comfortable,
+// Target, Unfamiliar, a stagger step apart — while the toolbar comes from the right
+// one step behind the first card. Slot indices are SORT_BINS order (0 U, 1 T, 2 C, 3 M).
 // Plays once per mount of the sort view — packs that land later do not replay it.
 const REDUCED_MOTION_OFF = { "@media (prefers-reduced-motion: reduce)": { animation: "none" } } as const;
 const CHROME_ENTRANCE_SX = {
     bins: {
-        "& .sort-bins__bin-slot--1": { animation: dockSlideIn(0, binInFromLeftKeyframes), ...REDUCED_MOTION_OFF },
-        "& .sort-bins__bin-slot--0": { animation: dockSlideIn(DOCK_STAGGER_STEP_MS, binInFromLeftKeyframes), ...REDUCED_MOTION_OFF },
+        "& .sort-bins__bin-slot--3": { animation: dockSlideIn(0, binInFromLeftKeyframes), ...REDUCED_MOTION_OFF },
+        "& .sort-bins__bin-slot--2": { animation: dockSlideIn(DOCK_STAGGER_STEP_MS, binInFromLeftKeyframes), ...REDUCED_MOTION_OFF },
+        "& .sort-bins__bin-slot--1": { animation: dockSlideIn(2 * DOCK_STAGGER_STEP_MS, binInFromLeftKeyframes), ...REDUCED_MOTION_OFF },
+        "& .sort-bins__bin-slot--0": { animation: dockSlideIn(3 * DOCK_STAGGER_STEP_MS, binInFromLeftKeyframes), ...REDUCED_MOTION_OFF },
     },
     toolbar: { animation: dockSlideIn(DOCK_STAGGER_STEP_MS), ...REDUCED_MOTION_OFF },
 } as const;
@@ -511,22 +578,31 @@ const CommonalityTierLabel = styled(Typography)({
 });
 
 // The level pill's soft-introduction caption (si `sortDifficultyCaption`,
-// docs/SOFT_INTRODUCTION.md): "DIFFICULTY" under the pill for a learner's first visits,
-// then gone. Ink on the ground, so it takes the look's soft ink.
+// docs/SOFT_INTRODUCTION.md): "DIFFICULTY →" for a learner's first visits, then gone.
+// Drawn like the Deck Tower's sort-platform si print ("ADD MORE / CARDS →",
+// DeckTowerPlatform → `FIXTURE_PRINT`): bold caps in the cjk face, the look's full ink
+// (white by day, as the print's washed white), the arrow pointing at what it names. It
+// sits LEFT of the pill, vertically centred on it (user request 2026-11-09; it was under
+// the pill), absolutely placed so the toolbar keeps its width and the prompt its room.
 // 9px — two steps below the type scale's smallest (SIZE.micro, 11px) and below the shelf
 // overline (components/primitives/Label → `Label`, 10px); no token this small exists —
 // it matches the Settings page's 9px uppercase tags (made smaller twice by user request
 // 2026-10-29: 11 → 10 → 9).
 const LevelCaption = styled(Typography)({
-    fontFamily: FONTS.label,
+    position: "absolute",
+    right: "calc(100% + 8px)",
+    top: 0,
+    height: TOOLBAR_KEY_HEIGHT_PX,
+    display: "flex",
+    alignItems: "center",
+    fontFamily: FONTS.cjk,
     fontSize: 9,
     fontWeight: WEIGHT.bold,
     letterSpacing: TRACKING.caps,
     textTransform: "uppercase",
     lineHeight: 1,
     whiteSpace: "nowrap",
-    textAlign: "center",
-    marginTop: 9,
+    pointerEvents: "none",
 });
 
 // The on-deck card IS the app's mini preview card (src/components/MiniCard.tsx) — the
@@ -662,7 +738,8 @@ const HOVER_RAISE_MS = 180;
 // memo is load-bearing, not just a perf tweak: while a card is being dragged, the
 // parent AddCardsPage re-renders on unrelated state — most notably `tts.speakingKey`
 // flipping on every autoplay narration start/stop (read for the speaker button's
-// isLoading), and `highlightedBucket` on every drag-move. Re-rendering a card mid-drag
+// isLoading). (The bin highlight no longer re-renders the page: it lives in SortBins'
+// own state.) Re-rendering a card mid-drag
 // interrupts its live use-gesture gesture: the handler fires the release path with the
 // pointer not over a bucket, so the card snaps back to its tray origin WHILE the finger
 // is still down (the "snaps back a second or two into audio" bug). All props below are
@@ -761,8 +838,8 @@ const DraggableCard = memo(function DraggableCard({ card, size, locked, sorted, 
             if (down) {
                 // Held: track the finger/cursor 1:1 (immediate) at the one pickup lift. The
                 // card itself never changes over a bucket; the page grows the target bin
-                // (onHighlight → activeBinId). Re-issuing the same target every move is a
-                // no-op for a spring already there.
+                // (onHighlight → SortBins' `highlight`). Re-issuing the same target every move is
+                // a no-op: SortBins' state setter bails out on an unchanged bin.
                 const overBucket = onCheckCollision(px, py);
                 api.start({ x: mx, y: my, scale: HELD_CARD_SCALE, immediate: true });
                 // The shadow eases out from under the card as it rises (not a snap).
@@ -924,11 +1001,11 @@ const AddCardsPage: React.FC = () => {
     // The live CardsRow, measured when a pack leaves so the exit overlay can sit in the
     // exact same spot and know how far it has to travel to clear the section's top.
     const cardsRowRef = useRef<HTMLDivElement>(null);
-    // The on-deck row's width, which decides whether a pack fits across on regular
-    // MiniCards or needs the compact face (dockCardSize). A callback ref, not a ref +
+    // The on-deck row's width, which decides whether a full 4-card pack fits across on
+    // regular MiniCards or every pack takes the compact face (dockCardSize). A callback ref, not a ref +
     // effect: the platform only mounts once the first pack arrives (the page shows a
     // spinner before that), so an effect keyed on mount would miss it. The first width
-    // is read synchronously in the commit, so a 4-card pack is laid out compact before
+    // is read synchronously in the commit, so a compact dock is laid out compact before
     // its first paint rather than flashing at the regular size.
     const [dockWidth, setDockWidth] = useState<number | null>(null);
     const dockResizeObserverRef = useRef<ResizeObserver | null>(null);
@@ -952,19 +1029,21 @@ const AddCardsPage: React.FC = () => {
     const [exhausted, setExhausted] = useState(false);
     const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
     const [loading, setLoading] = useState(true);
-    const [highlightedBucket, setHighlightedBucket] = useState<string | null>(null);
     // Manual HSK/difficulty override from the level dropdown; null = "auto" (the
     // client-tracked adaptive target below). Not persisted — reverts to auto on
     // reload, matching the request-scoped nature of a "show me level N" session.
     const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
     const [levelMenuAnchor, setLevelMenuAnchor] = useState<HTMLElement | null>(null);
 
-    // Session counts — how many cards the learner has sorted into each bin on THIS visit,
-    // printed on the bins' decks (SortBins), one deck layer per card. Start at 0 on every
-    // visit; Undo takes a card back off. Deliberately not the account's library totals
-    // (the pre-2026-10-29 tally pills): the decks grow as the learner works, which is the
-    // point of drawing them as decks.
-    const [sessionCounts, setSessionCounts] = useState<Record<string, number>>({ library: 0, "already-learned": 0 });
+    // Session decks — the cards the learner has sorted into each bin on THIS visit, oldest
+    // first, drawn as the bins' decks (SortBins): one layer per card, the last card's
+    // mini card on top. Empty on every visit; Undo takes a card back off (and the card
+    // under it shows its face again). Deliberately not the account's library totals (the
+    // pre-2026-10-29 tally pills): the decks grow as the learner works, which is the point
+    // of drawing them as decks. Each change replaces only its own bin's array, so the
+    // other bins' memoized SortBin skip the render.
+    const [sessionDecks, setSessionDecks] = useState<Record<string, readonly DiscoverCard[]>>(() =>
+        Object.fromEntries(SORT_BIN_IDS.map((id) => [id, []])));
 
     // Adaptive leveling state (docs/SORT_CARDS_REQUIREMENTS.md §6): the CLIENT is the
     // sole owner of the auto target level once seeded. Refs (not state) because they
@@ -994,28 +1073,14 @@ const AddCardsPage: React.FC = () => {
     // sheet can now grow to cover the whole screen and the pill would float over it on
     // every host, not just this one.
 
-    // Each bin's hit area (its SVG group) — registered by SortBins.
-    const binRefs = useRef<Map<string, Element>>(new Map());
-    const registerBin = useCallback((id: string, el: Element | null) => {
-        if (el) binRefs.current.set(id, el);
-        else binRefs.current.delete(id);
-    }, []);
-    // Bin geometry snapshotted at drag START. The highlight and drop hit-tests both read
-    // from THIS (not live getBoundingClientRect), so they share one identical threshold
-    // and a drag-move costs no layout read. (The bins bob a few px; a snapshot taken
-    // mid-bob is well inside that tolerance.)
-    const bucketRectsRef = useRef<Map<string, DOMRect>>(new Map());
+    // The bins' drop hit test, filled by SortBins (SortBinsHitTester): it maps the
+    // pointer onto the iso floor and picks the nearest platform. Snapshotted at drag
+    // START, so the highlight and the drop share one geometry and a drag-move costs no
+    // layout read.
+    const binHitTesterRef = useRef<SortBinsHitTester | null>(null);
 
-    // The two bins, coloured as the COLLECTION each one feeds: LEARNING_COLORS for
-    // Learning and the core bar's MASTERY_BAR_COLORS for Mastered (the ramp SURFACE tier). Ids are the
-    // sort API's bucket wire values.
-    const bins = useMemo<readonly [SortBinSpec, SortBinSpec]>(() => [
-        // User-chosen copy. "To Learn" (2026-10-29) is the learner's verdict rather than
-        // the "Learning" collection name; the mastered bin was "Already Know" until
-        // 2026-11-04 and now matches its bucket id, "Already Learned".
-        { id: "library", label: "To Learn", color: LEARNING_COLORS.main },
-        { id: "already-learned", label: "Already Learned", color: MASTERY_BAR_COLORS.core.main },
-    ], []);
+    // The four bins come from SORT_BINS (module scope, below the imports).
+    const bins = SORT_BINS;
 
     // ---- Time of day (docs/SORT_CARDS_REQUIREMENTS.md § 4.9) ---------------
     // The app's shared day clock — the one the Deck Tower and the eip read, with the
@@ -1139,11 +1204,17 @@ const AddCardsPage: React.FC = () => {
         ? <DifficultyMeter className="add-cards__level-meter" score={selectedLevel} filledColor={look.keyInk} emptyColor={look.keyInk} />
         : "Auto";
 
-    // Apply one card's effect on its bin's session count. `direction` is +1 for a sort,
-    // -1 for an undo. A skip touches neither bin (it never creates a vet row).
-    const adjustTally = useCallback((bucket: string, direction: 1 | -1) => {
-        if (bucket !== "library" && bucket !== "already-learned") return;
-        setSessionCounts((c) => ({ ...c, [bucket]: Math.max(0, (c[bucket] ?? 0) + direction) }));
+    // Apply one card's effect on its bin's session deck: a sort puts `card` on top, an
+    // undo takes the card with `card.id` back off (its LAST occurrence — the newest).
+    // A skip touches neither bin (it never creates a vet row).
+    const adjustTally = useCallback((bucket: string, card: DiscoverCard | undefined, direction: 1 | -1) => {
+        if (!card || !(SORT_BIN_IDS as readonly string[]).includes(bucket)) return;
+        setSessionDecks((decks) => {
+            const deck = decks[bucket] ?? [];
+            if (direction === 1) return { ...decks, [bucket]: [...deck, card] };
+            const at = deck.map((c) => c.id).lastIndexOf(card.id);
+            return at < 0 ? decks : { ...decks, [bucket]: [...deck.slice(0, at), ...deck.slice(at + 1)] };
+        });
     }, []);
 
     // Log every card that lands on-deck (i.e. becomes a live, visible slot). One log
@@ -1162,21 +1233,25 @@ const AddCardsPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPack?.packKey]);
 
-    // Snapshot every bucket's rect at drag start. Both the highlight and the drop test
-    // read these frozen rects, so the two thresholds can never differ.
+    // Freeze the bins' geometry at drag start. Both the highlight and the drop test read
+    // this snapshot, so the two thresholds can never differ.
     const snapshotBucketRects = useCallback(() => {
-        const rects = new Map<string, DOMRect>();
-        for (const [id, el] of binRefs.current) rects.set(id, el.getBoundingClientRect());
-        bucketRectsRef.current = rects;
+        binHitTesterRef.current?.snapshot();
     }, []);
 
-    // Collision test: is the pointer over a bucket? Uses the drag-start snapshot (above)
-    // so highlight and drop hit-test against the exact same geometry.
-    const checkBucketCollision = useCallback((clientX: number, clientY: number): string | null => {
-        for (const [id, r] of bucketRectsRef.current) {
-            if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) return id;
-        }
-        return null;
+    // Collision test: which bin is the pointer over? Delegated to SortBins' iso hit test
+    // (the bins' screen boxes overlap on the diagonal, so a rect test can't tell them apart).
+    const checkBucketCollision = useCallback(
+        (clientX: number, clientY: number): string | null => binHitTesterRef.current?.binAt(clientX, clientY) ?? null,
+        []
+    );
+
+    // The bin a held card is over grows and says its sentence (SortBins → ACTIVE_SCALE,
+    // SpeechBubble); it settles back the moment the card is let go. Handed straight to
+    // SortBins' own state — page state here re-rendered this whole page on every
+    // platform crossing, which lagged a quick sweep over the bins.
+    const highlightBucket = useCallback((bucketId: string | null) => {
+        binHitTesterRef.current?.highlight(bucketId);
     }, []);
 
     // Prime the audio sinks from this gesture. Deliberately NOT guarded by a
@@ -1297,6 +1372,29 @@ const AddCardsPage: React.FC = () => {
     const handleCloseEip = useCallback(() => {
         setEipOpen(false);
     }, []);
+
+    // Prefetch the audio of EVERY card the queue holds — the on-deck pack and the packs
+    // buffered behind it — the moment they land. Without this the autoplay below fetched
+    // each word only when its turn came, so every gap between narrated words was the
+    // 600ms beat PLUS a full /api/tts/synthesize round-trip (and a cold Google synth on
+    // the server). Now the requests run in parallel, ahead of time, and the autoplay
+    // plays from CloudTTSProvider's cache. Same (text, pronunciation, voice) arguments as
+    // autoSpeakSentence, so the warmed cache key is the one the autoplay hits. Repeat
+    // calls for an already-cached word are free (the provider dedupes on its key), so
+    // re-running on every queue change is harmless. Read through ttsRef — `tts` changes
+    // identity on every narration start/stop. Declared BEFORE the autoplay effect so the
+    // on-deck pack's fetches are already in flight when its narration starts.
+    const queuedPackKeys = queue.map((p) => p.packKey).join("|");
+    useEffect(() => {
+        for (const pack of queue) {
+            for (const card of pack.cards) {
+                ttsRef.current.prefetchSentence(card.entryKey, card.pronunciation ?? undefined);
+            }
+        }
+        // Keyed on the held packKeys, not `queue`: a card sorted within a pack replaces
+        // the queue array without adding any new word to fetch.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [queuedPackKeys]);
 
     // Autoplay: narrate every card in the on-deck pack, left to right, once per
     // pack (keyed on packKey so it fires exactly once when a pack lands on-deck,
@@ -1451,20 +1549,20 @@ const AddCardsPage: React.FC = () => {
     }, [navigate, originPath]);
     // Back from the ordinary (non-set) page. A launch carrying `state.exitTo` names its own
     // return point — the Deck Tower's mini sort platform (DeckTowerPage → `SORT_EXIT`), which
-    // opened this page with the circle transition, so Back closes the circle back onto that
-    // platform (`circleBackTo`, NodePage `exitCircleTo`). A launch without one (a deep link, a
-    // reload that lost the state) returns to the tower's main world with the slide.
+    // opened this page with the world pan's dash, so Back dashes the camera back onto the
+    // tower (`dashBack`, NodePage `exitDash`; src/hooks/pageDash.ts). A launch without one (a
+    // deep link, a reload that lost the state) returns to the tower's main world with the slide.
     // Docs: docs/DECK_TOWER.md § "The sort platform".
     const location = useLocation();
     const launchExit = readExit(location.state);
-    const circleBackTo = launchExit ? readCirclePoint(location.state) : undefined;
+    const dashBack = launchExit ? readDashLaunch(location.state) : undefined;
     const leave = () =>
         launchExit
             ? navigate(launchExit.path, { state: launchExit.state })
             : navigate("/", { state: { towerWorld: "core" } });
     // Opened from the Deck Tower's platform (the only launch carrying `exitTo`), the footer's
     // Flashcards tab leads back to the same place as Back, so a tap on it plays Back too — the
-    // circle closing onto the platform — rather than the footer's plain jump (NodePage
+    // dash back onto the tower — rather than the footer's plain jump (NodePage
     // `backOnFooterTab`, components/footerTabOverride.ts).
     const backOnFooterTab = launchExit ? ("deck" as const) : undefined;
     const exitedRef = useRef(false);
@@ -1504,10 +1602,13 @@ const AddCardsPage: React.FC = () => {
     // Sort one card into a bucket (per-card POST). Optimistic: resolve locally first,
     // then decide (from the ref) whether that completed the pack.
     // A completing pack contributes exactly ONE adaptive-leveling signal, derived from
-    // every bucket sorted into it this session (docs §6). The rule is deliberately naive
-    // — no streaks, no thresholds: ANY "Add to Learning" card means the level was too
-    // hard (target − 1), and a pack sorted entirely as "Already Learned" means it was too
-    // easy (target + 1). Anchored on the completing pack's OWN level (not the running
+    // every bucket sorted into it this session (docs §6). The rule is a deliberately naive
+    // ladder — no streaks, no thresholds — read from the hardest verdict down:
+    //   - ANY Unfamiliar card            → too hard  (packLevel − 1)
+    //   - else ANY Target card           → about right (no change)
+    //   - else any Comfortable/Mastered  → too easy  (packLevel + 1)
+    // (User-chosen 2026-11-09: Unfamiliar −1, Target 0, Comfortable +1, Mastered +1.)
+    // Anchored on the completing pack's OWN level (not the running
     // auto target), since the target may already have drifted from an earlier in-flight
     // signal — this is exactly why the update is "set to packLevel±1", never "increment
     // the target".
@@ -1515,11 +1616,13 @@ const AddCardsPage: React.FC = () => {
         const outcomes = Object.values(packBucketsRef.current[pack.packKey] ?? {});
         if (outcomes.includes("library")) {
             autoLevelRef.current = Math.max(MIN_DIFFICULTY_LEVEL, pack.level - 1);
-        } else if (outcomes.includes("already-learned")) {
+        } else if (outcomes.includes("target")) {
+            // Target means the pack was pitched right: hold the level where it is.
+        } else if (outcomes.includes("comfortable") || outcomes.includes("already-learned")) {
             autoLevelRef.current = Math.min(MAX_DIFFICULTY_LEVEL, pack.level + 1);
         }
-        // A pack with no library/already-learned outcomes (fully skipped) carries no
-        // signal at all — nothing to do (§5.1).
+        // A pack with no card-bucket outcomes (fully skipped) carries no signal at all —
+        // nothing to do (§5.1).
     }, []);
 
     const handleSortCard = useCallback(async (cardId: number, bucketId: string) => {
@@ -1527,7 +1630,7 @@ const AddCardsPage: React.FC = () => {
         if (!pack) return;
         pushUndo({ action: "sort", cardId, bucket: bucketId, pack });
         markResolved(pack.packKey, [cardId]);
-        adjustTally(bucketId, 1);
+        adjustTally(bucketId, pack.cards.find((c) => c.id === cardId), 1);
         packBucketsRef.current = {
             ...packBucketsRef.current,
             [pack.packKey]: { ...(packBucketsRef.current[pack.packKey] ?? {}), [cardId]: bucketId },
@@ -1609,7 +1712,7 @@ const AddCardsPage: React.FC = () => {
             setLeavingPack((prev) => (prev?.pack.packKey === entry.pack.packKey ? null : prev));
         }
         // Give the tally back the card this action added (no-op for a skip).
-        adjustTally(entry.bucket, -1);
+        adjustTally(entry.bucket, entry.pack.cards.find((c) => c.id === entry.cardId), -1);
         // Bring the undone pack back to the FRONT so it is on deck again. It may already
         // be the head (undoing a card within the on-deck pack — leave the queue as-is),
         // or it may still be sitting in the buffer (the server can re-serve a just-sorted
@@ -1647,7 +1750,7 @@ const AddCardsPage: React.FC = () => {
 
     if (loading) {
         return (
-            <NodePage title="Add Cards" onBack={leave} exitCircleTo={circleBackTo} backOnFooterTab={backOnFooterTab} {...groundChrome}>
+            <NodePage title="Add Cards" onBack={leave} exitDash={dashBack} backOnFooterTab={backOnFooterTab} {...groundChrome}>
                 <Box className="add-cards__loading-wrapper" sx={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
                     <DelayedCircularProgress className="add-cards__spinner" />
                 </Box>
@@ -1674,7 +1777,7 @@ const AddCardsPage: React.FC = () => {
 
     if (!currentPack) {
         return (
-            <NodePage title="Add Cards" onBack={leave} exitCircleTo={circleBackTo} backOnFooterTab={backOnFooterTab} {...groundChrome}>
+            <NodePage title="Add Cards" onBack={leave} exitDash={dashBack} backOnFooterTab={backOnFooterTab} {...groundChrome}>
                 <ContentArea className="add-cards__content">
                     <Box className="add-cards__no-cards-error" sx={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center" }}>
                         {exhausted
@@ -1686,9 +1789,6 @@ const AddCardsPage: React.FC = () => {
         );
     }
 
-    // The bin a held card is over grows (SortBins → ACTIVE_SCALE); it settles back the
-    // moment the card is let go, as the card despawns and the bin's place animation plays.
-    const activeBinId = highlightedBucket;
 
     // One slot's contents: the tier tag, the card in its well, and the per-card action
     // row. Shared by the live row and the leaving-pack overlay so the exiting slots are
@@ -1700,9 +1800,9 @@ const AddCardsPage: React.FC = () => {
         // Resolved this session (sorted/skipped) and not pre-sorted: the card is gone,
         // its well left empty. Pre-sorted (locked) cards stay in place, greyed.
         const resolvedHere = !card.sorted && done[pack.packKey]?.has(card.id) === true;
-        // Per PACK, not per page: a leaving 4-card pack keeps the compact face it was
-        // shown at while the 3-card pack replacing it rises in at regular size.
-        const cardSize = dockCardSize(pack.cards.length, dockWidth);
+        // One size for every pack (the full pack's, dockCardSize), so the dock's height —
+        // and the bins above it — never change between packs.
+        const cardSize = dockCardSize(dockWidth);
         const infoLoading = !leaving && eipLoadingKey === card.entryKey;
         return (
             <>
@@ -1738,7 +1838,7 @@ const AddCardsPage: React.FC = () => {
                             // Undo re-showing a card in a slot that never left.
                             settleIn={!leaving && undoRestore?.entrance === "rise" && undoRestoredPackKey === pack.packKey}
                             onCheckCollision={checkBucketCollision}
-                            onHighlight={setHighlightedBucket}
+                            onHighlight={highlightBucket}
                             onDrop={handleSortCard}
                             onFirstDrag={handleCardPickup}
                         />
@@ -1783,7 +1883,7 @@ const AddCardsPage: React.FC = () => {
         <NodePage
             title="Add Cards"
             onBack={leave}
-            exitCircleTo={circleBackTo}
+            exitDash={dashBack}
             backOnFooterTab={backOnFooterTab}
             {...groundChrome}
             headerExtraActions={
@@ -1797,21 +1897,36 @@ const AddCardsPage: React.FC = () => {
             }
         >
             <ContentArea className="add-cards__content">
-                {/* The two bins: iso decks on floating platforms, growing one layer per
-                    card sorted into them this session (SortBins). */}
+                {/* The four utcm bins, in a stepped tetromino: iso decks on band-coloured floating
+                    platforms, growing one layer per card sorted into them this session
+                    (SortBins). */}
                 <BinsArea
                     className="add-cards__bins-area"
                     // Each platform slides in separately from the left (CHROME_ENTRANCE_SX).
                     sx={CHROME_ENTRANCE_SX.bins}
                 >
-                    <SortBins
-                        className="add-cards__bins"
-                        bins={bins}
-                        counts={sessionCounts}
-                        activeBinId={activeBinId}
-                        look={look}
-                        registerBin={registerBin}
-                    />
+                    {/* "Rate each card 1–4…": painted on the sky, centred between the
+                        toolbar and the platforms; the numbers are printed big on the
+                        platforms' tops (SortBins → `NumberPrint`). */}
+                    <SortPrompt
+                        className="add-cards__sort-prompt"
+                        sx={{
+                            ...TOWER_TYPE_SX,
+                            color: look.ink,
+                            pt: `${TOOLBAR_TOP_PX + TOOLBAR_KEY_HEIGHT_PX}px`,
+                        }}
+                    >
+                        Rate each card 1–4 on how well you know it
+                    </SortPrompt>
+                    <BinsScene className="add-cards__bins-scene">
+                        <SortBins
+                            className="add-cards__bins"
+                            bins={bins}
+                            decks={sessionDecks}
+                            look={look}
+                            hitTesterRef={binHitTesterRef}
+                        />
+                    </BinsScene>
 
                     {/* Level pill · undo · skip — top-right over the bins (the artboard's
                         `.tb`). Skip is de-emphasized (§5.1): a small keycap, not a drag
@@ -1820,7 +1935,7 @@ const AddCardsPage: React.FC = () => {
                         className="add-cards__toolbar"
                         sx={CHROME_ENTRANCE_SX.toolbar}
                     >
-                        <Box className="add-cards__level-control" sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                        <Box className="add-cards__level-control" sx={{ position: "relative", display: "flex" }}>
                             <ButtonBase
                                 className="add-cards__level-dropdown"
                                 onClick={(e) => setLevelMenuAnchor(e.currentTarget)}
@@ -1831,11 +1946,11 @@ const AddCardsPage: React.FC = () => {
                                 {levelPillContent}
                                 <Icon name="keyboard_arrow_down" size={18} color={look.keyInk} />
                             </ButtonBase>
-                            {/* si `sortDifficultyCaption`: names the pill for a learner's
-                                first 7 visits over 7 days, then retires. */}
+                            {/* si `sortDifficultyCaption`: points at the pill for a
+                                learner's first 7 visits over 7 days, then retires. */}
                             {difficultyCaption === "intro" && (
-                                <LevelCaption className="add-cards__level-caption" sx={{ color: look.inkSoft }}>
-                                    Difficulty
+                                <LevelCaption className="add-cards__level-caption" sx={{ color: look.ink }}>
+                                    Difficulty →
                                 </LevelCaption>
                             )}
                         </Box>
@@ -1895,14 +2010,14 @@ const AddCardsPage: React.FC = () => {
                     </Menu>
                 </BinsArea>
 
-                {/* On-deck: up to 4 levitating cards (compact faces when 4 won't fit). A
+                {/* On-deck: up to 4 levitating cards (compact faces for every pack when 4 won't fit). A
                     card the user resolved this session leaves an empty well in its slot so
                     the other cards don't reposition. */}
                 <OnDeckSection ref={onDeckSectionRef} className="add-cards__on-deck">
                     <CardsRow
                         ref={cardsRowRef}
                         className="add-cards__cards-row"
-                        compact={dockCardSize(currentPack.cards.length, dockWidth) === "compact"}
+                        compact={dockCardSize(dockWidth) === "compact"}
                     >
                         {currentPack.cards.map((card, slotIndex) => (
                             // Keyed on pack + card, and the SAME element whether the card
@@ -1926,7 +2041,7 @@ const AddCardsPage: React.FC = () => {
                             <CardsRow
                                 key={leavingPack.exitId}
                                 className="add-cards__cards-row add-cards__cards-row--leaving"
-                                compact={dockCardSize(leavingPack.pack.cards.length, dockWidth) === "compact"}
+                                compact={dockCardSize(dockWidth) === "compact"}
                                 sx={{
                                     position: "absolute",
                                     left: 0,

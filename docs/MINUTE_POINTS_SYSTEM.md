@@ -51,8 +51,7 @@ per-language. See the invariant note in `134-add-lifetime-minutes-earned.sql`. T
 for a never-penalized language and DIVERGE once a penalty lands.
 
 **Two display quantities (GROSS vs NET),** both now per language:
-- **NET** — the prominent "Current Balance" number on the tester dashboard + the nmp
-  minutes badge. Drops on penalty/loss, but **only within its 24-hour checkpoint band**:
+- **NET** — the prominent "Current Balance" number on the tester dashboard. Drops on penalty/loss, but **only within its 24-hour checkpoint band**:
   an inactivity penalty can never carry it across a multiple of 1440 minute points
   (`STREAK_CONFIG.CHECKPOINT_MINUTES`), so 1560 bottoms out at 1440 and 3300 at 2880.
   Below 1440 it is unprotected and can still reach 0. Checkpoints are **absorbing** — a
@@ -95,12 +94,8 @@ where one moved and the other did not; it rejects negative input, which is what 
 safe to bind gross to it. `adjustPoints` deliberately touches net only — a penalty
 must never lower gross.
 
-### Global rollups (the two consumers that are still global)
+### Global rollups
 
-- The **night-market unlock entitlement** reads Σ net across languages
-  (`UserMinutePointsService.getGlobalNet`). The market has no language dimension yet —
-  `nightmarketunlocks` and `nightmarkettemplatelocations` are keyed on `userId` alone — so
-  per-language entitlement is **Phase 2**.
 - The **leaderboard** (test-only) rolls up in SQL inside
   `IUserLanguagesDAL.getTotalsForAllUsers`: `SUM(totalMinutePoints)` and
   `MAX(currentStreak)` (the user's best language streak).
@@ -148,7 +143,6 @@ is global except the two rollups listed above.
 - `UserMinutePointsService.getCalendar(userId, language, yearMonth)` — returns one row per day for the requested month and language, zero-filled.
 - `UserMinutePointsService.getLanguageSummary(userId, language, timestamp, tz)` — returns `{ totalMinutePoints (this language's net), lifetimeMinutesEarned (this language's gross), todayMinutes (fire badge), yesterdayMinutes, bankingPending, currentStreak (this language's streak) }`. `yesterdayMinutes` and `bankingPending` drive the td daily banking run (migration 175; see [DAILY_MINUTE_BANKING.md](./DAILY_MINUTE_BANKING.md)). Backs `GET /api/users/minutePoints/summary`. **Every field is language-scoped** since migration 130; the field NAMES are unchanged because they are the client contract, only their scope moved. A language the user has never studied has no row and correctly returns all zeros.
 - `UserMinutePointsService.markBankingSeen(userId, language, timestamp, tz)` — stamps `user_languages."lastBankingShownDate"` (migration 175) with the resolved streak date. Backs `POST /api/users/minutePoints/bankingSeen`. Presentational only; it moves no balance. See [DAILY_MINUTE_BANKING.md](./DAILY_MINUTE_BANKING.md).
-- `UserMinutePointsService.adjustMinutesForAuthor(userId, delta, timestamp, tz)` — **template-author-only** dev tool (`POST /api/nightMarket/dev/adjustMinutes`, gated on `isTemplateAuthor`, 403 otherwise, NOT rate-limited). `delta > 0` adds to today's `minutesEarned` + credits **both** counters; `delta < 0` adds `|delta|` to today's `penaltyMinutes` (gross intact) + debits net only (floored); then reconciles the night market (`NightMarketPlacementService.reconcileUnlocks` — grant on +, decay on −; decay also prunes empty dangling templates). Backs the nmp ±1/±5/±30 + Submit buttons. See docs/NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md.
 - DAL split: the day ledger (`IUserMinutePointsDAL`) serves per-day/per-month reads; the wallet/streak/gross row (`IUserLanguagesDAL`) serves balances and streaks. `getMinutesForDate` still sums a day across all languages but is now used only by the test-only leaderboard — the streak threshold reads the single-language day total returned by `addMinutesForDate`.
 - `database/cron/expire-stale-streaks.sql` — hourly Postgres cron, the **sole authority for streak breaks and point penalties**. For each user below the threshold (`today − lastStreakDate ≥ 2`, in the user's stored tz, 4 AM-bounded), it debits an **escalating** penalty by consecutive missed day (`3, 15, 30, 60, 90, 120`, then the remainder on day 7+) from `totalMinutePoints` — **floored at the balance's 24-hour checkpoint**, so no debit crosses a multiple of 1440 — resets `currentStreak = 0`, and stamps the amount actually debited as `penaltyMinutes` on the missed day (`today − 1`) unless that amount is 0. Once per user per local day (`lastPenaltyDate` guard). See `docs/STREAK_EXPIRATION_CRON.md`.
 - `UserController.onLogin` — post-login hook (`POST /api/auth/onLogin`). Today: refreshes `users.timezone` from the client so the cron has an up-to-date tz for every active user. It is no longer the only such trigger: `UserController.register` sets the zone at creation, `UserController.refresh` re-syncs it on every ~15-minute token rotation, and a foregrounded tab re-sends it on change. All four funnel through `UserService.refreshUserContext` / `createUser`; the full contract is in [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) ("Refresh path for `users.timezone`").
@@ -208,9 +202,8 @@ Accrual is decided by path, not by what a page does:
 
 | List | Match | Members |
 | --- | --- | --- |
-| `MINUTE_POINTS_ELIGIBLE_PAGES` | prefix (page + descendants) | **`/flashcards/card`**, **`/dictionary`** (search page + the cdp under it), `/reader`, `/discover/sort`, `/games/{bubble-match,word-search,match-speed,hydra-bubbles,bucket-drop}`, **`/immersive-world`**, `/flashcards/writing/notebook` ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)) |
+| `MINUTE_POINTS_ELIGIBLE_PAGES` | prefix (page + descendants) | **`/flashcards/card`**, **`/dictionary`** (search page + the cdp under it), `/reader`, `/discover/sort`, `/games/{bubble-match,word-search,match-speed,hydra-bubbles,bucket-drop}`, `/flashcards/writing/notebook` ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)) |
 | `MINUTE_POINTS_ELIGIBLE_EXACT_PAGES` | exact path only | `/flashcards` (the legacy desktop page) |
-| `MINUTE_POINTS_EXCLUDED_EXACT_PAGES` | exact path only; **wins over both lists above** | `/immersive-world`, `/immersive-world/scene-editor` |
 | `MINUTE_POINTS_AUTO_ACTIVE_PAGES` | prefix; subset that starts accruing on mount | `/games` |
 
 The `/games/*` entries (and the `/games` auto-active prefix) currently match nothing: the
@@ -218,9 +211,10 @@ Games hub was deleted 2026-11-06 and the routed games' pages are not mounted whi
 `standaloneGames` feature flag is off (`src/games/registry.ts` → `ROUTED_GAMES`). They stay
 listed so turning the flag back on needs no edit here.
 
-The rule over those four lists is `isMinutePointsEligiblePath` / `isMinutePointsAutoActivePath`
-(`src/minutePoints/eligibility.ts`), pulled out of `useMinutePoints` on 2026-09-07 when the
-third list arrived. Both failure directions are **silent** — a study page that earns nothing
+The rule over those three lists is `isMinutePointsEligiblePath` / `isMinutePointsAutoActivePath`
+(`src/minutePoints/eligibility.ts`), pulled out of `useMinutePoints` on 2026-09-07. (A fourth,
+exact-path EXCLUSION list existed only for Immersive World's parameterized play route and
+went with that feature on 2026-11-09 — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md).) Both failure directions are **silent** — a study page that earns nothing
 and a menu that farms points look the same on screen — so the rule is unit-tested rather than
 resolved inline in a 450-line hook.
 
@@ -240,23 +234,6 @@ releasing the claim saves and deactivates as leaving a study route does. A count
 claimants (or a StrictMode double-mount) cannot release each other's claim. The
 one-PageHeader rule still holds: the tower page unmounts its own header while the session's
 is up.
-
-### The immersive world earns, but its list and its editor do not (2026-09-07)
-
-Holding a conversation with an NPC in the target language is as study-shaped as anything in the
-app; it was simply never added. The wrinkle is that the play surface is a **parameterized
-child** — `/immersive-world/:sceneId` — which only a prefix can admit, and that prefix also
-sweeps in the scene LIST (a hub you pick from) and the scene EDITOR (authoring, and a surface an
-author might leave open all afternoon). Hence `MINUTE_POINTS_EXCLUDED_EXACT_PAGES`, which
-carves those two back out by exact path.
-
-Reach for the exclusion list only in that shape — study surface as the parameterized child,
-browse screens as its siblings. When a narrower prefix exists, list it instead. Matching
-EXACTLY is deliberate: the exclusion must not quietly become a second prefix list.
-
-A scene is **not** auto-active. Games start accruing on mount because a board is read for a few
-seconds before the first tap; a scene is read for much longer than that, and its composer makes
-the learner's involvement explicit, so the ordinary first-interaction gate applies.
 
 Only **study** surfaces earn. Menus and browse screens deliberately do not: the hubs
 (the Deck Tower outside a study session, Menu, Games) and browse screens such as td's
@@ -316,7 +293,6 @@ on each call.
 |---|---|---|---|
 | GET  | `/api/users/:id/totalMinutePoints`            | —                              | `{ totalMinutePoints, currentStreak }` — cross-language rollup (Σ net, MAX streak) computed in `UserService`; no longer called by the client hook |
 | GET  | `/api/users/minutePoints/summary`              | query: `language`, `tz`, `timestamp` | `{ totalMinutePoints (NET), lifetimeMinutesEarned (GROSS), todayMinutes, currentStreak }` — **all four scoped to `language`** |
-| POST | `/api/nightMarket/dev/adjustMinutes`          | body: `{ delta, timestamp, tz }` | **template-author only (403)** — artificial ±N minute signal; returns `{ totalMinutePoints, lifetimeMinutesEarned }`; reconciles the market |
 | POST | `/api/users/minutePoints/increment`            | `{ timestamp, tz, language? }` | Adds 1 to the payload `language` (falls back to `selectedLanguage`); may advance THAT language's streak |
 | GET  | `/api/users/minutePoints/calendar/:yearMonth`  | path: `YYYY-MM`; query: `language` | Dense per-day list (one language) with `minutesEarned` and `penaltyMinutes` |
 | POST | `/api/auth/onLogin`                            | `{ tz }`                       | Post-login bookkeeping (currently: refresh `users.timezone`) |
@@ -327,7 +303,7 @@ on each call.
 ### Abuse resistance of the increment path
 
 `POST /api/users/minutePoints/increment` is the app's **only currency source** — minute
-points fund night-market unlocks via `unlocksForMinutes`, so every guard here is an
+points drive the leaderboard, the arena and streaks, so every guard here is an
 economy guard, not a politeness limit. Two of them are load-bearing, and both were
 originally written in a form a scripted client could walk straight past.
 

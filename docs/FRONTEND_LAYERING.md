@@ -15,72 +15,27 @@ Referenced from [ARCHITECTURE_REVIEW.md](./ARCHITECTURE_REVIEW.md) (findings 5 a
 | `src/pages/` | App-level, auth, and legacy pages only (`AccountSheet`, login/register, settings) | It is not part of any one feature |
 | `src/components/` | Genuinely shared presentational components | Importers in **two or more** features |
 | `src/hooks/`, `src/utils/` | Shared, feature-agnostic logic | Same test as `components/` |
-| `src/engine/market/` | The night-market engine — pure simulation/geometry | No React, no DOM, no network, **and no Pixi** — see the rule below |
 | `src/cardIcons/` | The card-icon subsystem (layout math, text layout, API client, `editor/`) | Consumed by both flp and cdp |
 | `src/api/` | The HTTP transport (§ 3) | — |
 | `src/routes/` | `routeMeta.ts` (path table, **no page imports**) + `registry.ts` (components, **all `React.lazy`**) | — |
 
-### `src/engine/` imports nothing outside itself
-
-Every file under `src/engine/market/` imports only its siblings — no React, no
-Pixi, no browser API. This is load-bearing, not tidiness: it is what allows the
-whole 1,000-agent simulation to move into a Web Worker verbatim, and it is the
-single largest piece of pre-paid work if the app is ever ported off the web.
-
-**Enforced by a test, not by review** (`src/engine/__tests__/enginePurity.test.ts`,
-added 2026-08-13 — REACT_NATIVE_MIGRATION.md action item 13). A leak is invisible
-when it happens: importing `pixi.js` into an engine module works perfectly, ships,
-and silently costs both properties above. The test is stricter than the manual
-grep it replaces in three ways — it covers subdirectories and `__tests__`, it
-catches dynamic `import()` and `require()`, and it also rejects **relative** paths
-that escape the engine (`../../features/…`), which would drag React and Pixi in
-transitively while looking local.
-
-**One carve-out: `src/assets/` data** (added 2026-09-09). An engine module may
-reference sprite/manifest files under `src/assets/` — `market/freeFarmTileset.ts` and
-`market/lumeishTileset.ts` both do. It is gated to that one directory *and* to asset
-extensions (`.png .webp .jpg .jpeg .svg .json .woff2`), so a `.ts` under `src/assets/`
-is still forbidden. Rationale: data cannot drag in a renderer, React or the DOM, so
-neither property above is at risk.
-
-The same change closed a **blind spot** — `import.meta.glob('…')` was not scanned at
-all, so the ~180-sprite farm pack had always been exempt while a plain
-`import manifest from '../../assets/….json'` (inert data, strictly safer) was rejected.
-The rule was blocking the harmless case and permitting the Vite-coupled one. Both are
-now scanned and both are allowed on the same narrow terms.
-
-The equivalent grep, if you want it by hand:
-
-```bash
-grep -rhn "^import .*from ['\"]" src/engine/market/*.ts | grep -v "from ['\"]\."
-# expected: no output
-```
-
-**Tests count.** A test that needs a real Pixi object belongs on the renderer side
-of the line — see `src/features/nightmarket/__tests__/pedestrianDepthPixi.test.ts`,
-which was split out of the engine's own depth test for exactly this reason. Do not
-weaken such a test to keep it in `src/engine/`; move it. The purity test allows
-exactly `vitest`, `fs` and `path` inside `src/engine/**/__tests__/` (harness and
-tree-walking only) and nothing else — adding a renderer or React to that allowlist
-is a decision to give up Web Worker eligibility, so do it deliberately or not at
-all.
-
-→ Rationale: [REACT_NATIVE_MIGRATION.md](./REACT_NATIVE_MIGRATION.md) § The Night
-Market finding.
+> **No `src/engine/` any more.** It held the Night Market / Immersive World iso engine
+> (pure simulation, guarded by an `enginePurity` test) and was deleted with those features
+> on 2026-11-09 — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md). If a pure simulation layer
+> comes back, restore that rule and its test with it.
 
 ### Every route is code-split
 
-`src/routes/registry.ts` binds **all 37 routes** with `React.lazy`, and
+`src/routes/registry.ts` binds **every route** with `React.lazy`, and
 `src/App.tsx` wraps every route in `<Suspense>` unconditionally — there is no
 per-route `lazy` flag to forget. Adding a page with a plain static `import` still
 works, which is precisely the danger: it silently moves that page and everything
 it pulls in back into the main chunk. `src/__tests__/routeRegistry.test.ts` fails
 if any route's component is not lazy.
 
-The one module that must **never** regain a static heavy import is `src/main.tsx`.
-PIXI's `unsafe-eval` shim lived there and single-handedly pinned the whole renderer
-into every user's main chunk; it now lives in
-`src/features/nightmarket/pixiRuntime.ts`.
+The one module that must **never** regain a static heavy import is `src/main.tsx`:
+a renderer shim imported there once pinned a whole canvas renderer into every user's
+main chunk.
 
 ### The rule
 
@@ -115,8 +70,8 @@ become shared when a second *page* used it, but when a second *feature* did.
 
 **Applied again, 2026-09-09.** The beginner keyboard's candidate bar carried desktop-only
 horizontal paging arrows (measuring, the `(hover: hover) and (pointer: fine)` gate, the
-`scrollBy` travel). The iw composer's hint tray then needed the identical control, which is
-the same trigger as above — a **second feature**, not a second page. The logic moved to
+`scrollBy` travel). The (since removed) Immersive World composer's hint tray then needed the
+identical control, which is the same trigger as above — a **second feature**, not a second page. The logic moved to
 `src/hooks/useHorizontalScrollArrows.ts` and the button to `src/components/ScrollArrow.tsx`;
 each call site keeps only what genuinely differs (`CandidateRow` passes its per-mode accent
 colour, the tray passes an end-of-travel callback that fetches its next page). Worth noting
@@ -126,12 +81,8 @@ surfaces.
 
 ### Dependency direction
 
-`features/` → `components/`, `hooks/`, `utils/`, `engine/`, `api/` — and never the
-reverse. In particular **nothing in `src/engine/` may import from `src/features/`**: the
-engine is consumed by feature code and by tests, so a back-edge makes the simulation
-depend on the authoring UI. When the engine needs a shape, the shape is the engine's
-(see `src/engine/market/templateDefinition.ts`, which owns `TemplateDefinitionPayload`
-and is re-exported by `features/nightmarket/templateEditorApi.ts` for feature callers).
+`features/` → `components/`, `hooks/`, `utils/`, `api/` — and never the reverse. When a
+shared layer needs a shape, the shape lives in the shared layer and features re-export it.
 
 ---
 
@@ -183,9 +134,9 @@ the whole app.
 > Until 2026-09-05 it threw `new Error(message)`, which silently dropped the status and the
 > entire parsed body — everything except the one `error` string. **The symptom appears far
 > from the cause**: the call site still gets an `Error` with a sensible `.message`, so
-> nothing looks broken until some caller reads a *structured* body. The iw scene editor was
-> the first to: `problemsFromError` (`features/immersiveworld/immersiveWorldSceneApi.ts`)
-> reads `response.data.problems`, so a refused save showed the server's one-line summary and
+> nothing looks broken until some caller reads a *structured* body. The (since removed)
+> Immersive World scene editor was the first to: its `problemsFromError` read
+> `response.data.problems`, so a refused save showed the server's one-line summary and
 > never the per-field list — defeating a validator deliberately written to return every
 > problem at once. An `err.status === 409` check would have failed identically and just as
 > quietly.
@@ -200,10 +151,7 @@ the whole app.
 returning parsed data. The page does not know the path, the method, or the payload shape.
 
 Existing feature-local modules: `features/community/communityApi.ts`,
-`features/discover/starterPacksApi.ts`, `features/nightmarket/nightMarketLayoutApi.ts`,
-`features/nightmarket/templateEditorApi.ts`,
-`features/nightmarket/templateSandboxApi.ts`,
-`cardIcons/cardIconApi.ts`, `utils/vocabApi.ts`.
+`features/discover/starterPacksApi.ts`, `cardIcons/cardIconApi.ts`, `utils/vocabApi.ts`.
 
 Cross-feature endpoint groups instead live directly under `src/api/`:
 `collections.ts`, `dictionary.ts`, `flashcards.ts`, `friends.ts`, `provisional.ts`,
@@ -235,7 +183,7 @@ through a wrapper that depends on it, so its raw `fetch` calls stay.
 
 ### 3.3 API paths are camelCase
 
-`/api/starterPacks/...`, `/api/nightMarketTemplates/...`, `/api/users/displaySettings`.
+`/api/starterPacks/...`, `/api/writingNotebook/...`, `/api/users/displaySettings`.
 User-facing SPA URLs are kebab-case (`/tester-dashboard`, `/discover/sort/:language`) and are unrelated
 to API paths. A client API module must stay in step with its `server/routes/*.ts` file —
 these are the two halves of one contract with no compiler linking them.
@@ -246,12 +194,11 @@ these are the two halves of one contract with no compiler linking them.
 
 | Section | Files |
 |---|---|
-| §1 directories | `src/features/`, `src/pages/`, `src/cardIcons/editor/`, `src/engine/market/` |
-| §1 direction | `src/engine/market/templateDefinition.ts`, `src/features/nightmarket/templateEditorApi.ts` |
+| §1 directories | `src/features/`, `src/pages/`, `src/cardIcons/editor/` |
 | §1 routing | `src/routes/routeMeta.ts`, `src/routes/registry.ts` |
 | §2 splits | `src/features/flashcards/card/CardFace.tsx`, `src/features/flashcards/FlashcardsLearnPage/InfoCardTabContent.tsx`, `infoCardTabAvailability.ts` |
 | §3 transport | `src/api/http.ts`, `src/utils/authHeader.ts`, `src/utils/fetchInterceptor.ts` |
-| §3.1 API modules | the seven modules listed above |
+| §3.1 API modules | the modules listed above |
 | §3.2 token rule | `src/AuthContext.tsx`, [TOKEN_EXPIRATION_IMPLEMENTATION.md](./TOKEN_EXPIRATION_IMPLEMENTATION.md) |
 
 Related docs: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (page archetypes + the

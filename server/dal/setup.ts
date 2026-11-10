@@ -5,6 +5,7 @@ import { VocabEntryDAL } from './implementations/VocabEntryDAL.js';
 import { UserMinutePointsDAL } from './implementations/UserMinutePointsDAL.js';
 import { UserLanguagesDAL } from './implementations/UserLanguagesDAL.js';
 import { DictionaryDAL } from './implementations/DictionaryDAL.js';
+import { OnDeckVocabDAL } from './implementations/OnDeckVocabDAL.js';
 import { UserService } from '../services/UserService.js';
 import { VocabEntryService } from '../services/VocabEntryService.js';
 import { FlashcardMarkService } from '../services/FlashcardMarkService.js';
@@ -16,6 +17,9 @@ import { ValidationService } from '../services/ValidationService.js';
 import { StarterPacksService } from '../services/StarterPacksService.js';
 import { LazyEnrichmentService } from '../services/LazyEnrichmentService.js';
 import { SortPacksDAL } from './implementations/SortPacksDAL.js';
+import { StarterPacksDAL } from './implementations/StarterPacksDAL.js';
+import { TextDAL } from './implementations/TextDAL.js';
+import { ValidationDAL } from './implementations/ValidationDAL.js';
 import { UserController } from '../controllers/UserController.js';
 import { VocabEntryController } from '../controllers/VocabEntryController.js';
 import { OnDeckVocabController } from '../controllers/OnDeckVocabController.js';
@@ -24,18 +28,6 @@ import { DictionaryController } from '../controllers/DictionaryController.js';
 import { TextController } from '../controllers/TextController.js';
 import { ValidationController } from '../controllers/ValidationController.js';
 import { StarterPacksController } from '../controllers/StarterPacksController.js';
-import { NightMarketDAL } from './implementations/NightMarketDAL.js';
-import { NightMarketService } from '../services/NightMarketService.js';
-import { NightMarketController } from '../controllers/NightMarketController.js';
-import { NightMarketTemplateService } from '../services/NightMarketTemplateService.js';
-import { NightMarketTemplateController } from '../controllers/NightMarketTemplateController.js';
-import { NightMarketPlacementDAL } from './implementations/NightMarketPlacementDAL.js';
-import { NightMarketPlacementService } from '../services/NightMarketPlacementService.js';
-import { NightMarketSandboxDAL } from './implementations/NightMarketSandboxDAL.js';
-import { NightMarketSandboxService } from '../services/NightMarketSandboxService.js';
-import { NightMarketSandboxController } from '../controllers/NightMarketSandboxController.js';
-import { NightMarketWorldService } from '../services/NightMarketWorldService.js';
-import { NightMarketWorldController } from '../controllers/NightMarketWorldController.js';
 import { GameAssetDAL } from './implementations/GameAssetDAL.js';
 import { GameProgressDAL } from './implementations/GameProgressDAL.js';
 import { Icons8DAL } from './implementations/Icons8DAL.js';
@@ -74,6 +66,7 @@ import { UsageStatsDAL } from './implementations/UsageStatsDAL.js';
 import { UsageDashboardService } from '../services/UsageDashboardService.js';
 import { UsageDashboardController } from '../controllers/UsageDashboardController.js';
 import { TTSService } from '../services/TTSService.js';
+import { CardAudioService } from '../services/CardAudioService.js';
 import { TTSController } from '../controllers/TTSController.js';
 import { CategoryPromotionDAL } from './implementations/CategoryPromotionDAL.js';
 import { VelocityController } from '../controllers/VelocityController.js';
@@ -92,11 +85,6 @@ import { StudyChallengeService } from '../services/StudyChallengeService.js';
 import { UserProfileService } from '../services/UserProfileService.js';
 import { UserProfileController } from '../controllers/UserProfileController.js';
 import { StudyChallengeController } from '../controllers/StudyChallengeController.js';
-import { ImmersiveWorldDAL } from './implementations/ImmersiveWorldDAL.js';
-import { ImmersiveWorldSceneService } from '../services/ImmersiveWorldSceneService.js';
-import { ImmersiveWorldSceneController } from '../controllers/ImmersiveWorldSceneController.js';
-import { ImmersiveWorldService } from '../services/ImmersiveWorldService.js';
-import { ImmersiveWorldRuntimeController } from '../controllers/ImmersiveWorldRuntimeController.js';
 
 // DAL instances
 const userDAL = new UserDAL();
@@ -107,10 +95,13 @@ const userMinutePointsDAL = new UserMinutePointsDAL();
 // (migrations 130 and 134, docs/PER_LANGUAGE_STREAKS.md). Replaced the global counters on `users`.
 const userLanguagesDAL = new UserLanguagesDAL();
 const dictionaryDAL = new DictionaryDAL();
+// The study surfaces' card reads (flp loop, game pools, Word Search, deck counts);
+// OnDeckVocabService holds the selection policy over them.
+const onDeckVocabDAL = new OnDeckVocabDAL();
 const sortPacksDAL = new SortPacksDAL();
-const nightMarketDAL = new NightMarketDAL();
-const nightMarketPlacementDAL = new NightMarketPlacementDAL();
-const nightMarketSandboxDAL = new NightMarketSandboxDAL();
+const starterPacksDAL = new StarterPacksDAL();
+const textDAL = new TextDAL();
+const validationDAL = new ValidationDAL();
 const gameAssetDAL = new GameAssetDAL();
 const gameProgressDAL = new GameProgressDAL();
 const icons8DAL = new Icons8DAL();
@@ -140,10 +131,9 @@ const provisionalCardDAL = new ProvisionalCardDAL();
 // The weekly head-to-head between two friends — one table, everything about a
 // challenge on it (migration 148, docs/STUDY_CHALLENGE.md).
 const studyChallengeDAL = new StudyChallengeDAL();
-// The Immersive World scene catalog (migration 158, docs/IMMERSIVE_WORLD.md). Scenes only
-// for now — the run/rating/memory tables get their methods when phase 2 has a runtime to
-// call them.
-const immersiveWorldDAL = new ImmersiveWorldDAL();
+// (Night Market and Immersive World — their DALs, services and controllers — were removed
+// 2026-11-09 and their tables dropped; the code is archived on the
+// `archive/night-market-immersive-world` branch, see docs/ARCHIVED_FEATURES.md.)
 // (The global Word of the Day — DailyWordDAL / WordOfTheDayService / its controller and
 // GET /api/dictionary/word-of-the-day — was removed 2026-11-04 with the Reading/Writing
 // Mastery Centers, its only client surface. The `daily_words` table (migration 169)
@@ -160,27 +150,13 @@ const vocabEntryService = new VocabEntryService(vocabEntryDAL, userDAL, dictiona
 const flashcardMarkService = new FlashcardMarkService(vocabEntryDAL, categoryPromotionDAL);
 // Request-time (validator-gated) trigger for the zh discover lazy-enrichment pipeline
 // (docs/DISCOVER_LAZY_ENRICHMENT.md §5). Injected into the two trigger points below.
-const lazyEnrichmentService = new LazyEnrichmentService(userDAL);
+const lazyEnrichmentService = new LazyEnrichmentService(userDAL, dictionaryDAL);
 // Created before onDeckVocabService because Word Search borrows its level estimate.
-const starterPacksService = new StarterPacksService(vocabEntryDAL, dictionaryDAL, sortPacksDAL, lazyEnrichmentService);
+const starterPacksService = new StarterPacksService(vocabEntryDAL, dictionaryDAL, sortPacksDAL, starterPacksDAL, lazyEnrichmentService);
 // dictionaryDAL: createText segments the first line (gsa) to derive the title.
-const textService = new TextService(userDAL, dictionaryDAL);
-const validationService = new ValidationService(userDAL);
-const nightMarketService = new NightMarketService(nightMarketDAL, userDAL);
-// Validator-authored template CATALOG (definitions), separate from the unlock economy. The
-// sandbox DAL is injected so deleting a template also removes every author's sandbox placement
-// of it (docs/NIGHT_MARKET_TEMPLATE_SANDBOX.md § cleanup).
-const nightMarketTemplateService = new NightMarketTemplateService(userDAL, nightMarketSandboxDAL);
-// Per-user template LAYOUT read (placements → rendered world); seeds the origin hub.
-const nightMarketWorldService = new NightMarketWorldService(nightMarketPlacementDAL, nightMarketTemplateService);
-// Occupant/placement WRITE side (grant flow + spawn). Injected into the minute-points service so
-// earning a minute reconciles the user's unlock entitlement (best-effort — see below).
-const nightMarketPlacementService = new NightMarketPlacementService(nightMarketPlacementDAL, nightMarketTemplateService);
-// Desktop-only Template Sandbox: template authors freely tile catalog templates (scratch state).
-// Constructed after the placement service — the sandbox's Iterate action reuses its growth planner.
-const nightMarketSandboxService = new NightMarketSandboxService(nightMarketSandboxDAL, userDAL, nightMarketPlacementService);
-// Constructed after the placement service so the grant hook can be wired in.
-const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userDAL, userLanguagesDAL, nightMarketPlacementService, arenaService);
+const textService = new TextService(userDAL, dictionaryDAL, textDAL);
+const validationService = new ValidationService(userDAL, validationDAL);
+const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userDAL, userLanguagesDAL, arenaService);
 const gameAssetService = new GameAssetService(gameAssetDAL);
 const gameProgressService = new GameProgressService(gameProgressDAL);
 // Community shared-layout feeds + votes; reuses vocabEntryService for the apply-to-card flow.
@@ -192,13 +168,17 @@ const leaderboardService = new LeaderboardService(userDAL, userMinutePointsDAL, 
 // is constructed HERE rather than as a module singleton so every service has one
 // lifetime owner (docs/ARCHITECTURE_REVIEW.md finding 8).
 const ttsService = new TTSService();
+// Card audio: pre-warm + the det `ttsVoice` stamp, layered over ttsService. Shared by
+// the flp/game pools (via onDeckVocabService), the loop-refill and acp pack-refill
+// controllers, and /api/tts/synthesize — one stamp policy for all of them.
+const cardAudioService = new CardAudioService(ttsService, dictionaryDAL);
 // Constructed after starterPacksService: it borrows estimateLevel to pick which
 // difficulty band to lend from (docs/PROVISIONAL_CARDS.md § Which words get lent).
 const provisionalCardService = new ProvisionalCardService(provisionalCardDAL, starterPacksService);
-// Constructed after ttsService (the working loop pre-warms each card's audio) and
+// Constructed after cardAudioService (the working loop pre-warms each card's audio) and
 // after provisionalCardService (the loop lends cards when every card it owns is
 // resting on cooldown). No cycle: ProvisionalCardService knows nothing of this one.
-const onDeckVocabService = new OnDeckVocabService(vocabEntryDAL, dictionaryService, starterPacksService, ttsService, provisionalCardService);
+const onDeckVocabService = new OnDeckVocabService(vocabEntryDAL, onDeckVocabDAL, dictionaryService, starterPacksService, cardAudioService, provisionalCardService);
 // Constructed after starterPacksService (it borrows estimateLevel for the candidate
 // band, and the shared "already known" write for a struck word).
 const studyChallengeService = new StudyChallengeService(
@@ -236,19 +216,15 @@ const focusModeDAL = new FocusModeDAL();
 const focusModeService = new FocusModeService(focusModeDAL);
 const focusModeController = new FocusModeController(focusModeService);
 // After focusModeService: turning a Reading / Writing goal on may auto-enable focus.
-const userController = new UserController(userService, icons8DAL, nightMarketWorldService, focusModeService);
+const userController = new UserController(userService, icons8DAL, focusModeService);
 const onDeckVocabController = new OnDeckVocabController(
-  onDeckVocabService, provisionalCardService, studyChallengeService, focusModeService
+  onDeckVocabService, provisionalCardService, studyChallengeService, focusModeService, cardAudioService
 );
 const userMinutePointsController = new UserMinutePointsController(userMinutePointsService);
 const dictionaryController = new DictionaryController(dictionaryService, userDAL, vocabEntryDAL, lazyEnrichmentService);
 const textController = new TextController(textService);
 const validationController = new ValidationController(validationService);
-const starterPacksController = new StarterPacksController(starterPacksService, provisionalCardService);
-const nightMarketController = new NightMarketController(nightMarketService);
-const nightMarketTemplateController = new NightMarketTemplateController(nightMarketTemplateService);
-const nightMarketSandboxController = new NightMarketSandboxController(nightMarketSandboxService);
-const nightMarketWorldController = new NightMarketWorldController(nightMarketWorldService);
+const starterPacksController = new StarterPacksController(starterPacksService, provisionalCardService, cardAudioService);
 const gamesController = new GamesController(gameAssetService, gameProgressService);
 // Speed Reading is game-SPECIFIC and so gets its own controller rather than
 // growing the game-agnostic GamesController.
@@ -292,7 +268,7 @@ const leaderboardController = new LeaderboardController(leaderboardService);
 const usageStatsDAL = new UsageStatsDAL();
 const usageDashboardService = new UsageDashboardService(userDAL, usageStatsDAL);
 const usageDashboardController = new UsageDashboardController(usageDashboardService);
-const ttsController = new TTSController(ttsService);
+const ttsController = new TTSController(cardAudioService);
 const friendsController = new FriendsController(friendsService);
 const arenaController = new ArenaController(arenaService);
 // The Deck Tower's weather (docs/DECK_TOWER.md § "Weather"). Reads users."geoCell" through
@@ -300,30 +276,6 @@ const arenaController = new ArenaController(arenaService);
 const weatherService = new WeatherService(arenaDAL);
 const weatherController = new WeatherController(weatherService);
 const studyChallengeController = new StudyChallengeController(studyChallengeService);
-// The iw scene editor's service. Takes userDAL only for the `isTemplateAuthor` gate
-// (phase 1e) — the same grant the night market template editor uses.
-const immersiveWorldSceneService = new ImmersiveWorldSceneService(immersiveWorldDAL, userDAL);
-const immersiveWorldSceneController = new ImmersiveWorldSceneController(immersiveWorldSceneService);
-// The runtime half (§ 12 phase 2) — a separate service from the authoring one by lifecycle:
-// authoring runs once under a human's eye and may refuse; this runs many times in front of a
-// learner and may never refuse harder than a frozen scene (§ 14 Q7).
-// The dictionary is iw's fourth argument, not its second: `budget` and `rungs` keep their
-// positions so every existing construction (and every test) is unchanged. It is there for
-// § 5.3b's segmented speech bubbles, which reuse the est's popup rather than iw's own.
-// `userDAL` is the SIXTH argument for the same reason the dictionary is the fourth: every
-// earlier position is load-bearing for existing constructions and tests. It is taken only for
-// § 7's template-author budget exemption (an author replaying a scene under test would
-// otherwise burn the 60-turn session run and the 400/day cap) — not for any gate; the runtime
-// half never refuses on identity.
-const immersiveWorldService = new ImmersiveWorldService(
-  immersiveWorldDAL,
-  undefined,
-  undefined,
-  dictionaryDAL,
-  undefined,
-  userDAL,
-);
-const immersiveWorldRuntimeController = new ImmersiveWorldRuntimeController(immersiveWorldService);
 
 export {
   focusModeService,
@@ -335,6 +287,9 @@ export {
   userLanguagesDAL,
   dictionaryDAL,
   sortPacksDAL,
+  starterPacksDAL,
+  textDAL,
+  validationDAL,
   userService,
   vocabEntryService,
   onDeckVocabService,
@@ -351,18 +306,6 @@ export {
   textController,
   validationController,
   starterPacksController,
-  nightMarketDAL,
-  nightMarketService,
-  nightMarketController,
-  nightMarketTemplateService,
-  nightMarketTemplateController,
-  nightMarketSandboxDAL,
-  nightMarketSandboxService,
-  nightMarketSandboxController,
-  nightMarketPlacementDAL,
-  nightMarketPlacementService,
-  nightMarketWorldService,
-  nightMarketWorldController,
   gameAssetDAL,
   gameProgressDAL,
   gameAssetService,
@@ -394,6 +337,7 @@ export {
   usageDashboardService,
   usageDashboardController,
   ttsService,
+  cardAudioService,
   ttsController,
   friendshipDAL,
   friendsService,
@@ -410,9 +354,4 @@ export {
   studyChallengeController,
   userProfileService,
   userProfileController,
-  immersiveWorldDAL,
-  immersiveWorldSceneService,
-  immersiveWorldSceneController,
-  immersiveWorldService,
-  immersiveWorldRuntimeController,
 };

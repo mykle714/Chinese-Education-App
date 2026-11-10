@@ -35,7 +35,6 @@ const ALL_TIPS: TipDef[] = [
     { text: "Word Search hides your vocab in a grid — words can run in any direction.", game: "word-search" },
     { text: "Your streak resets if a full day passes without any study activity." },
     { text: "The Community page shows card designs other learners have upvoted.", feature: "community" },
-    { text: "Visit the Night Market for a change of scenery while you review.", feature: "nightMarket" },
     { text: "Check the Reader to mine new words straight out of real texts." },
 ];
 

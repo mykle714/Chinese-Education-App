@@ -1,5 +1,5 @@
 /**
- * DebugDumpButton — the author-only "dump what the recognizer saw" control.
+ * DebugDumpButton — the feature-tester-only "dump what the recognizer saw" control.
  *
  * LAYER: client feature view. Owns only the console/clipboard side effects; the
  * payload itself is built by the pure `buildDebugSnapshot`.
@@ -7,13 +7,13 @@
  * Spec: docs/BEGINNER_KEYBOARD.md § 6w.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * ⚠️ GATED ON `users.isTemplateAuthor`, AND THE GATE IS NOT HERE
+ * ⚠️ GATED ON `users.isFeatureTester`, AND THE GATE IS NOT HERE
  *
  * The provider decides (it is the only layer in this feature holding auth) and
- * passes `debug` down. Same grant as the night-market and iw editors — this is a
- * tool for whoever is tuning the recognizer, not a user-facing feature.
+ * passes `debug` down. This is a tool for whoever is tuning the recognizer, not a
+ * user-facing feature. (It rode `users.isTemplateAuthor` until migration 185.)
  *
- * It is UX-only, exactly like every other `isTemplateAuthor` check on the client:
+ * It is UX-only, exactly like every other `isFeatureTester` check on the client:
  * there is no server call behind it and nothing here is privileged. A determined
  * learner could produce the same dump from the console. The gate exists so the
  * button is not in everyone's way.

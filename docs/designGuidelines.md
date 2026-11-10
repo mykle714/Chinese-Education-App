@@ -160,7 +160,6 @@ PostgreSQL 15 database with Node.js/Express backend, managed via Docker Compose.
 | readingGoal | boolean | NO | `false` | Enables the Reading mastery bar |
 | writingGoal | boolean | NO | `false` | Enables the Writing mastery bar |
 | isValidator | boolean | NO | `false` | Grants the validator flow — see [DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md) |
-| isTemplateAuthor | boolean | NO | `false` | Grants the night-market template editor/sandbox |
 | showSegmentSpaces | boolean | NO | `false` | Account-level est display toggle (zh only) |
 
 **Not here any more:** the global minute-point counters (`totalMinutePoints`,
@@ -179,8 +178,7 @@ migration 130, renamed by 145. See [PER_LANGUAGE_STREAKS.md](./PER_LANGUAGE_STRE
   `user_languages`, `userminutepoints`, `vocabentries_zh` / `vocabentries_es`, `decks`,
   `friendships` (both sides), `texts`, `refresh_tokens`, `validations`, `weeklies`,
   `wins`, `discover_skips`, `category_promotions`, `gameprogress`,
-  `writing_practice_completions`, the three `nightmarkettemplate*` tables,
-  `nightmarketunlocks`, `community_layout_votes`.
+  `writing_practice_completions`, `community_layout_votes`.
 
 #### VocabEntries — `vocabentries_zh` / `vocabentries_es`
 

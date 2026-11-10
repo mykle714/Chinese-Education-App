@@ -33,7 +33,7 @@ import { gameLabel } from "./usageFormat";
  *   window totals — sums + distinct users over the window
  *   recent        — the individual learners behind those totals, by name
  *   languages     — minutes + active users per study language, with a meter
- *   features      — cards added, wins (per game), writing, iw, AI lookups
+ *   features      — cards added, wins (per game), writing, AI lookups
  */
 
 const WINDOW_OPTIONS = USAGE_WINDOWS.map((d) => ({ value: String(d), label: d === 0 ? "All" : `${d}d` }));

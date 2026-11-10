@@ -1,13 +1,13 @@
 import type { PoolClient } from 'pg';
-import { VocabEntryDAL } from '../dal/implementations/VocabEntryDAL.js';
-import { DictionaryDAL } from '../dal/implementations/DictionaryDAL.js';
-import { SortPacksDAL } from '../dal/implementations/SortPacksDAL.js';
+import type { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
+import type { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
+import type { ISortPacksDAL } from '../dal/interfaces/ISortPacksDAL.js';
+import type { IStarterPacksDAL, DiscoverDetRow } from '../dal/interfaces/IStarterPacksDAL.js';
 import { DiscoverCard, StarterPackBucket, SortPack } from '../types/index.js';
+import { NotFoundError, ValidationError } from '../types/dal.js';
 import { SortPackRow } from '../types/sortPacks.js';
-import db from '../db.js';
-import { dictTableForLanguage } from '../dal/shared/dictTable.js';
-import { vetTableForLanguage, CORE_CATEGORY_EXPR, vetSortedClause } from '../dal/shared/vetTable.js';
-import { coreMasteredTypedMarkHistory } from '../utils/masteryCompute.js';
+import { coreSeededTypedMarkHistory, SORT_BUCKET_CORE_POSITIVES } from '../utils/masteryCompute.js';
+import { DISCOVER_SORT_BUCKETS, type DiscoverSortBucket } from '../contracts/wire.js';
 import { LazyEnrichmentService } from './LazyEnrichmentService.js';
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../utils/definitions.js';
 
@@ -25,12 +25,12 @@ import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../utils/
  * `AddCardsPage.tsx` — because the level must react to a SortPack's outcome as soon as
  * it completes, not on the next server round-trip.
  *
- * Card source is the per-language dictionaryentries table, gated by _supplyGate:
- * `discoverable = TRUE`, for every language. Per-user
+ * Card source is the per-language dictionaryentries table, gated by `discoverSupplyGate`
+ * (dal/shared/dictTable.ts): `discoverable = TRUE`, for every language. Per-user
  * sort state lives in two places:
  *   - vocabentries (vet): "Add to Learning" / "Already Learned" rows persist what the
- *     user did with a card; the GENERATED `category` column (from markHistory) is what
- *     `estimateLevel`'s cold-start seed reads.
+ *     user did with a card; the CORE-bar band derived from `typedMarkHistory`
+ *     (`CORE_CATEGORY_EXPR`, migration 143) is what `estimateLevel`'s cold-start seed reads.
  *   - discover_skips: "Skip for now" deferrals (migration 80). Deliberately separate
  *     so a skip carries NO level signal and never enters the library.
  *
@@ -39,9 +39,13 @@ import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../utils/
  *   - Chinese (dictionaryentries_zh): '1'..'6' — these ARE HSK proficiency levels
  *     (1 = HSK1 .. 6 = HSK6); migration 79 dropped the old 'HSK' prefix only.
  *   - Spanish (dictionaryentries_es): '1'..'6' learner-acquisition difficulty.
- * The encoding is centralized in _levelConfig so the level math stays
+ * The encoding is centralized in `MAX_LEVEL` + StarterPacksDAL's LEVEL_EXPR so the level math stays
  * language-agnostic. The UI draws the value as a six-hexagon meter in every language
  * (src/components/ScoreMeters.tsx → DifficultyMeter) and never names HSK.
+ *
+ * LAYER: service — no SQL. Supply, skips and seen packs go through `IStarterPacksDAL`;
+ * the vet row a sort creates, promotes or undoes goes through `IVocabEntryDAL`; authored
+ * packs through `ISortPacksDAL` (docs/BACKEND_LAYERING.md).
  */
 export class StarterPacksService {
   /**
@@ -58,33 +62,22 @@ export class StarterPacksService {
   private static readonly MIN_MASTERED_TO_ADVANCE = 3;
   private static readonly LEARN_LATER_TOLERANCE = 1;
 
+  /**
+   * The difficulty ceiling — one generalized 1..6 scale for every language (migration 79;
+   * for zh the integer IS the HSK level). Must match `StarterPacksDAL`'s VALID_LEVEL band.
+   */
+  private static readonly MAX_LEVEL = 6;
+
   constructor(
-    private vocabEntryDAL: VocabEntryDAL,
-    private dictionaryDAL: DictionaryDAL,
-    private sortPacksDAL: SortPacksDAL,
+    private vocabEntryDAL: IVocabEntryDAL,
+    private dictionaryDAL: IDictionaryDAL,
+    private sortPacksDAL: ISortPacksDAL,
+    private starterPacksDAL: IStarterPacksDAL,
     // Request-time lazy-enrichment trigger (docs/DISCOVER_LAZY_ENRICHMENT.md §5).
     // Sorting a zh card into Learning / Already-Learned tops up its enrichment when
     // the sorter is a validator. Optional so non-DI test construction still works.
     private lazyEnrichmentService?: LazyEnrichmentService
   ) {}
-
-  /**
-   * Resolve the per-language dictionaryentries table for discover/sort/undo queries.
-   * Whitelisted (never interpolates caller-controlled text) so it is safe to splice
-   * directly into SQL. Card ids are surrogate serials that collide across tables, so
-   * every id lookup must be scoped to the correct language's table.
-   */
-  private _dictTable(language: string): string {
-    return dictTableForLanguage(language);
-  }
-
-  /**
-   * Resolve the per-language vocabentries table (vet) — vocabentries_zh /
-   * vocabentries_es (migration 66). Whitelisted, safe to splice into SQL.
-   */
-  private _vetTable(language: string): string {
-    return vetTableForLanguage(language);
-  }
 
   /**
    * Get the initial queue of ready-to-show cards for a language. The client holds a
@@ -114,12 +107,12 @@ export class StarterPacksService {
     const level = await this.estimateLevel(userId, language);
 
     // Step 1: fresh (non-skipped) cards, nearest-level-first.
-    let rows = await this._fetchSupplyRows(language, userId, level, excludeIds, { includeSkips: false, limit });
+    let rows = await this.starterPacksDAL.findSupplyRows(language, userId, level, excludeIds, { includeSkips: false, limit });
 
     // Step 2: backfill from recycled skips only if fresh supply ran short.
     if (rows.length < limit) {
       const have = new Set([...excludeIds, ...rows.map((r) => r.id)]);
-      const skipRows = await this._fetchSupplyRows(language, userId, level, [...have], { includeSkips: true, limit: limit - rows.length });
+      const skipRows = await this.starterPacksDAL.findSupplyRows(language, userId, level, [...have], { includeSkips: true, limit: limit - rows.length });
       rows = rows.concat(skipRows);
     }
 
@@ -143,7 +136,7 @@ export class StarterPacksService {
    * The clusters themselves deliberately do NOT travel — `DiscoverCard` is unchanged and the
    * payload stays the same size. See docs/DEFINITION_CLUSTERS.md.
    */
-  private _rowsToDiscoverCards(rows: any[]): DiscoverCard[] {
+  private _rowsToDiscoverCards(rows: DiscoverDetRow[]): DiscoverCard[] {
     return rows.map(row => ({
       id: row.id,
       entryKey: row.word1,
@@ -177,53 +170,6 @@ export class StarterPacksService {
   }
 
   /**
-   * Encoding of the integer difficulty level stored in the dict table's difficulty
-   * column. As of migration 79 every supported language uses ONE generalized scale —
-   * a bare integer '1'..'6' — so this is no longer per-language:
-   *   - maxLevel       — the difficulty ceiling (6 for all languages).
-   *   - levelExpr      — SQL extracting the integer level from de."difficulty".
-   *   - validPredicate — SQL matching rows whose difficulty is a valid level.
-   * All SQL fragments are static (never interpolate caller input) so they are
-   * safe to splice directly into queries.
-   *
-   * For Chinese the integer still IS the HSK proficiency level (1 = HSK1 .. 6 = HSK6);
-   * migration 79 only dropped the textual 'HSK' prefix, the semantics are unchanged.
-   * For Spanish it is a learner-acquisition score on the same 1..6 scale.
-   */
-  private _levelConfig(_language: string): {
-    maxLevel: number;
-    levelExpr: string;
-    validPredicate: string;
-  } {
-    // Single generalized config (kept the `_language` param in case a future
-    // language needs to diverge from the shared 1..6 integer scale).
-    // `difficulty` is a smallint (migration 92), so it is used directly — no
-    // CAST, and the validity check is a numeric range rather than a text regex.
-    return {
-      maxLevel: 6,
-      levelExpr: `de."difficulty"`,
-      validPredicate: `de."difficulty" BETWEEN 1 AND 6`,
-    };
-  }
-
-  /**
-   * Supply-visibility gate for the discover flows (sort / quick-mark / progress).
-   *
-   * ONE flag, every language: `discoverable`. Chinese briefly gated on a lower
-   * `sortable` bar (migration 110) so partially-enriched cards could reach discover
-   * ahead of full enrichment; that idea is retired (migration 144 drops the column)
-   * because the corpus-wide pre-pass it depended on never ran, so in practice
-   * `sortable` only ever added a couple hundred rows on top of `discoverable`
-   * while forking every supply query on language. See docs/DISCOVER_FLOW.md.
-   *
-   * @param alias - table alias prefix incl. trailing dot (e.g. `de.`), or '' when
-   *   the query has no alias (getProgress).
-   */
-  private _supplyGate(alias = 'de.'): string {
-    return `${alias}discoverable = TRUE`;
-  }
-
-  /**
    * COLD-START ONLY (docs §6.1): the lowest level the user has NOT yet cleared, used to
    * seed the client's adaptive target level the first time it enters the flow with no
    * level of its own to send. Once seeded, the client tracks and moves its own target
@@ -242,179 +188,42 @@ export class StarterPacksService {
    * mastered. A brand-new user (all zero) is not-cleared at L1 → estimate 1.
    */
   async estimateLevel(userId: string, language: string): Promise<number> {
-    const { maxLevel, levelExpr, validPredicate } = this._levelConfig(language);
-    const det = this._dictTable(language);
-    const vet = this._vetTable(language);
-    const client = await db.getClient();
-    try {
-      // CORE BAR (migration 143): "how much of this level does the learner already
-      // know" is a recognition/production question. Banding it on all three bars would
-      // let a learner who never enabled the reading goal be estimated differently from
-      // one who did, off identical study — and the estimate exists precisely to place
-      // a NEW learner, who has no reading/writing history either way.
-      const result = await client.query<{ lvl: number; mastered: string; learning: string }>(`
-        SELECT ${levelExpr} AS lvl,
-               COUNT(*) FILTER (WHERE ${CORE_CATEGORY_EXPR} = 'Mastered')  AS mastered,
-               COUNT(*) FILTER (WHERE ${CORE_CATEGORY_EXPR} <> 'Mastered') AS learning
-        FROM ${vet} ve
-        JOIN ${det} de
-          ON ve."entryKey" = de.word1 AND de.language = ve.language
-        WHERE ve."userId" = $1
-          AND ve.language = $2
-          AND ${validPredicate}
-          -- SORTED only: a provisional card carries no statement of intent about the
-          -- user's level, so it must not drag the cold-start estimate around.
-          AND ${vetSortedClause()}
-        GROUP BY lvl
-      `, [userId, language]);
-
-      // Index the per-level counts so missing levels read as 0.
-      const mastered = new Map<number, number>();
-      const learning = new Map<number, number>();
-      for (const row of result.rows) {
-        mastered.set(row.lvl, parseInt(row.mastered, 10));
-        learning.set(row.lvl, parseInt(row.learning, 10));
-      }
-
-      // Walk up from the bottom; return the first uncleared level.
-      for (let L = 1; L <= maxLevel; L++) {
-        const cleared =
-          (mastered.get(L) ?? 0) >= StarterPacksService.MIN_MASTERED_TO_ADVANCE &&
-          (learning.get(L) ?? 0) <= StarterPacksService.LEARN_LATER_TOLERANCE;
-        if (!cleared) return L;
-      }
-      return maxLevel; // everything cleared → top of the scale
-    } finally {
-      client.release();
+    // Banded on the CORE bar (migration 143) — see StarterPacksDAL.countSortedByLevel.
+    // Index the per-level counts so missing levels read as 0.
+    const mastered = new Map<number, number>();
+    const learning = new Map<number, number>();
+    for (const row of await this.starterPacksDAL.countSortedByLevel(userId, language)) {
+      mastered.set(row.level, row.mastered);
+      learning.set(row.level, row.learning);
     }
+
+    // Walk up from the bottom; return the first uncleared level.
+    for (let L = 1; L <= StarterPacksService.MAX_LEVEL; L++) {
+      const cleared =
+        (mastered.get(L) ?? 0) >= StarterPacksService.MIN_MASTERED_TO_ADVANCE &&
+        (learning.get(L) ?? 0) <= StarterPacksService.LEARN_LATER_TOLERANCE;
+      if (!cleared) return L;
+    }
+    return StarterPacksService.MAX_LEVEL; // everything cleared → top of the scale
   }
 
   /**
-   * Fetch ready-to-show discoverable card rows for a user/language, ordered
-   * NEAREST-LEVEL-FIRST around `level` (in-level, then ±1, ±2, …; ties broken by id).
-   * Always excludes cards the user has already sorted (vet NOT EXISTS) and any
-   * `excludeIds` the caller already holds.
-   *
-   * `opts.includeSkips` selects the two supply phases (docs §5):
-   *   - false → exclude cards currently in discover_skips (the normal fresh supply).
-   *   - true  → ONLY cards in discover_skips (the recycle phase), oldest skip first,
-   *             used to backfill when fresh supply is short.
+   * The sort-progress bar: discoverable cards vs the ones the user has acted on (sorted
+   * vet rows + current skips).
    */
-  private async _fetchSupplyRows(
-    language: string,
-    userId: string,
-    level: number,
-    excludeIds: number[],
-    opts: { includeSkips: boolean; limit: number; exactLevel?: number }
-  ): Promise<any[]> {
-    if (opts.limit <= 0) return [];
-
-    const det = this._dictTable(language);
-    const vetTable = this._vetTable(language);
-    const { levelExpr, validPredicate } = this._levelConfig(language);
-
-    const client = await db.getClient();
-    try {
-      // $1 language, $2 userId, $3 level (for the nearest-first distance ordering),
-      // then optional excludeIds, then $limit.
-      const params: any[] = [language, userId, level];
-      let excludeFilter = '';
-      if (excludeIds.length > 0) {
-        params.push(excludeIds);
-        excludeFilter = ` AND de.id != ALL($${params.length}::int[])`;
-      }
-
-      // When the caller pins an exact level (pack supply drives level drift itself),
-      // constrain to that band so level is honored before any pack-vs-single ordering.
-      let exactLevelFilter = '';
-      if (typeof opts.exactLevel === 'number') {
-        params.push(opts.exactLevel);
-        exactLevelFilter = ` AND ${levelExpr} = $${params.length}`;
-      }
-
-      // Skip phase: fresh supply EXCLUDES skipped cards; recycle phase keeps ONLY them.
-      // `recycleOrder` pulls the oldest skip back first when recycling.
-      const skipFilter = opts.includeSkips
-        ? `AND EXISTS (SELECT 1 FROM discover_skips ds WHERE ds."userId" = $2 AND ds.language = de.language AND ds."cardId" = de.id)`
-        : `AND NOT EXISTS (SELECT 1 FROM discover_skips ds WHERE ds."userId" = $2 AND ds.language = de.language AND ds."cardId" = de.id)`;
-      const recycleOrder = opts.includeSkips
-        ? `(SELECT ds."createdAt" FROM discover_skips ds WHERE ds."userId" = $2 AND ds.language = de.language AND ds."cardId" = de.id) ASC,`
-        : '';
-
-      // Both languages are now one det row per word1 (es since migration 123), so a card
-      // is "already sorted" when the user holds a vet row for that word — full stop. The
-      // Spanish branch used to exclude per (word1, pos) because the same spelling supplied
-      // several discoverable cards, one per POS.
-      params.push(opts.limit);
-      const limitParam = `$${params.length}`;
-
-      const result = await client.query(`
-        SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
-               de."definitionClusters",
-               de.language, de.script, de."difficulty", de."frequencyScore", de.breakdown, de.synonyms,
-               de."exampleSentences",
-               de."iconId"
-        FROM ${det} de
-        WHERE de.language = $1
-          AND ${this._supplyGate()}
-          AND ${validPredicate}
-          AND NOT EXISTS (
-            SELECT 1 FROM ${vetTable} ve
-            WHERE ve."userId" = $2 AND ve."entryKey" = de.word1 AND ve.language = de.language
-              -- SORTED only. A provisional card (migration 140) has a vet row but the
-              -- user has not sorted it, so discover MUST keep offering it — that is how
-              -- a temporary card earned in a game gets promoted into the real deck.
-              AND ${vetSortedClause()}
-          )
-          ${skipFilter}
-          ${excludeFilter}
-          ${exactLevelFilter}
-        ORDER BY ${recycleOrder} ABS(${levelExpr} - $3) ASC, de."frequencyScore" DESC NULLS LAST, de.id ASC
-        LIMIT ${limitParam}
-      `, params);
-      return result.rows;
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
-   * Get user's progress on a starter pack
-   */
-  async getProgress(language: string, userId: string): Promise<any> {
-    const table = this._dictTable(language);
-    const client = await db.getClient();
-    try {
-      const totalResult = await client.query<{ count: string }>(`
-        SELECT COUNT(*) as count
-        FROM ${table}
-        WHERE language = $1 AND ${this._supplyGate('')}
-      `, [language]);
-
-      // "Sorted" = cards the user has acted on = library vet rows PLUS current skips.
-      // Skips moved out of vet into discover_skips (migration 80), so both must be
-      // counted to keep progress faithful to the pre-split behaviour.
-      const sortedResult = await client.query<{ count: string }>(`
-        SELECT
-          (SELECT COUNT(*) FROM ${this._vetTable(language)} ve
-             WHERE ve."userId" = $1 AND ve.language = $2 AND ${vetSortedClause()})
-        + (SELECT COUNT(*) FROM discover_skips
-             WHERE "userId" = $1 AND language = $2) AS count
-      `, [userId, language]);
-
-      const total: number = parseInt(totalResult.rows[0].count);
-      const sorted: number = parseInt(sortedResult.rows[0].count);
-      const remaining: number = total - sorted;
-
-      return {
-        total,
-        sorted,
-        remaining,
-        percentComplete: total > 0 ? Math.round((sorted / total) * 100) : 0
-      };
-    } finally {
-      client.release();
-    }
+  async getProgress(language: string, userId: string): Promise<{
+    total: number; sorted: number; remaining: number; percentComplete: number;
+  }> {
+    const [total, sorted] = await Promise.all([
+      this.starterPacksDAL.countDiscoverable(language),
+      this.starterPacksDAL.countSortedOrSkipped(userId, language),
+    ]);
+    return {
+      total,
+      sorted,
+      remaining: total - sorted,
+      percentComplete: total > 0 ? Math.round((sorted / total) * 100) : 0,
+    };
   }
 
   /**
@@ -422,7 +231,7 @@ export class StarterPacksService {
    * supply, this returns a full PAGE of not-yet-sorted discoverable words at ONE EXACT
    * level, ordered by vernacular score (most colloquial first), paginated by offset.
    *
-   * Differences from `_fetchSupplyRows`:
+   * Differences from `StarterPacksDAL.findSupplyRows`:
    *   - exact level only (no nearest-level ± drift);
    *   - `discover_skips` is NOT excluded — a skipped word has no vet row, so it is
    *     offered here for a second triage pass (docs §5, resolved decision);
@@ -447,69 +256,12 @@ export class StarterPacksService {
   ): Promise<{ cards: DiscoverCard[]; level: number; hasMore: boolean }> {
     const resolvedLevel = level ?? await this.estimateLevel(userId, language);
 
-    const det = this._dictTable(language);
-    const vetTable = this._vetTable(language);
-    const { levelExpr, validPredicate } = this._levelConfig(language);
-    // $1 language, $2 userId, $3 level, then optional cursor score+id, then limit.
-    const params: any[] = [language, userId, resolvedLevel];
-    let cursorFilter = '';
-    if (cursor) {
-      params.push(cursor.score); // may be null (the NULL-score tail)
-      const scoreIdx = params.length;
-      params.push(cursor.id);
-      const idIdx = params.length;
-      // Resume strictly AFTER (cursor.score, cursor.id) under DESC-NULLS-LAST / id-ASC:
-      //   - a NULL cursor score means we're already in the trailing NULL-score block,
-      //     so continue by id within it;
-      //   - otherwise take everything with a lower score, the same score with a larger
-      //     id, or any NULL score (which sorts after every non-NULL score).
-      cursorFilter = `
-        AND CASE
-              WHEN $${scoreIdx}::int IS NULL THEN (de."frequencyScore" IS NULL AND de.id > $${idIdx})
-              ELSE (
-                de."frequencyScore" < $${scoreIdx}::int
-                OR (de."frequencyScore" = $${scoreIdx}::int AND de.id > $${idIdx})
-                OR de."frequencyScore" IS NULL
-              )
-            END`;
-    }
-    params.push(limit + 1);
-    const limitIdx = params.length;
-
-    const client = await db.getClient();
-    try {
-      const result = await client.query(`
-        SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
-               de."definitionClusters",
-               de.language, de.script, de."difficulty", de."frequencyScore", de.breakdown, de.synonyms,
-               de."exampleSentences",
-               de."iconId"
-        FROM ${det} de
-        WHERE de.language = $1
-          AND ${this._supplyGate()}
-          AND ${validPredicate}
-          AND ${levelExpr} = $3
-          AND NOT EXISTS (
-            SELECT 1 FROM ${vetTable} ve
-            WHERE ve."userId" = $2 AND ve."entryKey" = de.word1 AND ve.language = de.language
-              -- SORTED only. A provisional card (migration 140) has a vet row but the
-              -- user has not sorted it, so discover MUST keep offering it — that is how
-              -- a temporary card earned in a game gets promoted into the real deck.
-              AND ${vetSortedClause()}
-          )
-          ${cursorFilter}
-        ORDER BY de."frequencyScore" DESC NULLS LAST, de.id ASC
-        LIMIT $${limitIdx}
-      `, params);
-
-      const rows = result.rows;
-      const hasMore = rows.length > limit;
-      const pageRows = hasMore ? rows.slice(0, limit) : rows;
-      const cards = await this._enrichDiscoverCards(this._rowsToDiscoverCards(pageRows), language);
-      return { cards, level: resolvedLevel, hasMore };
-    } finally {
-      client.release();
-    }
+    // Over-fetch by one: the extra row only answers "is there another page?".
+    const rows = await this.starterPacksDAL.findQuickMarkPage(language, userId, resolvedLevel, cursor, limit + 1);
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+    const cards = await this._enrichDiscoverCards(this._rowsToDiscoverCards(pageRows), language);
+    return { cards, level: resolvedLevel, hasMore };
   }
 
   /**
@@ -554,7 +306,10 @@ export class StarterPacksService {
    * Bucket effects (docs §8):
    *   - skip            → INSERT discover_skips (NO vet row → no level signal).
    *   - library         → "Add to Learning": upsert vet row, empty history (Unfamiliar).
+   *   - target          → upsert vet row + 3/3 core history → Target (pbh 4.0).
+   *   - comfortable     → upsert vet row + 5/5 core history → Comfortable (pbh 6.67).
    *   - already-learned → upsert vet row + perfect 8/8 history → GENERATED category Mastered.
+   * Per-bucket counts: SORT_BUCKET_CORE_POSITIVES (contracts/mastery.ts).
    */
   async sortCard(
     userId: string,
@@ -570,9 +325,8 @@ export class StarterPacksService {
     opts: { packId?: number | null; lastInPack?: boolean } = {}
   ): Promise<any> {
     const inPackMode = opts.packId !== undefined;
-    const validBuckets: string[] = ['already-learned', 'library', 'skip'];
-    if (!validBuckets.includes(bucket)) {
-      throw new Error(`Invalid bucket: ${bucket}`);
+    if (!(DISCOVER_SORT_BUCKETS as readonly string[]).includes(bucket)) {
+      throw new ValidationError(`Invalid bucket: ${bucket}`);
     }
 
     // Skip is signal-free: it lives in discover_skips, never in vet. Record it and
@@ -583,82 +337,75 @@ export class StarterPacksService {
       return { success: true, message: 'Card skipped', bucket: 'skip', nextCard: cards[0] ?? null, exhausted, level };
     }
 
-    // library / already-learned both persist as the internal 'library' bucket
-    // (per CLAUDE.md "Learning" is UI text only). already-learned additionally
-    // writes a perfect history so the GENERATED category resolves to Mastered.
+    // Every card bucket (library / target / comfortable / already-learned) persists as
+    // the internal 'library' bucket (per CLAUDE.md "Learning" is UI text only). The
+    // three above Unfamiliar additionally seed a core history that lands the card in
+    // the band the learner chose (SORT_BUCKET_CORE_POSITIVES); library seeds nothing.
     const actualBucket: StarterPackBucket = 'library';
-    const shouldMarkMastered = bucket === 'already-learned';
+    const seedPositives = SORT_BUCKET_CORE_POSITIVES[bucket as Exclude<DiscoverSortBucket, 'skip'>];
 
     // Look up the card in the language-appropriate dictionary table. Card ids are
     // per-table surrogate serials that collide across languages, so we must scope
     // the lookup by language (DictionaryDAL.findById is hardcoded to _zh).
+    //
+    // A miss is a 404, not a 500: it means the id is unknown OR names a det row that is
+    // not discoverable (the gate in findDiscoverableWordById). Neither is a server fault,
+    // and the message is the same for both, so it does not reveal which rows exist
+    // undiscoverable (docs/API_ABUSE_HARDENING.md § 1b).
     const dictEntry = await this._findDiscoverCardById(cardId, language);
     if (!dictEntry) {
-      throw new Error(`Dictionary entry ${cardId} not found`);
+      throw new NotFoundError(`Card ${cardId} not found`);
     }
 
-    const client = await db.getClient();
-    try {
-      // Find or create the corresponding VocabEntry. Identity is
-      // (userId, entryKey, language) for BOTH languages — Spanish dropped `pos` from the
-      // key in migration 123, so one Spanish word is one card carrying all its senses.
-      const vetTable = this._vetTable(dictEntry.language);
-      const existing = await this.vocabEntryDAL.findByUserAndKey(
-        userId, dictEntry.word1, dictEntry.language
-      );
+    // Find or create the corresponding VocabEntry. Identity is
+    // (userId, entryKey, language) for BOTH languages — Spanish dropped `pos` from the
+    // key in migration 123, so one Spanish word is one card carrying all its senses.
+    const existing = await this.vocabEntryDAL.findBucketRowByUserAndKey(
+      userId, dictEntry.word1, dictEntry.language
+    );
 
-      let vocabEntryId: number;
+    let vocabEntryId: number;
 
-      if (!existing) {
-        // No `category` to insert: it stopped being a stored column in migration 101
-        // and is now derived on read from "typedMarkHistory" (compute_core_category,
-        // migration 143). A fresh row's empty history reads 'Unfamiliar'; the
-        // shouldMarkMastered branch below seeds the history that reads 'Mastered'.
-        const insertResult = await client.query(`
-          INSERT INTO ${vetTable} (
-            "userId", "entryKey", language, "starterPackBucket"
-          ) VALUES ($1, $2, $3, $4)
-          RETURNING id
-        `, [userId, dictEntry.word1, dictEntry.language, actualBucket]);
-        vocabEntryId = insertResult.rows[0].id;
-        console.log(`[StarterPacks] Created VocabEntry id=${vocabEntryId} for entryKey=${dictEntry.word1}`);
+    if (!existing) {
+      // No `category` to insert: it is derived on read from "typedMarkHistory"
+      // (compute_core_category, migration 143). A fresh row's empty history reads
+      // 'Unfamiliar'; the seedPositives branch below seeds the band the learner chose.
+      vocabEntryId = await this.vocabEntryDAL.insertLibraryRow(userId, dictEntry.word1, dictEntry.language);
+      console.log(`[StarterPacks] Created VocabEntry id=${vocabEntryId} for entryKey=${dictEntry.word1}`);
+    } else {
+      vocabEntryId = existing.id;
+      // A row already exists. The interesting case is a PROVISIONAL row (migration
+      // 140): a temporary card a game handed the user, which they have now chosen to
+      // keep. Promote it IN PLACE — flip the bucket and touch nothing else — so every
+      // mark they earned on it while it was temporary survives being sorted. That is
+      // the whole reason provisional cards are real vet rows rather than an ephemeral
+      // list: progress is never lost to sorting. See docs/PROVISIONAL_CARDS.md.
+      //
+      // An already-'library' row is left completely alone (re-sorting a card the user
+      // already holds must not reset anything).
+      if (existing.starterPackBucket === 'provisional') {
+        await this.vocabEntryDAL.promoteRowToLibrary(vocabEntryId, dictEntry.language);
+        console.log(`[StarterPacks] Promoted provisional VocabEntry id=${vocabEntryId} to '${actualBucket}' for entryKey=${dictEntry.word1} (marks preserved)`);
       } else {
-        vocabEntryId = existing.id;
-        // A row already exists. The interesting case is a PROVISIONAL row (migration
-        // 140): a temporary card a game handed the user, which they have now chosen to
-        // keep. Promote it IN PLACE — flip the bucket and touch nothing else — so every
-        // mark they earned on it while it was temporary survives being sorted. That is
-        // the whole reason provisional cards are real vet rows rather than an ephemeral
-        // list: progress is never lost to sorting. See docs/PROVISIONAL_CARDS.md.
-        //
-        // An already-'library' row is left completely alone (re-sorting a card the user
-        // already holds must not reset anything).
-        if (existing.starterPackBucket === 'provisional') {
-          await client.query(
-            `UPDATE ${vetTable} SET "starterPackBucket" = $1 WHERE id = $2`,
-            [actualBucket, vocabEntryId]
-          );
-          console.log(`[StarterPacks] Promoted provisional VocabEntry id=${vocabEntryId} to '${actualBucket}' for entryKey=${dictEntry.word1} (marks preserved)`);
-        } else {
-          console.log(`[StarterPacks] VocabEntry already exists id=${vocabEntryId} for entryKey=${dictEntry.word1}`);
-        }
+        console.log(`[StarterPacks] VocabEntry already exists id=${vocabEntryId} for entryKey=${dictEntry.word1}`);
       }
+    }
 
-      if (shouldMarkMastered) {
-        // Fill the CORE bar's two tracks 8/8 and leave reading/writing at 0. The
-        // learner is declaring they know the word, not that they can read or write
-        // it — those bars stay honest and start from zero. See
-        // coreMasteredTypedMarkHistory and docs/MASTERY_REWORK.md § "Declaring a
-        // card already known".
-        const currentTimestamp: string = new Date().toISOString();
-        await this.vocabEntryDAL.updateTypedMarkHistory(
-          vocabEntryId,
-          coreMasteredTypedMarkHistory(currentTimestamp)
-        );
-        console.log(`[StarterPacks] Marked VocabEntry id=${vocabEntryId} as Mastered with a full typed history`);
-      }
-    } finally {
-      client.release();
+    if (seedPositives > 0) {
+      // Fill the CORE bar's two tracks to the chosen band (8/8 for Mastered) and
+      // leave reading/writing at 0. The learner is declaring how well they know the
+      // word, not that they can read or write it — those bars stay honest and start
+      // from zero. See coreSeededTypedMarkHistory and docs/MASTERY_REWORK.md
+      // § "Declaring a card already known".
+      //
+      // ⚠️ Like the Mastered seed always has, this REPLACES the row's history — so a
+      // promoted provisional card's earned marks are overwritten by the declared band.
+      const currentTimestamp: string = new Date().toISOString();
+      await this.vocabEntryDAL.updateTypedMarkHistory(
+        vocabEntryId,
+        coreSeededTypedMarkHistory(seedPositives, currentTimestamp)
+      );
+      console.log(`[StarterPacks] Seeded VocabEntry id=${vocabEntryId} for bucket '${bucket}' (${seedPositives}/track core history)`);
     }
 
     // Sorting a card OVERRIDES any prior "skip for now" on it: a card that was skipped
@@ -723,37 +470,17 @@ export class StarterPacksService {
     client: PoolClient
   ): Promise<number | null> {
     if (!userId || !entryKey || !language) return null;
-    const vetTable = this._vetTable(language);
 
-    const existing = await client.query<{ id: number; starterPackBucket: string | null }>(
-      `SELECT id, "starterPackBucket" FROM ${vetTable}
-        WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3`,
-      [userId, entryKey, language]
-    );
-
-    if (existing.rows.length > 0) {
-      const row = existing.rows[0];
-      if (row.starterPackBucket === 'provisional') {
-        await client.query(
-          `UPDATE ${vetTable} SET "starterPackBucket" = 'library' WHERE id = $1`,
-          [row.id]
-        );
+    const existing = await this.vocabEntryDAL.findBucketRowByUserAndKey(userId, entryKey, language, client);
+    if (existing) {
+      if (existing.starterPackBucket === 'provisional') {
+        await this.vocabEntryDAL.promoteRowToLibrary(existing.id, language, client);
       }
-      return row.id;
+      return existing.id;
     }
-
-    // ON CONFLICT covers the race where the learner sorts the same word in another
-    // tab between the SELECT and this INSERT; the DO UPDATE is a no-op write whose
-    // only job is to make RETURNING produce the existing row's id.
-    const inserted = await client.query<{ id: number }>(
-      `INSERT INTO ${vetTable} ("userId", "entryKey", language, "starterPackBucket")
-       VALUES ($1, $2, $3, 'library')
-       ON CONFLICT ("userId", "entryKey", language)
-         DO UPDATE SET "starterPackBucket" = ${vetTable}."starterPackBucket"
-       RETURNING id`,
-      [userId, entryKey, language]
-    );
-    return inserted.rows[0]?.id ?? null;
+    // Race-safe insert: a concurrent sort of the same word in another tab resolves to
+    // that row's id rather than a unique-violation.
+    return this.vocabEntryDAL.insertLibraryRowIfAbsent(userId, entryKey, language, client);
   }
 
   /**
@@ -761,23 +488,14 @@ export class StarterPacksService {
    * Idempotent per (userId, language, cardId) via the unique index.
    */
   private async _recordSkip(userId: string, cardId: number, language: string): Promise<void> {
-    const client = await db.getClient();
-    try {
-      await client.query(`
-        INSERT INTO discover_skips ("userId", language, "cardId")
-        VALUES ($1, $2, $3)
-        ON CONFLICT ("userId", language, "cardId") DO NOTHING
-      `, [userId, language, cardId]);
-    } finally {
-      client.release();
-    }
+    await this.starterPacksDAL.insertSkips(userId, language, [cardId]);
   }
 
   /**
    * Undo the last sort. The client passes the bucket it sorted into so we reverse the
    * exact trace (docs §8):
    *   - skip            → DELETE the discover_skips row (by cardId — no word1 lookup).
-   *   - library / already-learned → DELETE the vet row (by word1).
+   *   - library / target / comfortable / already-learned → DELETE the vet row (by word1).
    * Returns { success } — the client already has the card to re-show; it does not
    * need a replacement.
    */
@@ -787,99 +505,40 @@ export class StarterPacksService {
     // wrongly suppressed and never re-served. array_remove is a no-op when the id is
     // absent, so this is safe for non-completing undos too.
     if (packId != null) {
-      await this._unseePack(userId, packId);
+      await this.starterPacksDAL.removeSeenPack(userId, packId);
     }
 
     if (bucket === 'skip') {
-      const client = await db.getClient();
-      try {
-        const result = await client.query(`
-          DELETE FROM discover_skips
-          WHERE "userId" = $1 AND language = $2 AND "cardId" = $3
-          RETURNING id
-        `, [userId, language, cardId]);
-        return result.rows.length > 0
-          ? { success: true, message: 'Skip undo successful' }
-          : { success: false, message: 'Skip not found' };
-      } finally {
-        client.release();
-      }
+      const removed = await this.starterPacksDAL.deleteSkip(userId, language, cardId);
+      return removed
+        ? { success: true, message: 'Skip undo successful' }
+        : { success: false, message: 'Skip not found' };
     }
 
-    // library / already-learned: delete the vet row created by the sort.
-    const table = this._dictTable(language);
-    const client = await db.getClient();
-    try {
-      // Get word1 for the dictionary entry from the language-appropriate table (card ids
-      // collide across the per-language tables — see _dictTable).
-      const dictResult = await client.query(`
-        SELECT word1 FROM ${table} WHERE id = $1
-      `, [cardId]);
-
-      const word1: string | undefined = dictResult.rows[0]?.word1;
-
-      if (!word1) {
-        return { success: false, message: 'Card not found in sorted list' };
-      }
-
-      // One vet row per (user, word, language) in both languages now, so the undo targets
-      // exactly the row the sort created. Spanish used to need a `pos IS NOT DISTINCT FROM`
-      // predicate here to avoid touching a sibling card of the same spelling.
-      //
-      // Undo has TWO outcomes, because sorting can either CREATE a row or PROMOTE an
-      // existing provisional one (migration 140, docs/PROVISIONAL_CARDS.md):
-      //   - the row carries marks  → the user earned that progress in a game while the
-      //     card was provisional. Deleting would silently destroy it, so instead demote
-      //     the row back to 'provisional'. The card leaves the deck, keeps its history,
-      //     and discover keeps offering it (the supply query treats provisional as
-      //     unsorted), so it can be re-sorted later with the progress intact.
-      //   - the row has no marks   → nothing to preserve; delete it as before, so a
-      //     mis-tap leaves no trace and the word returns to the normal fresh supply.
-      //
-      // `typedMarkHistory` defaults to '{}' (migration 101) and every track is an array,
-      // so "has marks" is "any track is non-empty". Doing it in SQL keeps it atomic.
-      const undoResult = await client.query<{ id: number; demoted: boolean }>(`
-        WITH target AS (
-          SELECT id,
-                 EXISTS (
-                   SELECT 1
-                   FROM jsonb_each("typedMarkHistory") AS t(track, marks)
-                   WHERE jsonb_array_length(marks) > 0
-                 ) AS "hasMarks"
-          FROM ${this._vetTable(language)}
-          WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3
-        ),
-        demoted AS (
-          UPDATE ${this._vetTable(language)} v
-          SET "starterPackBucket" = 'provisional'
-          FROM target
-          WHERE v.id = target.id AND target."hasMarks"
-          RETURNING v.id
-        ),
-        removed AS (
-          DELETE FROM ${this._vetTable(language)} v
-          USING target
-          WHERE v.id = target.id AND NOT target."hasMarks"
-          RETURNING v.id
-        )
-        SELECT id, TRUE AS demoted FROM demoted
-        UNION ALL
-        SELECT id, FALSE AS demoted FROM removed
-      `, [userId, word1, language]);
-
-      if (undoResult.rows.length === 0) {
-        return { success: false, message: 'Card not found in sorted list' };
-      }
-
-      const demoted: boolean = undoResult.rows[0].demoted === true;
-      if (demoted) {
-        console.log(`[StarterPacks] Undo demoted VocabEntry id=${undoResult.rows[0].id} to 'provisional' (marks preserved) for entryKey=${word1}`);
-      }
-
-      return { success: true, message: 'Card undo successful', demoted };
-    } finally {
-      client.release();
+    // Any card bucket: reverse the vet row the sort created. Card ids collide across the
+    // per-language det tables, so the word is resolved in the language's own table.
+    const word1 = await this.starterPacksDAL.findWordById(cardId, language);
+    if (!word1) {
+      return { success: false, message: 'Card not found in sorted list' };
     }
+
+    // Undo has TWO outcomes, because sorting can either CREATE a row or PROMOTE an
+    // existing provisional one (migration 140, docs/PROVISIONAL_CARDS.md):
+    //   - the row carries marks  → the user earned that progress in a game while the
+    //     card was provisional. Deleting would silently destroy it, so it is demoted
+    //     back to 'provisional': it leaves the deck, keeps its history, and discover
+    //     keeps offering it, so it can be re-sorted later with the progress intact.
+    //   - the row has no marks   → nothing to preserve; it is deleted, so a mis-tap
+    //     leaves no trace and the word returns to the normal fresh supply.
+    // Both happen in ONE statement (`undoSortedRow`), so the check cannot race a mark.
+    const undone = await this.vocabEntryDAL.undoSortedRow(userId, word1, language);
+    if (!undone) {
+      return { success: false, message: 'Card not found in sorted list' };
+    }
+    if (undone.demoted) {
+      console.log(`[StarterPacks] Undo demoted VocabEntry id=${undone.id} to 'provisional' (marks preserved) for entryKey=${word1}`);
+    }
+    return { success: true, message: 'Card undo successful', demoted: undone.demoted };
   }
 
   /**
@@ -897,20 +556,11 @@ export class StarterPacksService {
    * CLAUDE.md's mark-discoverable rule exists to keep out of learners' decks.
    *
    * Safe for the provisional-promotion path: lent cards are drawn from
-   * `discoverable = TRUE` rows too (`ProvisionalCardDAL._supplyGate`), so promoting
+   * `discoverable = TRUE` rows too (the same `discoverSupplyGate`), so promoting
    * one still resolves here.
    */
   private async _findDiscoverCardById(cardId: number, language: string): Promise<{ word1: string; language: string } | null> {
-    const table = this._dictTable(language);
-    const client = await db.getClient();
-    try {
-      const result = await client.query<{ word1: string; language: string }>(`
-        SELECT word1, language FROM ${table} WHERE id = $1 AND ${this._supplyGate('')}
-      `, [cardId]);
-      return result.rows[0] ?? null;
-    } finally {
-      client.release();
-    }
+    return this.starterPacksDAL.findDiscoverableWordById(cardId, language);
   }
 
   // ===========================================================================
@@ -921,29 +571,7 @@ export class StarterPacksService {
 
   /** Delete any discover_skips row for (userId, language, cardId). No-op if absent. */
   private async _clearSkip(userId: string, cardId: number, language: string): Promise<void> {
-    const client = await db.getClient();
-    try {
-      await client.query(
-        `DELETE FROM discover_skips WHERE "userId" = $1 AND language = $2 AND "cardId" = $3`,
-        [userId, language, cardId]
-      );
-    } finally {
-      client.release();
-    }
-  }
-
-  /** The authored pack ids this user has already finished or skipped (users.seenPacks). */
-  private async _getSeenPacks(userId: string): Promise<number[]> {
-    const client = await db.getClient();
-    try {
-      const result = await client.query<{ seenPacks: number[] }>(
-        `SELECT "seenPacks" FROM users WHERE id = $1`,
-        [userId]
-      );
-      return result.rows[0]?.seenPacks ?? [];
-    } finally {
-      client.release();
-    }
+    await this.starterPacksDAL.deleteSkip(userId, language, cardId);
   }
 
   /**
@@ -951,37 +579,9 @@ export class StarterPacksService {
    * Appends only if absent, keeping seenPacks free of duplicates.
    */
   async markPackSeen(userId: string, packId: number): Promise<void> {
-    const client = await db.getClient();
-    try {
-      await client.query(
-        `UPDATE users SET "seenPacks" = array_append("seenPacks", $2)
-         WHERE id = $1 AND NOT ($2 = ANY("seenPacks"))`,
-        [userId, packId]
-      );
-    } finally {
-      client.release();
-    }
+    await this.starterPacksDAL.addSeenPack(userId, packId);
   }
 
-  /** Remove a pack id from seenPacks (undo of the finishing/skipping action). */
-  private async _unseePack(userId: string, packId: number): Promise<void> {
-    const client = await db.getClient();
-    try {
-      await client.query(
-        `UPDATE users SET "seenPacks" = array_remove("seenPacks", $2) WHERE id = $1`,
-        [userId, packId]
-      );
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
-   * Hydrate a set of det ids into DiscoverCards (in the given id order) tagged with
-   * per-user pack state: `sorted` (has a library vet row → locked + "sorted!") and
-   * `skipped` (currently in discover_skips → draggable again inside a pack). Used for
-   * authored-pack cards.
-   */
   /**
    * Hydrate discover cards for an explicit set of WORDS (det `word1` values), in the
    * order given, dropping any word with no discoverable det row.
@@ -996,62 +596,24 @@ export class StarterPacksService {
    */
   async getCardsForWords(words: string[], userId: string, language: string): Promise<DiscoverCard[]> {
     if (!words || words.length === 0) return [];
-    const det = this._dictTable(language);
-    const client = await db.getClient();
-    try {
-      const result = await client.query(`
-        SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
-               de."definitionClusters",
-               de.language, de.script, de."difficulty", de."frequencyScore", de.breakdown, de.synonyms,
-               de."exampleSentences",
-               de."iconId"
-        FROM ${det} de
-        WHERE de.word1 = ANY($1::text[]) AND de.language = $2
-          AND ${this._supplyGate()}
-        ORDER BY array_position($1::text[], de.word1)
-      `, [words, language]);
-
-      return await this._enrichDiscoverCards(this._rowsToDiscoverCards(result.rows), language);
-    } finally {
-      client.release();
-    }
+    const rows = await this.starterPacksDAL.findDiscoverableByWords(words, language);
+    return this._enrichDiscoverCards(this._rowsToDiscoverCards(rows), language);
   }
 
+  /**
+   * Hydrate a set of det ids into DiscoverCards (in the given id order) tagged with
+   * per-user pack state: `sorted` (has a library vet row → locked + "sorted!") and
+   * `skipped` (currently in discover_skips → draggable again inside a pack). Used for
+   * authored-pack cards.
+   */
   private async _hydrateCards(entryIds: number[], userId: string, language: string): Promise<DiscoverCard[]> {
-    if (entryIds.length === 0) return [];
-    const det = this._dictTable(language);
-    const vetTable = this._vetTable(language);
-    const client = await db.getClient();
-    try {
-      const result = await client.query(`
-        SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
-               de."definitionClusters",
-               de.language, de.script, de."difficulty", de."frequencyScore", de.breakdown, de.synonyms,
-               de."exampleSentences",
-               de."iconId",
-               EXISTS (
-                 SELECT 1 FROM ${vetTable} ve
-                 WHERE ve."userId" = $2 AND ve."entryKey" = de.word1 AND ve.language = de.language
-                   AND ${vetSortedClause()}
-               ) AS sorted,
-               EXISTS (
-                 SELECT 1 FROM discover_skips ds
-                 WHERE ds."userId" = $2 AND ds.language = de.language AND ds."cardId" = de.id
-               ) AS skipped
-        FROM ${det} de
-        WHERE de.id = ANY($1::int[]) AND de.language = $3
-        ORDER BY array_position($1::int[], de.id)
-      `, [entryIds, userId, language]);
-
-      // Preserve authored card order; attach the pack-state flags onto each DTO.
-      return this._rowsToDiscoverCards(result.rows).map((card, i) => ({
-        ...card,
-        sorted: result.rows[i].sorted === true,
-        skipped: result.rows[i].skipped === true,
-      }));
-    } finally {
-      client.release();
-    }
+    const rows = await this.starterPacksDAL.findCardsWithPackState(entryIds, userId, language);
+    // Preserve authored card order; attach the pack-state flags onto each DTO.
+    return this._rowsToDiscoverCards(rows).map((card, i) => ({
+      ...card,
+      sorted: rows[i].sorted,
+      skipped: rows[i].skipped,
+    }));
   }
 
   /** Turn authored sort_packs rows into SortPack DTOs (cards hydrated; no sentence — not shown in this flow). */
@@ -1079,7 +641,7 @@ export class StarterPacksService {
     if (limit <= 0) return [];
     // Pin to EXACTLY this level — getNextPacks drives the nearest-level drift, so a
     // level's singles are served before drifting away (level honored first).
-    const rows = await this._fetchSupplyRows(language, userId, level, excludeCardIds, { includeSkips: false, limit, exactLevel: level });
+    const rows = await this.starterPacksDAL.findSupplyRows(language, userId, level, excludeCardIds, { includeSkips: false, limit, exactLevel: level });
     const cards = await this._enrichDiscoverCards(this._rowsToDiscoverCards(rows), language);
     return cards.map((card) => ({
       packKey: `single:${card.id}`,
@@ -1095,9 +657,8 @@ export class StarterPacksService {
    * level-1 pack for a level-2 user). e.g. level 2 → [2, 3, 1, 4, 5, 6].
    */
   private _levelDriftOrder(level: number): number[] {
-    const { maxLevel } = this._levelConfig('');
     const levels: number[] = [];
-    for (let l = 1; l <= maxLevel; l++) levels.push(l);
+    for (let l = 1; l <= StarterPacksService.MAX_LEVEL; l++) levels.push(l);
     return levels.sort((a, b) => {
       const da = Math.abs(a - level);
       const db = Math.abs(b - level);
@@ -1137,7 +698,7 @@ export class StarterPacksService {
     manual = false
   ): Promise<{ packs: SortPack[]; exhausted: boolean; level: number }> {
     const level = requestedLevel != null ? requestedLevel : await this.estimateLevel(userId, language);
-    const seen = await this._getSeenPacks(userId);
+    const seen = await this.starterPacksDAL.findSeenPackIds(userId);
 
     // Split the client-held packKeys into authored ids and single card ids.
     const heldPackIds: number[] = [];
@@ -1168,7 +729,7 @@ export class StarterPacksService {
       // fetchPacksAtLevel already applied. Do NOT re-sort here: `packOrder` is a
       // deliberate human teaching sequence (packs build on each other), and a derived
       // ordering silently overrides it. Frequency ordering still governs the fallback
-      // singles (_fetchSupplyRows' ORDER BY), which have no curation order to respect.
+      // singles (StarterPacksDAL.findSupplyRows' ORDER BY), which have no curation order to respect.
       for (const p of authored) {
         if (packs.length >= limit) break;
         if (p.cards.some((c) => !c.sorted)) { // never serve an all-sorted pack (§4.5)
@@ -1198,18 +759,7 @@ export class StarterPacksService {
    * authored packs). Signal-free — no vet rows, no level movement (requirements §5.1).
    */
   async skipPack(userId: string, cardIds: number[], language: string, packId: number | null = null): Promise<void> {
-    if (cardIds.length > 0) {
-      const client = await db.getClient();
-      try {
-        await client.query(`
-          INSERT INTO discover_skips ("userId", language, "cardId")
-          SELECT $1, $2, UNNEST($3::int[])
-          ON CONFLICT ("userId", language, "cardId") DO NOTHING
-        `, [userId, language, cardIds]);
-      } finally {
-        client.release();
-      }
-    }
+    await this.starterPacksDAL.insertSkips(userId, language, cardIds);
     if (packId != null) {
       await this.markPackSeen(userId, packId);
     }
@@ -1221,24 +771,7 @@ export class StarterPacksService {
    * only needs the card face.)
    */
   async listSkipped(userId: string, language: string): Promise<DiscoverCard[]> {
-    const det = this._dictTable(language);
-    const client = await db.getClient();
-    try {
-      const result = await client.query(`
-        SELECT de.id, de.word1, de.word2, de.pronunciation, de.tone, de.definitions,
-               de."definitionClusters",
-               de.language, de.script, de."difficulty", de."frequencyScore", de.breakdown, de.synonyms,
-               de."exampleSentences",
-               de."iconId"
-        FROM discover_skips ds
-        JOIN ${det} de ON de.id = ds."cardId" AND de.language = ds.language
-        WHERE ds."userId" = $1 AND ds.language = $2
-        ORDER BY ds."createdAt" DESC
-      `, [userId, language]);
-      return this._rowsToDiscoverCards(result.rows);
-    } finally {
-      client.release();
-    }
+    return this._rowsToDiscoverCards(await this.starterPacksDAL.findSkippedCards(userId, language));
   }
 
   /**
@@ -1256,15 +789,6 @@ export class StarterPacksService {
    * skipped-cards sheet's "Recycle all" action). Returns how many were cleared.
    */
   async recycleAllSkips(userId: string, language: string): Promise<number> {
-    const client = await db.getClient();
-    try {
-      const result = await client.query(
-        `DELETE FROM discover_skips WHERE "userId" = $1 AND language = $2 RETURNING id`,
-        [userId, language]
-      );
-      return result.rows.length;
-    } finally {
-      client.release();
-    }
+    return this.starterPacksDAL.deleteAllSkips(userId, language);
   }
 }

@@ -282,43 +282,6 @@ vote and apply controls behave exactly as they do in a feed.
 Code: `src/features/profile/ProfileDesignGrid.tsx`;
 `server/dal/implementations/CommunityLayoutDAL.ts` → `getDesignsByOwner`.
 
-## Night market visit
-
-`/night-market/user/:userId` renders another account's continent, read-only.
-
-🚩 **Gated by the `nightMarket` flag** ([FEATURE_FLAGS.md](./FEATURE_FLAGS.md) § 2d). The
-"Visit their night market" button on this page is the only way in, so with the flag off the
-button is not rendered and the route is not registered.
-
-**The read is read-only on the server too, and that took a deliberate change.**
-`NightMarketWorldService.getUserLayout` *seeds an origin hub* when a market has no
-placements — a WRITE. A stranger's page view must never materialise a hub in someone
-else's account, so the visit branch passes `{ seedIfEmpty: false }` and an unbuilt market
-comes back empty; the client says "They haven't built a night market yet."
-
-The visited account's **own** language decides which continent renders (each language
-grows its own — migration 130). It is resolved from their account server-side, never from
-the query string, so a visitor cannot ask for a language the profile header never showed.
-
-⚠️ **One write survives a visit, knowingly**: `getUserLayout` recomputes and persists each
-placement's `activeVersion` (a stability cache, not a source of truth). The recompute is
-deterministic from the owner's own data, so a visitor writes exactly the value the
-owner's next read would have written. Suppressing it would make a visited market render
-differently from the owner's view, which is worse. If that trade ever stops being
-acceptable, the fix is to compute-without-persisting on the visit path.
-
-`NightMarketVisitPage` is a **separate page** from `NightMarketEnginePage`, not a mode of
-it. The owner's page also owns the minute-point badge, the occupant counter, the
-template-author minute-adjust tool (a write against the *signed-in* account) and the
-debug-overlay column — all of which would be wrong or dangerous pointed at someone else's
-market. Hiding them behind an `isVisit` prop would leave those write paths mounted and one
-conditional away from firing. The two share everything genuinely common: `useMarketWorld`
-and `MarketEngineViewer`.
-
-Code: `src/features/nightmarket/NightMarketVisitPage.tsx`;
-`server/controllers/NightMarketWorldController.ts` → `getLayout`;
-`server/services/NightMarketWorldService.ts` → `getUserLayout`.
-
 ---
 
 ## API
@@ -327,7 +290,6 @@ Code: `src/features/nightmarket/NightMarketVisitPage.tsx`;
 |---|---|---|
 | GET | `/api/users/:userId/profile` | `UserProfileResponse` |
 | GET | `/api/users/:userId/designs?after=&limit=` | `CommunityDesign[]` |
-| GET | `/api/nightMarket/layout?userId=` | `UserLayoutResponse` (visit mode) |
 
 A designs page **shorter than `limit`** means the list is exhausted — there is no
 `hasMore` flag, deliberately, so there is no second signal that can disagree with the

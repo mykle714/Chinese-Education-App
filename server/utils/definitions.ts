@@ -495,7 +495,7 @@ export function defaultSenseCluster(clusters: SenseCluster[] | null | undefined)
  * `resolveDisplayPronunciation` does. The client twin lives in src/utils/definitionUtils.ts.
  *
  * Use it for: an untagged sentence segment (`resolveSenseView` in
- * server/dal/shared/segmentString.ts — IW bubbles, Reader documents), surfaces that list a
+ * server/dal/shared/segmentString.ts — e.g. Reader documents), surfaces that list a
  * word with its FLAT definitions (dictionary search rows, synonyms, Word Search bonus words,
  * the validator document title), and the det primary column itself
  * (backfill-search-readings.js --repair-primary). Card surfaces, which print one sense's

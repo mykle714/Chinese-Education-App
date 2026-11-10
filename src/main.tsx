@@ -1,8 +1,7 @@
-// NOTE: `pixi.js/unsafe-eval` deliberately does NOT live here. A static import in
-// the entry module pinned the whole PIXI runtime into the main chunk for every
-// user and defeated code-splitting of the Night Market viewers. It now lives in
-// src/features/nightmarket/pixiRuntime.ts, imported by the four modules that
-// actually construct a renderer.
+// NOTE: keep heavy renderer imports OUT of this entry module. A static
+// `pixi.js/unsafe-eval` import here once pinned the whole PIXI runtime into the
+// main chunk for every user (the Night Market that needed it was removed
+// 2026-11-09). See docs/FRONTEND_LAYERING.md § "Every route is code-split".
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'

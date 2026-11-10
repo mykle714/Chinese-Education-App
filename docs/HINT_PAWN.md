@@ -206,7 +206,7 @@ the iso side is `deckTower/iso/pawnIdles.ts`, `PawnIdleProps.tsx`, `usePawnMotio
 
 Code: `HintPawn` → `onPawnTap`, `PAWN_TAP_JUMP_SHARE`, `OUCH_TIP`; `usePawnOuch.ts`;
 `PawnOuchBubble.tsx`; `pawnHintLines.ts` → `OUCH_LINES`; the iso side is `IsoPawn` → `onTap`,
-`usePawnMotion` → `poke`, the `flinch` mode, `PawnAirRing.tsx`.
+`usePawnMotion` → `poke`, the `flinch` mode.
 
 Every tap restarts the idle minute and ends a doze or knit. Then:
 
@@ -229,10 +229,9 @@ Every tap restarts the idle minute and ends a doze or knit. Then:
     `COLORS.border` outline, `SHADOW.chip`).
 - **1 in 5: the jump** (`PAWN_TAP_JUMP_SHARE`, owner 2026-11-08), the tower's poke jump.
 - **Mid-air taps always jump again.** Jumps chain as on the Deck Tower, climbing with each
-  tap, and each mid-air jump kicks off a light-blue double ring (docs/ISO_ART_FRAMEWORK.md
-  § IsoPawn → "Air ring").
+  tap.
 - **No "!"**: passing `onTap` turns off IsoPawn's "!" emote, and the ouch replaces it. The
-  Deck Tower's pawns keep the "!" (and get the air ring too).
+  Deck Tower's pawns keep the "!".
 
 ## Night vest
 

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { OnDeckVocabService, parseFlpWorld, type CollectionFilter } from '../services/OnDeckVocabService.js';
+import type { CardAudioService } from '../services/CardAudioService.js';
 import { MAX_SEED_IDS, parseIdCsv, requireUserId, getUserLanguage, handleControllerError } from '../utils/controllerUtils.js';
 import { MarkType, MARK_TYPES } from '../types/index.js';
 import { ProvisionalCardService } from '../services/ProvisionalCardService.js';
@@ -42,7 +43,9 @@ export class OnDeckVocabController {
      * Narrows every UNRESTRICTED round to a focused world's daily set
      * (docs/FOCUS_MODE.md § 4) — see `applyFocus`.
      */
-    private focusModeService: FocusModeService
+    private focusModeService: FocusModeService,
+    // Pre-warms the loop refill's audio before it is sent (see getLoopRefill).
+    private cardAudioService: CardAudioService
   ) {}
 
   /**
@@ -249,7 +252,7 @@ export class OnDeckVocabController {
       // The pre-warm stamps `hasAudio`, so its result is what goes out.
       let warmed = cards;
       try {
-        warmed = await this.onDeckVocabService.prewarmAudio(cards);
+        warmed = await this.cardAudioService.prewarm(cards);
       } catch (prewarmError) {
         console.error('TTS pre-warm failed for loop refill:', prewarmError);
       }

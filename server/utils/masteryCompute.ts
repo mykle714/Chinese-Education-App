@@ -43,4 +43,6 @@ export {
   ACCELERATION_STREAK,
   ACCELERATED_MARK_COUNT,
   coreMasteredTypedMarkHistory,
+  coreSeededTypedMarkHistory,
+  SORT_BUCKET_CORE_POSITIVES,
 } from '../contracts/mastery.js';

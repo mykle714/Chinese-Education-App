@@ -195,7 +195,7 @@ internal helper for fallback-card selection). Algorithm:
      returned pack's cards are hydrated + tagged `sorted` (vet row → locked "sorted!") /
      `skipped` (discover_skips → draggable again).
    - **Fallback packs-of-1 at the SAME level** from remaining fresh (un-sorted,
-     **un-skipped**) words (`_fetchSupplyRows` pinned via `exactLevel`), wrapped as a
+     **un-skipped**) words (`StarterPacksDAL.findSupplyRows` pinned via `exactLevel`), wrapped as a
      single-card pack.
 3. Skips are **not** auto-recycled here (requirements §5.2).
 
@@ -249,7 +249,7 @@ Replace `DiscoverFetchResponse.cards` with `packs`.
 
 ### 5.2 `src/features/discover/AddCardsPage.tsx`
 - FIFO is now a **queue of packs** (target 2: on-deck + buffer).
-- Render: up to **4 draggable MiniCards** (compact 78×112 faces when a 4-card row won't fit — SORT_CARDS_REQUIREMENTS.md §4.5 *Compact dock*) (no sentence band — removed). Autoplay
+- Render: up to **4 draggable MiniCards** (every pack on compact 78×112 faces when a full 4-card row won't fit — SORT_CARDS_REQUIREMENTS.md §4.5 *Compact dock*) (no sentence band — removed). Autoplay
   is pack-level, not per-pickup: an effect keyed on `currentPack.packKey` narrates
   every card's own word audio via `tts.autoSpeakSentence(card.entryKey, card.pronunciation)`
   left to right, once per pack landing on-deck, whenever `tts.autoplay` is true. (The

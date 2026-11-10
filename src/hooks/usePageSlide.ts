@@ -62,11 +62,13 @@ export function clearSkipNextEnter() {
  * one cannot finish and is just paused. Must run AFTER the clone is in the document
  * (its animations only exist once styles resolve on it).
  *
- * Also copies each live <canvas> bitmap onto its blank copy (see below).
+ * Also copies each live <canvas> bitmap onto its blank copy, and each scrolled box's
+ * scroll offset (see below).
  *
- * Used by: `exit` below (both the slide and the circle). Docs: docs/LEAF_NODE_PAGES.md.
+ * Used by: `exit` below (the slide and the circle) and src/hooks/pageDash.ts → runPageDash
+ * (the dash). Docs: docs/LEAF_NODE_PAGES.md.
  */
-function freezeClone(original: HTMLElement, clone: HTMLElement): void {
+export function freezeClone(original: HTMLElement, clone: HTMLElement): void {
     const originals: Element[] = [original, ...Array.from(original.querySelectorAll("*"))];
     const cloneByIndex: Element[] = [clone, ...Array.from(clone.querySelectorAll("*"))];
     const cloneIndex = new Map<Element, number>();
@@ -84,6 +86,16 @@ function freezeClone(original: HTMLElement, clone: HTMLElement): void {
         } catch {
             // A tainted or lost context: the copy just stays blank.
         }
+    });
+
+    // `cloneNode` does not copy scroll offsets either: a scrolled box (the Deck Tower's
+    // tower scroller, a long list) would snap back to its top inside the clone. Copy them.
+    originals.forEach((liveEl, i) => {
+        if (liveEl.scrollTop === 0 && liveEl.scrollLeft === 0) return;
+        const copy = cloneByIndex[i];
+        if (!copy) return;
+        copy.scrollTop = liveEl.scrollTop;
+        copy.scrollLeft = liveEl.scrollLeft;
     });
 
     if (typeof clone.getAnimations !== "function") return;
@@ -137,6 +149,7 @@ interface UsePageSlideResult {
     // mounts the destination beneath) while sliding a clone of this page away — or,
     // with `circleTo` (a viewport point), shrinking it into a circle closing onto that
     // point (the circle transition's exit, src/utils/pageTransition.ts → CIRCLE_MOTION).
+    // (The dash's exit is not here: NodePage calls src/hooks/pageDash.ts directly.)
     exit: (performNavigate: () => void, circleTo?: ScreenPoint) => void;
 }
 

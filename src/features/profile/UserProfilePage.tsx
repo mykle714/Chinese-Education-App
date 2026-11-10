@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Avatar, Box, Button, Typography } from "@mui/material";
-import StorefrontIcon from "@mui/icons-material/Storefront";
+import { Avatar, Box, Typography } from "@mui/material";
 import NodePage from "../../components/NodePage";
 import { HeaderIconButton } from "../../components/PageHeader";
 import { FooterSpacer } from "../../components/MobileFooter";
@@ -22,7 +21,6 @@ import { LANGUAGE_FLAGS, LANGUAGE_NAMES, languageRegionCode } from "../../types"
 import type { Language } from "../../types";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
-import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { API_BASE_URL } from "../../constants";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
@@ -66,8 +64,8 @@ function sinceLabel(iso: string | null | undefined, prefix: string): string | nu
  * what makes the Add-friend button meaningful.
  *
  * Layout, top to bottom: the page's grey top bar carrying EVERY relationship control
- * (add / accept / revoke / remove, plus the challenge block), an identity card, a Visit
- * night market button, the progress card, and their card designs as a paginated grid.
+ * (add / accept / revoke / remove, plus the challenge block), an identity card, the
+ * progress card, and their card designs as a paginated grid.
  *
  * ── THE CONTROLS LIVE IN THE TOP BAR ──────────────────────────────────────────
  * They go in `headerExtraActions` — the same slot the card detail and collection pages
@@ -94,10 +92,9 @@ function UserProfilePage() {
     const { userId } = useParams<{ userId: string }>();
     usePageTitle("Profile");
 
-    const slideNavigate = useSlideNavigate();
-    // Plain navigate for the back arrow only: a profile is reached from several places
+    // Plain navigate for the back arrow: a profile is reached from several places
     // (friends list, leaderboard, challenges), so "back" means the actual history entry
-    // rather than a fixed parent route. `useSlideNavigate` only takes paths.
+    // rather than a fixed parent route.
     const navigate = useNavigate();
     const { isAuthenticated } = useAuth();
 
@@ -333,36 +330,6 @@ function UserProfilePage() {
                                 </Typography>
                             </Box>
                         </Box>
-
-                        {/* ── Visit their night market ──
-                            Read-only: the visit endpoint suppresses the hub seeding a first
-                            load would otherwise perform, so opening someone's market never
-                            writes to their account.
-
-                            Flagged (server/contracts/featureFlags.ts): this button is the
-                            ONLY way to reach `/night-market/user/:userId`, so dropping it is
-                            that route's whole entry gate. */}
-                        {isFeatureEnabled("nightMarket") && (
-                        <Button
-                            className="user-profile-page__night-market-button"
-                            onClick={() => slideNavigate(`/night-market/user/${profile.identity.userId}`)}
-                            startIcon={<StorefrontIcon />}
-                            sx={{
-                                alignSelf: "flex-start",
-                                textTransform: "none",
-                                fontFamily: FONTS.sans,
-                                fontSize: SIZE.body,
-                                fontWeight: WEIGHT.semibold,
-                                color: COLORS.onSurface,
-                                backgroundColor: COLORS.purM, // v2: buttons are MID tier
-                                borderRadius: 3,
-                                px: 2,
-                                py: 0.75,
-                            }}
-                        >
-                            {profile.relationship === "self" ? "Visit your night market" : "Visit their night market"}
-                        </Button>
-                        )}
 
                         <ProfileStatsCard
                             identity={profile.identity}

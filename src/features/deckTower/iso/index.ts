@@ -23,7 +23,7 @@ export { default as IsoCardImprint } from "./IsoCardImprint";
 export { default as IsoFloorPrint } from "./IsoFloorPrint";
 export { default as IsoPaperStack } from "./IsoPaperStack";
 export { default as IsoSortPlatform } from "./IsoSortPlatform";
-export { sortPlatformTopZ, SORT_PLATFORM_JUMP } from "./sortPlatformMetrics";
+export { sortPlatformTopZ, SORT_PLATFORM_JUMP, SLAB_THICKNESS } from "./sortPlatformMetrics";
 export { PAPER_SHEET_THICKNESS, paperStackHeight } from "./paperStackMetrics";
 export { default as IsoFloorLabel, RAISED_HEIGHT } from "./IsoFloorLabel";
 export { default as IsoLever } from "./IsoLever";
@@ -63,6 +63,11 @@ export { default as IsoCloudShadow } from "./IsoCloudShadow";
 export { default as IsoFog, type IsoFogPiercer } from "./IsoFog";
 export { planFogClouds, FOG_LEVELS, type FogCloud, type FogCover } from "./fogClouds";
 export { default as IsoRain, type IsoRainFall, type IsoRainSolid } from "./IsoRain";
+export { default as IsoSnow, type IsoSnowFall } from "./IsoSnow";
+export { IsoSnowCap, IsoCardSnow, IsoBallSnow, IsoSnowShed, SnowSlab, SNOW_CAP_DEPTH, SNOW_SHED_MS, type SnowCover } from "./IsoSnowCap";
+export { IsoFloorSnow, IsoSnowSkirt, FLOOR_SNOW_DEPTH } from "./IsoSnowFloor";
+export { newSnowTrail, MAX_TRAIL_POINTS, type SnowTrail } from "./snowTrail";
+export { useSnowTrailRecorder, type SnowWalker } from "./snowChannel";
 export { openFloorSpot, hiddenBehind, type FloorSolid, type OpenFloorSpot } from "./openFloor";
 export { default as IsoBurnMark, BURN_MARK_RADIUS } from "./IsoBurnMark";
 export { default as IsoLightningBolt } from "./IsoLightningBolt";
@@ -75,7 +80,7 @@ export { planSidePath, useSkyTraffic, prefersReducedMotion, type SkyRegion, type
 // Rules + math
 export * from "./geometry";
 export { dimetricView, makeCameraProjector, type CameraView } from "./camera";
-export { bandMaterial, deckUnderLayerMaterial, floorSlabMaterial, holeTone, ISO, mixHex, platformTone, shadeHex, spaceOver, type Material, type PlatformTone } from "./palette";
+export { bandMaterial, deckUnderLayerMaterial, floorSlabMaterial, holeTone, ISO, mixHex, platformTone, shadeHex, snowMaterial, spaceOver, type Material, type PlatformTone } from "./palette";
 export { shadowFootprint, shadowSpread, shadowTone, type IsoSurface } from "./light";
 export {
     blendWash,

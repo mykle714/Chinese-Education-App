@@ -1,12 +1,14 @@
 import { Request, Response } from 'express';
 import { StarterPacksService } from '../services/StarterPacksService.js';
 import { ProvisionalCardService } from '../services/ProvisionalCardService.js';
+import type { CardAudioService } from '../services/CardAudioService.js';
 import { requireUserId, handleControllerError } from '../utils/controllerUtils.js';
+import { DISCOVER_SORT_BUCKETS } from '../contracts/wire.js';
 
 // Supported language codes — used for validation in multiple endpoints
 const VALID_LANGUAGES = ['zh', 'es'] as const;
 
-// Difficulty scale ceiling (StarterPacksService._levelConfig — one generalized 1..6
+// Difficulty scale ceiling (StarterPacksService.MAX_LEVEL — one generalized 1..6
 // scale for every language, migration 79). Used to validate the manual level-dropdown
 // override on the sort-pack fetch endpoints.
 const MAX_DIFFICULTY_LEVEL = 6;
@@ -31,7 +33,11 @@ export class StarterPacksController {
     private starterPacksService: StarterPacksService,
     // Supplies the "sort the temporary cards you just played" set
     // (docs/PROVISIONAL_CARDS.md § Sorting what you played).
-    private provisionalCardService: ProvisionalCardService
+    private provisionalCardService: ProvisionalCardService,
+    // The same TTS disk-cache pre-warm the flp's working loop runs, so a refilled
+    // pack's audio is already synthesized server-side when the acp autoplay asks for it
+    // (docs/AUDIO_PLAYBACK.md § 4 "acp pack audio is fetched ahead").
+    private cardAudioService: CardAudioService
   ) {}
 
   /**
@@ -130,7 +136,23 @@ export class StarterPacksController {
       const manual = parseManual(mode);
 
       const { packs, exhausted, level: centerLevel } = await this.starterPacksService.getNextPacks(language, userId, held, 1, requestedLevel, manual);
-      res.json({ nextPack: packs[0] ?? null, exhausted, level: centerLevel });
+      const nextPack = packs[0] ?? null;
+      // Pre-warm the TTS disk cache for the refilled pack's words before responding,
+      // so a word nobody has heard yet is synthesized NOW (while the pack waits in the
+      // client's buffer) instead of when autoplay reaches it — a cold Google call is
+      // what made the gap between narrated words uneven. Only the refill does this:
+      // its latency is hidden behind the packs already buffered. The initial
+      // GET /api/starterPacks/:language skips it, since the first pack's paint must
+      // not wait on Google; the client's own prefetch covers that pack instead.
+      // Graceful degrade, as on the flp loop refill: a cold cache costs latency only.
+      if (nextPack) {
+        try {
+          await this.cardAudioService.prewarm(nextPack.cards);
+        } catch (prewarmError) {
+          console.error('TTS pre-warm failed for sort pack refill:', prewarmError);
+        }
+      }
+      res.json({ nextPack, exhausted, level: centerLevel });
     } catch (error: any) {
       handleControllerError(error, res, 'StarterPacksController.nextPack');
     }
@@ -355,8 +377,14 @@ export class StarterPacksController {
         return;
       }
 
-      const validBuckets = ['already-learned', 'library', 'skip'];
-      if (!validBuckets.includes(bucket)) {
+      // A det id is a positive integer. Anything else (a string, a float) used to reach
+      // the `id = $1` query and fail there as a 500.
+      if (!Number.isInteger(cardId) || cardId <= 0) {
+        res.status(400).json({ error: 'cardId must be a positive integer' });
+        return;
+      }
+
+      if (!DISCOVER_SORT_BUCKETS.includes(bucket)) {
         res.status(400).json({ error: 'Invalid bucket type' });
         return;
       }

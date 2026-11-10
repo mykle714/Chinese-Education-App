@@ -77,17 +77,15 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    a list of rows, one per secondary destination; tapping a row goes to that page.
 
    - **Rows** (`src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations`,
-     returning `{ main, gated }`): **Night Market**, **Immersive World**, **Reader**,
-     **Community**, each flag-gated row only while its flag is on. Every row navigates to
+     returning `{ main, gated }`): **Reader** and **Community** (the latter only while its
+     flag is on). Every row navigates to
      its `route`. There is **no Friends row**: the `/friends` page was deleted 2026-11-06,
      and Friends lives only in the AccountSheet's Friends tab (td's header avatar). There is
      **no Games row**: the Games hub (`/games`) was deleted 2026-11-06 and the routed games'
      pages are off behind the `standaloneGames` flag; games are played only as flp breaks
      inside the Deck Tower ([GAMES_FEATURE.md](./GAMES_FEATURE.md)).
      Below a hairline, only for accounts holding the grant: **Tester Dashboard** (feature
-     tester with testing features on, or admin), **Template Editor** / **Template Sandbox**
-     (`isTemplateAuthor` + `nightMarket` flag) and **Scene Editor** (`isTemplateAuthor` +
-     `immersiveWorld` flag). The hairline and the gated group appear together or not at all.
+     tester with testing features on, or admin) — the only gated row. The hairline and the gated group appear together or not at all.
      There is **no Dictionary or Arena row**: both are footer tabs, and a row would be a
      second door to the same room. There is deliberately **no Compare Words row**: Compare
      is a sheet raised over the word you are already looking at
@@ -123,8 +121,7 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    keep the footer, slide in-from-right / out-to-right via the arrow).
    - Menu destinations → **back one history entry**, i.e. to the page the Menu popover
      was opened over, or `/` on a cold deep link (`src/utils/navigateBack.ts` →
-     `navigateBackOr(navigate, "/")`): `/community`, `/reader` (node); `/night-market`, `/tester-dashboard`, `/immersive-world`, the Template
-     Editor / Sandbox and leaving the Scene Editor (leaf).
+     `navigateBackOr(navigate, "/")`): `/community`, `/reader` (node); `/tester-dashboard` (leaf).
    - Friends drill-ins (`/friends/requests`, `/friends/sent`, `/friends/remove`,
      `/friends/challenges`), opened from the AccountSheet's Friends tab → back one history
      entry (`navigateBackOr(navigate, "/")`), landing on the page the sheet was over with
@@ -162,7 +159,7 @@ became a sheet (2026-10-09) they are:
 - Frame routes (`shell: "frame"` in `src/routes/routeMeta.ts`, which replaced the old
   `MOBILE_DEMO_PATHS` array; includes `/`) → wrapped in `MobileDemoFrame` (full-bleed on mobile, centered phone card on desktop).
 - Everything else (auth pages, etc.) → full-height, no chrome; each owns its
-  `PageHeader`. (Reader / Night Market / Settings / Tester Dashboard render inside
+  `PageHeader`. (Reader / Settings / Tester Dashboard render inside
   the frame as leaf pages; both card-detail cdps render inside the frame as node pages;
   Dictionary is a footer tab.)
 
@@ -176,8 +173,7 @@ became the hub menu (later `/menu`, now the Menu popover); `/` is the Deck Tower
 learners, so it is gated on `users.isFeatureTester` (migration 178 — it rode
 `users.isValidator` until that data-validation flag was split from feature testing, see
 [DATA_VALIDATION_SYSTEM.md](./DATA_VALIDATION_SYSTEM.md)) **or** `users.isAdmin`
-(migration 168) in two places, mirroring the `isTemplateAuthor` gate on the Night
-Market template editor:
+(migration 168) in two places:
 
 - `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` (`gated`) —
   the `tester-dashboard` row is spread in only when `useTestingFeatures() || user?.isAdmin` (the tester half also needs

@@ -28,13 +28,13 @@ export interface SoftIntroSpec {
 export const SOFT_INTROS = {
     /**
      * acp's level pill ("Auto" / the six-triangle difficulty meter, AddCardsPage toolbar). Intro: a small
-     * "Difficulty" caption under it, so the learner learns what the pill picks. Graduated:
+     * "DIFFICULTY →" caption left of it, pointing at it, so the learner learns what the pill picks. Graduated:
      * the pill alone, as the Tower Tier 2 design draws it.
      */
     sortDifficultyCaption: {
         minVisits: 7,
         minDays: 7,
-        description: 'acp level pill: "Difficulty" caption under it (intro) → pill alone (graduated)',
+        description: 'acp level pill: "DIFFICULTY →" caption left of it (intro) → pill alone (graduated)',
     },
     /**
      * td main world's mini sort platform (DeckTowerPlatform `sortBin`). Intro: "ADD MORE /
@@ -54,6 +54,17 @@ export const SOFT_INTROS = {
         minVisits: 70,
         minDays: 14,
         description: 'td notebook stack: "Writing notebook" floor print under it (intro) → stack alone (graduated)',
+    },
+    /**
+     * td settled snow (docs/TOWER_SNOW.md § "Covering text"). Intro: snow leaves every
+     * piece of floor and card text readable — the floor plate stays bare, the floor prints and
+     * the "0 cards" imprint are drawn over the floor snow, and the top card's snow lies only
+     * on its rim. Graduated: snow covers them all. Counted on every td visit, snowy or not.
+     */
+    towerSnowCover: {
+        minVisits: 4,
+        minDays: 1,
+        description: "td snow: text on the plate, floor prints and top card stays readable (intro) → snow covers it (graduated)",
     },
     /**
      * The hint pawn's "Tap / to / dismiss" cue (PawnHintBody `DismissCue`, flp hint bubble).

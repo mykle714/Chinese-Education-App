@@ -25,7 +25,7 @@
  *
  * A flag is for a feature that is BUILT but should not be reachable yet. It is not
  * a permission check — per-user gating is `users.isValidator` / `users.isFeatureTester`
- * / `users.isTemplateAuthor` / `users.isAdmin` — and it is not a rollback mechanism
+ * / `users.isAdmin` — and it is not a rollback mechanism
  * for data (see CLAUDE.md, which records that gloss-confusability rolls back by
  * `TRUNCATE`, not by a flag).
  *
@@ -42,7 +42,7 @@
  * DI wiring in `server/dal/setup.ts` is deliberately NOT gated. Services are
  * injected into other services (`StudyChallengeService` into `FriendsService` as
  * the unfriend resolver, `CommunityLayoutDAL` into `UserProfileService`,
- * `NightMarketPlacementService` and `ArenaService` into `UserMinutePointsService`), so
+ * `ArenaService` into `UserMinutePointsService`), so
  * skipping construction would mean teaching those call sites to tolerate an absent
  * dependency — a much larger change than not answering HTTP requests, and one that
  * would have to be undone to turn the flag back on.
@@ -108,47 +108,6 @@ export const FEATURE_FLAGS = {
    * or written differently because of it.
    */
   arena: true,
-
-  /**
-   * Night Market — the vocabulary market the learner builds out as they earn minute
-   * points (docs/NIGHT_MARKET_FEATURE.md). Gates all THREE of the feature's server
-   * namespaces (`/api/nightMarket/*`, `/api/nightMarketTemplates/*`,
-   * `/api/nightMarketSandbox/*`), its four routes — the market itself, the read-only
-   * visit to someone else's market, and the two desktop authoring tools — the hp hero
-   * tile, the two template-author tiles, and the "Visit their night market" button on
-   * a user profile.
-   *
-   * The two authoring tools are covered because they author THIS feature's content:
-   * `users.isTemplateAuthor` answers "may you author?", which is a different question
-   * from "does the feature exist?" and is not a substitute for it.
-   *
-   * NOT gated: unlock accrual. `UserMinutePointsService` keeps calling
-   * `NightMarketPlacementService.grantUnlocks` / `reconcileUnlocks` as minutes are
-   * credited (the no-gating-DI rule below), so a learner who studies while the flag is
-   * off still arrives at a market that matches their balance rather than an empty lot.
-   * Unlike arena's injected service this one WRITES rows — deliberately, for that
-   * reason. Nor is the origin-hub seeding on registration gated
-   * (`UserController.seedNightMarketHub`), for the same "no cliff on re-enable" reason.
-   *
-   * ⚠️ CURRENTLY OFF (switched off 2026-09-25).
-   */
-  nightMarket: false,
-
-  /**
-   * Immersive World — the once-a-day conversation with an NPC in a scene
-   * (docs/IMMERSIVE_WORLD.md). Gates `/api/immersiveWorld/*` — BOTH halves of that
-   * router, the phase-1 authoring endpoints and the phase-2 learner runtime, which
-   * share a URL prefix but not a service — plus the three `/immersive-world*` routes
-   * (scene list, one running scene, scene editor), the hp tile and the Scene Editor
-   * tile.
-   *
-   * NOT gated: the TTS voice plumbing. `useTTS`'s per-call `voice` parameter exists for
-   * iw alone (docs/IMMERSIVE_WORLD.md § 6.4a) but is an ordinary optional argument that
-   * every other caller already omits, so there is nothing to switch off.
-   *
-   * ⚠️ CURRENTLY OFF (switched off 2026-10-30).
-   */
-  immersiveWorld: false,
 
   /**
    * Writing Notebook — endless per-word handwriting practice sheets

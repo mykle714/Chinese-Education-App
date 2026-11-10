@@ -144,7 +144,7 @@ frame itself (`.mobile-demo-frame`, positioned) via `useScreenOverlayHost`
 `frameOverlayHost`), pinned `absolute; inset: 0` at a z-index above the footer bar's
 100 — so its dim covers the whole screen, footer included, and nothing in the page can
 mask it. Callers: `SheetPanel` (modal), `ChallengeSheet`, `SteppedHelpPopup`,
-`MinimizablePopup`, the Immersive World overlays. (Until 2026-10-06 overlays used
+`MinimizablePopup`. (Until 2026-10-06 overlays used
 `nearestOverlayHost` — `NodePage`'s transformed `Surface` — plus a `useHideFooter` hold;
 `ChallengeRoundScoreboard` still uses it, which is correct on a footerless leaf page.)
 Full rule: docs/UX_AND_NAVIGATION.md § Dimming the background.

@@ -20,7 +20,7 @@ import type { WeatherKind, WeatherNow } from "../../api/weather";
 
 /**
  * How a rain streak is drawn — shared by BOTH rain layers (the sky's WeatherLayer behind the
- * scene, and PlatformRain in front of the tower, splashing on the platform), so a drop reads
+ * scene, and iso/IsoRain in front of the tower, splashing on the platform), so a drop reads
  * the same wherever it falls.
  *   - `RAIN_LEAN`: px of sideways travel per px of fall (a light wind from the left).
  *   - `RAIN_ALPHA`: present, but well under the tower's own whites.
@@ -29,6 +29,21 @@ import type { WeatherKind, WeatherNow } from "../../api/weather";
 export const RAIN_LEAN = 0.18;
 export const RAIN_ALPHA = 0.42;
 export const RAIN_STROKE_PX = 1.2;
+
+/**
+ * How a snowflake is drawn — shared by BOTH snow layers (the sky's WeatherLayer behind the
+ * scene, and iso/IsoSnow falling in front of the platform and settling on it), so a flake
+ * reads the same wherever it falls (docs/TOWER_SNOW.md § "Falling snow").
+ *   - `SNOW_ALPHA`: flake opacity.
+ *   - `SNOW_R`: flake radius range, CSS px.
+ *   - `SNOW_SPEED`: fall speed range, CSS px/s.
+ *   - `SNOW_SWAY`: sideways sway amplitude, CSS px; `SNOW_SWAY_RATE`: its phase speed, rad/s.
+ */
+export const SNOW_ALPHA = 0.85;
+export const SNOW_R = [1.1, 2.6] as const;
+export const SNOW_SPEED = [28, 64] as const;
+export const SNOW_SWAY = 14;
+export const SNOW_SWAY_RATE = 0.9;
 
 /** The feature-tester pin (WeatherToggle): `auto` follows the real weather. */
 export type WeatherOverride = "auto" | WeatherKind;

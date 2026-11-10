@@ -5,7 +5,7 @@ API directly. **Scope: illegal state.** Not every abusive-looking action is a bu
 inflating your own mastery, for instance, is explicitly acceptable (the honour system
 is the design, see [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 8). What is *not*
 acceptable is a request sequence that leaves an account or the server in a state the
-app's own rules say cannot exist: unearned night-market unlocks, a streak that cannot
+app's own rules say cannot exist: unearned minute points, a streak that cannot
 break, progress rows for languages that do not exist, two live challenges for one
 pair, unbounded rows.
 
@@ -65,6 +65,12 @@ not "why would the client lie" but "what does this value decide".
   the sort endpoint used to look up the id with no such filter, letting any dictionary
   row (including rows whose enrichment columns are still null) be added to a library.
   That is exactly the state CLAUDE.md's mark-discoverable rule exists to prevent.
+  The lookup is `StarterPacksDAL.findDiscoverableWordById` (gated by
+  `discoverSupplyGate`). A miss returns **404 `ERR_NOT_FOUND`** with the same message
+  whether the id is unknown or merely undiscoverable, so the endpoint does not reveal
+  which undiscoverable rows exist. A non-integer `cardId` is rejected with 400 by
+  `StarterPacksController.sortCard` before any query runs.
+  (`StarterPacksService.sortCard` → `NotFoundError`.)
 * **`gameId`** on `/api/games/:gameId/progress`. A raw path segment keying a
   `(userId, gameId)` upsert. Now whitelisted against `KNOWN_GAME_IDS`.
 * **`entryKey`** on votes and writing-practice completions — unbounded `VARCHAR` with
@@ -114,7 +120,6 @@ a second caller. The one exception is `/api/arena/admin/tick`, gated in
 
 | Role | Covers |
 |---|---|
-| `users.isTemplateAuthor` | all 9 template mutations, all 7 sandbox mutations, `POST /api/nightMarket/dev/adjustMinutes` (a real PPE route despite the `/dev/` path) |
 | `users.isValidator` | all 5 validation endpoints, AI enrichment spend |
 | `users.isFeatureTester` (migration 178) | `/api/arena/admin/tick` (via `ArenaService` → `canManuallyTick`), the study-challenge `anytime` escape hatch (`StudyChallengeService` → `resolveAnytime`) |
 
@@ -128,7 +133,3 @@ a second caller. The one exception is `/api/arena/admin/tick`, gated in
   changes are confirmed with the repo owner first.
 * **`user_languages.language` has no CHECK constraint.** Every write path now
   validates, but the column would accept anything a future path forgets to coerce.
-* **Duplicated `_supplyGate`.** `StarterPacksService._supplyGate` and
-  `ProvisionalCardDAL._supplyGate` are byte-identical implementations of the same
-  rule. They agree today; a change to one silently desynchronises discover from
-  provisional lending. Worth extracting to `server/dal/shared/`.

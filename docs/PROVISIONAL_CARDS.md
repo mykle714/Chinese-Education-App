@@ -668,7 +668,7 @@ not called for `collection.kind === 'focus'`), so it never lends at any point.
 ## 7. Sorting what you played
 
 Provisional cards stay **unsorted** as far as discover is concerned. The supply query
-(`StarterPacksService._fetchSupplyRows`) excludes only rows with a *sorted* bucket, so
+(`StarterPacksDAL.findSupplyRows`) excludes only rows with a *sorted* bucket, so
 lent words keep appearing in the normal sort flow — that is how a temporary card gets
 promoted into the real deck.
 

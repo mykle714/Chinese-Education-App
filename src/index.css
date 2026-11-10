@@ -294,6 +294,25 @@ textarea,
   animation: none;
   z-index: 1;
 }
+/* …and the footer is NOT its own group in a circle: it belongs to the page the circle reveals
+   (td's home screen → the Dictionary, where it slides in), so it stays in the root snapshot,
+   clipped by the phone frame and by the circle. As its own group it is lifted out of the frame
+   (a named group is not clipped by `overflow: hidden`) and on desktop slid up from below the
+   phone card in plain sight. */
+:root[data-vt-dir="circle"] .mobile-footer {
+  view-transition-name: none;
+}
+
+/* The dash transition's entrance hold (src/hooks/pageDash.ts → HOLD_CLASS): while the
+   arriving page is hidden under the dash's sky, every CSS animation in the route page (the
+   phone frame's first child) is paused, delays included, so its entrances (acp's card dock
+   slide-in) play when it slides in instead of finishing unseen. */
+.page-dash-hold > :first-child,
+.page-dash-hold > :first-child *,
+.page-dash-hold > :first-child *::before,
+.page-dash-hold > :first-child *::after {
+  animation-play-state: paused !important;
+}
 
 /* Material Symbols Rounded — the app's icon face (docs/SHELF_REDESIGN.md, D3).
  *

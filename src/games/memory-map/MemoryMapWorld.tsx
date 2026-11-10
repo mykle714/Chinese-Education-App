@@ -35,8 +35,8 @@ const WORD_LAYERS = ["ring", "ink"] as const;
  * The camera is one `transform` on one div; the words are absolutely-positioned
  * children that never move relative to it. The 50-slot cap (MEMORY_MAP_CAPACITY) is
  * what makes this safe — at that size there is nothing to cull and no scene graph to
- * justify. A game that genuinely needed one should borrow the night market's Pixi host
- * rather than growing a second one here.
+ * justify. A game that genuinely needed one should start from the archived Night Market
+ * Pixi host (removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md) rather than growing one here.
  *
  * ── THE CAMERA IS FIXED (owner, 2026-11-04) ──────────────────────────────────
  * No pan, no pinch, no wheel. The camera is DERIVED, never stored: centre the map and

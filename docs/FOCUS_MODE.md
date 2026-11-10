@@ -103,7 +103,8 @@ first-of-day requests agree on one set: `claimSnapshot` only replaces an older d
 ## 4. Where focus narrows a round
 
 *Code: `OnDeckVocabController.applyFocus`; `routes/flashcardRoutes.ts` (mark refill);
-`OnDeckVocabService` → `CollectionFilter` `{ kind: 'focus', ids }`, `focusPlayFilter`.*
+`server/dal/interfaces/IOnDeckVocabDAL.ts` → `CollectionFilter` `{ kind: 'focus', ids }` (re-exported by
+`OnDeckVocabService`); `server/dal/implementations/OnDeckVocabDAL.ts` → `focusScopeClause`.*
 
 On every **unrestricted** launch whose world is focused, the controller substitutes a `focus`
 collection holding today's remaining ids (snapshot minus cards marked correct today, re-read on
@@ -156,7 +157,8 @@ Fill order (`getGameVocabPool`):
 lists the outside words as `outsideFocusWords`.
 
 *Code: `OnDeckVocabController` → `applyFocus`, `getGamePool`, `getWordSearchGrid`; `OnDeckVocabService` →
-`CollectionFilter`, `focusPlayFilter`, `getGameVocabPool`, `getWordSearchGrid` (`focusBreak`);
+`getGameVocabPool`, `getWordSearchGrid` (`focusBreak`); `IOnDeckVocabDAL.ts` → `CollectionFilter`;
+`OnDeckVocabDAL.ts` → `focusScopeClause`;
 `FocusModeService` → `resolveWorld` (`setIds`); `src/api/gamePool.ts` → `GamePoolRequest.flpBreak`;
 `src/games/match-speed/poolRequest.ts`.*
 

@@ -13,7 +13,7 @@
 /** A user's full progress state for one language. */
 export interface LanguageProgress {
   language: string;
-  /** NET wallet: penalty-debited, floored at 0. Funds this language's night market. */
+  /** NET wallet: penalty-debited, floored at the 24-hour checkpoint (0 below 1440). */
   totalMinutePoints: number;
   /**
    * GROSS lifetime minutes earned in this language (migration 134). Monotonic — the earn

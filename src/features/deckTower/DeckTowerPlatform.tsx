@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
+import type { SnowComponent } from "./towerSnow";
 import {
     CARD_THICKNESS,
     IsoCardImprint,
@@ -8,6 +9,13 @@ import {
     IsoFloorPrint,
     IsoFog,
     IsoRain,
+    IsoSnow,
+    IsoFloorSnow,
+    IsoSnowSkirt,
+    FLOOR_SNOW_DEPTH,
+    SNOW_CAP_DEPTH,
+    useSnowTrailRecorder,
+    type SnowWalker,
     IsoBurnMark,
     IsoLightningBolt,
     IsoLever,
@@ -19,6 +27,7 @@ import {
     RAISED_HEIGHT,
     SORT_PLATFORM_JUMP,
     sortPlatformTopZ,
+    SLAB_THICKNESS,
     backToFront,
     depthRankAmong,
     flatPath,
@@ -32,6 +41,9 @@ import {
     shadowLandTiming,
     toOpenPath,
     type IsoRainFall,
+    type IsoSnowFall,
+    type SnowCover,
+    type SnowTrail,
     type IsoSurface,
     type FogCloud,
     type PawnEntranceFrame,
@@ -47,7 +59,7 @@ import type { PlatformLightning } from "./towerLightning";
 import type { SwapPawn } from "./useDeckSwap";
 import { usePlatePress } from "./usePlatePress";
 import { IMPACT_MS, type TowerDrop } from "./towerResizes";
-import { LEARNING_COLORS } from "../../utils/categoryColors";
+import { CATEGORY_COLORS } from "../../utils/categoryColors";
 import { COLORS } from "../../theme/colors";
 import type { TowerCollapse } from "./useTowerResize";
 import { useSoftIntro } from "../../softIntro/useSoftIntro";
@@ -62,6 +74,9 @@ import { useSoftIntro } from "../../softIntro/useSoftIntro";
  * (useDeckSwap.ts). The page keys it by world, so arriving in another world mounts a
  * fresh platform (and pawn). It owns only its pawns' depth slots; every number it draws
  * is handed in.
+ *
+ * The home screen renders the same component (home/HomeScene.tsx, docs/HOME_SCREEN.md
+ * § "The platform") with no deck, no plate and no lever — the pawn alone.
  *
  * Draw order inside the platform (IsoPlatform):
  *   decals    the cards' imprint under the stack ("0 cards", IsoCardImprint — drawn
@@ -89,6 +104,15 @@ import { useSoftIntro } from "../../softIntro/useSoftIntro";
  *     falling onto it (CSS free fall), with the landing's smoke ring around the join
  *     (IsoSmokePuff, its back half under the drop and its front half over it) and the
  *     whole loaded platform sinking under the blow (`PLATFORM_SINK_CSS`).
+ *
+ * Settled snow (`snow`, docs/TOWER_SNOW.md): each object draws its own (the top card, the
+ * lever's ball, the corner fixture's top); the floor's sheet and the pawn's trail are a
+ * floor decal over the imprint, the burns, the si print AND the plate (buried; pressing it
+ * brushes a hole over it — `plateDrift` — and until then the trail ploughs through its drift
+ * too, the pawn sinking in it as on the floor), sliding off the trap door as it swings
+ * (`floorSlide`). While it lies (`snowLying`) the tower and corner fixtures are banked in
+ * at their base (IsoSnowSkirt), the pawns wade sunk in with no shadow (IsoPawn `snowDepth`), and shadows
+ * fall on the snow's top (`shadowReceiverFor`, `shadowGround`).
  */
 
 /** World units the platform sinks when a dropped tower lands on it. */
@@ -229,21 +253,28 @@ interface DeckTowerPlatformProps {
     summitSpot: React.MutableRefObject<{ x: number; y: number } | null>;
     /** A swap's old towers are still on screen: an INCOMING pawn is not startled by them. */
     swapOutgoing: boolean;
-    plate: {
+    /**
+     * The deck plate on the floor. Undefined: none — the home screen's platform
+     * (home/HomeScene.tsx) carries no deck, so it has no plate to name one.
+     */
+    plate?: {
         /** The deck it names. Switching decks swaps it in one frame — a hard cut, no animation. */
         face: PlateFace;
         ariaLabel: string;
         /** Fired when the pressed plate is RELEASED (usePlatePress). */
         onTap: () => void;
+        /** Fired as a press goes down (the page brushes the snow off the plate). */
+        onPress?: () => void;
         /** Taps are ignored (a swap is running): no pointer cursor, and it will not press. */
         busy: boolean;
     };
     /**
      * The focus lever in the floor's left corner (IsoLever, docs/FOCUS_MODE.md § 5): its
      * animated numbers (useLeverMotion) and its tap. Fully sunk with its hatch shut, it
-     * draws nothing — the floor is flush — and takes no taps.
+     * draws nothing — the floor is flush — and takes no taps. Undefined: no lever at all
+     * (the home screen's platform); its obstacle slot is still held, like the stack's.
      */
-    lever: {
+    lever?: {
         pull: number;
         sink: number;
         hatch: number;
@@ -273,8 +304,8 @@ interface DeckTowerPlatformProps {
     };
     /**
      * The mini sort platform in the floor's right corner (main world, while the Learning
-     * tower is drawn; docs/DECK_TOWER.md § "The sort platform") — acp's To Learn bin in
-     * miniature (empty, lying flat on the floor), and its button. It moves with the tower like the notebook stack does.
+     * tower is drawn; docs/DECK_TOWER.md § "The sort platform") — acp's four bins in
+     * miniature (one slab lying flat on the floor, a band colour per quadrant), and its button. It moves with the tower like the notebook stack does.
      * `hopping`: it jumps every 2 s, the "cards low — go sort" call. Never passed together
      * with `notebook` (they take the same corner, on different worlds).
      */
@@ -320,7 +351,35 @@ interface DeckTowerPlatformProps {
      * so it survives this component remounting on a pan.
      */
     lightning?: PlatformLightning;
+    /**
+     * Snow falling in front of everything on the floor and settling there (IsoSnow) — the
+     * weather's snow in iso space; the sky's own snow is WeatherLayer's. Undefined: none.
+     */
+    snowFall?: IsoSnowFall;
+    /**
+     * Snow lying on this platform (useTowerSnow, docs/TOWER_SNOW.md). Each cover is present
+     * only while that component is snowy (or brushing off). Undefined: none (the home screen).
+     */
+    snow?: {
+        covers: Partial<Record<SnowComponent, SnowCover>>;
+        /** The `towerSnowCover` si has graduated: snow covers the "0 cards" imprint too. The fixtures' si prints, the plate and the top card are always fully covered. */
+        coverText: boolean;
+        /** The floor's footprints (the page keeps the store, so they outlast a pan). */
+        trail: SnowTrail;
+        /** The tower's top's footprints, through its cap. */
+        towerTrail: SnowTrail;
+        /** A deck swap is running: the floor's snow slides off the opening trap door, and stays gone until it ends. */
+        swapping: boolean;
+    };
 }
+
+/** The snow drift over the plate, and its hole once pressed (IsoFloorSnow `drift`): the plate and a small margin round it. */
+const PLATE_DRIFT_RECT = insetRect(layout.labelPlate, -0.12);
+
+/** The door angle by which the floor's snow has slid wholly off (the trap door opens to 86°). */
+const SNOW_SLID_OFF_ANGLE = (75 * Math.PI) / 180;
+
+const noop = () => {};
 
 const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     world,
@@ -347,6 +406,8 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     rain,
     rainCeilingY,
     lightning,
+    snowFall,
+    snow,
     bobPaused = false,
     fadeOpacity = 1,
     keepDeck = false,
@@ -356,9 +417,47 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     // decks' band colours and the card stock are washed here, under the scene's wash.
     const palette = useIsoPalette();
     const wash = useIsoWash();
-    const plateBand = wash(plate.face.band);
+    const plateBand = plate ? wash(plate.face.band) : undefined;
     const stackBand = stack ? wash(stack.bandColor) : undefined;
     const floor = world.floor;
+    // ── Snow (docs/TOWER_SNOW.md) ──
+    const covers = snow?.covers ?? {};
+    const floorSnow = covers.floor;
+    // Until the `towerSnowCover` si graduates, the "0 cards" imprint is printed OVER the
+    // floor's snow, so an empty tower still says so. Nothing else shows through: the corner
+    // fixtures' si prints, the plate and the top card are always buried.
+    const coverText = snow?.coverText ?? false;
+    const textOverSnow = floorSnow !== undefined && !coverText;
+    // The plate lies UNDER the floor's snow, buried (the sheet is deeper than the plate
+    // stands). Pressing it brushes the snow over it off (`covers.plate` shedding), and the
+    // sheet keeps a hole over it from then until the trap door clears the floor.
+    const plateCover = covers.plate;
+    const plateBuried = floorSnow !== undefined && plateCover !== undefined && !plateCover.shed;
+    // Everything standing on a snowy floor casts its shadow onto snow.
+    const ground: IsoSurface = floorSnow ? { ...floor, color: palette.snow } : floor;
+    // The snow's top, where the imprint printed over it (si intro) lies — FLOOR_SNOW_DEPTH up.
+    const snowTop: IsoSurface = { ...ground, z: floor.z + FLOOR_SNOW_DEPTH };
+    // The floor's snow sliding off the opening trap door: the widest the door has swung during
+    // this swap, so it never slides back on as the door closes (the page clears it when the
+    // swap ends). A ref written in render: idempotent, it only ever ratchets up within a swap.
+    const slideMax = useRef(0);
+    if (!snow?.swapping) slideMax.current = 0;
+    else slideMax.current = Math.max(slideMax.current, Math.min(1, hingeAngle / SNOW_SLID_OFF_ANGLE));
+    const floorSlide = slideMax.current;
+    // The floor's snow lying (not sliding off a trap door): what stands in it is banked in
+    // (IsoSnowSkirt), the pawns wade sunk in with no shadow (IsoPawn `snowDepth`), and other shadows fall on its top.
+    const snowLying = floorSnow !== undefined && floorSlide <= 0;
+    // Where an object of this height casts its shadow: on the snow's top while it stands out
+    // of the snow, nowhere while it is buried in it, and on the floor without snow.
+    const shadowReceiverFor = (height: number): IsoSurface | null | undefined => (!snowLying ? undefined : height > FLOOR_SNOW_DEPTH ? snowTop : null);
+    // The floor's own receiver for everything else (cloud shade, a sky drop's shadow).
+    const shadowGround = snowLying ? snowTop : ground;
+    // The sort platform is thinner than the floor's snow: in snow it is as deep as the snow,
+    // so its top lies flush with the snow's — the snow meets it at its outer edge (the skirt
+    // reaches exactly to its top outline), not partway up its top. It casts no shadow then
+    // (`shadowReceiverFor`: not taller than the snow). Any floor snow, sliding or not, so it
+    // does not jump as the sheet slides off a trap door it is falling with.
+    const sortThickness = floorSnow ? Math.max(SLAB_THICKNESS, FLOOR_SNOW_DEPTH) : SLAB_THICKNESS;
     // A corner fixture is an obstacle only where it stands: the pawn walks round the
     // notebook stack on the writing world and the sort platform on main, and has that
     // corner to itself elsewhere.
@@ -381,8 +480,13 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     // The print, lit or SHADED. A pawn's shadow is an opaque floor-tone patch, so like the
     // plate (`floorDecalsShaded`) the print is drawn again in its shaded tone inside the shadow
     // (IsoPawn `decals`) — otherwise the shadow paints over the letters it crosses.
+    // The print lies on the floor UNDER any snow, even during the snow si (owner's call
+    // 2026-11-09: only the "0 cards" imprint shows through): the lit print is drawn under the
+    // sheet, so it shows again as the sheet slides off a trap door; its shaded copy (drawn
+    // over everything, inside the pawn's shadow) only on a snowless floor.
     const fixturePrintInk = wash(COLORS.white);
     const renderFixturePrint = (shaded: boolean) =>
+        (!shaded || !floorSnow) &&
         fixturePrint && (
             <IsoFloorPrint
                 at={fixturePrint.at}
@@ -424,10 +528,42 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
             ? { className: "deck-tower-page__falling", transform: `translate(0 ${dropPx.toFixed(2)})` }
             : { className: "deck-tower-page__standing" };
 
+    // The cards' imprint ("0 cards"). Over the snow (si intro) it is printed on the sheet.
+    const imprint = showImprint ? <IsoCardImprint rect={layout.card} surface={textOverSnow ? snowTop : floor} /> : null;
+    // The walkers the snow's trails follow (snowChannel.ts): each live (not falling) pawn's
+    // ground point on the floor, and the one summit spot on the tower's top. Recorded only
+    // while that snow lies.
+    // Each pawn's airborne flag (IsoPawn `airborne`), by key: the trails skip a pawn in the air.
+    // Refs kept for the platform's life; keys of pawns gone are dropped as the pawns change.
+    const airborneRefs = useRef(new Map<string, React.MutableRefObject<boolean>>());
+    const airborneFor = (key: string) => {
+        let r = airborneRefs.current.get(key);
+        if (!r) {
+            r = { current: false };
+            airborneRefs.current.set(key, r);
+        }
+        return r;
+    };
+    for (const k of [...airborneRefs.current.keys()]) if (!pawns.some((p) => String(p.key) === k)) airborneRefs.current.delete(k);
+    const livePawns = pawns.filter((p) => !p.outgoing);
+    const trailWalkers: SnowWalker[] = lightning
+        ? livePawns.map((p) => ({ key: String(p.key), spot: lightning.pawnSpot(p.key), airborne: airborneFor(String(p.key)) }))
+        : [];
+    useSnowTrailRecorder(snow?.trail, trailWalkers, snowLying);
+    const towerSnowLying = covers.tower !== undefined && !covers.tower.shed;
+    // The summit spot is the live (incoming) pawn's (`summitSpot` is passed to it alone).
+    const summitPawnKey = livePawns.length ? String(livePawns[0].key) : undefined;
+    const summitWalkers: SnowWalker[] = summitPawnKey ? [{ key: "summit", spot: summitSpot, airborne: airborneFor(summitPawnKey) }] : [];
+    useSnowTrailRecorder(snow?.towerTrail, summitWalkers, towerSnowLying);
+
     // The plate is a push button: raised at rest, flush while held, and the deck switch
     // fires on RELEASE — its face cuts straight to the other deck as it pops back up.
-    const platePress = usePlatePress({ enabled: !plate.busy, onRelease: plate.onTap });
-    const plateButton = (
+    // (Called unconditionally — a hook — and simply never pressed when there is no plate.)
+    const platePress = usePlatePress({ enabled: plate !== undefined && !plate.busy, onRelease: plate?.onTap ?? noop, onPress: plate?.onPress });
+    // The plate's snow stands proud of the sheet by the plate's own live height (a drift),
+    // offset from the floor's snow as the plate is from the floor.
+    const plateDrift = plate && floorSnow ? { rect: PLATE_DRIFT_RECT, rise: Math.max(0, platePress.raised) * RAISED_HEIGHT, cover: plateCover } : undefined;
+    const plateButton = plate && (
         <g
             className="deck-tower-page__plate-button"
             role="button"
@@ -439,7 +575,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
             <path className="deck-tower-page__plate-hit" d={flatPath(proj, layout.labelPlateHit, floor.z)} fill="transparent" />
             <IsoFloorLabel
                 rect={layout.labelPlate}
-                surface={floor}
+                surface={ground}
                 text={plate.face.text}
                 bandColor={plateBand}
                 wallSteps={plate.face.wallSteps}
@@ -453,15 +589,18 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     const floorDecalsShaded = (
         <>
             {renderFixturePrint(true)}
-            <IsoFloorLabel
-                rect={layout.labelPlate}
-                surface={floor}
-                text={plate.face.text}
-                bandColor={plateBand}
-                wallSteps={plate.face.wallSteps}
-                shaded
-                raised={platePress.raised}
-            />
+            {/* Not while it is buried: the shadow then falls on the snow over it. */}
+            {plate && !plateBuried && (
+                <IsoFloorLabel
+                    rect={layout.labelPlate}
+                    surface={ground}
+                    text={plate.face.text}
+                    bandColor={plateBand}
+                    wallSteps={plate.face.wallSteps}
+                    shaded
+                    raised={platePress.raised}
+                />
+            )}
         </>
     );
 
@@ -470,11 +609,16 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     // And the tower's top as the summit (usePawnMotion's SUMMIT), at its live height. With
     // no cards left it closes, so a pawn never stays inside the tower's footprint (not
     // during a study: the pawn is away on the count card, and comes back with it).
+    // With no plate its step is flush with the floor (height 0), which is no step at all.
     const pawnSteps: PawnStep[] = [
-        { rect: layout.labelPlate, height: Math.max(0, platePress.raised) * RAISED_HEIGHT },
+        // Bare once pressed clear (its hole in the floor's snow): the pawn stands on it unsunk.
+        // Until then the floor's snow, lifted with it (its drift).
+        { rect: layout.labelPlate, height: plate ? Math.max(0, platePress.raised) * RAISED_HEIGHT : 0, snowDepth: plateBuried ? undefined : 0 },
         {
             rect: layout.card,
             height: summitCards * CARD_THICKNESS,
+            // The top card's cap: the pawn wades through it up there too.
+            snowDepth: towerSnowLying ? SNOW_CAP_DEPTH : 0,
             summit: { closed: !summitHeld && summitCards === 0, held: summitHeld },
         },
     ];
@@ -483,7 +627,8 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
         <g key={`pawn-${pawnKey(p)}`} className={p.outgoing && dropPx > 0 ? "deck-tower-page__falling" : "deck-tower-page__standing"}>
             <IsoPawn
                 at={layout.pawnAt}
-                surface={floor}
+                surface={ground}
+                snowDepth={snowLying ? FLOOR_SNOW_DEPTH : undefined}
                 roam={roam}
                 startledBy={layout.card}
                 // The trap door's drop, in world units: the old pawn falls with it on its own,
@@ -502,6 +647,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                 summitSpot={p.outgoing ? undefined : summitSpot}
                 // Lightning (towerLightning.ts): an outgoing pawn is falling, never struck.
                 floorSpot={p.outgoing ? undefined : lightning?.pawnSpot(p.key)}
+                airborne={p.outgoing ? undefined : airborneFor(pawnKey(p))}
                 shockId={lightning?.shockIds[p.key]}
                 crispy={lightning?.crispyPawns.includes(p.key) ?? false}
             />
@@ -518,6 +664,8 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     const landingZ = drop ? floor.z + drop.baseCards * CARD_THICKNESS : 0;
     // The tower's element (its layer's slot is held by a placeholder when there is none).
     let deckEl: React.ReactElement | null = null;
+    // The standing tower's height (the snow banks round its base up to its top at most).
+    const towerHeight = stack ? Math.round(stack.count * stack.progress) * CARD_THICKNESS : 0;
     if (stack) {
         deckEl = (
             <g
@@ -538,7 +686,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                     <IsoCardRuns
                         key={`collapse-${stack.collapse.key}`}
                         rect={layout.card}
-                        surface={floor}
+                        surface={ground}
                         plan={stack.collapse.plan}
                         label={stack.label}
                         bandColor={stackBand}
@@ -548,13 +696,20 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                     <IsoCardStack
                         rect={layout.card}
                         count={stack.count}
-                        surface={floor}
+                        surface={ground}
+                        shadowReceiver={shadowReceiverFor(towerHeight)}
                         progress={stack.progress}
                         label={stack.label}
                         bandColor={stackBand}
                         printOpacity={stack.printOpacity}
+                        // Not during a ghost collapse (IsoCardRuns has no snow; it is back on the
+                        // settled tower after), nor while the count card is its own layer (the
+                        // page passes no cover then — the snow rides TowerCoverCard).
+                        snow={covers.tower}
+                        snowTrail={snow?.towerTrail}
                     />
                 )}
+                {snowLying && <IsoSnowSkirt rect={layout.card} z={floor.z} height={towerHeight} shadow />}
                 {drop && (
                     // Keyed per drop, so its CSS fall (and the puffs' delays) start on mount.
                     <g key={`drop-${drop.key}`} className="deck-tower-page__mode-drop">
@@ -564,7 +719,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                             // shadow is drawn here, still, and fades in from the impact (not
                             // before: until then it would sit over the "0 cards" imprint).
                             <g className="deck-tower-page__mode-drop-shadow" style={dropShadowStyle(drop)}>
-                                <IsoShadow footprint={layout.card} casterZ={floor.z} receiver={floor} />
+                                <IsoShadow footprint={layout.card} casterZ={floor.z} receiver={shadowGround} />
                             </g>
                         )}
                         <IsoSmokePuff rect={layout.card} z={landingZ} side="behind" delayMs={drop.fallMs} />
@@ -609,15 +764,16 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     // The stack's slot is held even when there is no tower, so each layer's index stays the
     // index of its obstacle in `layout.roam.obstacles` (the pawn splices in by rank).
     layers.push(deckEl ?? <g key="stack" />);
-    // The lever: obstacle 1, in front of the tower's front-left face.
-    const leverTappable = !lever.busy && lever.sink < 0.05 && lever.skyFall === null;
+    // The lever: obstacle 1, in front of the tower's front-left face. With none, its slot is
+    // held by a placeholder (the stack's rule above).
+    const leverTappable = lever !== undefined && !lever.busy && lever.sink < 0.05 && lever.skyFall === null;
     const onLeverKey = (e: React.KeyboardEvent<SVGGElement>) => {
         if (e.key !== "Enter" && e.key !== " ") return;
         e.preventDefault();
         if (leverTappable) lever.onTap();
     };
     layers.push(
-        <g
+        !lever ? <g key="lever" /> : <g
             key="lever"
             className="deck-tower-page__lever"
             role="button"
@@ -635,13 +791,14 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                 <g {...fallSx(stackFalling && lever.skyFall === null)}>
                     <IsoLever
                         at={layout.leverAt}
-                        surface={floor}
+                        surface={ground}
                         inside={world.platform.material}
                         pull={lever.pull}
                         sink={lever.sink}
                         hatch={lever.hatch}
                         air={lever.skyFall ?? undefined}
                         knob={world.leverKnob}
+                        snow={covers.lever}
                     />
                 </g>
             )}
@@ -709,18 +866,35 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                 onTap: notebook.onTap,
                 artSelector: ".iso-paper-stack",
                 hitPath: prism(proj, insetRect(layout.notebook, -0.4), floor.z, notebookTopZ + 0.4).hull,
-                art: <IsoPaperStack rect={layout.notebook} sheets={notebook.sheets} progress={notebook.progress} surface={floor} />,
+                art: (
+                    <>
+                        <IsoPaperStack
+                            rect={layout.notebook}
+                            sheets={notebook.sheets}
+                            progress={notebook.progress}
+                            surface={ground}
+                            shadowReceiver={shadowReceiverFor(notebookTopZ - floor.z)}
+                            snow={covers.notebook}
+                        />
+                        {snowLying && <IsoSnowSkirt rect={layout.notebook} z={floor.z} height={notebookTopZ - floor.z} shadow casterHeight={notebookTopZ - floor.z} />}
+                    </>
+                ),
             }),
         );
     }
-    // The mini sort platform (main world, Learning only): acp's empty To Learn bin in
-    // miniature, lying flat on the floor — a white slab (acp's day platform) with a dashed
-    // footprint in the bin's collection colour (LEARNING_COLORS.main, SortBins' "To Learn"),
-    // both washed for the time of day. Its tap target
+    // The mini sort platform (main world, Learning only): acp's four bins in miniature,
+    // lying flat on the floor — one slab, its quadrants in the four bands' colours (acp's
+    // platforms: CATEGORY_COLORS, the band SURFACE tier), washed for the time of day. Its tap target
     // covers it from the floor to the top of its jump, so a hopping platform is still
     // easy to catch.
     if (sortBin) {
-        const sortTopZ = sortPlatformTopZ(floor.z, sortBin.progress);
+        const sortQuadrantColors = [
+            wash(CATEGORY_COLORS.Unfamiliar),
+            wash(CATEGORY_COLORS.Target),
+            wash(CATEGORY_COLORS.Comfortable),
+            wash(CATEGORY_COLORS.Mastered),
+        ] as const;
+        const sortTopZ = sortPlatformTopZ(floor.z, sortBin.progress, sortThickness);
         layers.push(
             cornerButton({
                 key: "sort-bin",
@@ -735,16 +909,23 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                     sortTopZ + (sortBin.hopping ? SORT_PLATFORM_JUMP : 0) + 0.3,
                 ).hull,
                 art: (
-                    <IsoSortPlatform
-                        rect={layout.sortBin}
-                        surface={floor}
-                        deckColor={wash(LEARNING_COLORS.main)}
-                        slabColor={wash(COLORS.white)}
-                        progress={sortBin.progress}
-                        // Not while it falls with the trap door: it leaves the floor still.
-                        hopping={sortBin.hopping && !stackFalling}
-                        paused={bobPaused}
-                    />
+                    <>
+                        <IsoSortPlatform
+                            rect={layout.sortBin}
+                            surface={ground}
+                            shadowReceiver={shadowReceiverFor(sortTopZ - floor.z)}
+                            quadrantColors={sortQuadrantColors}
+                            thickness={sortThickness}
+                            // Its walls hidden under the lying snow (no skirt: it paints over the
+                            // walls, but their anti-aliased edges still showed through).
+                            buriedTo={snowLying ? snowTop.z : undefined}
+                            progress={sortBin.progress}
+                            // Not while it falls with the trap door: it leaves the floor still.
+                            hopping={sortBin.hopping && !stackFalling}
+                            paused={bobPaused}
+                            snow={covers.sortBin}
+                        />
+                    </>
                 ),
             }),
         );
@@ -807,7 +988,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     // rules — the sort platform as a solid up to its slab's top.
     const towerTopZ = stack && !stackFalling && cardsOnTower > 0 ? floor.z + cardsOnTower * CARD_THICKNESS : null;
     const notebookPierceZ = notebook && !stackFalling ? floor.z + paperStackHeight(notebook.sheets, notebook.progress) : null;
-    const sortPierceZ = sortBin && !stackFalling ? sortPlatformTopZ(floor.z, sortBin.progress) : null;
+    const sortPierceZ = sortBin && !stackFalling ? sortPlatformTopZ(floor.z, sortBin.progress, sortThickness) : null;
     const fogPiercers = useMemo(() => {
         const out = towerTopZ === null ? [] : [{ rect: layout.card, zTop: towerTopZ }];
         if (notebookPierceZ !== null) out.push({ rect: layout.notebook, zTop: notebookPierceZ });
@@ -838,14 +1019,23 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                 hingeAngle={hingeAngle}
                 decals={
                     <>
-                        {showImprint && <IsoCardImprint rect={layout.card} surface={floor} />}
+                        {!textOverSnow && imprint}
                         {/* Lightning's scorches: floor decals, under everything standing on it. */}
                         {lightning?.burns.map((b) => <IsoBurnMark key={`burn-${b.id}`} at={b.at} z={floor.z} seed={b.id} />)}
                         {renderFixturePrint(false)}
+                        {/* The plate, under the floor's snow when there is any (its press handlers
+                            still take taps: the snow lets pointer events through). */}
                         {plateButton}
+                        {/* The floor's snow and the channel ploughed through it, sliding off the opening
+                            trap door, with the plate's hole once it is pressed; then (si intro) the
+                            text printed over it. */}
+                        {floorSnow && (
+                            <IsoFloorSnow rect={layout.platform} z={floor.z} slide={floorSlide} trail={snow?.trail} drift={plateDrift} />
+                        )}
+                        {textOverSnow && imprint}
                         {/* Passing cloud shade, over the print and the plate (a glaze, so both
                             still read) and under everything standing on the floor. */}
-                        {cloudShadows?.({ receiver: floor, clip: layout.platform })}
+                        {cloudShadows?.({ receiver: shadowGround, clip: layout.platform })}
                     </>
                 }
                 groundDecals={cloudShadows?.({ receiver: world.ground })}
@@ -871,6 +1061,13 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                 {rain && (
                     <g className="deck-tower-page__layer deck-tower-page__layer--rain" style={layerFade}>
                         <IsoRain rect={layout.platform} floorZ={floor.z} fall={rain} solids={rainSolids} ceilingY={rainCeilingY} />
+                    </g>
+                )}
+                {/* Snow in front of everything standing on the floor, settling on the floor
+                    and the solids' tops (IsoSnow); under the front sky travellers. */}
+                {snowFall && (
+                    <g className="deck-tower-page__layer deck-tower-page__layer--snow" style={layerFade}>
+                        <IsoSnow rect={layout.platform} floorZ={floor.z} fall={snowFall} solids={rainSolids} ceilingY={rainCeilingY} />
                     </g>
                 )}
                 {/* A lightning bolt coming down onto the floor, over everything on it. */}

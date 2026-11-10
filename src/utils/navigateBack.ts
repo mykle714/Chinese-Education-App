@@ -10,8 +10,8 @@ import type { NavigateFunction } from "react-router-dom";
  * did not write) is treated as "has history", the same reading the callers below
  * always made.
  *
- * Used by the Menu-popover destinations (Reader, Community, Night Market, Tester
- * Dashboard, Immersive World, the template/scene editors) and the Friends drill-ins
+ * Used by the Menu-popover destinations (Reader, Community, Tester Dashboard) and the
+ * Friends drill-ins
  * (Sent, Requests, Remove, Challenges — opened from the AccountSheet's Friends tab). Since
  * the `/menu`, `/games` and `/friends` pages were deleted (2026-11-06) these have no fixed
  * parent, so Back returns to whatever page they were opened over. Also used by the saved-card

@@ -16,6 +16,8 @@ import {
   PBH_FULL,
   PBH_MAX_TERM_CAP,
   coreMasteredTypedMarkHistory,
+  coreSeededTypedMarkHistory,
+  SORT_BUCKET_CORE_POSITIVES,
   positiveCount,
   type MasteryGoals,
 } from '../contracts/mastery.js';
@@ -245,6 +247,34 @@ describe('coreMasteredTypedMarkHistory', () => {
     const h = coreMasteredTypedMarkHistory('t');
     expect(h.reading).toBeUndefined();
     expect(h.writing).toBeUndefined();
+  });
+});
+
+describe('coreSeededTypedMarkHistory / SORT_BUCKET_CORE_POSITIVES', () => {
+  it("lands each acp sort bucket's card in the band of its bin", () => {
+    // acp's four bins are the four utcm bands; the seed must read back as that band.
+    const expected = {
+      'library': 'Unfamiliar',
+      'target': 'Target',
+      'comfortable': 'Comfortable',
+      'already-learned': 'Mastered',
+    } as const;
+    for (const [bucket, band] of Object.entries(expected)) {
+      const h = coreSeededTypedMarkHistory(SORT_BUCKET_CORE_POSITIVES[bucket as keyof typeof expected], 't');
+      expect(barCategory(h, 'core')).toBe(band);
+      expect(barCategory(h, 'reading')).toBe('Unfamiliar');
+    }
+  });
+
+  it('seeds both core tracks equally and nothing at zero', () => {
+    const h = coreSeededTypedMarkHistory(3, 't');
+    expect(h.recognition).toHaveLength(3);
+    expect(h.production).toHaveLength(3);
+    expect(coreSeededTypedMarkHistory(0, 't')).toEqual({});
+  });
+
+  it('is coreMasteredTypedMarkHistory at a full window', () => {
+    expect(coreSeededTypedMarkHistory(MARK_WINDOW_SIZE, 't')).toEqual(coreMasteredTypedMarkHistory('t'));
   });
 });
 

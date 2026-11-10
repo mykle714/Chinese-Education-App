@@ -11,3 +11,22 @@
 export function dictTableForLanguage(language: string | null | undefined): string {
   return language === 'es' ? 'dictionaryentries_es' : 'dictionaryentries_zh';
 }
+
+/**
+ * The discover supply gate — the ONE predicate that decides whether a det row may be
+ * offered to a learner: sorted in acp / Quick Mark, counted in the progress bar,
+ * accepted by `POST /api/starterPacks/sort`, or lent as a provisional card.
+ *
+ * One flag, every language: `discoverable` (the zh-only `sortable` bar was retired by
+ * migration 144). Shared by `StarterPacksDAL` and `ProvisionalCardDAL` so the two can
+ * never drift apart: a word we lend must also be a word discover will later offer for
+ * sorting, or the end-of-round "sort these cards" hand-off would show an empty flow.
+ *
+ * @param alias table alias INCLUDING the trailing dot (`'de.'`), or `''` for an
+ *   unaliased query. Always a fixed literal at the call site — never caller input.
+ *
+ * Referenced by: docs/DISCOVER_FLOW.md § "Card supply gate".
+ */
+export function discoverSupplyGate(alias = 'de.'): string {
+  return `${alias}discoverable = TRUE`;
+}

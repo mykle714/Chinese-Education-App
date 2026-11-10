@@ -1,7 +1,7 @@
 import { IProvisionalCardDAL, ProvisionalCandidate, OwnCardCandidate } from '../interfaces/IProvisionalCardDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { ValidationError } from '../../types/dal.js';
-import { dictTableForLanguage } from '../shared/dictTable.js';
+import { dictTableForLanguage, discoverSupplyGate } from '../shared/dictTable.js';
 import { vetTableForLanguage, vetProvisionalClause, vetSortedClause, CORE_CATEGORY_EXPR } from '../shared/vetTable.js';
 
 /**
@@ -17,17 +17,6 @@ import { vetTableForLanguage, vetProvisionalClause, vetSortedClause, CORE_CATEGO
  */
 export class ProvisionalCardDAL implements IProvisionalCardDAL {
   constructor(protected readonly dbManager: DatabaseManager = defaultDbManager) {}
-
-  /**
-   * Supply-visibility gate, mirroring StarterPacksService._supplyGate: one flag,
-   * `discoverable`, for every language (the zh-only `sortable` bar is retired —
-   * migration 144). Keeping the two gates in step matters — a word we lend must also
-   * be a word discover will later offer for sorting, or the end-of-round "sort these
-   * cards" hand-off would show an empty flow.
-   */
-  private _supplyGate(alias = 'de.'): string {
-    return `${alias}discoverable = TRUE`;
-  }
 
   async countSorted(userId: string, language: string): Promise<number> {
     if (!userId) throw new ValidationError('userId is required');
@@ -122,7 +111,7 @@ export class ProvisionalCardDAL implements IProvisionalCardDAL {
         SELECT de.id, de.word1, de."difficulty", de."frequencyScore"
         FROM ${det} de
         WHERE de.language = $1
-          AND ${this._supplyGate()}
+          AND ${discoverSupplyGate()}
           AND de."difficulty" BETWEEN 1 AND 6
           -- Never lend a word the user already holds, in EITHER bucket: 'library'
           -- means it is already in their deck, 'provisional' means it is already lent.

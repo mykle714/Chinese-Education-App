@@ -20,12 +20,11 @@ import type { RampHue } from "../../theme/colors";
  *
  * Every flag-gated row needs its flag (server/contracts/featureFlags.ts); for Community
  * this list is the ONLY navigational entry, so dropping the row is the whole client-side
- * entry gate (docs/FEATURE_FLAGS.md). A gated tool needs BOTH its grant and its
- * feature's flag. The grant says the account may author; the flag says the feature exists.
+ * entry gate (docs/FEATURE_FLAGS.md). A gated tool needs its grant (and its feature's flag,
+ * if it has one). The grant says the account may use it; the flag says the feature exists.
  *
  * Hues are the destinations' existing identities (the ramp hue each wore as a bento
- * tile): one feature, one hue. The Scene Editor shares Immersive World's `red`, and the
- * template tools share Night Market's `pur`.
+ * tile): one feature, one hue.
  *
  * There is no Dictionary or Arena row: both are footer tabs, so a row would be a second
  * door to the same room. There is no Compare row either: Compare is a sheet over a word
@@ -55,16 +54,8 @@ export function useMenuDestinations(): MenuDestinations {
     const testingFeatures = useTestingFeatures();
 
     const main: MenuDestination[] = [
-        ...(isFeatureEnabled("nightMarket")
-            ? [routeDest("night-market", "/night-market", "Night Market", "nights_stay", "pur")]
-            : []),
         // No Games row: the Games hub was deleted 2026-11-06 and the routed games' pages
         // are off (`standaloneGames` flag). Games are played as flp breaks in the Deck Tower.
-        // Its own destination rather than a Games row (docs/IMMERSIVE_WORLD.md § 14 Q9):
-        // iw is once per day and earns no marks, unlike everything on the Games shelf.
-        ...(isFeatureEnabled("immersiveWorld")
-            ? [routeDest("immersive-world", "/immersive-world", "Immersive World", "theater_comedy", "red")]
-            : []),
         routeDest("reader", "/reader", "Reader", "article", "pur"),
         // No Friends row: the `/friends` page was deleted 2026-11-06, and Friends lives only
         // in the AccountSheet's Friends tab (raised from the Deck Tower avatar).
@@ -79,16 +70,6 @@ export function useMenuDestinations(): MenuDestinations {
         // route bounce (docs/NAVIGATION.md § Tester Dashboard).
         ...(testingFeatures || user?.isAdmin
             ? [routeDest("tester-dashboard", "/tester-dashboard", "Tester Dashboard", "dashboard", "blu")]
-            : []),
-        // One grant (users.isTemplateAuthor, migration 115) covers all three authoring tools.
-        ...(user?.isTemplateAuthor && isFeatureEnabled("nightMarket")
-            ? [
-                  routeDest("template-editor", "/night-market/template-editor", "Template Editor", "grid_view", "pur"),
-                  routeDest("template-sandbox", "/night-market/template-sandbox", "Template Sandbox", "dashboard_customize", "pur"),
-              ]
-            : []),
-        ...(user?.isTemplateAuthor && isFeatureEnabled("immersiveWorld")
-            ? [routeDest("scene-editor", "/immersive-world/scene-editor", "Scene Editor", "theater_comedy", "red")]
             : []),
     ];
 

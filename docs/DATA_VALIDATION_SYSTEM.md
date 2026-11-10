@@ -105,8 +105,8 @@ which case it also needs a discriminator in the uniqueness key (migration 139 ad
 `senseLabel` for exactly that; a per-sense field must additionally be listed in
 `PER_SENSE_VALIDATION_FIELDS`, which is what makes the controller require a `senseLabel`
 and the service compose a per-sense body). It does need, in order: the `ValidationField` union in both
-type files; `VALID_FIELDS` (controller); `DET_FIELD_COLUMNS`,
-`DetFieldRow`, `composeBody`, `isFieldPopulated` (`ValidationService`); a formatter
+type files; `VALID_FIELDS` (controller); `DET_FIELD_COLUMNS` (`ValidationDAL`),
+`DetFieldRow` (`IValidationDAL`), `composeBody`, `isFieldPopulated` (`ValidationService`); a formatter
 in `validationBodyFormat.ts`; `ENTRY_LEVEL_VALIDATION_FIELDS` + `EntryApprovalFlags`
 (`server/types/index.ts`) and the matching branch in
 `DictionaryDAL.enrichFieldApprovalsBatch` if the client needs a read-path flag; a
@@ -120,8 +120,8 @@ backfill that writes the column (plus its `validationFields` entry in
 
 - `users."isValidator" BOOLEAN NOT NULL DEFAULT false` — gates the validator UI +
   endpoints (dictionary data approval ONLY). It used to ALSO gate the Night Market
-  template editor; migration 115 split that onto its own `users."isTemplateAuthor"`
-  flag, so the two responsibilities are now independent grants.
+  template editor; migration 115 split that onto `users."isTemplateAuthor"`, which
+  migration 185 then dropped with the Night Market.
 
   **Data validation is its ONLY job.** From 2026-08-22 it was also reused as the
   "trusted tester" grant (the Study Challenge "allow anytime" hatch, then the soft-intro
@@ -308,7 +308,9 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
 - **`ValidationService.submitEntryValidation`** (server) — the method behind
   `POST /api/validation/entrySubmit`: looks up the det row fresh by `(word1,
   language, discoverable=TRUE)` (the client never knows/sends the det surrogate
-  id; shared helper `getDetFieldRowByWord1`), checks the field is populated
+  id; shared helper `getDetFieldRowByWord1` → `ValidationDAL.findDiscoverableFieldRow`;
+  every `validations` read/write is a `ValidationDAL` method — `upsertVote`, `deleteVote`,
+  `findVoteAction`), checks the field is populated
   (`isFieldPopulated`),
   then `UPSERT`s into `validations` (`ON CONFLICT ... DO UPDATE SET action,
   content, validatorName`), writing the `senseLabel` normalized by

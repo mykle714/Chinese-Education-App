@@ -22,14 +22,18 @@ PPE is current through migration **182** (2026-11-04). Latest code deploy: `c554
 
 | Runbook | What | Status | Still open because |
 |---|---|---|---|
+| [NM_IW_REMOVAL_DEPLOY_RUNBOOK.md](./NM_IW_REMOVAL_DEPLOY_RUNBOOK.md) | Night Market + Immersive World removal: drop migration **185** (8 tables, `users."isTemplateAuthor"`, `nightmarket_unlocks_for_minutes`) AFTER the rebuild; `install-timers.sh` required (maintenance unit loses its prune step) | **Not yet deployed** (written 2026-11-09) | Whole deploy pending |
 | [CLUSTER_V11_DEPLOY_RUNBOOK.md](./CLUSTER_V11_DEPLOY_RUNBOOK.md) | Clusterer zh v11 / es v5 (translation-test prompt). **No migration**; re-stamp unflagged zh rows on PPE | Deployed 2026-10-30 (28,210 re-stamped, 93 held back; manifest sync ✅; 0 `selectedSense` on flagged words) | Step 3 heals (est `senseDict` re-tags, flagged words' `longDefinition`) await a user decision |
 | [EXAMPLE_SENTENCE_TARGET_INDEX_DEPLOY_RUNBOOK.md](./EXAMPLE_SENTENCE_TARGET_INDEX_DEPLOY_RUNBOOK.md) | Example-sentence target index + per-occurrence tags. **No migration**; needs the manual `--locate-targets` heal on PPE | Deployed + healed 2026-10-10 (161 rows tagged, 15 deliberate-repeat residue) | Someone must open 了's est on PPE and see 心中**了**然 underlined |
 | [MEMORY_MAP_SLOTS_DEPLOY_RUNBOOK.md](./MEMORY_MAP_SLOTS_DEPLOY_RUNBOOK.md) | Memory Map slot tree (migration **173**, contract) | Deployed 2026-10-06 | Someone must open Memory Map on PPE and see a full, tilted 50-tile map |
 | [DROP_SHORT_DEF_OVERRIDE_DEPLOY_RUNBOOK.md](./DROP_SHORT_DEF_OVERRIDE_DEPLOY_RUNBOOK.md) | 164 + 165 before the rebuild, contract drop 166 after it; `searchReadings` backfill | Deployed 2026-09-24 | Someone must run a logged-in dictionary search for 行 and see results |
-| [IW_SCENE_NOTES_DEPLOY_RUNBOOK.md](./IW_SCENE_NOTES_DEPLOY_RUNBOOK.md) | iw scene notes + scene events (migrations **160**, **161**; expand-only, applied BEFORE the rebuild because the shipped `ImmersiveWorldDAL` selects both columns by name) | Deployed 2026-09-05; notes/events confirmed 2026-09-06 | Someone must confirm a HALF-BUILT scene saves with amber warnings rather than being refused |
 | [GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md](./GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md) | Gloss phase-2 half B, the runtime guard (**no migration**) | Deployed 2026-08-24; infrastructure checks passed | Someone must open a real game board and confirm it fills rather than coming back short (the one over-blocking symptom the checks cannot see) |
 
 ## Deploy history and lessons
+
+Retired 2026-11-09 without a PPE action: `IW_SCENE_NOTES_DEPLOY_RUNBOOK.md` (migrations
+160/161). Its last open condition (a half-built scene saving with warnings) became moot
+when Immersive World was removed — see [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md).
 
 Deployed 2026-11-04, **181** (`users."memoryMapFrameAspect"`, expand-only) + **182**
 (Match Speed review/challenge history delete — 0 rows matched on PPE), no runbook: both

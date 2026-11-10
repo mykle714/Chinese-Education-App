@@ -3,7 +3,7 @@
 Tapping the Deck Tower's floor plate switches the tower between the learner's **Learning**
 and **Mastered** decks. The plate cuts straight to the other deck's colour and name. Then a
 **deck transition** clears the old tower off the platform, a **pawn entrance** brings on a
-new pawn, and the new deck's tower grows. Transitions and entrances each come from a
+new pawn, and the new deck's tower falls in from the sky. Transitions and entrances each come from a
 registry with one random pick per swap. Each registry has one entry today. Each world
 (main, reading, writing) swaps on its own (§ "Several worlds").
 
@@ -65,7 +65,7 @@ not the deck ([DECK_TOWER.md](./DECK_TOWER.md) § "Worlds").
 0 ── PLATE_SETTLE_MS ──▶ t = 0 ─────────── clearedMs ─────────── readyMs ──────── durationMs
  plate + title cut     transition starts:  old tower + pawn     new pawn LANDS;   follow-through
  to the new deck;      door drops, old     are gone; the scene  new tower starts  ends; the swap
- plate pops back up    tower falls, its    refits to the new    growing           settles
+ plate pops back up    tower falls, its    refits to the new    sky-dropping      settles
                                                    pawn pops "!"; the  deck's count
                                             new pawn mounts,
                                             hidden until its
@@ -77,10 +77,11 @@ not the deck ([DECK_TOWER.md](./DECK_TOWER.md) § "Worlds").
   the swap hangs on them:
   - `clearedMs`: `towerDeck` switches to the new deck, so the scene memo refits the
     viewBox. The scroll re-snaps to the bottom.
-  - Between the two beats, `towerOnStage` is false. No stack is drawn, `cardsOnTower` is
-    0, and `useBuildProgress` resets to 0.
-  - `readyMs`: the build-up starts for the new count. The clouds, wind, sky → space
-    and the 50-card startle all replay off the new build-up.
+  - Between the two beats, `towerOnStage` is false. No stack is drawn and `cardsOnTower` is
+    0 (`DeckTowerPage` → `swapDropPending`), while the scene is already fitted to the new
+    deck's count.
+  - `readyMs`: the new deck's tower sky-drops in (§ "The new tower's sky drop"). The
+    clouds, wind, sky → space and the 50-card startle all replay off its impact.
 - **Landing is the sync point.** The new pawn's entrance is scheduled backwards from
   `readyMs` (`entranceStartFor(entrance, readyAt) = readyAt − entrance.landMs`). Any pair
   of transition and entrance therefore lands the pawn on the beat. With the trap door,
@@ -89,7 +90,7 @@ not the deck ([DECK_TOWER.md](./DECK_TOWER.md) § "Worlds").
   early keeps its mount and first paint away from the landing beat. A new pawn key per
   swap makes the entrance play on mount.
 - **The old tower falls as it stood.** `frozenProgress` is the build-up's progress at the
-  tap, so a tap mid-build drops a half-built tower.
+  tap. Nothing builds up any more, so it is always 1 today.
 - **Taps are ignored** while that world's swap runs (`busy`), while the camera is
   panning between worlds, and until its counts have loaded (`countsLoaded`).
 - **On tap the scroller smooth-scrolls to the bottom.** `fallDistance` is measured from
@@ -97,7 +98,7 @@ not the deck ([DECK_TOWER.md](./DECK_TOWER.md) § "Worlds").
 - **Reduced motion:** a tap switches the deck instantly, with no transition or new
   pawn.
 - **The clock** is React state ticked by rAF only while a swap runs (about 2–3 s). This is
-  the same per-frame-render pattern as the tower's build-up.
+  the same per-frame-render pattern as the old build-up.
 
 ### Several worlds
 
@@ -112,9 +113,36 @@ its plate can be tapped.
 - **Fall distance** (`scene.fallDistance`) and **the splat** (`scene.splatFloor`) are the
   on-screen world's: its tower's top to the screen's bottom edge, and its tower's screen-x
   span, in that world's band.
-- **Regrowth.** A skill world's tower otherwise stands at full height without a build-up;
-  after its swap the new tower grows like the main one's (`useBuildProgress` `animate` =
-  that world's swap is busy).
+- **The new tower** sky-drops in on every world, the same way (§ "The new tower's sky
+  drop").
+
+### The new tower's sky drop
+
+`DeckTowerPage.tsx` → `swapDropPending`, `swapReadyKey` (layout effect), `startResize`
+(`{ camera: false }`), `towerCountFor`; `towerResizes.ts` → `SKY_DROP`; `useTowerResize.ts`.
+Built 2026-11-09; it replaced the new tower's card-by-card build-up.
+
+- **When.** At `readyMs`, the beat the door slams and the new pawn lands, the page plays
+  the § Tower resizes `SKY_DROP` ([DECK_TOWER.md](./DECK_TOWER.md) § Tower resizes) from 0
+  to the new deck's count. It does this for either deck, Learning or Mastered. The tower
+  falls from just above the screen's top edge onto the bare floor and lands a beat after
+  the slam: slam, then thud. The landing sinks the platform, puffs smoke and fades the
+  floor shadow in. The lever's own sky fall (`LEVER_LANDS_AFTER_PAWN_MS` after the pawn) is
+  unchanged and can land while the tower is still falling.
+- **No camera move.** The scroller was re-snapped to the platform at `clearedMs` and the
+  landing is the floor, so the drop falls onto the view as it stands.
+- **Empty until then.** From `clearedMs` until the drop is planned, `swapDropPending`
+  stands the tower at 0 cards. The drop's resize then holds it at 0 (`heldCards`) until it
+  ends. The trigger is a LAYOUT effect, so the frame where the platform comes back on stage
+  is never painted with the new tower at full height.
+- **Busy.** The drop outlives the swap's clock (fall + `IMPACT_MS` > the 220 ms rebound),
+  and while it plays the resize keeps the plate, the lever, swipes and arrows off.
+- **The startle and the sky bands** fire on the impact (`dropLanded`), as for any sky drop.
+- **An empty deck** plays nothing: the "0 cards" imprint simply stays.
+- **Reduced motion:** the swap is instant, so nothing is pending and nothing drops.
+- **Fixtures.** The corner fixtures (the notebook stack and the sort platform) do not drop
+  with the tower. They grow in on their own clock from `readyMs` (`useFixtureGrow`,
+  [DECK_TOWER.md](./DECK_TOWER.md) § The notebook stack).
 
 ### Pawns during a swap
 

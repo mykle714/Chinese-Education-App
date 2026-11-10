@@ -38,8 +38,8 @@ Deck Tower (/) — main world's mini sort platform
   `footerTab: "deck"` and `footerStyle: "slab"` — acp is a Deck Tower drill-in.
   - **Back arrow:** in normal mode `onBack` (`AddCardsPage` → `leave`) follows the
     launch's `state.exitTo`: the Deck Tower's mini sort platform opens acp with the
-    circle transition and `exitTo` = the tower's main world (`SORT_EXIT`), and Back closes
-    the circle onto that platform and returns there ([DECK_TOWER.md](./DECK_TOWER.md)
+    dash transition (the world pan's camera dash) and `exitTo` = the tower's main world
+    (`SORT_EXIT`), and Back dashes back onto the tower and returns there ([DECK_TOWER.md](./DECK_TOWER.md)
     § The sort platform). Without `exitTo` (a deep link) Back goes to `/` with
     `state.towerWorld: "core"`. With `exitTo`, the footer's Flashcards tab plays Back too
     (`backOnFooterTab = "deck"`). In **set mode** (`?set=provisional`, a sort offer) it
@@ -60,32 +60,29 @@ Deck Tower (/) — main world's mini sort platform
 ## Card supply gate
 
 Every discover surface draws its cards from the per-language det table through **one**
-predicate, `StarterPacksService._supplyGate()`
-(`server/services/StarterPacksService.ts`):
+predicate, `discoverSupplyGate()` (`server/dal/shared/dictTable.ts`):
 
 ```sql
 de.discoverable = TRUE
 ```
 
-No language branch, no second flag. Its four callers are `_fetchSupplyRows` (Sort
-Cards), `listQuickMarkCards` (Quick Mark), `getProgress` (the level bar), and — kept
-deliberately identical — `ProvisionalCardDAL._supplyGate`
-(`server/dal/implementations/ProvisionalCardDAL.ts`), so a word lent as a
-provisional card is always a word the sort flow can later offer. On top of the gate
-each query still applies the Tier-1 level filter `difficulty BETWEEN 1 AND 6`
-(`_levelConfig().validPredicate`).
+No language branch, no second flag. Its callers are all DAL methods:
+`StarterPacksDAL.findSupplyRows` (Sort Cards), `findQuickMarkPage` (Quick Mark),
+`countDiscoverable` (the progress bar), `findDiscoverableByWords` (the provisional
+sort set), `ProvisionalCardDAL.findCandidates` (so a word lent as a
+provisional card is always a word the sort flow can later offer), `ValidationDAL`'s
+det read and `DictionaryDAL.isLazyEnrichmentCandidate`. Being one shared function is
+what keeps discover and provisional lending from drifting apart. On top of the gate
+each supply query still applies the Tier-1 level filter `difficulty BETWEEN 1 AND 6`
+(`VALID_LEVEL` in `server/dal/implementations/StarterPacksDAL.ts`).
 
 The gate also guards the **write** side, not only supply. `sortCard`'s id lookup
-(`StarterPacksService._findDiscoverCardById`) applies `_supplyGate()` too, because a
+(`StarterPacksDAL.findDiscoverableWordById`) applies it too, because a
 hand-rolled `POST /api/starterPacks/sort` can send any det id — without it, that call
 adds an arbitrary dictionary row to the caller's library, including rows whose
 enrichment columns are still null. Safe for provisional promotion: lent cards are
 drawn from `discoverable = TRUE` rows as well. See
 [API_ABUSE_HARDENING.md](./API_ABUSE_HARDENING.md) § 1b.
-
-⚠️ The two `_supplyGate` implementations are byte-identical copies kept in sync by
-hand. They agree today; a change to one silently desynchronises discover from
-provisional lending.
 
 ### Historical: the retired `sortable` flag
 

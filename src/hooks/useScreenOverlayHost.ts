@@ -28,7 +28,7 @@ import { frameOverlayHost } from "../components/overlayHost";
  * z-index above the footer's 100.
  *
  * Callers: MinimizablePopup, SteppedHelpPopup, ChallengeSheet, ChallengeRoundScoreboard,
- * ProvisionalCardsNotice, IWSceneIntroCard, IWPlayPage (interaction popup).
+ * ProvisionalCardsNotice.
  * Docs: docs/UX_AND_NAVIGATION.md § Dimming the background.
  *
  * LAYER: shared UI hook — knows about the phone frame, nothing about any feature.

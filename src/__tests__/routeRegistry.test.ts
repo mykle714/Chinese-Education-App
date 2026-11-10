@@ -112,7 +112,6 @@ describe("shell classification matches the old MOBILE_DEMO_PATHS behaviour", () 
     // Flag-gated (server/contracts/featureFlags.ts): with the feature off the path is
     // not a route at all, so it has no shell to assert.
     ...(isFeatureEnabled("community") ? ["/community"] : []),
-    ...(isFeatureEnabled("nightMarket") ? ["/night-market"] : []),
     "/tester-dashboard", "/settings",
     "/discover/sort/zh", "/discover/sort/es",
     "/flashcards/card/7", "/dictionary/card/好", "/reader/abc-123",
@@ -121,9 +120,6 @@ describe("shell classification matches the old MOBILE_DEMO_PATHS behaviour", () 
   const PLAIN = [
     "/login", "/register", "/flashcards",
     "/profile",
-    ...(isFeatureEnabled("nightMarket")
-      ? ["/night-market/template-editor", "/night-market/template-sandbox"]
-      : []),
   ];
 
   it.each(FRAME)("%s renders in the phone frame", (path) => {
@@ -160,9 +156,6 @@ describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
     ["/dictionary/card/好", "dictionary"],
     // Footerless.
     ["/reader/abc", undefined],
-    ...(isFeatureEnabled("nightMarket")
-      ? ([["/night-market", undefined]] as Array<[string, string | undefined]>)
-      : []),
     ["/tester-dashboard", undefined],
     ["/settings", undefined],
     ["/login", undefined],
@@ -182,7 +175,6 @@ describe("page transitions match the old NODE/LEAF tables", () => {
   const LEAF = [
     "/tester-dashboard",
     "/settings",
-    ...(isFeatureEnabled("nightMarket") ? ["/night-market"] : []),
   ];
   const NO_SLIDE = ["/", "/dictionary", "/login", ...(isFeatureEnabled("arena") ? ["/arena"] : [])];
 

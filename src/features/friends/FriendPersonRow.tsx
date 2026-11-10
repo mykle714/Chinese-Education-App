@@ -160,8 +160,7 @@ function FriendPersonRow({ name, email, avatarIconId, secondary, actions, leadin
                     cursor: personPress ? "pointer" : "default",
                 }}
             >
-            {/* `.rw .av` — 36px, radius 12, NOT a circle. The design reserves circles
-                for the night market's pedestrians; a list avatar is a rounded square.
+            {/* `.rw .av` — 36px, radius 12, NOT a circle: a list avatar is a rounded square.
                 The inset ring is mandatory: `iconBg` is a pastel at ~1.15:1 on white
                 and vanishes without it (docs/SHELF_REDESIGN.md § D2). */}
             <Avatar

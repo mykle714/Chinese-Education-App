@@ -19,10 +19,17 @@ import { ISO } from "./iso";
  * features/discover/AddCardsPage.tsx.
  */
 
-/** Each layer drifts at its own fraction of the scroll: slow parallax, so space reads as far away. */
+/**
+ * Each layer drifts at its own fraction of the scroll: slow parallax, so space reads as far away.
+ * `seed` picks the layer's star arrangement — change it to re-roll where the stars fall
+ * (sizes/counts stay the same). It is also the layer's React key, so seeds must stay unique.
+ * Before adopting a new seed, check the closest pair of stars, measured with wrap-around
+ * because the tile repeats: a near-touching pair repeats as a "double star" across the sky.
+ * 143 / 413 keep the closest pair ≥ 44 px / ≥ 78 px (the old 7 / 23 gave 38 / 26).
+ */
 export const STAR_LAYERS = [
-    { tile: 233, count: 9, rMin: 0.5, rMax: 0.9, parallax: 0.004, seed: 7 },
-    { tile: 317, count: 7, rMin: 0.9, rMax: 1.5, parallax: 0.008, seed: 23 },
+    { tile: 233, count: 9, rMin: 0.5, rMax: 0.9, parallax: 0.004, seed: 143 },
+    { tile: 317, count: 7, rMin: 0.9, rMax: 1.5, parallax: 0.008, seed: 413 },
 ] as const;
 
 /** A small deterministic PRNG (mulberry32), so the star field is the same on every visit. */

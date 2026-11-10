@@ -15,10 +15,8 @@ export const STREAK_CONFIG = {
   // 1440 = 24 h. No inactivity penalty -- including the tier-7 wipe -- may take a
   // balance below the highest multiple of this at or under it, so 1560 floors at
   // 1440 and 3300 floors at 2880. Checkpoints are ABSORBING: a balance resting on
-  // one is permanently out of the penalty system, and so is the night-market
-  // entitlement derived from it. Hard-coded in the cron SQL; keep in sync.
-  // Does NOT apply to the author dev tool (adjustMinutesForAuthor), which stays a
-  // raw test signal. See docs/STREAK_EXPIRATION_CRON.md § Checkpoints.
+  // one is permanently out of the penalty system. Hard-coded in the cron SQL; keep
+  // in sync. See docs/STREAK_EXPIRATION_CRON.md § Checkpoints.
   CHECKPOINT_MINUTES: 1440,
 };
 

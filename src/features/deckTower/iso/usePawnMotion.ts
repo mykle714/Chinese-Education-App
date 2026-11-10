@@ -3,7 +3,7 @@ import { insetRect, insideRoundedRect, type Projector, type WorldRect } from "./
 import { shadowSlide, shadowSpread } from "./light";
 import { prefersReducedMotion } from "./skyTraffic";
 import { PAWN_GRAVITY, type PawnEntrance } from "./pawnEntrances";
-import { EMOTE_GAP, HEAD_RADIUS, pawnFigure, pawnVest } from "./pawnFigure";
+import { EMOTE_GAP, HEAD_RADIUS, PAWN_BODY_RADIUS, pawnFigure, pawnSnowClip, pawnVest } from "./pawnFigure";
 import { flinchPose, idlePose, IDLE_STALE_MS, LASTING_IDLES, type IdlePose, type PawnIdleCue, type PawnIdleKind } from "./pawnIdles";
 
 /**
@@ -133,11 +133,6 @@ import { flinchPose, idlePose, IDLE_STALE_MS, LASTING_IDLES, type IdlePose, type
  * page has its own reply). A tap while the feet are in the air always jumps, whatever
  * `onTap` returns. Without `onTap` every tap is a jump with the "!", as on the Deck Tower.
  *
- * AIR RING: a jump thrown while the feet are already in the air (a chained poke) leaves a
- * double ring where the feet kicked off (`airRings`, drawn by IsoPawn's PawnAirRing) — a
- * little platform in the air, so the double jump reads as pushing off something. The page
- * removes each with `dropAirRing` when its animation ends.
- *
  * Under prefers-reduced-motion nothing runs: the pawn stands at `at`, and the startle, the
  * poke, the stretch, the idles and the flinch are skipped.
  *
@@ -166,6 +161,13 @@ export interface PawnRoam {
 export interface PawnStep {
     rect: WorldRect;
     height: number;
+    /**
+     * The depth of the snow lying on it, overriding the floor's (`snowDepth`): 0 = bare (the
+     * Deck Tower's plate once pressed clear, in its hole), the cap's depth on a snowy tower
+     * top. Undefined: the floor's, lifted with the step (the drift over a buried plate) —
+     * except a summit, which never takes the floor's snow.
+     */
+    snowDepth?: number;
     /** Makes this the summit (see the header's SUMMIT). At most one per pawn. */
     summit?: {
         /** It may not be stood on: a pawn up there flies down, and a poke will not throw one up. */
@@ -260,6 +262,8 @@ const IMPACT_SQUASH_MAX = 0.16;
 const IMPACT_MS = 130;
 /** Below this the feet count as on their surface. */
 const FEET_EPS = 1e-4;
+/** World height of the feet over the surface above which the pawn counts as `airborne` (not the last tiny bounces of a landing). */
+const AIRBORNE_MIN = 0.03;
 /**
  * With the floor dropping away: how long the pawn's height takes to blend from its own
  * GRAVITY fall into the floor's. The two pulls are close (the trap door's is 140, raised
@@ -582,6 +586,10 @@ export interface PawnMotionRefs {
     decalClip: React.RefObject<SVGPathElement | null>;
     /** Undoes `travel` on the decal copy, so the decals stay put on the floor. */
     decalAnchor: React.RefObject<SVGGElement | null>;
+    /** The figure's group clipped to the snow line while it stands in snow (`snowDepth`). */
+    sunk: React.RefObject<SVGGElement | null>;
+    /** That clip's outline (pawnFigure.ts → `pawnSnowClip`), rewritten every frame. */
+    sunkClip: React.RefObject<SVGPathElement | null>;
 }
 
 export interface PawnEmote {
@@ -623,14 +631,6 @@ export interface PawnActiveIdle {
     ending: boolean;
 }
 
-/** A mid-air jump's ring (see the header's AIR RING): where the feet kicked off, in world units. */
-export interface PawnAirRing {
-    id: number;
-    x: number;
-    y: number;
-    z: number;
-}
-
 /** An entrance to play on mount, and when to start it (a `performance.now()` timestamp). */
 export interface PawnEntranceCue {
     animation: PawnEntrance;
@@ -667,6 +667,20 @@ export function usePawnMotion(opts: {
      * The Deck Tower reads it to tell whether a lightning strike landed on the pawn.
      */
     floorSpot?: React.MutableRefObject<Pt2 | null>;
+    /**
+     * Kept true while the feet are off the ground: a jump or a throw (feet physics above
+     * `AIRBORNE_MIN`), a flight onto the summit, an edge hop. The walk's own step bounce does
+     * not count. The Deck Tower's snow trails skip it (no channel ploughed through the air).
+     */
+    airborne?: React.MutableRefObject<boolean>;
+    /**
+     * World depth of the snow lying on the floor (undefined: none). Read live. Wherever snow
+     * lies under the pawn — this on the floor, or the step's own (`PawnStep` `snowDepth`) —
+     * and the floor is not dropping, the figure is cut off below the snow line (pawnFigure.ts
+     * → `pawnSnowClip`) — it wades, sunk in — and it casts no shadow. The line is that depth
+     * over the surface it stands on (`z0 + lift`).
+     */
+    snowDepth?: number;
     /** Freezes the pawn for a lightning shock each time this changes (see the header's SHOCK). */
     shockId?: number;
     /** Plays a back stretch for each new cue id (see the header's STRETCH). */
@@ -689,8 +703,6 @@ export function usePawnMotion(opts: {
     emote: PawnEmote | null;
     poke: () => void;
     activeIdle: PawnActiveIdle | null;
-    airRings: PawnAirRing[];
-    dropAirRing: (id: number) => void;
 } {
     const { proj, at, startled, roam, startledBy, onDepthRankChange } = opts;
     // Only the mount-time cue matters (an entrance is how the pawn ARRIVES), so it is
@@ -712,14 +724,13 @@ export function usePawnMotion(opts: {
         decalShade: useRef<SVGGElement>(null),
         decalClip: useRef<SVGPathElement>(null),
         decalAnchor: useRef<SVGGElement>(null),
+        sunk: useRef<SVGGElement>(null),
+        sunkClip: useRef<SVGPathElement>(null),
     };
     const [emote, setEmote] = useState<PawnEmote | null>(null);
     // What the loop is playing, mirrored to React for IsoPawn's marks. Set only on a change
     // (start, start of the ease-out, end), never per frame.
     const [activeIdle, setActiveIdle] = useState<PawnActiveIdle | null>(null);
-    const [airRings, setAirRings] = useState<PawnAirRing[]>([]);
-    const airRingIds = useRef(0);
-    const dropAirRing = (id: number) => setAirRings((rings) => rings.filter((r) => r.id !== id));
 
     // Mutable motion state lives in a ref: the rAF loop reads and writes it every frame,
     // and the startle effect below swaps its mode without restarting the loop.
@@ -797,12 +808,17 @@ export function usePawnMotion(opts: {
     summitSpotRef.current = opts.summitSpot;
     const floorSpotRef = useRef(opts.floorSpot);
     floorSpotRef.current = opts.floorSpot;
+    const airborneRef = useRef(opts.airborne);
+    airborneRef.current = opts.airborne;
     // Latest steps (their heights animate while the plate is pressed), read by the loop.
     const stepsRef = useRef(opts.steps ?? []);
     stepsRef.current = opts.steps ?? [];
     // Latest floor drop (animates every frame of a swap), read by the loop.
     const floorDropRef = useRef(opts.floorDrop ?? 0);
     floorDropRef.current = opts.floorDrop ?? 0;
+    // Latest snow top (it appears and goes with the floor's snow), read by `applyFrame`.
+    const snowDepthRef = useRef(opts.snowDepth);
+    snowDepthRef.current = opts.snowDepth;
     // Latest facing, read by the loop's back stretch (`applyFrame` reads `opts.facing` itself).
     const facingRef = useRef(opts.facing ?? 0);
     facingRef.current = opts.facing ?? 0;
@@ -825,6 +841,8 @@ export function usePawnMotion(opts: {
         shadowScale: number | undefined;
         shadowOpacity: number | undefined;
         hidden: boolean;
+        snowDepth: number;
+        floorDrop: number;
     } | null>(null);
     const surfaceZRef = useRef(opts.surfaceZ);
     surfaceZRef.current = opts.surfaceZ;
@@ -847,6 +865,10 @@ export function usePawnMotion(opts: {
         // compositor layers of their own. So the loop skips the write when nothing it
         // draws from has changed. A render always draws (`force`): it may have mounted a
         // node (the "!" bubble's anchor) that has never been placed.
+        // The snow lying where it stands (see SNOW below): the step's own, else the floor's —
+        // a summit never takes the floor's.
+        const stepHere = stepsRef.current[s.stepIdx];
+        const snowDepth = floorDropRef.current > 0 ? 0 : (stepHere?.snowDepth ?? (stepHere?.summit ? 0 : (snowDepthRef.current ?? 0)));
         const d = drawn.current;
         if (
             !force &&
@@ -866,7 +888,9 @@ export function usePawnMotion(opts: {
             d.marksFollowHead === marksFollowHead &&
             d.shadowScale === shadowOverride?.scale &&
             d.shadowOpacity === shadowOverride?.opacity &&
-            d.hidden === hidden
+            d.hidden === hidden &&
+            d.snowDepth === snowDepth &&
+            d.floorDrop === floorDropRef.current
         ) {
             return;
         }
@@ -887,7 +911,14 @@ export function usePawnMotion(opts: {
             shadowScale: shadowOverride?.scale,
             shadowOpacity: shadowOverride?.opacity,
             hidden,
+            snowDepth,
+            floorDrop: floorDropRef.current,
         };
+        const onSummit = !!stepsRef.current[s.stepIdx]?.summit;
+        // SNOW (`snowDepth`): the snow line is the depth lying under the pawn over the surface
+        // it stands on (`z0 + lift`) — none on a floor dropping away (the snow has slid off
+        // the opening trap door by then).
+        const snowZ = snowDepth > 0 ? z0 + s.lift + snowDepth : undefined;
         const home = p.project(at.x, at.y, z0);
         // `lift` raises the whole pawn (shadow and decal clip included): it stands, and
         // casts its shadow, on the step's top face.
@@ -903,6 +934,15 @@ export function usePawnMotion(opts: {
         const feet = { x: s.pos.x, y: s.pos.y, z: z0 + s.lift + hop };
         const fig = pawnFigure(p, feet, { lean, sx, sy, arch, bendHeading });
         refs.body.current?.setAttribute("d", fig.bodyPath);
+        // Sunk in the snow: the figure is cut off below the snow line in front of it.
+        if (refs.sunk.current && refs.sunkClip.current) {
+            if (snowZ !== undefined) {
+                refs.sunkClip.current.setAttribute("d", pawnSnowClip(p, s.pos, snowZ, PAWN_BODY_RADIUS * Math.max(1, sx)));
+                refs.sunk.current.setAttribute("clip-path", `url(#${refs.sunkClip.current.parentElement?.id ?? ""})`);
+            } else {
+                refs.sunk.current.removeAttribute("clip-path");
+            }
+        }
         // The night vest (IsoPawn `vest`), on the same pose as the body; only when it is mounted.
         if (refs.vest.current || refs.vestStripes.current) {
             const vest = pawnVest(p, feet, { lean, sx, sy, arch, bendHeading }, opts.facing ?? 0);
@@ -933,8 +973,9 @@ export function usePawnMotion(opts: {
             const f = k / EMOTE_DRAW_SCALE;
             refs.emoteAnchor.current.style.transform = `translate(${still.head.cx}px, ${tipY}px) scale(${f})`;
         }
-        const onSummit = !!stepsRef.current[s.stepIdx]?.summit;
-        if (refs.floorShadow.current) refs.floorShadow.current.style.visibility = onSummit ? "hidden" : "";
+        // Wading in snow it casts no shadow (owner's call, 2026-11-09): nor do the shaded decals show.
+        if (refs.floorShadow.current) refs.floorShadow.current.style.visibility = onSummit || snowZ !== undefined ? "hidden" : "";
+        if (refs.decalShade.current) refs.decalShade.current.style.visibility = snowZ !== undefined ? "hidden" : "";
         if (refs.summitShadow.current) refs.summitShadow.current.style.visibility = onSummit ? "" : "hidden";
         if (refs.shadow.current) {
             // Clamped at 0: falling BELOW its surface (FLOOR DROP) doesn't grow the shadow.
@@ -1080,12 +1121,6 @@ export function usePawnMotion(opts: {
         if (mode.kind !== "startle" && mode.kind !== "stretch") {
             s.stepPhase = 0;
             s.mode = { kind: "pause", until: performance.now() + (onTap ? PAUSE_MIN_MS : EMOTE_MS) };
-        }
-        // AIR RING (header): a jump off nothing leaves a ring where the feet kicked off.
-        if (airborne) {
-            airRingIds.current += 1;
-            const ring = { id: airRingIds.current, x: s.pos.x, y: s.pos.y, z: surfaceZRef.current + s.feetZ };
-            setAirRings((rings) => [...rings, ring]);
         }
         // Re-thrown from wherever the feet are.
         s.feetV = POKE_JUMP_SPEED;
@@ -1517,6 +1552,9 @@ export function usePawnMotion(opts: {
                 const onFloor = !onSummit && !hidden && s.mode.kind !== "entrance" && floorDropRef.current <= 0;
                 floorSpotRef.current.current = onFloor ? s.pos : null;
             }
+            if (airborneRef.current) {
+                airborneRef.current.current = s.mode.kind === "flight" || s.mode.kind === "edgeHop" || s.feetZ - s.lift > AIRBORNE_MIN;
+            }
             if (onSummit !== s.onSummit) {
                 s.onSummit = onSummit;
                 onSummitRef.current?.(onSummit);
@@ -1547,5 +1585,5 @@ export function usePawnMotion(opts: {
         // reached through `applyRef` (see VIEW in the header), so a new camera never restarts it.
     }, [reduced, at, roam]);
 
-    return { refs, emote, poke, activeIdle, airRings, dropAirRing };
+    return { refs, emote, poke, activeIdle };
 }

@@ -62,7 +62,7 @@ interface BeginnerKeyboardProps {
   onCommit: (text: string) => void;
   /** Total keyboard height in CSS px — the host decides this from the viewport. */
   height: number;
-  /** Author-only: show the § 6w recognizer debug-dump button in the footer row. */
+  /** Feature-tester-only: show the § 6w recognizer debug-dump button in the footer row. */
   debug?: boolean;
   /**
    * § 6z-9: the session's half-built character, held by the provider so it
@@ -244,7 +244,7 @@ export default function BeginnerKeyboard({ onCommit, height, debug, draft }: Beg
           {/* The controls section, set off from the parts (component buffer)
               above by a divider rule. The author-only § 6w debug tools get their
               own row ABOVE the key row, so the learner-facing keys keep a fixed
-              position whether or not the account is a template author. */}
+              position whether or not the account is a feature tester. */}
           <Box
             className="beginner-keyboard__controls"
             sx={{

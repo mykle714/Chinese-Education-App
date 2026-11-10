@@ -2,10 +2,12 @@ import React, { useMemo } from "react";
 import IsoSolid from "./IsoSolid";
 import IsoShadow from "./IsoShadow";
 import IsoCard from "./IsoCard";
+import { IsoCardSnow, type SnowCover } from "./IsoSnowCap";
 import { CARD_THICKNESS, cardStackMetrics, seamHeights } from "./cardStackMetrics";
 import { frontContour, prism, toOpenPath, type WorldRect } from "./geometry";
 import type { IsoSurface } from "./light";
 import { useIsoPalette, useIsoProjector } from "./sceneContext";
+import type { SnowTrail } from "./snowTrail";
 
 /**
  * IsoCardStack — a deck of N cards stacked into a tower (docs/ISO_ART_FRAMEWORK.md
@@ -25,6 +27,11 @@ interface IsoCardStackProps {
     /** The surface the stack stands on. */
     surface: IsoSurface;
     /**
+     * Where its shadow falls, when not on `surface` (docs/TOWER_SNOW.md § "The floor"): the
+     * top of the floor's snow it stands in. Null: no shadow (an object buried in the snow).
+     */
+    shadowReceiver?: IsoSurface | null;
+    /**
      * 0 → 1 build-up. The body grows to its full height and the top card rides up on
      * it; the printed figure counts up with it. 1 = settled.
      */
@@ -41,9 +48,16 @@ interface IsoCardStackProps {
     figure?: number;
     /** The top card's print opacity (IsoCard `printOpacity`). Default 1. */
     printOpacity?: number;
+    /**
+     * Snow on the top card (IsoCardSnow; docs/TOWER_SNOW.md § "The tower"): a full cap,
+     * hiding the print. It rides the top card up through a build-up. Undefined: bare.
+     */
+    snow?: SnowCover;
+    /** The pawns' channel through that snow (IsoCardSnow `trail`): the tower's top trail. */
+    snowTrail?: SnowTrail;
 }
 
-const IsoCardStack: React.FC<IsoCardStackProps> = ({ rect, count, surface, progress = 1, label, bandColor, figure, printOpacity }) => {
+const IsoCardStack: React.FC<IsoCardStackProps> = ({ rect, count, surface, shadowReceiver, progress = 1, label, bandColor, figure, printOpacity, snow, snowTrail }) => {
     const proj = useIsoProjector();
     const palette = useIsoPalette();
     const metrics = useMemo(() => cardStackMetrics(count), [count]);
@@ -78,7 +92,7 @@ const IsoCardStack: React.FC<IsoCardStackProps> = ({ rect, count, surface, progr
 
     return (
         <g className="iso-card-stack">
-            <IsoShadow footprint={rect} casterZ={baseZ} receiver={surface} className="iso-card-stack__shadow" />
+            {shadowReceiver !== null && <IsoShadow footprint={rect} casterZ={baseZ} receiver={shadowReceiver ?? surface} className="iso-card-stack__shadow" />}
             {body && (
                 <IsoSolid geometry={body} material={palette.card} className="iso-card-stack__body">
                     {seams && (
@@ -103,6 +117,7 @@ const IsoCardStack: React.FC<IsoCardStackProps> = ({ rect, count, surface, progr
                 caption={shown === 1 ? "card" : "cards"}
                 printOpacity={printOpacity}
             />
+            {snow && <IsoCardSnow rect={rect} z={baseZ + bodyHeight + metrics.topThickness} cover={snow} trail={snowTrail} />}
         </g>
     );
 };

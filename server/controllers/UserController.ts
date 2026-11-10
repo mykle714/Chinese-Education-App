@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import { UserService, IssuedRefreshToken } from '../services/UserService.js';
 import { IIcons8DAL } from '../dal/interfaces/IIcons8DAL.js';
-import { NightMarketWorldService } from '../services/NightMarketWorldService.js';
 import { ValidationError, DuplicateError, NotFoundError, DALError } from '../types/dal.js';
 import { CHINESE_FONT_IDS } from '../contracts/wire.js';
 import type { GoalsFocusAutoEnabled } from '../contracts/focusMode.js';
@@ -28,11 +27,9 @@ const SECURE_COOKIES = process.env.NODE_ENV === 'production';
  */
 export class UserController {
   // icons8DAL is used only to validate avatar icon ids (PUT /api/users/avatar).
-  // nightMarketWorldService seeds each new account's origin hub placement (canonical path).
   constructor(
     private userService: UserService,
     private icons8DAL: IIcons8DAL,
-    private nightMarketWorldService: NightMarketWorldService,
     /** Auto-enables focus when a Reading / Writing goal opens a crowded world (docs/FOCUS_MODE.md § 1a). */
     private focusModeService: FocusModeService,
   ) {}
@@ -72,23 +69,6 @@ export class UserController {
   }
 
   /**
-   * Canonical starter-hub seed for a freshly created account. Best-effort: a seeding failure
-   * (e.g. the hub template is not authored yet) must NOT fail account creation —
-   * NightMarketWorldService's first-load safety net will seed it on the user's first market load.
-   */
-  private async seedNightMarketHub(userId: string | undefined, language: string): Promise<void> {
-    if (!userId) return;
-    try {
-      // Seeds the hub for the account's INITIAL language only. Markets are per-language
-      // (migration 136); a second language's hub is seeded lazily by the world service's
-      // first-load safety net the first time that market is opened.
-      await this.nightMarketWorldService.seedHubPlacement(userId, language);
-    } catch (seedError) {
-      console.error('[UserController] Night Market hub seed failed (non-fatal):', seedError);
-    }
-  }
-
-  /**
    * Register a new user
    * POST /api/auth/register
    */
@@ -113,8 +93,6 @@ export class UserController {
         gender,
         birthDate,
       });
-
-      await this.seedNightMarketHub(newUser.id, newUser.selectedLanguage || 'zh');
 
       res.status(201).json(newUser);
     } catch (error) {
@@ -373,8 +351,7 @@ export class UserController {
    *
    * Both optional; at least one required; `null` = "Prefer not to answer". Validation is
    * entirely UserService.validateDemographics (shared with signup), whose ValidationError
-   * handleError maps to a 400. Read by the iw learner description and body —
-   * docs/IMMERSIVE_WORLD.md § 5.5.
+   * handleError maps to a 400. Its only reader was Immersive World (removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md).
    */
   async updateDemographics(req: Request, res: Response): Promise<void> {
     try {
@@ -622,8 +599,6 @@ export class UserController {
         password,
         timezone: tz
       });
-
-      await this.seedNightMarketHub(newUser.id, newUser.selectedLanguage || 'zh');
 
       res.status(201).json(newUser);
     } catch (error) {

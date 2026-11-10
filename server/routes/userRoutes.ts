@@ -36,8 +36,8 @@ router.put('/api/users/goals', authenticateToken, handle(userController.updateGo
 // Update the account's display preferences (word spacing). See docs/EXAMPLE_SENTENCES.md
 router.put('/api/users/displaySettings', authenticateToken, handle(userController.updateDisplaySettings, userController));
 
-// Set/clear the learner's gender and date of birth (migration 164). Read by Immersive World
-// to pick the learner's body and describe them to NPCs. See docs/IMMERSIVE_WORLD.md § 5.5
+// Set/clear the learner's gender and date of birth (migration 164). Collected for Immersive
+// World (removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md)
 router.put('/api/users/demographics', authenticateToken, handle(userController.updateDemographics, userController));
 
 // Minute Points — increment by 1

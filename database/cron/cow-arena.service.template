@@ -21,10 +21,9 @@ Type=oneshot
 
 ; ── WHY THIS IS A SEPARATE UNIT AND NOT A THIRD ExecStart ON cow-maintenance ───
 ; cow-maintenance is a oneshot with two ordered steps, and systemd ABORTS the unit
-; when a step fails. That is correct there, because its step 2 consumes what its
-; step 1 writes. The arena shares nothing with either: it reads opt-ins and writes
-; arenas/arena_members, while the maintenance pass debits minute points and prunes
-; templates. Appending it there would mean a failed inactivity-penalty SQL run
+; when a step fails. The arena shares nothing with those steps: it reads opt-ins and
+; writes arenas/arena_members, while the maintenance pass debits minute points and
+; expires challenges. Appending it there would mean a failed inactivity-penalty SQL run
 ; silently prevents arenas from forming — and because formation only happens in the
 ; hours around the Tuesday boundary, a failure in the wrong hour costs a whole week
 ; of arenas for every user. Separate units keep those failure domains apart.
@@ -33,7 +32,7 @@ Type=oneshot
 ; somehow ran past the hour, systemd will not start the next one on top of it.
 ;
 ; Runs as COMPILED JS inside the backend container — the PPE image has no tsx and
-; no devDeps, exactly as the template-prune step does. `bash -c` is required for
+; no devDeps. `bash -c` is required for
 ; the `>>` append, which is shell syntax systemd's ExecStart does not interpret.
 ;
 ; ⚠️ The script is arena-cron.js, NOT arena-tick.js. arena-tick is the dev trigger

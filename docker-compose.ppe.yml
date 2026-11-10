@@ -55,6 +55,10 @@ services:
       # below so they SURVIVE container rebuilds (they default to <dist>/logs
       # inside the container, which `up --build` wipes). See utils/diagnosticsLog.ts.
       - DIAGNOSTICS_LOG_DIR=/app/logs
+      # Synthesized TTS clips live on the `tts_cache` volume below so they SURVIVE
+      # rebuilds — the default path is inside <dist>, wiped by every `up --build`.
+      # See TTSService.ts → CACHE_DIR.
+      - TTS_CACHE_DIR=/app/cache/tts
     env_file:
       - ./.env
     ports:
@@ -64,6 +68,7 @@ services:
       - ./data/dictionaries:/app/data/dictionaries:ro
       - ./server/google-tts-credentials.json:/app/google-tts-credentials.json:ro
       - ./server/logs:/app/logs  # persisted client diagnostics logs (perf + error)
+      - tts_cache:/app/cache/tts  # persisted TTS disk cache (TTS_CACHE_DIR)
     depends_on:
       - postgres
     networks:
@@ -106,6 +111,11 @@ volumes:
     # so renaming the compose project (e.g. cow-prod → cow-ppe) silently mounts a NEW,
     # EMPTY volume. Dev and PPE are separate Docker daemons, so sharing a name is safe.
     name: cow_postgres_data
+  tts_cache:
+    # Regenerable (every clip can be re-synthesized from Google), but rebuilding it costs
+    # one synchronous upstream call per word, so it outlives containers. Explicit name for
+    # the same project-rename reason as postgres_data above.
+    name: cow_tts_cache
 
 networks:
   cow-network:

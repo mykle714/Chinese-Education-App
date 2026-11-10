@@ -28,8 +28,8 @@ type ProfilePatch = Partial<
 
 /**
  * The learner's gender / date of birth (migration 164). Asked at signup and editable in
- * Settings; `null` = "Prefer not to answer". Read by Immersive World (the learner's body, and
- * how NPCs address them) — docs/IMMERSIVE_WORLD.md § 5.5.
+ * Settings; `null` = "Prefer not to answer". Collected for Immersive World (removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md); no
+ * feature reads it today.
  */
 export type Demographics = Pick<ProfilePatch, 'gender' | 'birthDate'>;
 
@@ -454,8 +454,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     /**
      * Set or clear the learner's gender / date of birth (migration 164). Its own endpoint
-     * rather than a display setting: it changes how Immersive World treats the learner, not
-     * how anything is drawn. Send only the key that changed; null = "Prefer not to answer".
+     * rather than a display setting: it was collected for how Immersive World (now archived)
+     * treats the learner, not how anything is drawn. Send only the key that changed; null = "Prefer not to answer".
      */
     const updateDemographics = (demographics: Demographics) =>
         updateProfile('demographics', 'update your details', demographics);

@@ -132,6 +132,8 @@ export class CloudTTSProvider implements TTSProvider {
     // this map would grow once per distinct word played in a session.
     private urlCache = new Map<string, string>();
     private static MAX_CACHED_URLS = 64;
+    /** Pause before getOrFetchBlob's single retry of a transient failure. */
+    private static RETRY_DELAY_MS = 300;
 
     // --- iOS / mobile autoplay unlock ---------------------------------------
     // WebKit (and to a lesser extent mobile Chrome) only allows audio to start
@@ -381,19 +383,20 @@ export class CloudTTSProvider implements TTSProvider {
      * is the whole product of this call, an element cannot report one without loading, and
      * both sinks are derived from the SAME cached Blob — so the decode costs one extra pass
      * over 8–23 KB and no extra network. The alternative (route-dependent duration, or none
-     * on passthrough) would make Immersive World's reveal silently fall back to the timer
-     * for every learner on the default route.
+     * on passthrough) would make an audio-paced reveal silently fall back to the timer
+     * for every learner on the default route. (Its first caller, Immersive World, was
+     * removed 2026-11-09 — docs/ARCHIVED_FEATURES.md; no caller today.)
      *
      * Returns null rather than throwing when the audio cannot be produced or decoded — a
-     * missing duration is a legitimate answer meaning "pace it on a timer instead"
-     * (docs/IMMERSIVE_WORLD.md § 5.3a), and this must never be the thing that breaks a scene.
+     * missing duration is a legitimate answer meaning "pace it on a timer instead", and this
+     * must never be the thing that breaks the caller.
      *
      * ⚠️ It does NOT cancel in-flight playback and does not bump `generation`: preparing the
      * next line while the current one is still being spoken is the normal case.
      */
     async prepare(req: TTSRequest): Promise<number | null> {
         if (!req.text) return null;
-        // Arm the unlock listener here too — prepare is usually the FIRST thing iw calls, and
+        // Arm the unlock listener here too — prepare is usually a paced caller's FIRST call, and
         // waiting until speak() would waste the gesture that got us here.
         this.ensureUnlockListener();
         try {
@@ -707,9 +710,10 @@ export class CloudTTSProvider implements TTSProvider {
         const shortLang = args.lang.split('-')[0];
         const normalizedPinyin = (args.pronunciation || '').trim();
 
-        const promise = (async (): Promise<Blob> => {
+        // One POST. Split out so the retry below can re-issue it with a fresh token.
+        const post = (): Promise<Response> => {
             const token = this.getToken();
-            const res = await fetch(`${API_BASE_URL}/api/tts/synthesize`, {
+            return fetch(`${API_BASE_URL}/api/tts/synthesize`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -731,6 +735,21 @@ export class CloudTTSProvider implements TTSProvider {
                     ...(stamp === false ? { stamp: false } : {}),
                 }),
             });
+        };
+
+        const promise = (async (): Promise<Blob> => {
+            // ONE retry for a transient failure before the error reaches useTTS — whose
+            // catch swaps in the browser voice, so a single dropped request used to make
+            // one word of a narrated acp pack come out in a different voice. Transient =
+            // a network error (fetch rejected) or a 5xx (e.g. a Google hiccup on a cold
+            // synth). NOT retried: 4xx — a bad request, auth failure or 429 rate limit
+            // will not succeed on an immediate second try, and retrying a 429 only digs
+            // the hole deeper.
+            const firstTry = await post().catch(() => null); // null = network error
+            const res = firstTry && firstTry.status < 500
+                ? firstTry
+                : await new Promise((resolve) => setTimeout(resolve, CloudTTSProvider.RETRY_DELAY_MS))
+                    .then(post); // the retry's own network error propagates as-is
             if (!res.ok) {
                 throw new Error(`TTS server error: ${res.status}`);
             }

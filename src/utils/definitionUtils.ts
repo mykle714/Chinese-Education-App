@@ -421,8 +421,8 @@ function clusterReadingOrColumn(cluster: DefinitionCluster | null, columnPinyin:
  * donate its reading to it), and applied to a list row it reads 了 as `liǎo` — its particle
  * senses (`le`, score 5) carry only parenthetical glosses.
  *
- * Use it where a row names no chosen sense — the dictionary search row, the iw lookup
- * results, the community search header, the Reader's dictionary card. Use
+ * Use it where a row names no chosen sense — the dictionary search row, the community
+ * search header, the Reader's dictionary card. Use
  * `resolveDisplayPronunciation` wherever one sense's gloss is shown (cards, the eip, games).
  * See docs/DEFINITION_CLUSTERS.md.
  */

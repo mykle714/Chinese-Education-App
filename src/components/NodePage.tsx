@@ -5,7 +5,8 @@ import type { SxProps, Theme } from "@mui/material/styles";
 import MobileTabScreen from "./MobileTabScreen";
 import { type PageHeaderSize } from "./PageHeader";
 import { usePageSlide } from "../hooks/usePageSlide";
-import type { ScreenPoint } from "../utils/pageTransition";
+import type { DashLaunch, ScreenPoint } from "../utils/pageTransition";
+import { runPageDash } from "../hooks/pageDash";
 import type { FooterTab } from "./MobileFooter";
 import { useFooterTabOverride } from "./footerTabOverride";
 
@@ -44,8 +45,16 @@ interface NodePageProps {
      */
     exitCircleTo?: ScreenPoint;
     /**
+     * Close Back with the DASH transition instead (src/hooks/pageDash.ts): for a page opened
+     * with one (useSlideNavigate `dash`), the camera dashes back LEFT — this page whips off
+     * to the right and the destination slides in from the left. Wins over `exitCircleTo`.
+     * Today: acp opened from the Deck Tower's mini sort platform
+     * (docs/LEAF_NODE_PAGES.md § The dash transition). Undefined: the slide.
+     */
+    exitDash?: DashLaunch;
+    /**
      * A footer tab whose tap plays this page's Back (the back arrow's exit, circle
-     * included) instead of the footer's plain jump — for a page whose Back leads where that
+     * or dash included) instead of the footer's plain jump — for a page whose Back leads where that
      * tab does (footerTabOverride.ts). Today: acp opened from the Deck Tower, on "deck".
      * Undefined: the footer navigates as usual.
      */
@@ -99,6 +108,7 @@ const NodePage: React.FC<NodePageProps> = ({
     title,
     onBack,
     exitCircleTo,
+    exitDash,
     backOnFooterTab,
     headerExtraActions,
     headerSize,
@@ -120,7 +130,12 @@ const NodePage: React.FC<NodePageProps> = ({
     // Only the back arrow animates: navigate (destination mounts beneath) while a
     // clone of this page slides out to the right on top. Footer-tab taps navigate
     // normally (no slide) — except `backOnFooterTab`, which plays this same exit.
-    const handleBack = () => exit(onBack, exitCircleTo);
+    // A dash launch dashes back instead (pageDash.ts clones this surface itself).
+    const handleBack = () => {
+        const surface = surfaceRef.current;
+        if (exitDash && surface) runPageDash({ leaving: surface, direction: -1, lineColor: exitDash.lineColor, navigate: onBack });
+        else exit(onBack, exitCircleTo);
+    };
     useFooterTabOverride(backOnFooterTab, handleBack);
 
     return (

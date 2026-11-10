@@ -5,6 +5,7 @@ carries a `**Resolved:**` note describing the shape that replaced the one it des
 The measurement commands are kept so a future reader can re-check whether a finding has
 regressed — that is the point of this document, not the history of the fix.
 **Date of survey:** 2026-07-28 (branch `main`, at commit `429894b`)
+**Night Market / Immersive World** paths cited below (`src/engine/market`, `features/nightmarket`, the `NightMarket*` services, `/api/nightMarket*`) were deleted on 2026-11-09 — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md); those findings are history only.
 **Note on citations:** this document (like the rest of `docs/`) cites files by **path and
 symbol name only**. The `file.ts:NNN` line numbers it used to carry had drifted — several
 pointed past the end of the file — so they were removed rather than re-pinned; line numbers
@@ -480,9 +481,10 @@ Measured as references to `dbManager` / `executeQuery` / `client.query`:
 | `LazyEnrichmentService` | 4 | ✅ |
 | `VocabEntryService` | 4 | ✅ |
 
-`StarterPacksService` additionally carries private `_dictTable()` and `_vetTable()`
-helpers (lines 75, 83) — per-language table-name resolution, a DAL concern, living
-in the service layer.
+`StarterPacksService` additionally carried private `_dictTable()` and `_vetTable()`
+helpers — per-language table-name resolution, a DAL concern, living in the service
+layer. **Resolved 2026-11-09:** every service in this table now holds zero SQL (see
+docs/BACKEND_LAYERING.md § 4 for where each one's queries went).
 
 ### Two competing DI patterns
 

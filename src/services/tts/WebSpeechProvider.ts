@@ -21,7 +21,7 @@ export class WebSpeechProvider implements TTSProvider {
      * duration, so there is nothing to measure before it starts talking.
      *
      * That is not a gap to fill — it is why the browser voice can only ever drive
-     * Immersive World's TIMER-paced reveal (§ 5.3a), never the audio-paced one.
+     * a TIMER-paced reveal, never an audio-paced one.
      */
     async prepare(): Promise<number | null> {
         return null;

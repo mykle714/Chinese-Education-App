@@ -5,7 +5,6 @@ import { shadowFootprint, type IsoSurface } from "./light";
 import { useIsoPalette, useIsoProjector } from "./sceneContext";
 import { EMOTE_GAP, HEAD_RADIUS } from "./pawnFigure";
 import { prefersReducedMotion } from "./skyTraffic";
-import PawnAirRing from "./PawnAirRing";
 import PawnIdleProps from "./PawnIdleProps";
 import type { PawnIdleCue } from "./pawnIdles";
 import {
@@ -52,12 +51,11 @@ import { WEIGHT } from "../../../theme/scale";
  * Each new `stretch` cue plays a back stretch at the cue's time (usePawnMotion's STRETCH —
  * the flp's hint pawn, on each new speech bubble).
  *
- * IDLES AND TAPS (usePawnMotion's IDLE ANIMATIONS / TAP REACTION / AIR RING): each new
+ * IDLES AND TAPS (usePawnMotion's IDLE ANIMATIONS / TAP REACTION): each new
  * `idle` cue plays a sneeze, a song, a doze or knitting, with its marks drawn round the
  * head (PawnIdleProps) for as long as the pose plays; a lasting one holds until the cue is
  * withdrawn. `onTap` lets the page answer a tap with a flinch instead of a jump (and
- * silences the "!"). A jump chained in mid-air leaves a light-blue double ring where the
- * feet kicked off (PawnAirRing) — on every pawn, the Deck Tower's included.
+ * silences the "!").
  *
  * LIGHTNING (docs/DECK_TOWER.md § "Weather" → "Lightning strikes"): each change of
  * `shockId` is a strike landing on it. It freezes (usePawnMotion's SHOCK) while its body
@@ -116,6 +114,14 @@ interface IsoPawnProps {
     tappable?: boolean;
     /** Kept at its live ground point while it stands on the floor (usePawnMotion `floorSpot`). */
     floorSpot?: React.MutableRefObject<{ x: number; y: number } | null>;
+    /** Kept true while its feet are off the ground (usePawnMotion `airborne`). */
+    airborne?: React.MutableRefObject<boolean>;
+    /**
+     * World depth of the snow on its floor (usePawnMotion `snowDepth`; a step can set its
+     * own, `PawnStep` `snowDepth`): it wades sunk in, its body cut off below the snow line,
+     * with no shadow. Undefined: no snow on the floor.
+     */
+    snowDepth?: number;
     /** Plays the lightning shock each time this changes (not on mount). */
     shockId?: number;
     /** Smoulders — the crispy look, smoke wisps off its head (hidden while a shock is playing). */
@@ -308,6 +314,8 @@ const IsoPawn: React.FC<IsoPawnProps> = ({
     summitSpot,
     tappable = false,
     floorSpot,
+    airborne,
+    snowDepth,
     shockId,
     crispy = false,
     castsShadow = true,
@@ -324,7 +332,8 @@ const IsoPawn: React.FC<IsoPawnProps> = ({
     const decalClipId = `iso-pawn-decal-clip-${uid}`;
     const bodyId = `iso-pawn-body-${uid}`;
     const vestClipId = `iso-pawn-vest-clip-${uid}`;
-    const { refs, emote, poke, activeIdle, airRings, dropAirRing } = usePawnMotion({
+    const sunkClipId = `iso-pawn-sunk-clip-${uid}`;
+    const { refs, emote, poke, activeIdle } = usePawnMotion({
         proj,
         at,
         startled,
@@ -338,6 +347,8 @@ const IsoPawn: React.FC<IsoPawnProps> = ({
         summitSpot,
         surfaceZ: surface.z,
         floorSpot,
+        airborne,
+        snowDepth,
         shockId,
         stretch,
         facing,
@@ -430,11 +441,6 @@ const IsoPawn: React.FC<IsoPawnProps> = ({
                         </g>
                     )}
                 </g>
-                {/* Mid-air jumps' kick-off rings: in absolute screen space (they stay where they
-                    were kicked off), behind the figure. */}
-                {airRings.map((ring) => (
-                    <PawnAirRing key={ring.id} ring={ring} onDone={() => dropAirRing(ring.id)} />
-                ))}
                 {/* The 3D figure, in absolute screen space: usePawnMotion writes the body's `d`
                     and the head's cx/cy/r every frame (iso/pawnFigure.ts). The head is drawn
                     last: it is the nearest part to any camera looking down. The tap target
@@ -451,23 +457,31 @@ const IsoPawn: React.FC<IsoPawnProps> = ({
                         } as React.CSSProperties
                     }
                 >
-                    <path className="iso-pawn__body" id={bodyId} ref={refs.body} fill={palette.ink} />
-                    {/* The night vest, painted ON the body: clipped to the body's live outline
-                        (a <use> of the body path, so it follows every frame's rewrite);
-                        usePawnMotion writes both paths. Before the head, which covers its top. */}
-                    {vest && (
-                        <g className="iso-pawn__vest" clipPath={`url(#${vestClipId})`}>
-                            <clipPath id={vestClipId} className="iso-pawn__vest-clip">
-                                <use href={`#${bodyId}`} />
-                            </clipPath>
-                            <path className="iso-pawn__vest-cloth" ref={refs.vest} fill={palette.vest} />
-                            <path className="iso-pawn__vest-stripes" ref={refs.vestStripes} fill={palette.vestStripe} />
-                            {/* An open vest: the gap down its front and its two (unused) arm holes,
-                                in the body's ink over the cloth — reads as cut out of it. */}
-                            <path className="iso-pawn__vest-openings" ref={refs.vestOpenings} fill={palette.ink} />
-                        </g>
-                    )}
-                    <circle className="iso-pawn__head" ref={refs.head} fill={palette.ink} />
+                    {/* Sunk in snow (`snowDepth`): usePawnMotion points `sunk` at this clip while
+                        the pawn wades, and writes its outline every frame. The tap target stays
+                        outside it, whole. */}
+                    <clipPath id={sunkClipId} className="iso-pawn__sunk-clip">
+                        <path ref={refs.sunkClip} />
+                    </clipPath>
+                    <g className="iso-pawn__sunk" ref={refs.sunk}>
+                        <path className="iso-pawn__body" id={bodyId} ref={refs.body} fill={palette.ink} />
+                        {/* The night vest, painted ON the body: clipped to the body's live outline
+                            (a <use> of the body path, so it follows every frame's rewrite);
+                            usePawnMotion writes both paths. Before the head, which covers its top. */}
+                        {vest && (
+                            <g className="iso-pawn__vest" clipPath={`url(#${vestClipId})`}>
+                                <clipPath id={vestClipId} className="iso-pawn__vest-clip">
+                                    <use href={`#${bodyId}`} />
+                                </clipPath>
+                                <path className="iso-pawn__vest-cloth" ref={refs.vest} fill={palette.vest} />
+                                <path className="iso-pawn__vest-stripes" ref={refs.vestStripes} fill={palette.vestStripe} />
+                                {/* An open vest: the gap down its front and its two (unused) arm holes,
+                                    in the body's ink over the cloth — reads as cut out of it. */}
+                                <path className="iso-pawn__vest-openings" ref={refs.vestOpenings} fill={palette.ink} />
+                            </g>
+                        )}
+                        <circle className="iso-pawn__head" ref={refs.head} fill={palette.ink} />
+                    </g>
                     {tappable && <circle className="iso-pawn__hit" ref={refs.hit} fill="transparent" />}
                 </g>
                 {/* A billboard over the head, placed and scaled by usePawnMotion. Keyed per

@@ -235,7 +235,7 @@ describe('buildSegmentMetadata — sense-aware pronunciation', () => {
   });
 
   it('un-tagged: the default sense’s reading beats a stale entry-level column (行 xíng, not háng)', () => {
-    // An IW bubble / Reader document carries no sense tags. The column held CEDICT's háng
+    // A Reader document carries no sense tags. The column held CEDICT's háng
     // while the clusters were re-read — the top-scored sense ("OK") is xíng.
     const xing = {
       ...entry('行', 5),
@@ -252,7 +252,7 @@ describe('buildSegmentMetadata — sense-aware pronunciation', () => {
 
   it('un-tagged: a gloss-less PARTICLE sense still supplies the default reading (了 le, not liǎo)', () => {
     // The card resolver skips clusters whose glosses are all parenthetical; a sentence
-    // segment must not, or every 了 in an IW bubble reads liǎo.
+    // segment must not, or every 了 in a Reader document reads liǎo.
     const le = {
       ...entry('了', 5),
       pronunciation: 'le',

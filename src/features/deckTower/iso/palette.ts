@@ -49,9 +49,10 @@ export function bandMaterial(band: string): Material {
 
 /**
  * A card UNDER the top one in a short coloured deck: the card colour stepped down,
- * alternating by layer index `k` so the seams between layers read. Shared by acp's bins
- * (SortBins.tsx → `SortBin`) and the Deck Tower's mini sort platform (IsoSortPlatform).
- * Docs: docs/ISO_ART_FRAMEWORK.md § "IsoSortPlatform", docs/SORT_CARDS_REQUIREMENTS.md § 5.3.
+ * alternating by layer index `k` so the seams between layers read.
+ * ⚠️ UNUSED since 2026-11-09: acp's bins (SortBins.tsx → `SortBin`), its last caller,
+ * switched their decks to cream card stock. The Deck Tower's mini sort platform
+ * (IsoSortPlatform) does not use it either. Delete if nothing picks it up.
  */
 export function deckUnderLayerMaterial(color: string, k: number): Material {
     return {
@@ -88,6 +89,17 @@ export function floorSlabMaterial(floor: string, inside?: Material): Material {
  */
 export function holeTone(floor: string, inside?: Material): string {
     return insideMaterial(floor, inside).right;
+}
+
+/**
+ * Settled snow (IsoSnowCap and the Deck Tower's floor snow, docs/TOWER_SNOW.md): the scene's
+ * washed `snow` white on top, its walls stepped down by the platform's own 0.07 / 0.15, so
+ * a cap reads as a slab with thickness (the owner asked for thickness; at half steps the
+ * walls vanished into the white top). ⚠️ Derived from `ISO.snow` (`COLORS.white`) by `shadeHex`, like
+ * every wall tone in the framework; there is no snow token.
+ */
+export function snowMaterial(snow: string): Material {
+    return material(snow, 0.07, 0.15);
 }
 
 /** A floating platform's colours: its three-tone slab and the light bevel round its top edge. */
@@ -217,10 +229,4 @@ export const ISO = {
      * every world's platform.
      */
     yarn: COLORS.redMk,
-    /**
-     * A mid-air jump's double ring (PawnAirRing, docs/ISO_ART_FRAMEWORK.md § IsoPawn → "Air
-     * ring"): the blue ramp's palest tint (`blueAccent` = `--bluTint`), owner's pick
-     * 2026-11-08 — a light, airy kick-off mark rather than a solid object.
-     */
-    airRing: COLORS.blueAccent,
 } as const;

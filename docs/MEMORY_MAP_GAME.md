@@ -885,8 +885,8 @@ still none of the outcome hues.
 **DOM + CSS `transform` on a world layer. No `requestAnimationFrame` loop, no Pixi.**
 Same class as Match Speed: the fitted camera is a transform, colours are CSS transitions, the
 pulse is a keyframe animation. The 50-slot cap is what makes this safe — no viewport
-culling needed. A game that genuinely needed a scene graph should borrow the night
-market's Pixi host (`src/features/nightmarket/pixiRuntime.ts`), not invent one.
+culling needed. A game that genuinely needed a scene graph should start from the archived
+Night Market Pixi host (`pixiRuntime.ts`, removed 2026-11-09 — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)), not invent one.
 
 ---
 

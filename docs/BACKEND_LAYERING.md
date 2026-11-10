@@ -106,34 +106,38 @@ any one service, so the second and third adopters do not import a type from a si
 
 **All three transaction sites in the codebase conform** (2026-08-28):
 `services/FriendsService.ts` → `removeFriend`, `services/StudyChallengeService.ts`
-→ `acceptChallenge`, and `services/FlashcardMarkService.ts` → `applyMark` / `undoMark`. Note this rule is about the *transaction runner* specifically;
-the `dbManager.executeQuery` calls in `TextService`, `ValidationService`,
-`NightMarketTemplateService` and `LazyEnrichmentService` are the separate
-service-writes-SQL problem tracked in § 4 below.
+→ `acceptChallenge`, and `services/FlashcardMarkService.ts` → `applyMark` / `undoMark`.
+`StudyChallengeService.acceptChallenge` enlists its client in
+`StarterPacksService.ensureLibraryEntry`, which passes it on to the optional `client`
+parameter of `IVocabEntryDAL.findBucketRowByUserAndKey` / `promoteRowToLibrary` /
+`insertLibraryRowIfAbsent`.
 
 ---
 
 ## 4. Current conformance
 
-*Re-measure before trusting this table — it drifts. Counts below are
-`grep -cE '\.query(<[^>]*>)?\(' server/services/*.ts`, taken 2026-08-16 over 26
-services. **19 of 26 hold no SQL.***
+*Re-measure before trusting this — it drifts:
+`grep -cE '\.query(<[^>]*>)?\(|executeQuery|db\.getClient' server/services/*.ts`.
+Re-taken 2026-11-09 over 40 service files: **none hold SQL.** The only hits are the
+§ 3 transaction sites passing `tx.getClient()` into DAL methods (`FriendsService`,
+`StudyChallengeService`, `FlashcardMarkService`) and `TTSService`'s Google auth client,
+which is not a database client.*
 
-| Service | Direct-SQL sites | Assessment |
-|---|---|---|
-| `StarterPacksService.ts` | 21 | **Non-conforming, and getting worse** (was ~14). Straddles `SortPacksDAL` and raw vet/det queries — the mixed state is worse than either extreme, because a reader cannot tell which path a given query took. |
-| `NightMarketTemplateService.ts` | 13 | **Non-conforming** (down from ~26). Owns the `nightmarkettemplatedefinitions` read/write path with no DAL; a `NightMarketTemplateDAL` is the intended fix. |
-| `OnDeckVocabService.ts` | 12 | **Non-conforming — reclassified.** This was "conforming-by-exception (§3): one site, inside a transaction". It is now twelve `db.getClient()` + `client.query()` sites that are **not** transactions (the game-pool, collection, mastered-count and filler/distractor queries). The §3 exception no longer covers it; these belong on `IOnDeckVocabDAL`. |
-| `ValidationService.ts` | 7 | **Non-conforming** (down from ~14). Reads/writes the `validations` table and patches det columns directly. Needs a `ValidationDAL`; the det patches belong on `IDictionaryDAL`. |
-| `TextService.ts` | 6 | **Non-conforming** (down from ~12). The `texts` table still has no DAL at all. |
-| `VocabEntryService.ts` | 4 | **Conforming-by-exception (§3)** — the sites are inside transactions. Still worth migrating to client-accepting DAL methods. |
-| `LazyEnrichmentService.ts` | 1 | **Borderline.** A single `executeQuery` existence probe; belongs on `IDictionaryDAL` as `exists(word, language)`. |
+Where the last non-conforming services' SQL went (all 2026-11-09):
+
+| Former service | Now in |
+|---|---|
+| `StarterPacksService` (24 sites) | `StarterPacksDAL` (supply, skips, `seenPacks`) + `IVocabEntryDAL` (`insertLibraryRow`, `promoteRowToLibrary`, `insertLibraryRowIfAbsent`, `undoSortedRow`) |
+| `OnDeckVocabService` (15) | `OnDeckVocabDAL` |
+| `TextService` (7) | `TextDAL` |
+| `ValidationService` (4) | `ValidationDAL` |
+| `LazyEnrichmentService` (1) | `IDictionaryDAL.isLazyEnrichmentCandidate` |
 
 `services/wordSearchGrid.ts` matches a naive `pool.` grep but issues no SQL — its
 `pool` is a candidate-letter array.
 
-**These are recorded, not endorsed.** New code does not get to add to this table;
-the five non-conforming services are pre-existing debt with a named remedy each.
+**New code keeps it at zero.** A service that needs a new read adds a DAL method; a
+transaction passes its client into DAL methods (§ 3).
 
 ---
 
@@ -158,7 +162,7 @@ The `thisArg` second parameter preserves the controller's `this` binding; omitti
 it on a method that uses `this` is the most common mistake here.
 
 Route modules: `server/routes/*.ts`, mounted in `server/server.ts`. API paths are
-**camelCase** (`/api/starterPacks/...`, `/api/nightMarket/...`); user-facing SPA
+**camelCase** (`/api/starterPacks/...`, `/api/writingNotebook/...`); user-facing SPA
 URLs stay kebab-case (`/tester-dashboard`, `/discover/sort/:language`) and are unrelated.
 
 ---

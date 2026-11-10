@@ -22,7 +22,7 @@ interface LayoutProps {
 // Two render modes:
 //   • Mobile-demo surfaces (the phone-frame pages) → wrapped in MobileDemoFrame,
 //     which is full-bleed on mobile and a centered phone card on desktop.
-//   • Everything else (Reader / Dictionary / Night Market / Settings / dashboard
+//   • Everything else (Reader / Dictionary / Settings / dashboard
 //     / auth pages, etc.) → rendered full-height with no chrome.
 function Layout({ children }: LayoutProps) {
     const location = useLocation();

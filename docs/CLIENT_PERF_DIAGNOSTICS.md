@@ -9,7 +9,7 @@ Real-user interaction-latency telemetry, built to diagnose the **PPE-only**
 |---|---|---|
 | **Client capture** | `src/utils/perfDiagnostics.ts` | Observes the platform Performance APIs, buffers interesting entries, beacons batches to the server. |
 | **Client bootstrap** | `src/main.tsx` | Calls `initPerfDiagnostics()` once, gated to PPE (or `localStorage.perfDiag === "1"`). |
-| **Frame reporter** | `src/features/nightmarket/nmpPerf.ts` → `reportFrameStats()` | Ships each 2s window's mean/worst frame time under the current load label. The only *non*-interaction source — see "Frame records" below. |
+| **Frame reporter** | `src/utils/perfDiagnostics.ts` → `reportFrameStats()` | Exported for an animated surface to ship each 2s window's mean/worst frame time. **No caller today** — see "Frame records" below. |
 | **Server sink** | `server/routes/diagnosticsRoutes.ts` → `POST /api/diagnostics/perf` | Unauthenticated endpoint; appends each batch via the shared writer + prints a one-line summary. |
 | **Shared writer** | `server/utils/diagnosticsLog.ts` | `appendDiagnostic(prefix, record)` — resolves the (configurable) log dir, daily-rotates, and sweeps expired files. Used by **both** the perf and error sinks. |
 | **Analysis** | `server/scripts/analyze-client-perf.ts` | Read-only aggregator; reads every `client-perf-*.jsonl` (+ legacy single file) and prints per-route p50/p95 latency breakdowns. |
@@ -75,49 +75,28 @@ Plus one source that is **not** a Performance API:
 ### Frame records (`kind: "frame"` / `"frame-worst"`)
 
 **Added 2026-08-13.** Reported by an animated surface itself via the exported
-`reportFrameStats()` (`src/utils/perfDiagnostics.ts`), currently only from the
-Night Market's `nmpPerf` probe (`src/features/nightmarket/nmpPerf.ts`).
+`reportFrameStats()` (`src/utils/perfDiagnostics.ts`). **It has no caller today**: its only
+caller was the Night Market's `nmpPerf` load-test probe, removed with that feature on
+2026-11-09 ([ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)). The record shape stays so the
+next animated surface can volunteer frame cost through the same pipeline.
 
 **Why the other sources cannot cover this.** Everything above is
 interaction-triggered. A scene rendering at 8fps with nobody touching it produces
 **no records at all** and is indistinguishable from a healthy idle page. Frame
 cost has to be volunteered by the renderer.
 
-**Why here, and not a console log.** The Night Market scale question
-(`docs/REACT_NATIVE_MIGRATION.md` action item 4a: does it hold at 1,000
-pedestrians?) is answered by a *synthetic dev load test*, while the tap-lag
-question is answered by *real PPE telemetry*. Routing both through this pipeline
-means they share one transport, one JSONL shape, and one analyzer — so the two
-numbers are comparable rather than merely similarly named.
-
 | Field | Meaning |
 |---|---|
 | `kind: "frame"` | **Mean** frame time (ms) over one 2s window — throughput |
 | `kind: "frame-worst"` | **Longest single frame** (ms) in that window — jank, what a user feels |
-| `target` | Surface name (`night-market`) |
-| `name` | Load descriptor set by `nmpPerf.load()`, e.g. `peds=1000` — the experiment's x-axis |
+| `target` | Surface name supplied by the caller |
+| `name` | Load descriptor supplied by the caller (e.g. `peds=1000`) — the experiment's x-axis |
 | `duration` | The frame time itself, so the existing analyzer's p50/p95/max table works unchanged |
 
 Two kinds rather than one field: the analyzer buckets by `(kind, path)` and takes
 percentiles over `duration`, so mean and worst would pool into one meaningless
-distribution if they shared a kind.
-
-**Volume:** one pair per 2s window (~1 record/s) — two orders of magnitude under
-the tap census.
-
-**Double-gated, and both gates matter:**
-
-| Gate | Where | Effect |
-|---|---|---|
-| `initPerfDiagnostics()` ran | `src/main.tsx` — PPE, or `localStorage.perfDiag = "1"` | Without it `reportFrameStats` is a no-op |
-| `nmpPerf` enabled | dev by default; `localStorage.nmpPerf = "1"` in PPE | Without it no window is ever reported |
-
-Consequence worth knowing before reading a report: **in ordinary production these
-records do not exist**, because `nmpPerf` is off there. They are a *load-test
-instrument* that happens to share the PPE pipeline, not passive PPE telemetry.
-To run one, open nmp in dev with `localStorage.perfDiag = "1"`, cycle the
-pedestrian-load button in the debug column, and read the result with the same
-`analyze-client-perf.ts` invocation used for PPE.
+distribution if they shared a kind. `reportFrameStats` is a no-op unless
+`initPerfDiagnostics()` ran (PPE, or `localStorage.perfDiag = "1"`).
 
 Each record carries the route `path` and a best-effort `target` description
 derived from the app's descriptive class names (e.g.

@@ -6,6 +6,12 @@
 > **Current recommendation: do not migrate.** See
 > [§ Recommendation](#recommendation) for the reasoning and the conditions that
 > would change it.
+>
+> ⚠️ **The Night Market (and with it `src/engine/market/`, every `features/nightmarket/` Pixi
+> layer, the `enginePurity` test and `pixi.js` itself) was removed from `main` on 2026-11-09**
+> — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md). Every Night Market section below (the
+> finding, the load model, Tier 2, the Pixi→Skia row) describes the archived code and no
+> longer bears on a migration of today's app. Kept for a revival.
 
 The trigger for writing this was perceived performance problems in the current
 web build, plus a desire for native capabilities (orientation lock, store
@@ -226,8 +232,8 @@ good architecture on its own terms.
 > `src/features/nightmarket/__tests__/pedestrianDepthPixi.test.ts`. Renderer
 > verification belongs on the renderer side of the line.
 
-See [NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md) and
-[NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md).
+See NIGHT_MARKET_FEATURE.md (archived — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)) and
+NIGHT_MARKET_GRAPH_ASSUMPTIONS.md (archived — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)).
 
 ---
 
@@ -382,7 +388,7 @@ step; larger smooth assets are strictly better here.
 > `src/features/nightmarket/TerrainChunkLayer.tsx` (bake/LRU), behind the nmp
 > `chunkedTerrain` debug toggle. **Two constraints emerged during implementation
 > that this section did not anticipate**, both documented in
-> [NIGHT_MARKET_TERRAIN_CHUNKING.md](./NIGHT_MARKET_TERRAIN_CHUNKING.md):
+> NIGHT_MARKET_TERRAIN_CHUNKING.md (archived — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)):
 >
 > 1. **Only GROUND can be baked.** Flattening collapses many cell depths into one
 >    z, which is lossless only for art that could never sort in front of an entity.
@@ -632,7 +638,7 @@ currently depends on it. Two constraints should shape whatever is eventually bui
   when System Haptics is off or the device is in Low Power Mode, and there is no API to
   ask. So haptics must stay a **garnish on feedback already carried visually or
   audibly** — never the sole channel for a game result or a confirmation.
-- **It is native-build-only.** The dev browser and the mdp frame will feel nothing, so
+- **It is native-build-only.** The dev browser and the in-browser phone frame (`MobileDemoFrame`) will feel nothing, so
   the call sites need a no-op path rather than a `Capacitor.isNativePlatform()` check
   scattered through the UI. The shape that matches how this app already isolates
   platform differences (`src/utils/authHeader.ts`, and the bk's own
@@ -1021,7 +1027,7 @@ a bundle-size diff.
 |---|---|---|
 | 5 | **Replace the React-element-per-pedestrian-per-frame render with an imperative sprite pool** updated in `useTick` | `src/features/nightmarket/PedestrianLayer.tsx`. This is the current hard ceiling and bites long before 1,000 peds |
 | 6 | **Move the simulation into a Web Worker** | The engine is already pure and import-free; this is plumbing, not refactoring |
-| 7 | **Implement chunk-baked terrain** with the level ladder + LRU | ✅ **built 2026-08-13, OFF by default** behind the nmp `chunkedTerrain` debug toggle. Math is unit-tested; the visual result is not verifiable without a human. Full design + what to eyeball: [NIGHT_MARKET_TERRAIN_CHUNKING.md](./NIGHT_MARKET_TERRAIN_CHUNKING.md) |
+| 7 | **Implement chunk-baked terrain** with the level ladder + LRU | ✅ **built 2026-08-13, OFF by default** behind the nmp `chunkedTerrain` debug toggle. Math is unit-tested; the visual result is not verifiable without a human. Full design + what to eyeball: NIGHT_MARKET_TERRAIN_CHUNKING.md (archived — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)) |
 | 8 | **Implement the LOD ladder** — full sprite → static sprite → dot; pause invisible animations | ✅ **Unblocked.** Max zoom-out is fit-to-market; a fixed on-screen px/cell threshold (start at ~5 px/cell, tune by eye) demotes peds to dots. See [§ Zoom-out policy](#-zoom-out-policy-decided-2026-08-13) |
 | 9 | **Amortize pathfinding** — movement at 30 Hz, ~2% of agents replan per frame | `src/engine/market/pedestrianAgent.ts` |
 | 10 | **Measure at 1,000 peds / 500 stands / 100 templates on a real phone** | This is the experiment that settles the migration question on the actual product requirement |
@@ -1051,7 +1057,7 @@ machine, or a pair of eyes. Nothing here is waiting on more code being written.
 | # | What | Why it can't be automated | Unblocks |
 |---|---|---|---|
 | H1 | **Run Step 0 of [`/diagnostics-pull`](../.claude/commands/diagnostics-pull.md) on the PPE box** — three `ls` commands | Needs PPE shell access; there is no cross-machine SSH from dev | Item 4 (gate 1). Also tells us whether the pipeline is deployed at all — an empty pull and a healthy app produce identical analyzer output |
-| H2 | **Eyeball the chunked terrain** — nmp debug column, the `ViewComfy` toggle | Chunk seams, level-transition popping and ped occlusion are judged by looking; the math is already unit-tested (23 tests) | Item 7 leaving "off by default". Checklist: [NIGHT_MARKET_TERRAIN_CHUNKING.md](./NIGHT_MARKET_TERRAIN_CHUNKING.md) § "What still needs a human" |
+| H2 | **Eyeball the chunked terrain** — nmp debug column, the `ViewComfy` toggle | Chunk seams, level-transition popping and ped occlusion are judged by looking; the math is already unit-tested (23 tests) | Item 7 leaving "off by default". Checklist: NIGHT_MARKET_TERRAIN_CHUNKING.md (archived — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)) § "What still needs a human" |
 | H3 | **Run the dev load test** — nmp in dev with `localStorage.perfDiag = '1'`, cycle the ped-load button through every rung, then `analyze-client-perf.ts` | Someone has to sit at the machine and drive the knob | The first real number on the pedestrian ceiling → justifies (or refutes) items 5, 6, 9. **Do this after H1**, so both data sets share verified instrumentation |
 | H4 | **A real phone** for item 10 | It is the target device; a laptop result answers a different question | Item 10, and with it the migration decision on the actual product requirement |
 | H5 | **An intended tile pixel size** (open item 6) — a number, not the art | Product decision | Only the atlas memory budget and the 3 GB vs 4 GB device floor, both late. Item 10 measures against a placeholder atlas until then |
@@ -1155,8 +1161,8 @@ should not be re-derived:
 | What ports for free | `src/engine/market/*.ts`, `src/api/http.ts`, `src/utils/`, `src/types.ts`, `server/contracts/wire.ts`, all `*.test.ts*` |
 | Replacement map | `src/features/nightmarket/*.tsx`, `src/components/handwriting/*`, `src/services/tts/*`, `src/games/runtime/useSidewaysStage.ts`, `src/hooks/{usePageSlide,useBlockZoom,useBlockEdgeSwipe}.ts`, `src/App.tsx`, `package.json` |
 | Error-proneness ratings | as Replacement map |
-| The Night Market finding | `src/engine/market/` (all 25 files), `src/engine/__tests__/enginePurity.test.ts` (**enforces the rule**), `src/engine/market/__tests__/pedestrianDepth.test.ts`, [FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md) § `src/engine/` imports nothing outside itself, [NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md), [NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md) |
-| Why item 4a exists / what it built | `src/hooks/usePixiPedestrians.ts` (`seededCountRef`), `src/features/nightmarket/{NightMarketEnginePage,MarketEngineViewer,nmpPerf}.ts(x)`, `src/utils/perfDiagnostics.ts` (`reportFrameStats`), `src/engine/market/nightMarketRegistry.ts` (the empty asset pools), [CLIENT_PERF_DIAGNOSTICS.md](./CLIENT_PERF_DIAGNOSTICS.md) § Frame records, [NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md) § Load-testing it |
+| The Night Market finding | `src/engine/market/` (all 25 files), `src/engine/__tests__/enginePurity.test.ts` (**enforces the rule**), `src/engine/market/__tests__/pedestrianDepth.test.ts`, [FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md) § `src/engine/` imports nothing outside itself, NIGHT_MARKET_FEATURE.md (archived — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)), NIGHT_MARKET_GRAPH_ASSUMPTIONS.md (archived — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)) |
+| Why item 4a exists / what it built | `src/hooks/usePixiPedestrians.ts` (`seededCountRef`), `src/features/nightmarket/{NightMarketEnginePage,MarketEngineViewer,nmpPerf}.ts(x)`, `src/utils/perfDiagnostics.ts` (`reportFrameStats`), `src/engine/market/nightMarketRegistry.ts` (the empty asset pools), [CLIENT_PERF_DIAGNOSTICS.md](./CLIENT_PERF_DIAGNOSTICS.md) § Frame records, NIGHT_MARKET_FEATURE.md (archived — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)) § Load-testing it |
 | Night Market load model | `src/features/nightmarket/PedestrianLayer.tsx`, `src/engine/market/{pedestrianAgent,isometric,templateStitch,tileRegistry,cameraZoom}.ts`, [NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md), [PEDESTRIAN_WALKING_ALGORITHM.md](./PEDESTRIAN_WALKING_ALGORITHM.md) |
 | Terrain chunk baking | `src/features/nightmarket/{EditorTerrainLayer,TemplateTerrainLayer,GroundBackdropLayer}.tsx`, `src/engine/market/templateStitch.ts` |
 | The hanzi-writer port | `src/components/handwriting/{HanziGuide,GlyphSvg,loadCharData}.{tsx,ts}`, `node_modules/hanzi-writer/dist/index.esm.js`, [HANDWRITING_RECOGNITION.md](./HANDWRITING_RECOGNITION.md), [PRACTICE_WRITING.md](./PRACTICE_WRITING.md) |

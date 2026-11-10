@@ -21,14 +21,13 @@ import type { Language, VocabEntry } from "../../../types";
  * Closing keeps the tab trail (the acp rule): reopening on the same root word resumes the
  * drill-in chain; `openForRoot` reseeds when the root word changes.
  *
- * Hosts: acp (`AddCardsPage`), iw (`IWPlayPage` — its onClose also lifts the scene hold)
- * and the Dictionary page
+ * Hosts: acp (`AddCardsPage`) and the Dictionary page
  * (`features/dictionary/DictionaryPage`, the only host that turns on
  * `showSynonymsRelated` + `showWordTools`). The flp and cdp mount
  * `InfoCardSection` themselves: both mirror a card face (`isFlipped`) and wire extras.
  *
  * Layer: feature component (src/features/flashcards). Docs: docs/EIP_SHEET_GESTURES.md (mount
- * sites), docs/SORT_CARDS_REQUIREMENTS.md, docs/IMMERSIVE_WORLD.md § 5.3c,
+ * sites), docs/SORT_CARDS_REQUIREMENTS.md,
  * docs/READING_WRITING_CENTERS.md.
  */
 interface EipSheetProps {

@@ -73,7 +73,7 @@ export interface UsageLanguageRow {
  * React key); `label` is display copy.
  */
 export interface UsageFeatureRow {
-  key: 'cardsAdded' | 'gameWins' | 'writingPractice' | 'immersiveWorld' | 'aiDictionary';
+  key: 'cardsAdded' | 'gameWins' | 'writingPractice' | 'aiDictionary';
   label: string;
   /** How many times it happened (cards added, wins, completions, runs, AI calls). */
   events: number;
@@ -139,11 +139,6 @@ export interface UsageUserRow {
    * window rather than the learner-facing card's sliding 7 days.
    */
   velocity: number;
-  /**
-   * Immersive World runs STARTED in the window (`iw_scene_runs` by "startedAt") — a
-   * true play count: a run is logged when it begins, whether or not it is finished.
-   */
-  iwRuns: number;
   /**
    * WINS per game in the window, most-won first. ⚠️ NOT a play count: the app logs a
    * game round only when it is won (`wins`), so lost / abandoned rounds are invisible,

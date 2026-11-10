@@ -131,8 +131,8 @@ almost everything below follows from that one difference:
   pause at all. That rule exists to stop a CLOCK draining while backgrounded;
   this game has no clock, so the pause would protect nothing. Recorded so it is not
   later "fixed" by an audit against the framework checklist.
-- **A second pan/zoom surface** after the night market — and the first built as plain
-  DOM + a CSS transform rather than Pixi. The 49-word cap
+- **The app's pan/zoom surface** (the Pixi-based Night Market was the first; it was removed
+  2026-11-09), built as plain DOM + a CSS transform. The 49-word cap
   (`MEMORY_MAP_CAPACITY`) is what makes that safe: at that size there is nothing to cull.
 
 ### What Speed Reading introduced
@@ -520,9 +520,9 @@ inherits a shell from it.
 > handle) were written ahead of the first game and **no game ever imported them**.
 > They were removed in commit `70dc441`. Do not resurrect them speculatively — the
 > shipped pattern is DOM + rAF (Bubble Match, Word Search) or DOM + timers (Match
-> Speed, Speed Reading), and a game that genuinely needs a WebGL scene graph should
-> borrow from the night market's Pixi host (`src/features/nightmarket/pixiRuntime.ts`,
-> `useMarketWorld.ts`) rather than from a fresh unproven abstraction.
+> Speed, Speed Reading). The app's one Pixi host was the Night Market's, removed 2026-11-09 and
+> archived ([ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)) — a game that genuinely needs a WebGL
+> scene graph should start from that archived host rather than a fresh unproven abstraction.
 
 ### Layer 2b — Shared surface chrome (`src/games/shared/`)
 
@@ -718,15 +718,13 @@ caller always sends its real `surface`.
 Callers: Bubble Match (`BubbleMatchPage` → `fetchGamePool`), Match Speed
 (`MatchSpeedStage` → `fetchPool`), Speed Reading (`useSpeedReadingQueue` → `fetchPool`, built by `speedReadingPoolRequest`),
 Bucket Drop (`BucketDropStage` → `fetchPool`), Hydra (`HydraBubblesPage` →
-`fetchChallengeCards`; `useColorBuffers` → `fetchColor`), and Immersive World
-(`iwPlayApi.fetchKnownWords`). **Not** through it: Word Search
+`fetchChallengeCards`; `useColorBuffers` → `fetchColor`). **Not** through it: Word Search
 (`GET /api/onDeck/wordSearchGrid`), Memory Map (`src/api/memoryMap.ts`), Writing Grid
 (`src/api/writingGrid.ts`) — each has its own endpoint.
 
-⚠️ Two callers send no `need` where a reader might expect one, so the server runs the
+⚠️ One caller sends no `need` where a reader might expect one, so the server runs the
 baseline check on each call: **Match Speed's mid-run buffer top-ups** (every refill
-tick) and **Immersive World** (no `surface` either, so it lends up to its distribution's
-sum, 44). Both predate the shared module and were preserved as-is.
+tick). It predates the shared module and was preserved as-is.
 
 ### Layer 4 — Backend (`server/`)
 
@@ -1256,7 +1254,7 @@ Renaming a `gameId` counts as removing one game and adding another. Don't.
 - `server/services/GameAssetService.ts`, `GameProgressService.ts`
 - `server/controllers/GamesController.ts`
 - `server/dal/setup.ts` — DI wiring
-- `server/routes/gamesRoutes.ts` — route registration (games + night market + community + leaderboard)
+- `server/routes/gamesRoutes.ts` — route registration (games)
 - `server/routes/onDeckRoutes.ts` — `gamePool` / `wordSearchGrid` route registration (camelCase paths — project convention, see [BACKEND_LAYERING.md](./BACKEND_LAYERING.md))
 - `server/scripts/seedGameAssets.js` — asset seed helper
 - `database/migrations/52-create-game-tables.sql` — `gameassets` + `gameprogress`

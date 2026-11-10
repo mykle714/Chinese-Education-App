@@ -17,11 +17,15 @@ import type {
     DiscoverCard,
     DiscoverFetchResponse,
     DiscoverNextPackResponse,
+    DiscoverSortBucket,
     Language,
 } from "../../types";
 
-/** An Add Cards drop bucket. Both persist as `starterPackBucket = 'library'` server-side. */
-export type SortBucket = "library" | "already-learned";
+/**
+ * An Add Cards drop bucket — one per utcm band (acp's four bins). All four persist as
+ * `starterPackBucket = 'library'` server-side; each seeds the band's core history.
+ */
+export type SortBucket = Exclude<DiscoverSortBucket, "skip">;
 
 /** Keyset cursor for Quick Mark paging — the last fetched card's frequency score + id. */
 export interface QuickMarkCursorParams {

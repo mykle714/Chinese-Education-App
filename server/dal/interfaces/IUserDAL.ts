@@ -33,8 +33,8 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
    * This EXISTS BECAUSE THE READ-THEN-WRITE VERSION MINTS CURRENCY. The service
    * used to read `lastMinutePointIncrement`, compare it in JS, bank the minute, and
    * only then stamp the column — so N concurrent requests all read the same stale
-   * timestamp, all passed the check, and all banked a minute. Minute points fund
-   * night-market unlocks, which made the gap a currency generator rather than a
+   * timestamp, all passed the check, and all banked a minute. Minute points are the
+   * app's currency (leaderboard, arena, streaks), which made the gap a currency generator rather than a
    * cosmetic rate-limit miss. Compare-and-set in ONE statement is the fix: Postgres
    * serialises the row update, so exactly one concurrent caller sees rowCount 1.
    */

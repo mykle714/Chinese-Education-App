@@ -12,9 +12,7 @@
     "server": "cd server && npm run build && npm run start",
     "test": "vitest run",
     "test:server": "npm --prefix server test",
-    "test:all": "npm run test && npm run test:server",
-    "gen:lumeish-assets": "node scripts/normalize-lumeish.mjs",
-    "gen:unlock-schedule-sql": "tsx server/scripts/generate-unlock-schedule-sql.ts"
+    "test:all": "npm run test && npm run test:server"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -22,12 +20,10 @@
     "@hookform/resolvers": "^5.1.1",
     "@mui/icons-material": "^7.1.1",
     "@mui/material": "^7.1.1",
-    "@pixi/react": "^8.0.5",
     "@react-spring/web": "^10.0.3",
     "@use-gesture/react": "^10.3.1",
     "hanzi-writer": "^3.7.3",
     "hanzi-writer-data": "^2.0.1",
-    "pixi.js": "^8.18.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-hook-form": "^7.58.1",

@@ -68,6 +68,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { REPO_ROOT } from '../shared/lib/repoRoot.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
@@ -99,7 +100,7 @@ const DRY_RUN = flags.includes('--dry-run');
 // the word stamps wait for the apply pass, which re-runs this same command.
 const NO_WRITES = DRY_RUN || ORACLE_MODE === 'export';
 
-const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+// Host vs container layout: see shared/lib/repoRoot.js.
 const HANZI_DATA_DIR = path.join(REPO_ROOT, 'node_modules', 'hanzi-writer-data');
 const PARTS_FILE = path.join(REPO_ROOT, 'src', 'games', 'superposition', 'strokeParts.json');
 

@@ -42,21 +42,10 @@ lives in that doc's question log.
 
 ### 2. AI-powered immersive mode
 
-→ **Now has a doc: [IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md)** (abbrev **iw**). ⚠️ **The rest
-of this entry is stale as of 2026-11-08:** phase 1 is built (migrations 158/159,
-`src/features/immersiveworld/`, `server/services/iw/`), the § 14 question log is closed,
-and the feature sits behind `FEATURE_FLAGS.immersiveWorld` (currently off). This entry
-should be deleted in favour of the link. The open question this file used to hold — *what is a session?* — is answered one
-way there: **an objective-driven scene with model-driven NPCs**, built on the night market
-engine, where the learner's only inputs are one action button and a word palette whose
-contents are emitted into the world as speech. Nothing built, no migration, no tables
-confirmed; the whole design is blocked on that doc's § 14 question log. Decided so far: the
-NPC reply wire format (measured — a latency bench is built and passing at
-`server/scripts/bench/npc-latency/`); that **iw does not mark cards** — it earns minute
-points and ends each scene with per-NPC 1–5 ratings plus a one-phrase performance tag, so it
-never competes with the games on mastery; and that iw builds **its own beginner text
-input** rather than waiting on an OS IME — which makes it overlap item 1 above, and the two
-should be designed together with iw leading. **The next action is answering § 14.**
+→ **Built, then removed.** This idea became Immersive World (an objective-driven scene with
+model-driven NPCs, phase 1 + 2 built behind a flag). The feature was removed from `main` on
+2026-11-09 with its code, design doc and tables archived for a possible revival with a new UI —
+[ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md). Start there, not here.
 
 ---
 
@@ -158,7 +147,6 @@ Bubble Match, Word Search) whose whole appeal is tempo.
 - Settings: one master toggle, or separate sfx / speech volumes? (`useTTSSettings`
   already owns the speech half.)
 - Mobile autoplay policy — audio needs a user gesture to unlock; which gesture arms it?
-- Does the night market get ambience, or is this strictly feedback?
 
 ---
 

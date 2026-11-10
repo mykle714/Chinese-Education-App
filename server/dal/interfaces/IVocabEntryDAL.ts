@@ -118,6 +118,12 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
    * clears it, a value sets it. Returns the updated row, or null when no row matches (wrong
    * id / not the caller's). See docs/CARD_ICON_LAYOUT.md.
    */
+  /**
+   * Overwrite a row's whole `typedMarkHistory` (no cooldown or crossing logic — that is
+   * FlashcardMarkService's). Used by StarterPacksService.sortCard to seed the band a
+   * learner declared when sorting a card above Unfamiliar.
+   */
+  updateTypedMarkHistory(id: number, typedMarkHistory: TypedMarkHistory): Promise<void>;
   updateIconLayout(
     userId: string,
     id: string | number,
@@ -155,7 +161,8 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
   findBucketRowByUserAndKey(
     userId: string,
     entryKey: string,
-    language: string
+    language: string,
+    client?: PoolClient
   ): Promise<{ id: number; starterPackBucket: StarterPackBucket | null } | null>;
   /**
    * Insert a fresh 'library' row (no mastery state: `typedMarkHistory` defaults to '{}',
@@ -166,7 +173,25 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
    * Promote an existing non-library row (provisional, or a stray NULL bucket) to
    * 'library' in place, keeping its marks. Used by addToLibrary.
    */
-  promoteRowToLibrary(id: number, language: string): Promise<void>;
+  promoteRowToLibrary(id: number, language: string, client?: PoolClient): Promise<void>;
+  /**
+   * Insert a 'library' row unless one already exists for (user, entryKey, language), and
+   * return the row's id either way (ON CONFLICT — race-safe). Takes the caller's client so
+   * Study Challenge's accept transaction can enlist it. Used by
+   * StarterPacksService.ensureLibraryEntry.
+   */
+  insertLibraryRowIfAbsent(
+    userId: string, entryKey: string, language: string, client?: PoolClient
+  ): Promise<number | null>;
+  /**
+   * Reverse a sort: DEMOTE the row to 'provisional' when it carries any marks (progress
+   * earned while it was a lent card survives), otherwise DELETE it. Atomic (one
+   * statement). Null when the user has no row for the word. Used by
+   * StarterPacksService.undoSort. See docs/PROVISIONAL_CARDS.md.
+   */
+  undoSortedRow(
+    userId: string, entryKey: string, language: string
+  ): Promise<{ id: number; demoted: boolean } | null>;
   /**
    * Move a 'library' row back to 'provisional' — the non-destructive "remove from Learn
    * Now". The row, its marks and its deck memberships are all kept; only the bucket
@@ -203,13 +228,31 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
     limit?: number,
     offset?: number
   ): Promise<UsedInItem[]>;
-  /** Writing-flp used-in bubbles: pass 1 ungated + pass 2 at frequencyScore 4–5. */
-  findWritingUsedInForCharacter(
+  /**
+   * Batch forms — ONE query (and one pool client) for a whole deal instead of one per
+   * card (docs/DEFERRED_WORK.md, scaling table item 2). Each key gets exactly what the
+   * single form returns for it; a key with nothing maps to [].
+   */
+  findRelatedBySharedCharactersForWords(
     userId: string,
-    character: string,
+    words: string[],
     language: string,
     limit?: number
-  ): Promise<UsedInItem[]>;
+  ): Promise<Map<string, Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>>>;
+  /** Eip used-in preview (offset 0) per single character. */
+  findUsedInForCharacters(
+    userId: string,
+    chars: string[],
+    language: string,
+    limit?: number
+  ): Promise<Map<string, UsedInItem[]>>;
+  /** Writing-flp used-in bubbles per single character: pass 1 ungated + pass 2 at frequencyScore 4–5. */
+  findWritingUsedInForCharacters(
+    userId: string,
+    chars: string[],
+    language: string,
+    limit?: number
+  ): Promise<Map<string, UsedInItem[]>>;
 
   // Batch operations with progress tracking
   bulkUpsertWithProgress(

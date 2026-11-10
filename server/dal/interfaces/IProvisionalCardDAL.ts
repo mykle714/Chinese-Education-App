@@ -11,7 +11,7 @@
  * many to grant, when, and to which surface) lives in ProvisionalCardService.
  *
  * The candidate query is deliberately the same shape as the discover supply query in
- * StarterPacksService._fetchSupplyRows: nearest-level-first, then commonality. The two
+ * StarterPacksDAL.findSupplyRows: nearest-level-first, then commonality. The two
  * are NOT shared because they answer different questions — discover asks "what should
  * this user sort next?" (and recycles skips, and honors a client-driven target level),
  * while this asks "what can I safely lend them right now?".

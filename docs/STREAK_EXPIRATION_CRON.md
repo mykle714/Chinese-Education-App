@@ -12,12 +12,9 @@
 
 An hourly Postgres cron. It debits minute points from users who fall below the
 `RETENTION_MINUTES` (3-min) streak threshold, on an **escalating schedule** that
-grows with each consecutive missed local day, and — in the **same transaction** —
-decays their Night Market occupants back down to what the lowered minute total now
-entitles (`database/cron/expire-stale-streaks.sql`). A **companion job** then prunes
-any template that decay left empty and dangling (compiled JS, see Branch 2).
+grows with each consecutive missed local day (`database/cron/expire-stale-streaks.sql`).
 
-Both are `ExecStart=` steps of **one** systemd user unit, `cow-maintenance.service`,
+It is an `ExecStart=` step of **one** systemd user unit, `cow-maintenance.service`,
 fired hourly by `cow-maintenance.timer` and installed together by
 `database/cron/install-timers.sh`. See
 [Scheduling](#scheduling-systemd-user-timer-not-cron) — "cron" survives in this
@@ -87,8 +84,7 @@ new_total        = GREATEST(checkpoint_floor, total - tier_penalty)
 Four consequences to keep in mind:
 
 1. **A checkpoint is absorbing.** Once a balance lands exactly on one, no later tick can
-   debit it. The wallet — and the Night Market entitlement Branch 2 derives from it —
-   freezes there permanently, however long the lapse runs. The old "an inactive account
+   debit it. The wallet freezes there permanently, however long the lapse runs. The old "an inactive account
    zeroes out within a week" now holds **only below 24 h**.
 2. **No high-water column is needed.** A balance only rises by earning and falls by this
    cron, and this cron can no longer cross a checkpoint, so the checkpoint of the *current*
@@ -107,12 +103,6 @@ Four consequences to keep in mind:
 4. **The NOTICE `count=` counts streak breaks, not debits.** Some of the listed
    (user, language) pairs may have lost 0 minutes to an absorbing checkpoint. Cross-check
    against `userminutepoints` when auditing an actual debit total.
-
-**Not applied to the author dev tool.** `UserMinutePointsService.adjustMinutesForAuthor`
-(the nmp −N button) is a raw test signal and floors at 0 as before, so an author can still
-drive a balance anywhere to exercise market decay. It is the one debit path that can put a
-balance below its checkpoint; the next cron tick simply treats wherever it landed as the
-new checkpoint band.
 
 **The cron must never touch `"lifetimeMinutesEarned"`** (the GROSS counter, per-language as of
 migration 134). Gross is monotonic by definition — it records what the user *earned*, which a
@@ -138,14 +128,10 @@ exempt in one language and penalized in another on the same tick.
 
 > **This cron is the sole authority for streak breaks and INACTIVITY penalties.** No
 > application code debits points for inactivity (`UserDAL.applyStreakPenalty` was removed
-> as a dead alternate to this SQL). One narrow exception writes `penaltyMinutes` from app
-> code: the **template-author dev tool** (`UserMinutePointsService.adjustMinutesForAuthor`
-> via the re-introduced `UserMinutePointsDAL.addPenaltyMinutesForDate`) stamps an
-> *artificial* penalty when an author clicks the nmp −N button — a deliberate test signal,
-> not an inactivity penalty. It also debits that language's `"totalMinutePoints"` (floored, like
-> this cron) and reconciles the night market. As of migration 130 it stamps the **actually
-> removed** amount rather than the requested one, matching this cron — the old behaviour is why
-> historical ledger data can reconstruct to a negative balance. See docs/NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md.
+> as a dead alternate to this SQL). Historical ledger rows can still reconstruct to a
+> negative balance: until 2026-11-09 a Night Market author dev tool also stamped
+> `penaltyMinutes` (the requested amount, before migration 130 made it stamp the actually
+> removed amount); it was removed with that feature — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md).
 
 > **Removed: weekly achievement reset.** This cron used to have a branch that
 > wiped each user's `weeklies` rows at their local week rollover. The `weeklies`
@@ -155,57 +141,10 @@ exempt in one language and penalized in another on the same tick.
 > migration `78-create-wins-table.sql`). Nothing is wiped, so lifetime win history
 > is preserved and no cron branch is needed.
 
-## Branch 2 — Night Market occupant decay
-
-Because Branch 1 *lowers* `totalMinutePoints`, this branch (same transaction, three
-data-modifying CTEs: `decay_targets` → `decay_ranked` → `decay_delete`) trims each
-penalized **(user, language)** pair's Night Market **occupants** (`nightmarketunlocks` rows) down to their
-new entitlement `target = unlocks(new_total)`:
-
-**The entitlement is PER (user, language) since migration 130.** `nightmarketunlocks` and
-`nightmarkettemplatelocations` both carry `language`, so each penalized language decays its **own**
-market from its **own** post-debit balance (`final.new_total`) — matching what the application
-grant path feeds `grantUnlocks(userId, language, net)`. Decaying Spanish must never delete a
-Chinese occupant, which is why every join in the branch carries the language and `decay_ranked`
-partitions by `(userId, language)`.
-
-1. `decay_targets` computes each penalized language's `target` by calling the SQL function
-   **`nightmarket_unlocks_for_minutes(new_total)`**. The cron restates **no breakpoints of its
-   own**: that function's body is *generated* from the single source
-   `server/dal/shared/unlockSchedule.ts` into a marked `-- >>> BEGIN GENERATED …` block near the
-   top of the cron file (renderer `server/dal/shared/unlockScheduleSql.ts`, writer
-   `npm run gen:unlock-schedule-sql`), and the file `CREATE OR REPLACE`s it every tick — so
-   **redeploying this cron file is the whole install; there is no migration.** Change a
-   breakpoint → edit the TS table, regenerate, redeploy this file.
-   `src/__tests__/unlockScheduleSqlSync.test.ts` fails the build while the block is stale.
-2. `decay_ranked` ranks each user's occupants in **random** order (`row_number() …
-   ORDER BY random()`).
-3. `decay_delete` deletes the surplus (`rn > target`).
-
-This SQL branch deletes **only occupants**; an emptied template renders its unoccupied
-version on the next layout read (recompute-on-read settles each placement's active version),
-so the branch stays **pure SQL** and never computes a version. Freed slots return to the pool
-and a later grant (`NightMarketPlacementService.grantUnlocks`) backfills them before spawning
-anything new. No new table — the minute deduction is already audited via
-`userminutepoints.penaltyMinutes`. The NOTICE line adds `decayed_unlocks=<n>`.
-
-**Template pruning (companion job, not this SQL).** Emptied templates are no longer kept
-forever. A second cron job — `:02`, one minute after this SQL — removes any template that
-decay left **empty AND weakly attached** (0 occupants; touched on {0, 1, or 2 *adjacent*}
-sides; never the starter hub; never a 2-*opposite*-side bridge), iterated to a fixpoint.
-That is an iterative rectangle-adjacency computation that is impractical in plpgsql, so it
-lives in TypeScript (`NightMarketPlacementService.pruneDanglingTemplates`, pure core in
-`server/dal/shared/templatePrune.ts`) and runs as **compiled JS inside `cow-backend`**
-(`node dist/scripts/night-market/prune-dangling-templates.js`; the PPE image has no tsx).
-It targets exactly the **(user, language) pairs** this SQL just penalized via
-`user_languages.lastPenaltyDate`, pruning each market separately — no `DISTINCT`, because
-a market is per (user, language) and each penalized language needs its own pass. A failure on one
-pair is caught and logged so it cannot abort the rest of the run. The live
-author minute-loss tool reaches the same prune through
-`NightMarketPlacementService.reconcileUnlocks`. This **reverses** the former "placements are
-append-only, never removed" invariant. See
-[NIGHT_MARKET_TEMPLATES.md § Losing minutes removes unlocks](./NIGHT_MARKET_TEMPLATES.md#losing-minutes-removes-unlocks)
-and [NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md](./NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md).
+> **No Branch 2 any more.** Until 2026-11-09 the same transaction also decayed Night Market
+> occupants (and installed `nightmarket_unlocks_for_minutes()`), and a companion job pruned
+> dangling templates. Both went with the feature — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md).
+> The NOTICE line no longer carries `decayed_unlocks=`.
 
 The cron evaluates each user against the 4 AM local-day boundary using their
 stored `users.timezone`.
@@ -229,9 +168,7 @@ stored `users.timezone`.
   - `users.selectedLanguage`
   - `userminutepoints.language` (+ 3-col PK) — migration `62-add-language-to-userminutepoints.sql`
 - **Still user-level (not per language)**: `users.timezone` only (the 4 AM boundary is shared by
-  all of a user's languages). The night-market decay target became per-language in the same
-  migration `130-per-language-streaks.sql`, which added `language` to `nightmarketunlocks` +
-  `nightmarkettemplatelocations` and widened their corner/lookup indexes to include it.
+  all of a user's languages).
 - **Refresh path for `users.timezone`** — four overlapping triggers, so an account is
   never stranded on the column default (`NOT NULL DEFAULT 'UTC'`):
   1. **account creation** — `POST /api/auth/register` carries `tz`
@@ -342,7 +279,7 @@ seed `"lastPenaltyDate" = today_local` on the affected `user_languages` rows bef
   take the remainder at tier 7, so an inactive account under 24 h zeroes out within a
   week. Once at 0 it falls out of scope for debits (it still breaks its streak).
 - **≥24 h balances now stop falling.** Since checkpoints are absorbing, a long-inactive
-  account parks on its checkpoint forever and keeps the Night Market that entitles. The
+  account parks on its checkpoint forever. The
   cron will keep selecting that row daily (to reset the streak) and updating
   `lastPenaltyDate` while removing nothing.
 
@@ -381,10 +318,10 @@ The installer renders each template, substituting `__REPO_DIR__` with the absolu
 repo path, then runs `systemctl --user daemon-reload` and
 `systemctl --user enable --now cow-maintenance.timer`.
 
-### Third step — Study Challenge expiry (built on dev 2026-08-17, NOT on PPE)
+### Second step — Study Challenge expiry (built on dev 2026-08-17, NOT on PPE)
 
 Specified by [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 9 (Q60) and now written:
-`database/cron/expire-study-challenges.sql`, plus the third `ExecStart=` line and the
+`database/cron/expire-study-challenges.sql`, plus its `ExecStart=` line and the
 `Description=` update in `cow-maintenance.service.template`. All four passes were
 exercised against dev with backdated fixtures, and a second run is silent (idempotent).
 
@@ -395,16 +332,15 @@ disk doing nothing, and — because the whole feature's time-triggered transitio
 it — **no challenge ever expires or resolves on PPE**. This is the step of the deploy
 most likely to be forgotten, because everything else about the feature works without it.
 
-The unit gains a **third `ExecStart=` line** running a new pure-SQL file,
+The unit's **second `ExecStart=` line** runs a pure-SQL file,
 `database/cron/expire-study-challenges.sql`, appending to
 `__REPO_DIR__/logs/study-challenges.log`. PPE only, like everything else here.
 
-It belongs in this unit rather than in a timer of its own for the same reason the prune
-does: it is hourly, it is idempotent, it talks to the same container, and a second timer
+It belongs in this unit rather than in a timer of its own: it is hourly, it is idempotent, it talks to the same container, and a second timer
 would be a second thing to install, verify and forget.
 
-**The unit's `Description=` was updated with it** — it now reads *"inactivity penalty +
-dangling-template prune + study-challenge expiry"*, which is what `systemctl --user
+**The unit's `Description=` names every step** — it reads *"inactivity penalty +
+study-challenge expiry"*, which is what `systemctl --user
 status` prints. A stale description is how an operator concludes the wrong job failed.
 
 Four ordered passes, all idempotent (required, since `Persistent=true` re-runs a tick
@@ -445,15 +381,12 @@ is owned by the deploying user, so the install needs no privilege at all.
 
 Two behaviours improved in the move, both worth knowing when reading the logs:
 
-- **Ordering is enforced, not hoped for.** The two jobs were separate cron lines at
-  `:01` and `:02`; the prune reads rows the penalty pass writes (it targets
-  `lastPenaltyDate = today`), and one minute was merely assumed to be enough. They
-  are now two `ExecStart=` lines in one `Type=oneshot` unit, which systemd runs
-  strictly in sequence. Consequence: **if the penalty step fails, the prune step does
-  not run** and the unit is marked failed — correct, since the prune would have had
-  nothing to act on.
+- **Ordering is enforced, not hoped for.** The steps are `ExecStart=` lines in one
+  `Type=oneshot` unit, which systemd runs strictly in sequence. Consequence: **if the
+  penalty step fails, the challenge-expiry step does not run that tick** and the unit is
+  marked failed (the next hourly tick catches up — both passes are idempotent).
 - **Overlapping runs are impossible.** A service is a singleton, so a long run cannot
-  race the next tick on the `CREATE OR REPLACE FUNCTION` at the top of the SQL.
+  race the next tick.
 
 `Persistent=true` on the timer catches up a run missed to a reboot at next start;
 this is safe because the penalty SQL is idempotent within a local day
@@ -477,20 +410,20 @@ The installer warns loudly if it is ever off — that failure is otherwise silen
 systemctl --user list-timers cow-maintenance.timer   # when it next fires / last fired
 systemctl --user status cow-maintenance.service      # last run's exit status
 journalctl --user -u cow-maintenance -n 50           # per-run history systemd keeps
-systemctl --user start cow-maintenance.service       # run both steps now (safe; idempotent)
+systemctl --user start cow-maintenance.service       # run every step now (safe; idempotent)
 ```
 
-The two log files are unchanged (`logs/streak-expire.log`, `logs/prune-templates.log`),
+The log files (`logs/streak-expire.log`, `logs/study-challenges.log`) are unchanged,
 so the verification steps elsewhere in this document still apply. The journal adds
 exit status per run, which the log files never recorded.
 
 ### ⚠️ Never let two schedulers run this
 
 If the schedule exists in more than one place (the old cron drop-in, a stale user
-crontab line, and/or the timer), both fire in the same minute and race on the SQL's
-`CREATE OR REPLACE FUNCTION`, producing `ERROR: tuple concurrently updated` followed
-by a full `ROLLBACK` — that tick's penalties silently do not apply. This actually
-happened: the drop-in and a legacy user-crontab line coexisted for weeks, logging 453
+crontab line, and/or the timer), both fire in the same minute and race each other. Back
+when the SQL also ran a `CREATE OR REPLACE FUNCTION` (the retired Night Market branch) that
+produced `ERROR: tuple concurrently updated` followed by a full `ROLLBACK` — that tick's
+penalties silently did not apply. This actually happened: the drop-in and a legacy user-crontab line coexisted for weeks, logging 453
 such errors before the 2026-08-07 cleanup. The installer checks both legacy locations
 and warns if either is still present.
 

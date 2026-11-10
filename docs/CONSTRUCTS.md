@@ -97,8 +97,8 @@ Computed by `OnDeckVocabService` after the DB query, before the API response is 
 | `exampleSentences.segmentMetadata` | Each raw example sentence is greedy-segmented into tokens; each token is looked up in `dictionaryentries_zh` to attach `{ pronunciation, definition, particleOrClassifier, wordForms }`. `wordForms` is carried through verbatim from the matched DET row so the renderer can pick a tense-appropriate form per segment (see below). | `DictionaryService.enrichExampleSentencesMetadataBatch()` → `buildDictMap()` in `server/dal/shared/segmentString.ts` |
 | `expansionMetadata` | For each character in the `expansion` string, looks up `pronunciation` and `definition` in `dictionaryentries_zh`; result: `Record<char, { pronunciation, definition }>` | `DictionaryService.enrichExpansionMetadataBatch()` |
 | `synonymsMetadata` | Collects all unique synonym words from the batch, batch-queries `dictionaryentries_zh`, builds `Record<word, { definition, pronunciation }>` | `DictionaryService.enrichEntriesWithSynonymMetadata()` |
-| `relatedWords` | Finds up to 4 of the user's own library words (VET `starterPackBucket = 'library'`) that share characters with `entryKey`. Chinese only. Returns `Array<{ id, entryKey, pronunciation, definition }>` | `OnDeckVocabService.enrichWithRelatedWords()` → `VocabEntryDAL.findRelatedBySharedCharacters()` |
-| `usedIn` | Single-character zh entries only. Multi-char (2–4 char) words that contain this character. The field enriched onto the card is just the **first 4-item preview** (`limit=4, offset=0`); the full list is paged on demand (see below). Only words with `frequencyScore BETWEEN 3 AND 5` are surfaced (common-enough words; this also drops null-score rows, including in-library words with no det score). One `LIMIT`/`OFFSET` window over a single stable ordering: `is_user DESC, "frequencyScore" DESC NULLS LAST, char_length("entryKey") ASC, "entryKey" ASC` (in-library first, then commonality, then shortest word first, then alphabetical as a deterministic tiebreak), where `is_user=1` rows are the user's vet entries containing the char (LEFT-JOINed to `dictionaryentries_zh` for metadata, real `vocabEntryId`) and `is_user=0` rows are global det words containing the char that are NOT in the user's vet (`vocabEntryId === null`, deduped via `NOT EXISTS`). `offset=0` reproduces the old two-pass result. Returns `UsedInItem[]`. | `OnDeckVocabService.enrichWithUsedIn()` / `DictionaryController.lookupTerm` (offset-0 preview) and `DictionaryController.usedIn` (paginated) → `VocabEntryDAL.findUsedInForCharacter(userId, char, lang, limit, offset)` |
+| `relatedWords` | Finds up to 4 of the user's own library words (VET `starterPackBucket = 'library'`) that share characters with `entryKey`. Chinese only. Returns `Array<{ id, entryKey, pronunciation, definition }>` | `OnDeckVocabService.enrichMultipleWithRelatedWords()` → `VocabEntryDAL.findRelatedBySharedCharactersForWords()` (one query per deal; the single-word `findRelatedBySharedCharacters()` serves `VocabEntryService`) |
+| `usedIn` | Single-character zh entries only. Multi-char (2–4 char) words that contain this character. The field enriched onto the card is just the **first 4-item preview** (`limit=4, offset=0`); the full list is paged on demand (see below). Only words with `frequencyScore BETWEEN 3 AND 5` are surfaced (common-enough words; this also drops null-score rows, including in-library words with no det score). One `LIMIT`/`OFFSET` window over a single stable ordering: `is_user DESC, "frequencyScore" DESC NULLS LAST, char_length("entryKey") ASC, "entryKey" ASC` (in-library first, then commonality, then shortest word first, then alphabetical as a deterministic tiebreak), where `is_user=1` rows are the user's vet entries containing the char (LEFT-JOINed to `dictionaryentries_zh` for metadata, real `vocabEntryId`) and `is_user=0` rows are global det words containing the char that are NOT in the user's vet (`vocabEntryId === null`, deduped via `NOT EXISTS`). `offset=0` reproduces the old two-pass result. The `is_user=0` pass finds its words through the GIN index over each det word's characters (`charsContainClause`, migration 186), not a table scan. Returns `UsedInItem[]`. | `DictionaryController.lookupTerm` (offset-0 preview), `OnDeckVocabService.enrichMultipleWithUsedIn()` (offset-0 preview for a whole deal via `findUsedInForCharacters`, the same query per character) and `DictionaryController.usedIn` (paginated) → `VocabEntryDAL.findUsedInForCharacter(userId, char, lang, limit, offset)` |
 
 ---
 
@@ -140,7 +140,7 @@ When `resolveWordForm` returns a value, it replaces the dictionary base `definit
 
 ## Extra Info Panel (EIP)
 
-The EIP is the secondary panel on the FLP / mdp that surfaces auxiliary card info (sct, st, bt, est, et). Structurally it is two stacked regions:
+The EIP is the secondary panel on the flp that surfaces auxiliary card info (sct, st, bt, est, et). Structurally it is two stacked regions:
 
 ### Breakdown tab (bt) — single-char vs multi-char
 
@@ -167,61 +167,6 @@ The reverse direction mirrors this: while the content is at `scrollTop === 0`, a
 
 This means the user never sees the content scroll past the top of its page while there is still room to expand the panel — resizing always happens first, content scroll second.
 
-
-### Tile object (`TileDef`)
-
-Defined in `src/engine/market/nightMarketRegistry.ts`.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `isoX`, `isoY` | `number` | Integer iso coords (in `TILE_SIZE` units). Identity of the tile. |
-| `connections?` | `string[]` | Stand `assetId`s reachable from this tile. The "last-mile" hook from walkable space to a stall — must be 4-adjacent to that stand's footprint. |
-| `street?` | `Street` | The *winning* street that owns the tile (thickest-first, NS-wins-ties). Drives visual ownership. |
-| `intersectingStreets?` | `Street[]` | *Every* street that tried to claim this slot. `length >= 2` ⇒ intersection tile (the seed for nodes); `length === 1` ⇒ body tile on a single street. |
-| `isOccupied?` | `boolean` | Mutated each sim tick — true if a pedestrian's current or next tile is here. Pathfinder avoids these. |
-
-Streets are authored as `Street { isNorthSouth, start, end, offset, width }` and expanded to tiles by `streetTiles()` in `src/engine/market/tileRegistry.ts`. `buildTilesFromStreets()` then deduplicates by priority and stamps `street` + `intersectingStreets` onto each surviving tile.
-
-> **Future layout source:** the tiles above are authored today via the hand-written tile/street registry. The template system ([NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md), DESIGN stage) will replace that registry as the source of truth — the tile and street graphs will be computed from tiled, placed templates instead.
-
-### Two graphs are derived from tiles
-
-#### 1. Tile graph (fine-grained) — `src/engine/market/tileGraph.ts`
-
-Built by `buildTileGraph(TILES, DEMO_STALLS)` in `src/engine/market/tileRegistry.ts`. ⚠️ That module-level graph is **empty and unused** — `STREETS`/`TILES`/`DEMO_STALLS` are empty arrays. The live graph is rebuilt from stitched templates by `marketWorld.ts` via `streetRecovery.ts#recoverStreets`.
-
-- **Nodes** = every walkable tile (`tiles: Map<tileKey, TileDef>`).
-- **Edges** = pure 4-neighbor adjacency. For each tile, try `(±TILE_SIZE, 0)` and `(0, ±TILE_SIZE)`; keep neighbors that exist in `tileMap` (`tileGraph.ts`).
-- Also indexes stand access: `standAccessTiles` (assetId → tile keys that name it in `connections`) and validates that each access tile is 4-adjacent to the stand footprint and that each stand has exactly one access tile.
-
-Used for per-tile stepping and last-mile pathing (BFS in `bfsTilePath`).
-
-#### 2. Street graph (coarse) — `src/engine/market/streetGraph.ts`
-
-Built by `buildStreetGraph(STREETS, TILES)` in `src/engine/market/tileRegistry.ts` — the high-level routing graph. Same caveat as above: the `tileRegistry` instance is empty; `marketWorld.ts` builds the one the pedestrians actually walk.
-
-- **Nodes (`StreetNode`)** = 4-connected components of *intersection tiles* (tiles where `intersectingStreets.length >= 2`). Flood-filled in `buildNodes` (`streetGraph.ts`).
-- **Edges (`StreetEdge`)** = a single street's run between two intersection nodes. The `bodyTileSet` is every tile on that street with `intersectingStreets.length === 1` lying strictly between the two endpoint nodes. Because tiles on a street are axial and contiguous, an edge is a straight strip — pedestrians traverse it by monotonic motion along the street's primary axis.
-- **Adjacency** = `nodeId → [{ edge, other }]`. Plus `tileToNode` (intersection tile → node) and `tileToEdge` (body tile → its edge) for O(1) lookups when promoting a tile-BFS leg into an axial street walk.
-
-### Node types and their function
-
-The codebase uses the word "node" in two distinct senses:
-
-#### Tile-graph node — a walkable tile (`TileDef`)
-- **Function:** the unit of pedestrian movement and occupancy. Every step a pedestrian takes is from one tile-node to a 4-neighbor tile-node.
-- **Used by:** `bfsTilePath` for last-mile / off-street routing; the occupancy system (`isOccupied`) to prevent two peds from colliding on the same tile.
-- **Sub-roles a tile can play:**
-  - **Body tile** — `intersectingStreets.length === 1`. Lives in the body of exactly one street edge; the workhorse of axial walking.
-  - **Intersection tile** — `intersectingStreets.length >= 2`. Belongs to a `StreetNode` component; the place a pedestrian can switch streets.
-  - **Access tile** — has a non-empty `connections[]`. The single tile from which a given stand can be entered. Always 4-adjacent to that stand's footprint.
-
-#### Street-graph node — an intersection (`StreetNode`)
-- **Function:** the stopping points in the *high-level* plan. Routing across the market is "node → edge → node → edge → …", and only at a node may the pedestrian change streets.
-- Carries its `tileKeys` (all intersection tiles in the component), the distinct `streets` that meet there, and a debug centroid.
-- A pedestrian arriving at a node may pick any tile in the node as a randomized goal (this is how lane variety is introduced — see the `bodyTileSet` comment at `streetGraph.ts`).
-
-#### How the two interact
-- The **street graph** chooses *which* intersections to visit (coarse plan).
-- Each leg is a single `(edge, target)` pair — the ped walks axially along the edge's primary axis until it reaches the target (a node or a specific tile). See [PEDESTRIAN_WALKING_ALGORITHM.md](./PEDESTRIAN_WALKING_ALGORITHM.md) for the full algorithm and [NIGHT_MARKET_GRAPH_ASSUMPTIONS.md](./NIGHT_MARKET_GRAPH_ASSUMPTIONS.md) for the invariants it relies on.
-- `tileToNode` and `tileToEdge` are the bridges: given any tile, you can resolve which street-graph node or edge it belongs to in O(1), which is how the planner classifies start and goal positions.
+> The Night Market tile / street-graph constructs (`TileDef`, tile graph, street graph,
+> node and edge types) were removed with that feature on 2026-11-09 —
+> [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md).

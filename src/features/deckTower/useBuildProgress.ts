@@ -102,3 +102,50 @@ export function useBuildProgress(ready: boolean, count: number, animate = true):
     }, [ready, count]);
     return progress;
 }
+
+/**
+ * How long a corner fixture (the writing world's notebook paper stack, main's sort-platform
+ * slab) takes to grow in when a deck swap lands on Learning (docs/DECK_TOWER.md § "The
+ * notebook stack" / § "The sort platform"). The fixtures used to ride the tower's build-up;
+ * since 2026-11-09 the swap's new tower sky-drops in instead, so they grow on their own clock.
+ */
+export const FIXTURE_GROW_MS = 900;
+
+/**
+ * useFixtureGrow — a corner fixture's grow-in, 0 → 1 over FIXTURE_GROW_MS on an ease-out
+ * cubic (same braking feel as the old build-up's settle), started when `ready` turns true.
+ * Falling back to not-ready resets it to 0 (the swap's empty-platform beat), so the fixture
+ * arriving with the new deck grows from nothing.
+ *
+ * `animate` is read when a grow STARTS, not watched: false (no swap running — page open,
+ * a world arrival, counts landing) snaps to 1, so only a deck swap plays the grow. Snaps
+ * under prefers-reduced-motion too.
+ *
+ * Used by: DeckTowerPage (`fixtureProgress` → DeckTowerPlatform `notebook.progress`,
+ * `sortBin.progress`, and through them the fixtures' intro labels).
+ */
+export function useFixtureGrow(ready: boolean, animate: boolean): number {
+    const [progress, setProgress] = useState(0);
+    const animateRef = useRef(animate);
+    animateRef.current = animate;
+    useEffect(() => {
+        if (!ready) {
+            setProgress(0);
+            return;
+        }
+        if (!animateRef.current || prefersReducedMotion()) {
+            setProgress(1);
+            return;
+        }
+        let frame = 0;
+        const start = performance.now();
+        const tick = (now: number) => {
+            const u = Math.min(1, (now - start) / FIXTURE_GROW_MS);
+            setProgress(1 - (1 - u) ** 3);
+            if (u < 1) frame = requestAnimationFrame(tick);
+        };
+        frame = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(frame);
+    }, [ready]);
+    return progress;
+}

@@ -316,11 +316,11 @@ search response carries `matchedSense`, and `DictionaryEntryRow`, `IWLookupResul
 which shows that sense's reading and leads with its dd — see
 [DICTIONARY_NUMBERED_PINYIN_SEARCH.md](./DICTIONARY_NUMBERED_PINYIN_SEARCH.md) § "Sense matching".
 
-Segments — a sentence segment with no sense tag (every IW speech bubble, every Reader
+Segments — a sentence segment with no sense tag (every Reader
 document, an est segment the tagging pass did not label) falls back to the entry's **default**
 sense reading through this same resolver, not to the column: `resolveSenseView` in
 `server/dal/shared/segmentString.ts`, row 4 of the priority table in
-[SEGMENT_DRILL_DOWN.md](./SEGMENT_DRILL_DOWN.md) § 3a. This is what makes 行行 in an IW line
+[SEGMENT_DRILL_DOWN.md](./SEGMENT_DRILL_DOWN.md) § 3a. This is what makes 行行 in an untagged line
 read `xíng xíng` (the top-scored "OK" sense) rather than the column's `háng`.
 
 Server — the payloads that materialize a sense-resolved dd where the clusters do NOT travel,
@@ -343,13 +343,10 @@ resolvers and are stripped before the row leaves the method, so no wire DTO carr
 
 **Audio.** Card TTS is sense-resolved on both halves of the cache key: `src/hooks/useTTS.ts`
 (`speak`/`autoSpeak`/`prefetch`) passes `resolveDisplayPronunciation(entry[, senseIndex])`, and
-the server-side prewarm `OnDeckVocabService.prewarmAudio` resolves through the server twin, so
+the server-side prewarm `CardAudioService.prewarm` resolves through the server twin, so
 the pre-warmed MP3 is the one the client asks for. (Example-sentence *segment* narration is
 sense-correct via `segmentMetadata[seg].pronunciation`; see the est consumer row below.)
-**Still not covered:** Immersive World's spoken lines — `useIWSceneRuntime` calls
-`prepareSentence`/`autoSpeakSentence` with NO pinyin hint, so Google guesses each polyphone
-itself and can disagree with the bubble's (now correct) pinyin. The segments arrive after the
-line starts streaming, which is why a hint is not simply threaded through.
+
 
 Referenced code: `src/utils/definitionUtils.ts` (`resolveDisplayPronunciation`,
 `readingCluster`), `server/utils/definitions.ts` (server twins),

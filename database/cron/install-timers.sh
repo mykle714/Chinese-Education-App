@@ -3,7 +3,7 @@
 # Install every PPE schedule this project owns, as systemd USER timers.
 #
 # Currently two, independent of each other:
-#   cow-maintenance  HH:01  inactivity penalty + dangling-template prune
+#   cow-maintenance  HH:01  inactivity penalty + study-challenge expiry
 #                           (docs/STREAK_EXPIRATION_CRON.md)
 #   cow-arena        HH:06  resolve closed arenas, then form new ones
 #                           (docs/ARENA_FEATURE.md § 10)

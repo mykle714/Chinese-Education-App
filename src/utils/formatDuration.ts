@@ -2,15 +2,14 @@
  * Minute-points → duration copy ("2d 3h 5m", "7w 1d 2h 3m").
  *
  * A minute point IS a minute of study, so a balance reads naturally as a span of
- * time. Both surfaces that show a balance render it this way: the Night Market's
- * bottom-left badge and the friends leaderboard's per-row subtitle.
+ * time. The friends leaderboard's per-row subtitle renders it this way.
  *
  * Unit sizes match the minute-points domain, not the calendar: an hour is 60
  * minutes, a day is 1440 (the same 24-hour CHECKPOINT_MINUTES the inactivity penalty
  * floors at — see src/constants.ts) and a week is 7 of those. No DST, no month.
  *
  * Depended on by: src/features/friends/friendLabels.ts,
- * src/features/nightmarket/NightMarketEnginePage.tsx.
+ * src/features/profile/ProfileStatsCard.tsx, src/components/mastery/MasteryWindow.tsx.
  * Tested by: src/__tests__/formatDuration.test.ts.
  */
 
@@ -22,8 +21,7 @@ interface FormatDurationOptions {
     /**
      * Break days out into weeks past 7 (10080 → "1w" rather than "7d").
      *
-     * OFF by default so the Night Market badge keeps the output it has always had.
-     * The friends leaderboard opts in: its rows compare long-running balances, where
+     * OFF by default (the plain "50d" form). The friends leaderboard opts in: its rows compare long-running balances, where
      * "7w 1d" is easier to size up at a glance than "50d".
      */
     weeks?: boolean;

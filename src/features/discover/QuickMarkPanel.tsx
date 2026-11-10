@@ -156,7 +156,7 @@ interface MorphFlight {
     durationMs: number;
 }
 
-/** A slot rect's face size: the 4-card dock draws compact faces. */
+/** A slot rect's face size: a narrow-screen dock draws compact faces (AddCardsPage → `dockCardSize`). */
 const sizeForRect = (rect: DOMRect): MiniCardSize =>
     rect.width < MINI_CARD_DIMENSIONS.regular.width - 1 ? "compact" : "regular";
 

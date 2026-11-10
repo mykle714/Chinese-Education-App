@@ -1,4 +1,5 @@
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
+import type { IValidationDAL, DetFieldRow } from '../dal/interfaces/IValidationDAL.js';
 import {
   DefinitionCluster,
   Language,
@@ -7,7 +8,6 @@ import {
   isPerSenseValidationField,
 } from '../types/index.js';
 import { ValidationError, NotFoundError } from '../types/dal.js';
-import { dbManager } from '../dal/base/DatabaseManager.js';
 import {
   composeDefinitionsBody,
   composeDifficultyBody,
@@ -16,7 +16,7 @@ import {
   composePartsOfSpeechBody,
   composeSenseFrequencyScoreBody,
 } from '../utils/validationBodyFormat.js';
-import { longDefToDisplayString, resolveDefaultPronunciation, type LongDefinitionValue } from '../utils/definitions.js';
+import { longDefToDisplayString } from '../utils/definitions.js';
 
 /**
  * Validation Service — business logic for the human-in-the-loop data-validation
@@ -38,43 +38,17 @@ import { longDefToDisplayString, resolveDefaultPronunciation, type LongDefinitio
  * `definitionClusters[].sense` for the per-sense ones, so a validator can review each
  * sense of a polyseme independently.
  *
+ * LAYER: service — no SQL. The det read and the `validations` writes go through
+ * `IValidationDAL`.
+ *
  * Depends on: validationBodyFormat (shared pretty-text composer, also used by DictionaryDAL's
  * approval-freshness check), migration 104/106.
  */
 
-// The two det tables carry the same relevant columns; the table name is derived
-// from the (validated) language, never from raw input, so it is safe to inline.
-const TABLE_BY_LANGUAGE: Record<Language, string> = {
-  zh: 'dictionaryentries_zh',
-  es: 'dictionaryentries_es',
-};
-
-// Minimal shape of a det row read when composing / checking a field's review body.
-interface DetFieldRow {
-  id: number;
-  word1: string;
-  pronunciation: string | null;
-  partsOfSpeech: string[] | null;
-  definitions: string[] | null;
-  // Raw JSONB column, NOT a string: a per-sense array for zh, a per-POS object for
-  // es/legacy rows (migration 70). composeBody normalizes it via longDefToDisplayString.
-  longDefinition: LongDefinitionValue | null;
-  exampleSentences: Array<{ foreignText?: unknown; english?: unknown }> | null;
-  difficulty: number | null;
-  frequencyScore: number | null;
-  // Sense clusters (migration 90 zh / 123 es). Read for the per-sense fields, whose
-  // reviewable value is a cluster's OWN frequencyScore, not the entry's column.
-  definitionClusters: DefinitionCluster[] | null;
-}
-
-// The columns every det-row read for validation needs (getDetFieldRowByWord1).
-const DET_FIELD_COLUMNS =
-  `id, word1, pronunciation, "partsOfSpeech", definitions, "longDefinition", ` +
-  `"exampleSentences", difficulty, "frequencyScore", "definitionClusters"`;
-
 export class ValidationService {
   constructor(
-    private userDAL: IUserDAL
+    private userDAL: IUserDAL,
+    private validationDAL: IValidationDAL
   ) {}
 
   /**
@@ -122,17 +96,9 @@ export class ValidationService {
     // flag stores nothing.
     const content = action === 'approve' ? this.composeBody(entry, field, sense) : null;
 
-    const upsertResult = await dbManager.executeQuery<ValidationRecord>(async (client) =>
-      client.query(
-        `INSERT INTO validations
-           ("entryId", language, field, "senseLabel", "validatorUserId", "validatorName", action, content)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         ON CONFLICT ON CONSTRAINT validations_unique_per_user
-           DO UPDATE SET action = EXCLUDED.action, content = EXCLUDED.content,
-                         "validatorName" = EXCLUDED."validatorName"
-         RETURNING id, "entryId", language, field, "senseLabel", "validatorUserId", "validatorName", action, content, "createdAt"`,
-        [entry.id, language, field, sense, userId, user.name, action, content]
-      )
+    const record = await this.validationDAL.upsertVote(
+      { entryId: entry.id, language, field, senseLabel: sense, validatorUserId: userId },
+      { validatorName: user.name, action, content }
     );
 
     console.log(`[VALIDATION-SERVICE] ✅ Recorded inline ${action}:`, {
@@ -143,7 +109,7 @@ export class ValidationService {
       senseLabel: sense || undefined,
     });
 
-    return upsertResult.recordset[0];
+    return record;
   }
 
   /**
@@ -172,13 +138,8 @@ export class ValidationService {
     if (!entry) throw new NotFoundError('Entry not found');
 
     const sense = this.normalizeSenseLabel(field, senseLabel);
-    await dbManager.executeQuery(async (client) =>
-      client.query(
-        `DELETE FROM validations
-           WHERE "entryId" = $1 AND language = $2 AND field = $3
-             AND "senseLabel" = $4 AND "validatorUserId" = $5`,
-        [entry.id, language, field, sense, userId]
-      )
+    await this.validationDAL.deleteVote(
+      { entryId: entry.id, language, field, senseLabel: sense, validatorUserId: userId }
     );
 
     console.log(`[VALIDATION-SERVICE] ✅ Cleared inline vote:`, {
@@ -215,37 +176,20 @@ export class ValidationService {
     const entry = await this.getDetFieldRowByWord1(language, word1);
     if (!entry) throw new NotFoundError('Entry not found');
 
-    const result = await dbManager.executeQuery<{ action: 'approve' | 'flag' }>(async (client) =>
-      client.query(
-        `SELECT action FROM validations
-           WHERE "entryId" = $1 AND language = $2 AND field = $3
-             AND "senseLabel" = $4 AND "validatorUserId" = $5`,
-        [entry.id, language, field, this.normalizeSenseLabel(field, senseLabel), userId]
-      )
-    );
-
-    return result.recordset[0]?.action ?? null;
+    return this.validationDAL.findVoteAction({
+      entryId: entry.id,
+      language,
+      field,
+      senseLabel: this.normalizeSenseLabel(field, senseLabel),
+      validatorUserId: userId,
+    });
   }
 
   // ── helpers ────────────────────────────────────────────────────────────────
 
-  private tableFor(language: Language): string {
-    const table = TABLE_BY_LANGUAGE[language];
-    if (!table) throw new ValidationError(`Unsupported validation language: ${language}`);
-    return table;
-  }
-
   /** Shared by the inline (word1, language) paths: submit/clear/status. */
   private async getDetFieldRowByWord1(language: Language, word1: string): Promise<DetFieldRow | null> {
-    const table = this.tableFor(language);
-    const result = await dbManager.executeQuery<DetFieldRow>(async (client) =>
-      client.query(
-        `SELECT ${DET_FIELD_COLUMNS}
-           FROM ${table} WHERE word1 = $1 AND language = $2 AND discoverable = TRUE`,
-        [word1, language]
-      )
-    );
-    return result.recordset[0] || null;
+    return this.validationDAL.findDiscoverableFieldRow(language, word1);
   }
 
   /**

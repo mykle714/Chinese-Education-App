@@ -1,7 +1,6 @@
 import { IUserMinutePointsDAL } from '../dal/interfaces/IUserMinutePointsDAL.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { IUserLanguagesDAL } from '../dal/interfaces/IUserLanguagesDAL.js';
-import { NightMarketPlacementService } from './NightMarketPlacementService.js';
 import {
   MinutePointsIncrementRequest,
   CalendarResponse,
@@ -35,7 +34,7 @@ const MAX_CLIENT_CLOCK_SKEW_MS = 30 * 60 * 1000;
  * UserMinutePoints Service.
  *
  * LAYER: service. Owns the study-time economy: earning minutes, crossing the daily
- * threshold, and reconciling the night market that minutes fund.
+ * threshold, and crediting the arena.
  *
  * EVERYTHING HERE IS PER-LANGUAGE (migration 130, docs/PER_LANGUAGE_STREAKS.md).
  * The wallet, the streak and the penalty schedule are keyed (userId, language) in
@@ -57,13 +56,9 @@ export class UserMinutePointsService {
     private userMinutePointsDAL: IUserMinutePointsDAL,
     private userDAL: IUserDAL,
     private userLanguagesDAL: IUserLanguagesDAL,
-    // Optional: the night-market grant flow. When present, earning a minute reconciles the
-    // user's unlock entitlement (fill slots / spawn templates). Best-effort — a failure here
-    // must never break the minute-point increment, so the call is wrapped + swallowed below.
-    private nightMarketPlacementService?: NightMarketPlacementService,
     // Optional: the arena. When present, every credited minute is also added to
-    // the user's live arena membership for THIS language. Best-effort in exactly
-    // the same way the night-market grant is — see the call site below.
+    // the user's live arena membership for THIS language. Best-effort — see the
+    // call site below.
     private arenaService?: { creditMinutes(userId: string, language: string, minutes: number): Promise<void> }
   ) {}
 
@@ -84,8 +79,8 @@ export class UserMinutePointsService {
     // cannot all pass. This used to be a read here plus an UPDATE at the end of the
     // method, with a dozen awaits in between: a scripted client firing N requests at
     // once had them all read the same stale timestamp and all bank a minute. Minute
-    // points fund night-market unlocks, so that gap MINTED CURRENCY rather than
-    // merely relaxing a rate limit. See IUserDAL.claimMinutePointIncrement.
+    // points are a currency (they fund the leaderboard, arena and streaks), so that gap
+    // MINTED CURRENCY rather than merely relaxing a rate limit. See IUserDAL.claimMinutePointIncrement.
     //
     // Side effect of claiming up front: the window now runs from the start of a
     // request rather than its completion. That is strictly the safer direction and
@@ -144,23 +139,9 @@ export class UserMinutePointsService {
       console.log(`[MINUTE-POINTS-SERVICE] 🔥 ${language} streak advanced for user ${userId.substring(0, 8)}... on ${streakDate}`);
     }
 
-    // Reconcile THIS LANGUAGE's night-market unlock entitlement against its new wallet
-    // (best-effort). Each language grows its own market, so the grant is scoped to the
-    // language whose minute we just banked. The grant flow fills placeholder slots /
-    // spawns templates; it is idempotent (no-ops when already at target) so calling it
-    // every tick is cheap when no new threshold was crossed. A failure here must not
-    // surface to the study loop, so it is caught and logged only.
-    if (this.nightMarketPlacementService) {
-      try {
-        await this.nightMarketPlacementService.grantUnlocks(userId, language, totalMinutePoints);
-      } catch (err) {
-        console.error(`[MINUTE-POINTS-SERVICE] night-market grant failed for user ${userId.substring(0, 8)}… (${language})`, err);
-      }
-    }
-
     // Credit the same minute to this language's live arena membership, if any
     // (docs/ARENA_FEATURE.md § 4.1). Scoped to the language for the same reason
-    // the streak and the market are: an arena membership IS a (user, language).
+    // the streak is: an arena membership IS a (user, language).
     //
     // Best-effort and deliberately last. The ledger (userminutepoints) is the
     // source of truth for everything that matters; an arena is a view on top of
@@ -174,79 +155,6 @@ export class UserMinutePointsService {
         console.error(`[MINUTE-POINTS-SERVICE] arena credit failed for user ${userId.substring(0, 8)}… (${language})`, err);
       }
     }
-  }
-
-  /**
-   * AUTHOR-ONLY minute nudge (the nmp ±1/±5/±30 buttons — docs/NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md).
-   * Emits an artificial earn or loss signal so a template author can exercise the unlock economy
-   * without waiting on real study time:
-   *   • delta > 0 → adds to today's `minutesEarned` (GROSS ↑) AND credits totalMinutePoints (NET ↑).
-   *   • delta < 0 → adds |delta| to today's `penaltyMinutes` (GROSS unchanged) AND debits
-   *     totalMinutePoints (NET ↓, floored at 0) — the same shape as the real penalty cron, which is
-   *     why GROSS stays put and the two dashboard numbers diverge.
-   * Then reconciles that language's night market to the new NET (grant on +, decay on −).
-   * Gated on users.isTemplateAuthor (403). NOT rate-limited (unlike the +1 study path).
-   * Returns the fresh NET balance + gross for THAT LANGUAGE so the client can update both
-   * numbers immediately. All of it is scoped to users.selectedLanguage.
-   */
-  async adjustMinutesForAuthor(
-    userId: string,
-    delta: number,
-    timestamp: string,
-    tz: string
-  ): Promise<{ totalMinutePoints: number; lifetimeMinutesEarned: number }> {
-    const user = await this.userDAL.findById(userId);
-    if (!user) throw new NotFoundError('User not found');
-    if (!user.isTemplateAuthor) {
-      throw new DALError('Only template authors can adjust minutes', 'ERR_FORBIDDEN', 403);
-    }
-    if (!Number.isInteger(delta)) throw new ValidationError('delta must be an integer');
-
-    const resolvedTz = resolveTimezone(tz);
-    const streakDate = streakDateOf(this.parseTimestamp(timestamp), resolvedTz);
-    const language = user.selectedLanguage || 'zh';
-    await this.userDAL.updateTimezoneIfChanged(userId, resolvedTz);
-
-    if (delta > 0) {
-      // Earn signal: gross + net both rise. One statement bumps both counters on the
-      // language's user_languages row, so the pair cannot drift (migration 134).
-      await this.userMinutePointsDAL.addMinutesForDate(userId, streakDate, language, delta);
-      await this.userLanguagesDAL.incrementPoints(userId, language, delta);
-    } else if (delta < 0) {
-      // Loss signal: penalty rises (gross intact), net falls floored at 0.
-      //
-      // Stamp the amount ACTUALLY removed, not the requested amount. Debiting 30 from a
-      // balance of 1 removes 1, and stamping 30 would leave the ledger claiming penalties
-      // the user never paid, so reconstructing a balance from the ledger would go negative.
-      // The hourly cron has always stamped `total − new_total`; this path now matches it.
-      const requested = -delta;
-      const before = await this.userLanguagesDAL.getProgress(userId, language);
-      const actuallyRemoved = Math.min(requested, before.totalMinutePoints);
-
-      if (actuallyRemoved > 0) {
-        await this.userMinutePointsDAL.addPenaltyMinutesForDate(userId, streakDate, language, actuallyRemoved);
-      }
-      // Still pass the full request: adjustPoints floors at 0 itself, so this is a no-op
-      // beyond the floor and keeps the DAL the single owner of the flooring rule.
-      await this.userLanguagesDAL.adjustPoints(userId, language, -requested);
-    }
-
-    // Both of this language's counters come back in one row read — no unbounded SUM over
-    // the day ledger (that is what migration 134's counter replaced).
-    const after = await this.userLanguagesDAL.getProgress(userId, language);
-
-    // Make THIS LANGUAGE's market match its new net balance. Unlike the passive study-tick
-    // grant, this is an explicit author action, so a reconcile failure is allowed to surface
-    // (not swallowed). reconcileUnlocks both grants and DECAYS, which is why the author's
-    // −N path needs it where the study tick only ever grants.
-    if (this.nightMarketPlacementService && delta !== 0) {
-      await this.nightMarketPlacementService.reconcileUnlocks(userId, language, after.totalMinutePoints);
-    }
-
-    return {
-      totalMinutePoints: after.totalMinutePoints,
-      lifetimeMinutesEarned: after.lifetimeMinutesEarned,
-    };
   }
 
   /**
@@ -320,7 +228,7 @@ export class UserMinutePointsService {
    * One-shot snapshot for the client's minute-points hook. EVERY figure is scoped to
    * `language` — since migration 130 there is no global balance or global streak:
    *   • totalMinutePoints — that language's penalty-debited NET wallet
-   *     (user_languages.totalMinutePoints); drives ITS night-market unlocks and the
+   *     (user_languages.totalMinutePoints); drives the
    *     prominent "current balance" number. Decays when the language is neglected.
    *   • lifetimeMinutesEarned — that language's lifetime minutes earned, ignoring penalties;
    *     only ever grows. Shown as the secondary "total earned" figure. gross ≥ net, and they

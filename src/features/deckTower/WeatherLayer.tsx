@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { Box } from "@mui/material";
 import { keyframes } from "@mui/material/styles";
 import { ISO } from "./iso";
-import { RAIN_ALPHA, RAIN_LEAN, RAIN_STROKE_PX, type WeatherEffect } from "./towerWeather";
+import { RAIN_ALPHA, RAIN_LEAN, RAIN_STROKE_PX, SNOW_ALPHA, SNOW_R, SNOW_SPEED, SNOW_SWAY, SNOW_SWAY_RATE, type WeatherEffect } from "./towerWeather";
 
 /**
  * WeatherLayer — rain, snow and lightning over the Deck Tower's sky
@@ -45,11 +45,8 @@ interface WeatherLayerProps {
     flashId?: number;
 }
 
-const SNOW_ALPHA = 0.85;
-/** Snowflake radius range, fall speed range (px/s), and sway amplitude (px). */
-const SNOW_R = [1.1, 2.6] as const;
-const SNOW_SPEED = [28, 64] as const;
-const SNOW_SWAY = 14;
+// The snowflake's look (SNOW_ALPHA / SNOW_R / SNOW_SPEED / SNOW_SWAY) is shared with
+// iso/IsoSnow, the flakes falling in front of the platform (towerWeather.ts).
 /** Backing-store cap, so a 3× phone doesn't triple the fill cost of a decorative layer. */
 const MAX_DPR = 2;
 
@@ -162,7 +159,7 @@ const WeatherLayer: React.FC<WeatherLayerProps> = ({ effect, rootRef, flashId = 
                 ctx.beginPath();
                 for (const p of snow) {
                     p.y += p.speed * dt;
-                    p.phase += dt * 0.9;
+                    p.phase += dt * SNOW_SWAY_RATE;
                     if (p.y - p.r > height) {
                         p.y = -p.r;
                         p.x = Math.random() * width;

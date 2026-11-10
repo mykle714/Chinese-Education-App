@@ -70,7 +70,7 @@ server/
 │   ├── onDeckRoutes.ts
 │   ├── starterPacksRoutes.ts
 │   ├── dictionaryRoutes.ts
-│   ├── gamesRoutes.ts    # games + night-market + community + leaderboard
+│   ├── gamesRoutes.ts    # games framework (/api/games/*)
 │   ├── mediaRoutes.ts    # TTS + icons8 (behind proxyLimiter)
 │   ├── handwritingRoutes.ts
 │   ├── diagnosticsRoutes.ts # unauthenticated sinks (behind diagnosticsLimiter)

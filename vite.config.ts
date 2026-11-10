@@ -7,8 +7,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     // Discover BOTH the central src/__tests__ suite and tests colocated next to
-    // the code they cover (e.g. src/engine/market/__tests__) — the feature/engine
-    // folder structure colocates tests with their module.
+    // the code they cover (e.g. src/minutePoints/__tests__) — the feature folder
+    // structure colocates tests with their module.
     include: ['src/**/*.test.{ts,tsx}'],
   },
   server: {

@@ -35,6 +35,8 @@ const EMOTE_SCREEN_GAP = 0.3;
 
 /** World radius of the body's end spheres (camera-facing units). */
 const BODY_RADIUS = BODY_WIDTH / 2 / Math.SQRT2;
+/** The body's world half-width — how wide a channel the pawn ploughs through snow (IsoSnowFloor.tsx). */
+export const PAWN_BODY_RADIUS = BODY_RADIUS;
 /** Height of the bottom end sphere's centre above the feet: its outline touches the feet in the fixed view. */
 const BODY_FOOT_CENTRE = BODY_WIDTH / 2;
 export const HEAD_RADIUS = HEAD_SCREEN_RADIUS / Math.SQRT2;
@@ -511,4 +513,60 @@ export function circleHullPath(a: Pt, ra: number, b: Pt, rb: number): string {
         `A ${ra} ${ra} 0 ${aLarge} 0 ${at(a, ra, base + phi)}`,
         "Z",
     ].join(" ");
+}
+
+/** Points round the snow line's circle (pawnSnowClip): smooth enough at the pawn's size. */
+const SNOW_LINE_POINTS = 24;
+/** viewBox units the snow clip reaches past the snow line, up and to each side. */
+const SNOW_CLIP_REACH = 2000;
+
+/**
+ * The clip that sinks a pawn into snow (IsoPawn `snowDepth`; docs/TOWER_SNOW.md
+ * § "The pawn's trail"): everything ABOVE the snow line in front of it. The snow line is
+ * the near half of the body's circle (`bodyRadius` round the ground point) projected at the
+ * snow's top — where the snow in front of the pawn meets it, since the channel it ploughs
+ * is exactly its body's width. Beyond the circle's two side points the boundary runs out
+ * level, then the clip reaches far up. A figure whose feet are above `snowZ` (a jump) is
+ * not cut at all, as its outline lies wholly above the line.
+ */
+export function pawnSnowClip(proj: Projector, at: { x: number; y: number }, snowZ: number, bodyRadius: number): string {
+    const ring: Pt[] = [];
+    for (let i = 0; i < SNOW_LINE_POINTS; i++) {
+        const a = (i / SNOW_LINE_POINTS) * Math.PI * 2;
+        ring.push(proj.project(at.x + Math.cos(a) * bodyRadius, at.y + Math.sin(a) * bodyRadius, snowZ));
+    }
+    // The ring's screen-left and screen-right points split it into a near (lower) and a far chain.
+    let li = 0;
+    let ri = 0;
+    let lowest = 0;
+    for (let i = 1; i < ring.length; i++) {
+        if (ring[i].x < ring[li].x) li = i;
+        if (ring[i].x > ring[ri].x) ri = i;
+        if (ring[i].y > ring[lowest].y) lowest = i;
+    }
+    // Walk from the left point to the right one in whichever direction passes the lowest point.
+    const n = ring.length;
+    const walk = (step: number) => {
+        const out: Pt[] = [];
+        let passesLowest = false;
+        for (let i = li; ; i = (i + step + n) % n) {
+            out.push(ring[i]);
+            if (i === lowest) passesLowest = true;
+            if (i === ri) break;
+        }
+        return { out, passesLowest };
+    };
+    const fwd = walk(1);
+    const near = fwd.passesLowest ? fwd.out : walk(-1).out;
+    const l = ring[li];
+    const r = ring[ri];
+    const top = Math.min(l.y, r.y) - SNOW_CLIP_REACH;
+    const pts = [
+        { x: l.x - SNOW_CLIP_REACH, y: l.y },
+        ...near,
+        { x: r.x + SNOW_CLIP_REACH, y: r.y },
+        { x: r.x + SNOW_CLIP_REACH, y: top },
+        { x: l.x - SNOW_CLIP_REACH, y: top },
+    ];
+    return pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join("") + "Z";
 }

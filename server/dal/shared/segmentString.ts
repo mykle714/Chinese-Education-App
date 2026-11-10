@@ -423,7 +423,7 @@ function resolveSenseView(
   // Last resort when nothing sense-aware is known: the entry's DEFAULT sense — its
   // highest-frequencyScore cluster's reading — NOT the raw `pronunciation` column. The column
   // is the unreviewed copy of a heteronym's reading (行 stored `háng` while its top clusters
-  // read `xing2`), so an untagged segment — an IW bubble, a Reader document — would otherwise
+  // read `xing2`), so an untagged segment — a Reader document, say — would otherwise
   // print whichever CEDICT entry happened to seed the column.
   // ⚠️ resolveDefaultPronunciation, NOT the card resolver resolveDisplayPronunciation: the
   // card one skips gloss-less particle clusters, which would read 了 as `liǎo` in every

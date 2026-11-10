@@ -124,7 +124,7 @@ what says at a glance which control this is, before the word is read — and an 
 that slides as the label changes length is not one. It also gives the label a
 constant-size box in every state, which is what keeps a shrunken word optically
 centred. (The immersive-world volume chip was the other control laid out this way;
-it was removed on 2026-09-23 — [IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 4c.)
+it was removed on 2026-09-23, and Immersive World itself on 2026-11-09 — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md).)
 
 The `ariaLabel` carries the full meaning, since a screen reader gets neither a glyph
 nor any hint that the control cycles.
@@ -239,12 +239,34 @@ re-decode, never a round trip.
 `createObjectURL` pins its Blob for the life of the document otherwise, which is
 a real leak across a long study session.
 
-All three caches share `bufferKey` — `${shortLang}:${text}:${pinyin}` — so
+All three caches share `bufferKey` — `${shortLang}:${voice}:${text}:${pinyin}` (the voice
+role is load-bearing too, see § 6 "The voice is part of every cache key") — so
 `prefetch()` and `speak()` always land on the same slot. The pinyin component is
 load-bearing: the server uses it as an SSML `<phoneme>` hint, so 中 zhōng and 中
 zhòng are genuinely different audio.
 
-*Code:* `CloudTTSProvider` → `getOrFetchBlob`, `getOrDecodeBuffer`,
+**One retry for a transient failure.** `getOrFetchBlob` re-issues the POST once, after
+`RETRY_DELAY_MS` (300 ms), when the first attempt hits a network error or a **5xx**. It does
+not retry a 4xx: a bad request, an auth failure or a 429 will not succeed a moment later, and
+retrying a 429 only digs deeper into the limit. Without the retry, one dropped request went
+straight to `useTTS`'s browser fallback (§ 4 "The fallback rule"), which made a single word of an
+acp pack play in the OS voice while its neighbours used the cloud voice. A failure that
+survives the retry still evicts its `blobCache` slot, so the next `speak()` or `prefetch()`
+tries again from scratch.
+
+**The server's disk cache.** Behind the session caches sits `TTSService`'s on-disk MP3 cache.
+Keys are `sha256(voice:text:pinyin)`, and `/api/tts/synthesize` and the pre-warm both read it
+before any Google call. On PPE it lives on the `cow_tts_cache` named volume (`TTS_CACHE_DIR=/app/cache/tts`),
+so it survives `up --build`. The default path sits inside the build output and used to be
+wiped on every deploy. Each Google call is capped at `GOOGLE_TTS_TIMEOUT_MS` (8 s), because the
+pre-warm holds an endpoint's response until synthesis finishes. The pre-warm uses
+`ensureCached`, which on a hit checks only that the file exists and never reads its bytes.
+
+*Code (server):* `server/services/TTSService.ts` → `CACHE_DIR`, `GOOGLE_TTS_TIMEOUT_MS`,
+`ensureCached`, `hasCachedFile`, `synthesize`, `callGoogle`; `docker-compose.ppe.yml` →
+`TTS_CACHE_DIR`, `tts_cache`; `server/Dockerfile` (mount-point ownership).
+
+*Code:* `CloudTTSProvider` → `getOrFetchBlob`, `RETRY_DELAY_MS`, `getOrDecodeBuffer`,
 `getOrCreateUrl`, `evictOldestUrls`, `bufferKey`.
 
 ### 3b. Erhua (儿化) — one fused `<phoneme>` for the pair (2026-09-28)
@@ -278,9 +300,10 @@ MP3s are orphaned on disk rather than deleted.
 
 Every other entry point plays and forgets: `speak()` fetches, decodes and starts the clip as
 one call, resolving when the audio finishes. There is no moment at which the duration is known
-and playback has not started — and that moment is exactly what the Immersive World needs, where
+and playback has not started — and that moment is exactly what a surface needs where
 **the audio is the clock** and a line's typewriter reveal is spread across the clip's own
-duration ([IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 6.4).
+duration. Its first caller was Immersive World (removed 2026-11-09 — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)); it has no
+caller today.
 
 `prepare(req)` warms the same caches `speak` reads and returns the clip's duration in **ms**,
 or `null`. So prepare-then-speak costs one synthesis, not two.
@@ -305,7 +328,8 @@ cache miss, which is meaningful for a headword and a guaranteed-zero-row `UPDATE
 sentence; `stamp: false` skips it. Opt-OUT, so no existing caller changed behaviour.
 
 *Code:* `CloudTTSProvider` → `prepare`; `useTTS` → `prepareSentence`;
-`server/controllers/TTSController.ts` → `synthesize`.
+`server/controllers/TTSController.ts` → `synthesize`; `server/services/CardAudioService.ts` →
+`synthesizeForRequest`.
 
 ---
 
@@ -334,7 +358,7 @@ breaks the silence of `off`.
 > Immersive World's speech bubble did this until 2026-09-09 — `IWBubble.replayable` meant "a
 > clip was decoded", so muting the app removed the button from every NPC line. It is now
 > shown on every line the learner did not speak themselves, and the press pays the synth
-> round-trip when nothing was cached (see IMMERSIVE_WORLD.md § 14 Q41).
+> round-trip when nothing was cached (Immersive World has since been removed — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)).
 
 > Calling the manual pair from an automatic site is a real bug, not a style slip:
 > it plays audio in `off` **and** lights the speaker button's spinner, because
@@ -370,6 +394,28 @@ rest of the pack is not resumed afterwards.
 The run leaves a **600 ms gap** between words (`AUTOPLAY_GAP_MS`), so the pack is
 heard as separate words rather than one phrase. The stop check comes *after* the gap,
 so a press that lands during the silence still ends the run before the next word.
+
+### acp pack audio is fetched ahead, never on its turn
+
+The gap between two narrated words should be exactly `AUTOPLAY_GAP_MS`. That holds only
+when the next word is already in the session cache. The run awaits each word in turn, so
+fetching a word only when its turn came would add a full `/api/tts/synthesize` round-trip
+to every gap, and also a live Google synth on the server for a word nobody had heard yet.
+Two pre-warms prevent that:
+
+| Layer | What | When |
+|---|---|---|
+| Client | `prefetchSentence` for every card of every pack in the acp queue (on-deck and buffered), with the same arguments the autoplay passes | whenever the set of held `packKey`s changes |
+| Server | `CardAudioService.prewarm` on the refilled pack's cards before `POST /api/starterPacks/nextPack` responds | each refill only; its latency is hidden behind the buffered packs |
+
+The initial `GET /api/starterPacks/:language` deliberately does **not** pre-warm, so the
+first paint never waits on Google. The client prefetch, which fires as soon as those packs
+arrive, covers them instead. Set mode (`GET /api/starterPacks/:language/provisionalSet`)
+has no server pre-warm either and relies on the same client prefetch.
+
+*Code:* `src/features/discover/AddCardsPage.tsx` → the queue prefetch effect
+(`queuedPackKeys`); `server/controllers/StarterPacksController.ts` → `nextPack`;
+`server/services/CardAudioService.ts` → `prewarm`.
 
 ### A word's promise settles when its sound ends, not on a wall-clock guess
 
@@ -502,7 +548,7 @@ Narration resolves a voice from **two** axes, both server-side:
 | Axis | Where it comes from |
 |---|---|
 | **Language** | The learner's `selectedLanguage`, mapped by `useTTS` → `toTTSLang` and resolved by `TTSService.voiceForLang`. Keeps a Spanish word off the Mandarin voice. |
-| **Role** (`TTSVoiceKey`) | The **caller**: `'default'` \| `'male'` \| `'female'`, defaulting to `'default'`. Exists so an Immersive World NPC drawn as a man is voiced as a man ([IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 6.4a). |
+| **Role** (`TTSVoiceKey`) | The **caller**: `'default'` \| `'male'` \| `'female'`, defaulting to `'default'`. Added so an Immersive World NPC drawn as a man was voiced as a man (that feature was removed 2026-11-09 — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)); today only the learner's `/settings` Voice choice sets it. |
 
 The provider (Google Cloud TTS) carries both genders in every locale we use. Voice
 names verified against `GET texttospeech/v1/voices` on our own service account,
@@ -536,7 +582,7 @@ language — not a gender-neutral one. Every voice this app used before 2026-09-
 
 ### The learner's choice — `/settings` → Voice (BUILT 2026-09-09)
 
-The role is not only iw's. `/settings` carries a **Voice** picker — two `OptionRow`s, *Female*
+`/settings` carries a **Voice** picker — two `OptionRow`s, *Female*
 and *Male* — that sets the voice for everything the app reads TO the learner: flashcards,
 example sentences, game reveals. It is stored in the same `tts.settings` localStorage blob as
 `autoplay` and `route` (`TTSSettings.voice`, typed `NarrationVoice`), so it needs no migration
@@ -547,7 +593,7 @@ It is **per device**, not per account — the trade accepted for shipping it wit
 |---|---|
 | **Two options, not three** | `NarrationVoice` is `'female' \| 'male'`. `TTSVoice`'s third value, `'default'`, resolves to the *same provider voice* as `'female'`, so offering it would be one setting with two names for one outcome. The stored value says what the learner picked rather than "whatever we ship", and because `'female'` is a member of `TTSVoice` it crosses the wire unchanged and shares the default voice's cache slots. |
 | **It applies per language** | Picking *Male* gets the male voice of whatever they are studying, not one fixed voice. The language axis is still resolved from `selectedLanguage`. |
-| **It is a DEFAULT, not a floor** | `useTTS` uses it whenever the caller names no voice. A caller that names one — only iw, per speaking character — wins, because an NPC's voice belongs to the character, not to the learner's reading preference. The picker's subtitle says so ("Characters in a story keep their own voices"). |
+| **It is a DEFAULT, not a floor** | `useTTS` uses it whenever the caller names no voice. A caller that names one wins (no caller does today; Immersive World did, per speaking character). The picker's subtitle still says "Characters in a story keep their own voices". |
 | **Its own `SettingsSection`** | Not a second radio group inside Narration: the page's pattern is one control per card, and two unlabelled groups in one card read as one broken group. It sits directly under Narration because it answers the other half of the same question. |
 
 **Tapping an option plays a sample** — 你好 / *Hola* in the voice just chosen — because for a
@@ -567,14 +613,19 @@ previous render's voice, so relying on the write would demo the voice being repl
 
 **⛔ A non-default voice must not stamp `det."ttsVoice"`.** That column is shared dictionary
 data meaning "this row has cached audio in the voice the app reads with", so one learner
-picking *Male* must not rewrite it for everybody. `TTSController` skips the stamp unless
-`TTSService.isDefaultVoice(lang, voiceKey)` — the check lives in the service because only it
-knows `'female'` and `'default'` are the same voice. Before the picker existed this could not
-happen (iw was the only non-default caller and it already passes `stamp: false`), which is
+picking *Male* must not rewrite it for everybody. Every stamp, whether from
+`/api/tts/synthesize` or from a pre-warm, goes through one policy,
+`CardAudioService.recordAudioVoice`. It skips the stamp unless
+`TTSService.isDefaultVoice(lang, voiceKey)`; the check lives in `TTSService` because only it
+knows `'female'` and `'default'` are the same voice. The policy also says **when** to stamp:
+only after a fresh synthesis (a cache miss), which overwrites the column through
+`DictionaryDAL.stampTtsVoice`. A cache hit never writes. Nothing in the app reads `ttsVoice`
+today, so a write on every hit only cost a pool client and an `UPDATE` per card. Before the picker existed this could not
+happen (Immersive World was the only non-default caller and it already passed `stamp: false`), which is
 exactly why the guard had to be added *with* the picker.
 
 **Consequence worth knowing: the server's pre-warm only covers the default voice.**
-`OnDeckVocabService.prewarmAudio` synthesizes each on-deck card with no voice role, so a
+`CardAudioService.prewarm` (flp loop + mark replacement, game pools, acp pack refills) synthesizes each card with no voice role, so a
 learner on *Male* misses the disk cache on the first play of each word and pays one on-demand
 synthesis (~0.2–0.4 s) — after which it is on disk forever and in the session's buffer cache.
 `hasAudio` likewise reflects the default voice's success, which is a fine proxy: a word that
@@ -601,7 +652,7 @@ It is folded into both caches, and it has to be in both:
   whole feature not working.
 
 The corollary for `prepare()`-then-`speak()` callers (§ 3a): **pass the same voice to both.**
-A mismatch measures one clip's duration and plays another, which is precisely what iw's
+A mismatch measures one clip's duration and plays another, which is precisely what an
 audio-as-clock contract cannot survive, and it pays for a second synthesis to do it.
 
 ### The browser fallback does not carry the role
@@ -613,10 +664,11 @@ not be.
 
 *Code:* `server/services/TTSService.ts` → `TTSVoiceKey`, `TTS_VOICE_KEYS`, `toTTSVoiceKey`,
 `voiceForLang`, `voiceTag`, `cacheKey`, `synthesize`; `server/controllers/TTSController.ts` →
-`synthesize`; `src/services/tts/types.ts` → `TTSVoice`, `TTSRequest.voice`;
+`synthesize`; `server/services/CardAudioService.ts` → `recordAudioVoice`, `prewarm`;
+`server/dal/implementations/DictionaryDAL.ts` → `stampTtsVoice`; `src/services/tts/types.ts` → `TTSVoice`, `TTSRequest.voice`;
 `src/services/tts/CloudTTSProvider.ts` → `SynthArgs`, `bufferKey`, `getOrFetchBlob`;
 `src/hooks/useTTS.ts` → `speakText`, `speakSentence`, `autoSpeakSentence`, `prepareSentence`,
-`prefetchSentence`; `src/features/immersiveworld/play/useIWSceneRuntime.ts` → `voiceFor`.
+`prefetchSentence`.
 
 ---
 
@@ -689,9 +741,7 @@ unified flag — and all of them are in the **page header** as an `autoplay` chi
 flp (`FlashcardsLearnHeader`), acp (`AddCardsPage` header actions), Bubble Match
 and Hydra (`BubbleMatchHeaderControls`), Match Speed (`MatchSpeedHeader`) and Word
 Search (`WordSearchHeaderControls`, added 2026-08-29 — the game narrates found words,
-blue matches and review rungs, so it needed a mid-play mute like the rest) and
-Immersive World (`IWPlayPage`'s `rightContent`, added 2026-09-09 — a scene speaks its
-NPC lines aloud, so it needs the same mid-play mute) and Bucket Drop
+blue matches and review rungs, so it needed a mid-play mute like the rest) and Bucket Drop
 (`BucketDropStage`'s `headerRight`, added 2026-10-06 — it narrates the picked-up word,
 and like Bubble Match hides the chip on a reading run). The two
 that were buried — flp's settings-sheet row and Match Speed's dialog row — moved up
@@ -730,16 +780,17 @@ rule covers input-blocking overlays, and a header chip leaves the board playable
 - `src/hooks/useTTS.ts` — trigger contract, fallback rule, route push-down, voice role (§ 6)
 - `server/services/TTSService.ts` — the language × role voice table and the disk cache (§ 6)
 - `server/controllers/TTSController.ts` — request validation, incl. the voice role (§ 6)
-- `src/features/immersiveworld/play/useIWSceneRuntime.ts` — `voiceFor`, the only
-  caller that asks for a non-default voice (§ 6)
 - `src/services/tts/CloudTTSProvider.ts` — both sinks, all three caches, unlock
 - `src/services/tts/WebSpeechProvider.ts` — the unrouteable fallback; carries no voice role (§ 6)
 - `src/pages/SettingsPage.tsx` — `AUDIO_MODE_OPTIONS`; `NARRATION_VOICE_OPTIONS`,
   `VOICE_SAMPLE` and the voice section (§ 6)
-- `server/services/OnDeckVocabService.ts` — `prewarmAudio`, default-voice only (§ 6)
+- `server/services/CardAudioService.ts` — `prewarm` (default-voice only), `synthesizeForRequest`,
+  the one `ttsVoice` stamp policy `recordAudioVoice` (§ 4, § 6)
+- `server/dal/implementations/DictionaryDAL.ts` — `stampTtsVoice` (§ 6)
+- `server/controllers/StarterPacksController.ts` — `nextPack` pre-warms the refilled pack (§ 4)
 - `src/__tests__/ttsUnlockRecovery.test.ts` — unlock repeatability regression tests
 - `src/features/discover/AddCardsPage.tsx` — `unlockAudio` (no local latch, § 5);
-  `stopPackAutoplay` (§ 4)
+  `stopPackAutoplay`, the queue prefetch effect (§ 4)
 - `src/components/AudioModeChip.tsx` — reads `useTTSSettings`, never `useTTS` (§ 1, § 4)
 - [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) — est narration call sites
 - [REACT_NATIVE_MIGRATION.md](./REACT_NATIVE_MIGRATION.md) — `expo-audio`'s

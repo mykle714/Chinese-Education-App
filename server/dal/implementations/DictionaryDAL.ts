@@ -9,7 +9,13 @@ import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict, build
 import { LongDefinitionPart, LongDefinitionCitation } from '../../types/index.js';
 import { segmentPinyin } from '../../utils/pinyinSegment.js';
 import { parsePinyinQuery, pinyinQueryTokens } from '../../utils/searchSenseMatch.js';
-import { dictTableForLanguage } from '../shared/dictTable.js';
+import { dictTableForLanguage, discoverSupplyGate } from '../shared/dictTable.js';
+// The required-scripts manifest is the ONE source of truth for "fully enriched"
+// (docs/DISCOVER_LAZY_ENRICHMENT.md §5). It lives in the backfill utility layer;
+// importing it keeps the request-time candidacy check byte-for-byte identical to the
+// worker's. It is plain ESM JS with no types, hence the ts-ignore.
+// @ts-ignore — untyped JS module (scripts/backfill utility layer)
+import { buildIncompletePredicate } from '../../scripts/backfill/shared/lib/requiredScripts.js';
 import { AiDictionaryCacheRow, WordComparisonRow } from '../../types/index.js';
 import { sanitizeDocumentContent } from '../../utils/sanitizeContent.js';
 import {
@@ -214,7 +220,7 @@ const GLOSS_LEADING_MARKER_JS = new RegExp(`^(?:${GLOSS_LEADING_MARKERS.join('|'
  * results; after the head, the ladder resumes exactly as before and no row is lost or
  * duplicated — the head is a re-ORDERING of the same rows, not a separate query.
  *
- * ⚠️ Applies to `english-first` ONLY, which is the iw hint tray's ranking and nothing else's.
+ * ⚠️ Applies to `english-first` ONLY — built for Immersive World's hint tray (removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md); no caller today.
  * `relevance` — the dictionary page and the Community search bar — does not take the windowed
  * query path at all.
  */
@@ -756,7 +762,7 @@ export class DictionaryDAL implements IDictionaryDAL {
       ⚠️ `rankBy` NO LONGER CHANGES THE BUCKETS — IT CHANGES ONLY THE HEAD (2026-09-09).
       `english-first` additionally leads with an INTERLEAVED HEAD (see HINT_HEAD_PER_BUCKET and
       the windowed query below); `relevance` gets the same ladder without it. That is now the
-      whole of the difference between the iw hint tray and every other search surface. The two
+      whole of the difference between `english-first` and `relevance`. The two
       value names predate this convergence and are worth revisiting — see
       `DictionarySearchRanking` in contracts/wire.ts.
 
@@ -1677,9 +1683,9 @@ export class DictionaryDAL implements IDictionaryDAL {
    * GSA-segment arbitrary target-language text and attach the per-segment popup metadata
    * (pronunciation + dd) the est's `SegmentedSentenceDisplay` renders.
    *
-   * Public because a second surface needs it: Immersive World hands NPC dialogue through
-   * here so a spoken line is tappable in exactly the way an example sentence is
-   * (docs/IMMERSIVE_WORLD.md § 5.3b). That is also why the method below is no longer named
+   * Public because a second surface needed it: Immersive World (removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md) handed NPC
+   * dialogue through here so a spoken line was tappable in exactly the way an example
+   * sentence is. That is also why the method below is no longer named
    * for long definitions — it never was about them, it was about "text with embedded
    * target-language runs", which a bubble is too.
    *
@@ -1785,6 +1791,50 @@ export class DictionaryDAL implements IDictionaryDAL {
         };
       });
     });
+  }
+
+  /**
+   * Record that `word1` has cached TTS audio in `voice` (the resolved provider voice name)
+   * on its det row — `"ttsVoice"`, the "which det rows have audio" hint. Routed to the
+   * per-language det table and matched by (word1, language), because the TTS callers
+   * know the headword but not det's primary key.
+   *
+   * Policy (which voices may be stamped at all, when to call this) lives in
+   * `CardAudioService.recordAudioVoice` — this method only writes.
+   * Referenced by: docs/AUDIO_PLAYBACK.md § 6.
+   */
+  async stampTtsVoice(word1: string, language: string, voice: string): Promise<void> {
+    const table = dictTableForLanguage(language);
+    await this.dbManager.executeQuery<any>(async (client) => {
+      return await client.query(
+        `UPDATE ${table} SET "ttsVoice" = $1 WHERE word1 = $2 AND language = $3`,
+        [voice, word1, language]
+      );
+    });
+  }
+
+  /**
+   * True when the zh headword is discoverable but NOT yet fully enriched per the backfill
+   * manifest — the lazy-enrichment worker's own candidacy rule (`buildIncompletePredicate`),
+   * so "the runtime would trigger it" and "the worker would process it" can never disagree.
+   * zh only: the manifest is zh's (Spanish is paused).
+   *
+   * Referenced by: LazyEnrichmentService.run (gate 3), docs/DISCOVER_LAZY_ENRICHMENT.md § 5.
+   */
+  async isLazyEnrichmentCandidate(word1: string): Promise<boolean> {
+    const predicate = buildIncompletePredicate('de');
+    const result = await this.dbManager.executeQuery<{ one: number }>(async (client) =>
+      client.query(
+        `SELECT 1 AS one
+           FROM dictionaryentries_zh de
+          WHERE de.word1 = $1 AND de.language = 'zh'
+            AND ${discoverSupplyGate()}
+            AND ${predicate}
+          LIMIT 1`,
+        [word1]
+      )
+    );
+    return result.recordset.length > 0;
   }
 
   /**

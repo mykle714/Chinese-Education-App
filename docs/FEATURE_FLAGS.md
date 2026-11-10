@@ -4,21 +4,19 @@ One registry file switches whole features, and individual games, on and off:
 **`server/contracts/featureFlags.ts`** → `FEATURE_FLAGS`, `isFeatureEnabled`,
 `GAME_FLAGS`, `isGameEnabled`.
 
-**Status: BUILT 2026-09-19; `nightMarket` + `immersiveWorld` added 2026-09-20; `writingNotebook` added 2026-10-06. No migration of its own.**
+**Status: BUILT 2026-09-19; `writingNotebook` added 2026-10-06. No migration of its own.** (The `nightMarket` and `immersiveWorld` flags were deleted with their features on 2026-11-09 — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md).)
 
 | Flag | Gates | State |
 |---|---|---|
 | `studyChallenge` | Weekly head-to-head between friends ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md)) | **OFF** |
 | `community` | **Sharing** card designs with other learners ([COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md)) | **OFF** (since 2026-10-30) |
 | `arena` | Weekly global division leaderboard ([ARENA_FEATURE.md](./ARENA_FEATURE.md)) | ON |
-| `nightMarket` | The market, its two authoring tools, and visiting someone else's ([NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md)) | **OFF** (since 2026-09-25) |
-| `immersiveWorld` | Scene list, one running scene, and the scene editor ([IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md)) | **OFF** (since 2026-10-30) |
 | `writingNotebook` | The Writing Notebook page and its entry, the paper stack on the Deck Tower's writing world ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)) | ON |
 | `superpositionStoredGroups` | A data path, not a feature: Superposition reads the AI-authored tile groups stored on det instead of computing them ([SUPERPOSITION_GAME.md](./SUPERPOSITION_GAME.md) § Stored groups) | ON (since 2026-11-03) |
 | `standaloneGames` | The five routed games' own pages (`/games/bubble-match`, `/word-search`, `/match-speed`, `/hydra-bubbles`, `/bucket-drop`). Client-only; their flp breaks are not gated ([GAMES_FEATURE.md](./GAMES_FEATURE.md)) | **OFF** (since 2026-11-06) |
 | `GAME_FLAGS['<gameId>']` | One switch per game, eight of them ([GAMES_FEATURE.md](./GAMES_FEATURE.md)); `writing-grid` also gates the server's `/api/writingGrid/*` router (`server/server.ts`) | all ON |
 
-**`studyChallenge`, `community`, `nightMarket`, `immersiveWorld` and `standaloneGames` are the only things currently switched off.** Every other
+**`studyChallenge`, `community` and `standaloneGames` are the only things currently switched off.** Every other
 flag exists so it *can* be switched off, and documents what would go away if it were.
 
 Before this, the app had no flag mechanism at all — CLAUDE.md records the previous house
@@ -48,7 +46,7 @@ deliberate: this repo has no config service, and a pair of env vars (`X` + `VITE
 read as live-flippable when the client half still requires a rebuild.
 
 A flag is **not** a permission check — per-user gating is `users.isValidator` /
-`users.isFeatureTester` / `users.isTemplateAuthor` / `users.isAdmin` — and **not** a data rollback.
+`users.isFeatureTester` / `users.isAdmin` — and **not** a data rollback.
 Client tester surfaces additionally require a per-device switch on top of `isFeatureTester`:
 see [FEATURE_TESTING.md](./FEATURE_TESTING.md).
 
@@ -114,51 +112,11 @@ Gates **sharing**, not **authoring**.
   `users."geoCell"` value is read or written differently because of the flag.
 
 
-### 2d. `nightMarket` — OFF
+### 2d–2e. *(retired)*
 
-The widest flag: the feature owns **three** server namespaces and **four** routes.
-
-| Layer | Site |
-|---|---|
-| Server mounts | `server/server.ts` — **three** of them: `nightMarketRoutes` (`/api/nightMarket/*`), `nightMarketTemplateRoutes` (`/api/nightMarketTemplates/*`) and `nightMarketSandboxRoutes` (`/api/nightMarketSandbox/*`). The two authoring namespaces exist only to produce content for the market, so they are one flag, not three |
-| **No leak** | Every night-market endpoint lives in those three files. In particular the read-only visit to another user's market is `GET /api/nightMarket/layout?userId=`, *not* a `/api/users/:userId/...` path — so unlike community it needs nothing in `userRoutes.ts` |
-| Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes `/night-market`, `/night-market/user/:userId`, `/night-market/template-editor`, `/night-market/template-sandbox` |
-| Entry points | `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` — the Night Market row, **and** the two `isTemplateAuthor` rows (Template Editor, Template Sandbox) below the hairline |
-| | `src/features/profile/UserProfilePage.tsx` — the "Visit their night market" button, the only way to reach `/night-market/user/:userId` |
-| | `src/data/tips.ts` — the Night Market tip (`feature: "nightMarket"`) |
-
-**Authoring grant vs flag.** The Template Editor and Template Sandbox are already gated by
-`users.isTemplateAuthor`, and that is *not* a substitute: the grant answers "may you
-author?", the flag answers "does the feature exist?". Each tool tests both.
-
-**The hero tile.** Night Market is the hub's only `variant: "hero"` tile. With the flag off
-the mosaic simply opens on Games at base weight — no stand-in is promoted, because choosing
-one would re-weight a page whose order is load-bearing ([BENTO_SYSTEM.md](./BENTO_SYSTEM.md))
-for what is meant to be a temporary state.
-
-**NOT gated — and this one writes rows:**
-
-- **Unlock accrual keeps running.** `UserMinutePointsService` calls
-  `NightMarketPlacementService.grantUnlocks` / `reconcileUnlocks` on every minute-points
-  credit (the no-gating-DI rule in § 5). Deliberate: a learner who studies while the flag is
-  off should come back to a market matching their balance, not an empty lot. This is the one
-  place a flagged-off feature still mutates data — arena's injected service, by contrast,
-  finds nothing to do.
-- **Origin-hub seeding on registration** (`UserController.seedNightMarketHub`) — same reason.
-
-### 2e. `immersiveWorld` — OFF
-
-| Layer | Site |
-|---|---|
-| Server mount | `server/server.ts` → `app.use(immersiveWorldRoutes)`. **One mount covers both halves** — the phase-1 authoring endpoints and the phase-2 learner runtime share the router (they share a URL prefix but not a service). No endpoint lives outside it |
-| Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes `/immersive-world`, `/immersive-world/:sceneId`, `/immersive-world/scene-editor` |
-| Entry points | `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` — the Immersive World row, and the `isTemplateAuthor` Scene Editor row below the hairline |
-
-**NOT gated:** the TTS voice plumbing. `useTTS`'s per-call `voice` argument exists for iw
-alone (§ 6.4a of [IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md)) but is an ordinary optional
-parameter every other caller already omits, so there is nothing to switch off. Likewise the
-`/immersive-world` entries in `src/minutePoints/eligibility.ts` and
-`src/features/beginnerKeyboard/eligibility.ts` are path lists that simply stop matching.
+`nightMarket` (2d) and `immersiveWorld` (2e) were deleted with their features on
+2026-11-09 — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md). The letters are kept so
+existing § 2f+ citations stay valid.
 
 ### 2f. `writingNotebook` — ON
 
@@ -285,7 +243,5 @@ pages the API still serves).
 
 Turning a flag **off** is non-destructive: no rows are read, written or deleted, and every
 table (`study_challenges`, `community_layout_votes`, `arenas`, the `author` column,
-game save state, `iw_scenes`, the night-market placement tables) is
-left exactly as it was — with one deliberate exception, night-market unlock accrual (§ 2d),
-which keeps writing so that re-enabling is not a cliff. Turning it back on restores the
-feature as it stood.
+game save state) is left exactly as it was. Turning it back on restores the feature as it
+stood.

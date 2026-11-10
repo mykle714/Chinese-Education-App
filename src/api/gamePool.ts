@@ -2,8 +2,7 @@
  * gamePool.ts — the client's one typed call against GET /api/onDeck/gamePool.
  *
  * Every game that draws a board from the learner's cards (Bubble Match, Match Speed,
- * Speed Reading, Bucket Drop, Hydra Bubbles) and Immersive World's known-words list
- * goes through `fetchGamePool`. It used to be six hand-built querystrings — five on
+ * Speed Reading, Bucket Drop, Hydra Bubbles) goes through `fetchGamePool`. It used to be six hand-built querystrings — five on
  * raw `fetch` + `authHeader()` — each with its own copy of the response type.
  *
  * Server: `OnDeckVocabController.getGamePool` → `OnDeckVocabService.getGameVocabPool`

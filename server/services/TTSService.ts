@@ -7,8 +7,20 @@ import { GoogleAuth } from 'google-auth-library';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Cache location (relative to server/). Holds .mp3 files keyed by sha256(voice+':'+text).
-const CACHE_DIR = path.resolve(__dirname, '..', 'cache', 'tts');
+// Cache location. Holds .mp3 files keyed by sha256(voice+':'+text+':'+pinyin) — see cacheKey.
+// `TTS_CACHE_DIR` points it at a persistent volume on PPE (docker-compose.ppe.yml → the
+// `tts_cache` volume at /app/cache/tts). Without it the default resolves INSIDE the build
+// output (<dist>/../cache/tts), which every `up --build` recreates — so each deploy used to
+// wipe every synthesized clip and make the next deals wait on live Google calls. Dev keeps
+// the default, which lands in the bind-mounted server/cache/tts and so already persists.
+const CACHE_DIR = process.env.TTS_CACHE_DIR || path.resolve(__dirname, '..', 'cache', 'tts');
+
+// Upper bound on one Google synthesize call. The pre-warm AWAITS synthesis before an
+// endpoint responds (flp deal, game board, acp pack refill), so a hung upstream used to
+// hang that endpoint with it. A short word synthesizes in well under a second; past this
+// the call is abandoned, the word is marked hasAudio=false, and the client's own request
+// gets a fresh attempt later.
+const GOOGLE_TTS_TIMEOUT_MS = 8000;
 
 export interface SynthesisResult {
   audio: Buffer;
@@ -239,6 +251,25 @@ export class TTSService {
   }
 
   /**
+   * Make sure the clip is on disk WITHOUT reading it back — the pre-warm path, which only
+   * needs the file to exist (the client fetches the bytes later). A hit costs one
+   * `fs.access` instead of `synthesize`'s full `fs.readFile`. A miss synthesizes (and
+   * persists) as usual. Referenced by: `CardAudioService.prewarm`.
+   */
+  async ensureCached(
+    text: string,
+    lang: string = 'zh-CN',
+    pinyin?: string | null,
+    voiceKey: TTSVoiceKey = 'default',
+  ): Promise<Omit<SynthesisResult, 'audio'>> {
+    if (await this.hasCachedFile(text, lang, pinyin, voiceKey)) {
+      return { cacheHit: true, voice: this.voiceTag(lang, voiceKey) };
+    }
+    const { cacheHit, voice } = await this.synthesize(text, lang, pinyin, voiceKey);
+    return { cacheHit, voice };
+  }
+
+  /**
    * Whether a cached MP3 file already exists on disk for this (voice, text, pinyin).
    * Used as the source-of-truth check; the DB's ttsVoice column is just a hint.
    */
@@ -320,6 +351,8 @@ export class TTSService {
         voice: { languageCode, name: voice },
         audioConfig: { audioEncoding: 'MP3' },
       }),
+      // Rejects with a TimeoutError — see GOOGLE_TTS_TIMEOUT_MS.
+      signal: AbortSignal.timeout(GOOGLE_TTS_TIMEOUT_MS),
     });
 
     if (!res.ok) {

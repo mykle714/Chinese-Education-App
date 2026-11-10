@@ -1,8 +1,8 @@
 /**
  * useHorizontalScrollArrows — the "a mouse cannot swipe" problem, solved once.
  *
- * LAYER: shared client logic (`src/hooks/`, per FRONTEND_LAYERING.md — importers: the
- * beginner keyboard's candidate row and the iw composer's hint tray).
+ * LAYER: shared client logic (`src/hooks/`, per FRONTEND_LAYERING.md). Importer today: the
+ * beginner keyboard's candidate row (Immersive World's hint tray was the second, removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md).
  *
  * ── Why this exists ──────────────────────────────────────────────────────────────────
  * The app has several horizontally-overflowing strips of chips. A touch user just swipes
@@ -38,7 +38,7 @@
  * scroll an overflowing strip. No keyboard, no index, no wrapping — they share nothing but the
  * word "arrow".
  *
- * Referenced by: docs/BEGINNER_KEYBOARD.md § 6p, docs/IMMERSIVE_WORLD.md § 9a.
+ * Referenced by: docs/BEGINNER_KEYBOARD.md § 6p.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMediaQuery } from '@mui/material';

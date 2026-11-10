@@ -10,7 +10,7 @@ import db from '../../db.js';
 import { DICT_COLS, DICT_JOIN } from '../shared/dictJoin.js';
 import { vetTableForLanguage, vetReadFrom, VET_PHYSICAL_TABLES, vetSortedClause, WRITING_MASTERY_SELECT } from '../shared/vetTable.js';
 
-/** One raw used-in row (findUsedInForCharacter and findWritingUsedInForCharacter). */
+/** One raw used-in row (findUsedInForCharacter and the batch used-in reads). */
 type UsedInRow = {
   vocabEntryId: number | null;
   entryKey: string;
@@ -20,6 +20,34 @@ type UsedInRow = {
   selectedSense: string | null;
   frequencyScore: number | null;
 };
+
+/** One raw related-words row (findRelatedBySharedCharacters and its batch form). */
+type RelatedRow = {
+  id: number;
+  entrykey: string;
+  selectedSense: string | null;
+  pronunciation: string | null;
+  definition: string | null;
+  definitionClusters: DefinitionCluster[] | null;
+};
+
+/** A related word as it travels on a card (`VocabEntry.relatedWords`). */
+export type RelatedWord = { id: number; entryKey: string; pronunciation: string | null; definition: string | null };
+
+/**
+ * Map a related-words row to the wire shape. These rows are the user's OWN cards, so the
+ * list is a dd surface: both fields go through the shared sense resolvers (chosen sense →
+ * default), so a heteronym's pinyin follows the same pick as its gloss. The clusters
+ * themselves stay server-side. See docs/DEFINITION_CLUSTERS.md.
+ */
+function toRelatedWord(row: RelatedRow): RelatedWord {
+  return {
+    id: row.id,
+    entryKey: row.entrykey,
+    pronunciation: resolveDisplayPronunciation(row),
+    definition: resolveDisplayDefinition(row) || null,
+  };
+}
 
 /**
  * Map a used-in row to the wire shape. Saved (vet) rows read out their CHOSEN sense's
@@ -35,6 +63,220 @@ function toUsedInItem(row: UsedInRow): UsedInItem {
     definition: resolveDisplayDefinition(row) || null,
     frequencyScore: row.frequencyScore ?? null,
   };
+}
+
+/**
+ * The ordering of a used-in list: the user's saved words first, then commonality
+ * (unscored last), then shortest word, then entryKey as a deterministic tiebreak — so
+ * windows never overlap or skip. `a` is the row alias; it must expose `is_user`,
+ * `"frequencyScore"` and `"entryKey"`. Shared by both used-in builders and by the outer
+ * ORDER BY of their batch forms, which must re-impose it across the LATERAL.
+ */
+function usedInOrder(a: string): string {
+  return `${a}.is_user DESC, ${a}."frequencyScore" DESC NULLS LAST, char_length(${a}."entryKey") ASC, ${a}."entryKey" ASC`;
+}
+
+/**
+ * "Det word `col` contains the character(s) `ch`", in the form the GIN index
+ * `idx_dictionaryentries_zh_word1_chars` (migration 186) can serve. The `@>` over the
+ * character arrays narrows by index; `position` then re-checks the exact substring, which
+ * only matters if `ch` is ever more than one character (`@>` alone ignores order and
+ * adjacency). `col` must be `<alias>.word1` so the left side matches the index expression
+ * `string_to_array(word1, NULL)`. Without the index this is still correct, just a scan.
+ * Used by pass 2 of `usedInSql` and `writingUsedInSql`; docs/DEFERRED_WORK.md has the
+ * measurements behind it.
+ */
+function charsContainClause(col: string, ch: string): string {
+  return `string_to_array(${col}, NULL) @> string_to_array(${ch}, NULL)
+          AND position(${ch} IN ${col}) > 0`;
+}
+
+/**
+ * The eip used-in query for ONE character, up to (not including) its LIMIT — see
+ * `VocabEntryDAL.findUsedInForCharacter` for the two passes and the 3–5 gate. `$1` is the
+ * userId and `$2` the language in every caller; `ch` is the SQL expression for the
+ * character: a bound parameter (`'$3'`) in the single form, the unnested column (`'c.ch'`)
+ * in `findUsedInForCharacters`. Always a fixed literal at the call site.
+ */
+function usedInSql(ch: string): string {
+  return `
+      SELECT
+        m."vocabEntryId",
+        m."entryKey",
+        m.pronunciation,
+        m.definition,
+        m."definitionClusters",
+        m."selectedSense",
+        m."frequencyScore",
+        m.is_user
+      FROM (
+        -- Pass 1: the user's saved words (vet) containing the char.
+        SELECT
+          ve.id AS "vocabEntryId",
+          ve."entryKey",
+          de.pronunciation,
+          de.definition,
+          de."definitionClusters",
+          ve."selectedSense",
+          de."frequencyScore",
+          1 AS is_user
+        FROM vocabentries_zh ve
+        LEFT JOIN LATERAL (
+          SELECT pronunciation, definitions->>0 AS definition, "definitionClusters", "frequencyScore"
+          FROM dictionaryentries_zh
+          WHERE word1 = ve."entryKey" AND language = ve.language
+          LIMIT 1
+        ) de ON true
+        WHERE ve."userId" = $1
+          AND ve.language = $2
+          AND ve."entryKey" <> ${ch}
+          AND position(${ch} IN ve."entryKey") > 0
+          AND char_length(ve."entryKey") <= 4
+          -- Pass 1 is "words YOU have", so sorted only. A provisional card falls
+          -- through to pass 2 and is offered as a plain dictionary word instead.
+          AND ${vetSortedClause()}
+
+        UNION ALL
+
+        -- Pass 2: global det words containing the char, excluding the user's vet words.
+        SELECT
+          NULL::int AS "vocabEntryId",
+          d.word1 AS "entryKey",
+          d.pronunciation,
+          d.definitions->>0 AS definition,
+          -- Pass-2 words are NOT in the user's library, so there is no selectedSense to
+          -- honor -- but that is not the same as having no sense to resolve. The resolvers'
+          -- DEFAULT branch (highest-frequency cluster) is exactly what every other
+          -- det-fallback surface uses, so the clusters travel and only selectedSense is
+          -- typed NULL. Without them a pass-2 row falls back to the raw pronunciation
+          -- column, which is the unreviewed CEDICT seed: zhong4dian3 would list with the
+          -- chong2dian3 reading here while the same word's flashcard says zhong4dian3.
+          d."definitionClusters",
+          NULL::text AS "selectedSense",
+          d."frequencyScore",
+          0 AS is_user
+        FROM dictionaryentries_zh d
+        WHERE d.language = $2
+          AND char_length(d.word1) > 1
+          AND char_length(d.word1) <= 4
+          AND d.word1 <> ${ch}
+          AND ${charsContainClause('d.word1', ch)}
+          AND NOT EXISTS (
+            SELECT 1 FROM vocabentries_zh ve
+            WHERE ve."userId" = $1 AND ve.language = $2 AND ve."entryKey" = d.word1
+              AND ${vetSortedClause()}
+          )
+      ) m
+      -- Only surface words a learner would not be surprised to hear (frequencyScore
+      -- 3–5 on the post-2026-08-28 axis); this also drops null-score rows, so an
+      -- in-library word with no det score is filtered out too.
+      WHERE m."frequencyScore" BETWEEN 3 AND 5
+      ORDER BY ${usedInOrder('m')}`;
+}
+
+/**
+ * The writing-bar used-in query for ONE character (pass 1 ungated, pass 2 frequencyScore
+ * 4–5, no outer gate) — see `findWritingUsedInForCharacters`. `ch` as in `usedInSql`.
+ */
+function writingUsedInSql(ch: string): string {
+  return `
+      SELECT
+        m."vocabEntryId",
+        m."entryKey",
+        m.pronunciation,
+        m.definition,
+        m."definitionClusters",
+        m."selectedSense",
+        m."frequencyScore",
+        m.is_user
+      FROM (
+        -- Pass 1: the user's saved words (vet) containing the char. No frequency gate.
+        SELECT
+          ve.id AS "vocabEntryId",
+          ve."entryKey",
+          de.pronunciation,
+          de.definition,
+          de."definitionClusters",
+          ve."selectedSense",
+          de."frequencyScore",
+          1 AS is_user
+        FROM vocabentries_zh ve
+        LEFT JOIN LATERAL (
+          SELECT pronunciation, definitions->>0 AS definition, "definitionClusters", "frequencyScore"
+          FROM dictionaryentries_zh
+          WHERE word1 = ve."entryKey" AND language = ve.language
+          LIMIT 1
+        ) de ON true
+        WHERE ve."userId" = $1
+          AND ve.language = $2
+          AND ve."entryKey" <> ${ch}
+          AND position(${ch} IN ve."entryKey") > 0
+          AND char_length(ve."entryKey") <= 4
+          AND ${vetSortedClause()}
+
+        UNION ALL
+
+        -- Pass 2: everyday dictionary words (frequencyScore 4–5) containing the char,
+        -- excluding the user's sorted vet words (already offered by pass 1). The clusters
+        -- travel so the resolvers' default-sense branch picks the reading (see the same
+        -- note in findUsedInForCharacter).
+        SELECT
+          NULL::int AS "vocabEntryId",
+          d.word1 AS "entryKey",
+          d.pronunciation,
+          d.definitions->>0 AS definition,
+          d."definitionClusters",
+          NULL::text AS "selectedSense",
+          d."frequencyScore",
+          0 AS is_user
+        FROM dictionaryentries_zh d
+        WHERE d.language = $2
+          AND char_length(d.word1) > 1
+          AND char_length(d.word1) <= 4
+          AND d.word1 <> ${ch}
+          AND ${charsContainClause('d.word1', ch)}
+          AND d."frequencyScore" BETWEEN 4 AND 5
+          AND NOT EXISTS (
+            SELECT 1 FROM vocabentries_zh ve
+            WHERE ve."userId" = $1 AND ve.language = $2 AND ve."entryKey" = d.word1
+              AND ${vetSortedClause()}
+          )
+      ) m
+      ORDER BY ${usedInOrder('m')}`;
+}
+
+/**
+ * The related-words query for ONE word, up to its LIMIT — see
+ * `VocabEntryDAL.findRelatedBySharedCharacters`. `word` is the SQL expression for the word
+ * and `pattern` for its `[chars]` regex class; bound parameters in the single form,
+ * expressions over the unnested column in `findRelatedBySharedCharactersForWords`.
+ */
+function relatedSql(word: string, pattern: string): string {
+  return `
+      SELECT
+        ve.id,
+        ve."entryKey" as entrykey,
+        ve."selectedSense",
+        de.pronunciation,
+        de.definition,
+        de."definitionClusters"
+      FROM vocabentries_zh ve
+      LEFT JOIN LATERAL (
+        SELECT pronunciation, definitions->>0 as definition, "definitionClusters"
+        FROM dictionaryentries_zh
+        WHERE word1 = ve."entryKey" AND language = ve.language LIMIT 1
+      ) de ON true
+      WHERE ve."userId" = $1
+        AND ve.language = $2
+        AND ve."entryKey" != ${word}
+        AND ve."entryKey" ~ ${pattern}
+        -- Sorted rows only. Previously written as != 'skip', which (given the old
+        -- 'library'|'skip'|NULL domain) already resolved to library-only since
+        -- NULL != 'skip' is unknown. Skips now live in discover_skips (migration 80).
+        -- Provisional cards (migration 140) are excluded: "related words you already
+        -- know" must mean the user's own deck.
+        AND ${vetSortedClause()}
+      ORDER BY ve.id ASC`;
 }
 
 /**
@@ -449,27 +691,35 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   }
 
   /**
+   * Run one statement on the caller's transaction client when given, else on a pooled
+   * client of its own (docs/BACKEND_LAYERING.md § 3 — the client moves up a layer, the
+   * SQL never does).
+   */
+  private async runOn<T>(client: PoolClient | undefined, sql: string, params: unknown[]): Promise<T[]> {
+    if (client) return (await client.query(sql, params)).rows as T[];
+    return (await this.dbManager.executeQuery<T>((c) => c.query(sql, params))).recordset;
+  }
+
+  /**
    * Find vocabulary entry by user and key
    */
   // Docs: docs/LEAF_NODE_PAGES.md § "Read-only dictionary cdp" (the add/added toggle).
   async findBucketRowByUserAndKey(
     userId: string,
     entryKey: string,
-    language: string
+    language: string,
+    client?: PoolClient
   ): Promise<{ id: number; starterPackBucket: StarterPackBucket | null } | null> {
     if (!userId) throw new ValidationError('userId is required');
     if (!entryKey) throw new ValidationError('entryKey is required');
     if (!language) throw new ValidationError('language is required');
 
-    const table = vetTableForLanguage(language);
-    const result = await this.dbManager.executeQuery<{ id: number; starterPackBucket: StarterPackBucket | null }>(async (client) => {
-      return await client.query(
-        `SELECT id, "starterPackBucket" FROM ${table}
-          WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3`,
-        [userId, entryKey, language]
-      );
-    });
-    return result.recordset[0] ?? null;
+    const rows = await this.runOn<{ id: number; starterPackBucket: StarterPackBucket | null }>(client,
+      `SELECT id, "starterPackBucket" FROM ${vetTableForLanguage(language)}
+        WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3`,
+      [userId, entryKey, language]
+    );
+    return rows[0] ?? null;
   }
 
   // Docs: docs/PROVISIONAL_CARDS.md (in-place promotion). Moved out of
@@ -495,17 +745,89 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     return result.recordset[0].id;
   }
 
-  async promoteRowToLibrary(id: number, language: string): Promise<void> {
+  async promoteRowToLibrary(id: number, language: string, client?: PoolClient): Promise<void> {
     if (!id) throw new ValidationError('id is required');
     if (!language) throw new ValidationError('language is required');
 
+    await this.runOn(client,
+      `UPDATE ${vetTableForLanguage(language)} SET "starterPackBucket" = 'library' WHERE id = $1`,
+      [id]
+    );
+  }
+
+  // Docs: docs/STUDY_CHALLENGE.md § 3.3 (accept materialises the words).
+  async insertLibraryRowIfAbsent(
+    userId: string,
+    entryKey: string,
+    language: string,
+    client?: PoolClient
+  ): Promise<number | null> {
+    if (!userId) throw new ValidationError('userId is required');
+    if (!entryKey) throw new ValidationError('entryKey is required');
+    if (!language) throw new ValidationError('language is required');
+
+    // ON CONFLICT covers the race where the learner sorts the same word in another tab
+    // between the caller's existence check and this INSERT; the DO UPDATE is a no-op
+    // write whose only job is to make RETURNING produce the existing row's id.
     const table = vetTableForLanguage(language);
-    await this.dbManager.executeQuery(async (client) => {
-      return await client.query(
-        `UPDATE ${table} SET "starterPackBucket" = 'library' WHERE id = $1`,
-        [id]
-      );
-    });
+    const rows = await this.runOn<{ id: number }>(client,
+      `INSERT INTO ${table} ("userId", "entryKey", language, "starterPackBucket")
+       VALUES ($1, $2, $3, 'library')
+       ON CONFLICT ("userId", "entryKey", language)
+         DO UPDATE SET "starterPackBucket" = ${table}."starterPackBucket"
+       RETURNING id`,
+      [userId, entryKey, language]
+    );
+    return rows[0]?.id ?? null;
+  }
+
+  // Docs: docs/PROVISIONAL_CARDS.md (undoing a sort that promoted a lent card).
+  async undoSortedRow(
+    userId: string,
+    entryKey: string,
+    language: string
+  ): Promise<{ id: number; demoted: boolean } | null> {
+    if (!userId) throw new ValidationError('userId is required');
+    if (!entryKey) throw new ValidationError('entryKey is required');
+    if (!language) throw new ValidationError('language is required');
+
+    // One statement, so the "has marks?" check and the write cannot race a mark:
+    //   - the row carries marks → demote it to 'provisional' (progress kept; discover
+    //     treats provisional as unsorted, so the card is offered again);
+    //   - no marks             → delete it, so a mis-tap leaves no trace.
+    // `typedMarkHistory` defaults to '{}' (migration 101) and every track is an array, so
+    // "has marks" is "any track is non-empty".
+    const table = vetTableForLanguage(language);
+    const rows = await this.runOn<{ id: number; demoted: boolean }>(undefined, `
+      WITH target AS (
+        SELECT id,
+               EXISTS (
+                 SELECT 1
+                 FROM jsonb_each("typedMarkHistory") AS t(track, marks)
+                 WHERE jsonb_array_length(marks) > 0
+               ) AS "hasMarks"
+        FROM ${table}
+        WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3
+      ),
+      demoted AS (
+        UPDATE ${table} v
+        SET "starterPackBucket" = 'provisional'
+        FROM target
+        WHERE v.id = target.id AND target."hasMarks"
+        RETURNING v.id
+      ),
+      removed AS (
+        DELETE FROM ${table} v
+        USING target
+        WHERE v.id = target.id AND NOT target."hasMarks"
+        RETURNING v.id
+      )
+      SELECT id, TRUE AS demoted FROM demoted
+      UNION ALL
+      SELECT id, FALSE AS demoted FROM removed
+    `, [userId, entryKey, language]);
+    if (rows.length === 0) return null;
+    return { id: rows[0].id, demoted: rows[0].demoted === true };
   }
 
   // Docs: docs/PROVISIONAL_CARDS.md (demotion), docs/LEAF_NODE_PAGES.md § "Read-only dictionary cdp".
@@ -952,7 +1274,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     word: string,
     language: string,
     limit: number = 4
-  ): Promise<Array<{ id: number; entryKey: string; pronunciation: string | null; definition: string | null }>> {
+  ): Promise<RelatedWord[]> {
     if (!word || word.trim().length === 0) {
       return [];
     }
@@ -974,56 +1296,55 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     const pattern: string = `[${characters.join('')}]`;
 
     const query: string = `
-      SELECT
-        ve.id,
-        ve."entryKey" as entrykey,
-        ve."selectedSense",
-        de.pronunciation,
-        de.definition,
-        de."definitionClusters"
-      FROM vocabentries_zh ve
-      LEFT JOIN LATERAL (
-        SELECT pronunciation, definitions->>0 as definition, "definitionClusters"
-        FROM dictionaryentries_zh
-        WHERE word1 = ve."entryKey" AND language = ve.language LIMIT 1
-      ) de ON true
-      WHERE ve."userId" = $1
-        AND ve.language = $2
-        AND ve."entryKey" != $3
-        AND ve."entryKey" ~ $4
-        -- Sorted rows only. Previously written as != 'skip', which (given the old
-        -- 'library'|'skip'|NULL domain) already resolved to library-only since
-        -- NULL != 'skip' is unknown. Skips now live in discover_skips (migration 80).
-        -- Provisional cards (migration 140) are excluded: "related words you already
-        -- know" must mean the user's own deck.
-        AND ${vetSortedClause()}
-      ORDER BY ve.id ASC
+      ${relatedSql('$3', '$4')}
       LIMIT $5
     `;
 
-    const result = await this.dbManager.executeQuery<{
-      id: number;
-      entrykey: string;
-      selectedSense: string | null;
-      pronunciation: string | null;
-      definition: string | null;
-      definitionClusters: DefinitionCluster[] | null;
-    }>(async (client) => {
+    const result = await this.dbManager.executeQuery<RelatedRow>(async (client) => {
       return await client.query(query, [userId, language, word, pattern, limit]);
     });
 
-    return result.recordset.map((row) => ({
-      id: row.id,
-      entryKey: row.entrykey,
-      // Sense-resolved for the same reason the definition below is: a heteronym reads
-      // differently per sense, so the pinyin must follow the pick the gloss follows.
-      pronunciation: resolveDisplayPronunciation(row),
-      // These rows are the user's OWN cards, so the related-words list is a dd surface:
-      // flatten through the shared resolver (chosen sense -> definitions[0] fallback) rather
-      // than shipping det's definitions[0]. The clusters themselves stay server-side.
-      // See docs/DEFINITION_CLUSTERS.md.
-      definition: resolveDisplayDefinition(row) || null,
-    }));
+    return result.recordset.map(toRelatedWord);
+  }
+
+  /**
+   * `findRelatedBySharedCharacters` for EVERY word in `words`, in ONE query (`unnest`
+   * LATERAL-joined to the same per-word query, so each word gets exactly the rows the
+   * single form returns). Exists so a deal enriches all its cards on one pool client
+   * rather than one each (docs/DEFERRED_WORK.md, scaling table item 2). zh only; keys are
+   * the trimmed words, each mapped to its list ([] when none).
+   *
+   * Referenced by: OnDeckVocabService.enrichMultipleWithRelatedWords.
+   */
+  async findRelatedBySharedCharactersForWords(
+    userId: string,
+    words: string[],
+    language: string,
+    limit: number = 4
+  ): Promise<Map<string, RelatedWord[]>> {
+    const byWord = new Map<string, RelatedWord[]>();
+    if (language !== 'zh') return byWord;
+    const unique = [...new Set(words.map((w) => (w ?? '').trim()).filter((w) => w.length > 0))];
+    if (unique.length === 0) return byWord;
+    for (const w of unique) byWord.set(w, []);
+
+    // The regex class is the word's own characters, exactly as the single form builds it.
+    // Parenthesised: `~` and `||` share a precedence level in Postgres and associate left,
+    // so a bare `x ~ '[' || w.word || ']'` would parse as `(x ~ '[') || …`.
+    const query: string = `
+      SELECT w.word AS "forWord", r.*
+      FROM unnest($3::text[]) AS w(word)
+      CROSS JOIN LATERAL (
+        ${relatedSql('w.word', "('[' || w.word || ']')")}
+        LIMIT $4
+      ) r
+      ORDER BY w.word, r.id ASC
+    `;
+    const result = await this.dbManager.executeQuery<RelatedRow & { forWord: string }>(async (client) => {
+      return await client.query(query, [userId, language, unique, limit]);
+    });
+    for (const row of result.recordset) byWord.get(row.forWord)?.push(toRelatedWord(row));
+    return byWord;
   }
 
   /**
@@ -1048,11 +1369,14 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
    * first, then by commonality, then shortest-word-first, with entryKey as a final
    * deterministic tiebreak so pagination windows never overlap or skip.
    *
-   * `position(...) > 0` is a plain substring check — no regex meta to escape.
+   * Pass 1 filters with `position(...) > 0` (a plain substring check, no regex meta to
+   * escape; the user's vet is small). Pass 2 goes through `charsContainClause` so the
+   * migration-186 GIN index serves it instead of a full det scan.
    * Chinese-only; returns [] for non-single-character input or non-zh language.
    *
    * Referenced by: DictionaryController.usedIn (paginated endpoint) and
-   * .lookupTerm / OnDeckVocabService.enrichWithUsedIn (offset-0 preview).
+   * .lookupTerm (offset-0 preview). The flp deal uses the batch form, findUsedInForCharacters,
+   * which runs this same query per character (usedInSql).
    */
   async findUsedInForCharacter(
     userId: string,
@@ -1069,77 +1393,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     const ch: string = chars[0];
 
     const query: string = `
-      SELECT
-        m."vocabEntryId",
-        m."entryKey",
-        m.pronunciation,
-        m.definition,
-        m."definitionClusters",
-        m."selectedSense",
-        m."frequencyScore"
-      FROM (
-        -- Pass 1: the user's saved words (vet) containing the char.
-        SELECT
-          ve.id AS "vocabEntryId",
-          ve."entryKey",
-          de.pronunciation,
-          de.definition,
-          de."definitionClusters",
-          ve."selectedSense",
-          de."frequencyScore",
-          1 AS is_user
-        FROM vocabentries_zh ve
-        LEFT JOIN LATERAL (
-          SELECT pronunciation, definitions->>0 AS definition, "definitionClusters", "frequencyScore"
-          FROM dictionaryentries_zh
-          WHERE word1 = ve."entryKey" AND language = ve.language
-          LIMIT 1
-        ) de ON true
-        WHERE ve."userId" = $1
-          AND ve.language = $2
-          AND ve."entryKey" <> $3
-          AND position($3 IN ve."entryKey") > 0
-          AND char_length(ve."entryKey") <= 4
-          -- Pass 1 is "words YOU have", so sorted only. A provisional card falls
-          -- through to pass 2 and is offered as a plain dictionary word instead.
-          AND ${vetSortedClause()}
-
-        UNION ALL
-
-        -- Pass 2: global det words containing the char, excluding the user's vet words.
-        SELECT
-          NULL::int AS "vocabEntryId",
-          d.word1 AS "entryKey",
-          d.pronunciation,
-          d.definitions->>0 AS definition,
-          -- Pass-2 words are NOT in the user's library, so there is no selectedSense to
-          -- honor -- but that is not the same as having no sense to resolve. The resolvers'
-          -- DEFAULT branch (highest-frequency cluster) is exactly what every other
-          -- det-fallback surface uses, so the clusters travel and only selectedSense is
-          -- typed NULL. Without them a pass-2 row falls back to the raw pronunciation
-          -- column, which is the unreviewed CEDICT seed: zhong4dian3 would list with the
-          -- chong2dian3 reading here while the same word's flashcard says zhong4dian3.
-          d."definitionClusters",
-          NULL::text AS "selectedSense",
-          d."frequencyScore",
-          0 AS is_user
-        FROM dictionaryentries_zh d
-        WHERE d.language = $2
-          AND char_length(d.word1) > 1
-          AND char_length(d.word1) <= 4
-          AND d.word1 <> $3
-          AND position($3 IN d.word1) > 0
-          AND NOT EXISTS (
-            SELECT 1 FROM vocabentries_zh ve
-            WHERE ve."userId" = $1 AND ve.language = $2 AND ve."entryKey" = d.word1
-              AND ${vetSortedClause()}
-          )
-      ) m
-      -- Only surface words a learner would not be surprised to hear (frequencyScore
-      -- 3–5 on the post-2026-08-28 axis); this also drops null-score rows, so an
-      -- in-library word with no det score is filtered out too.
-      WHERE m."frequencyScore" BETWEEN 3 AND 5
-      ORDER BY m.is_user DESC, m."frequencyScore" DESC NULLS LAST, char_length(m."entryKey") ASC, m."entryKey" ASC
+      ${usedInSql('$3')}
       LIMIT $4 OFFSET $5
     `;
 
@@ -1151,8 +1405,8 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   }
 
   /**
-   * The writing flp's variant of findUsedInForCharacter — same two passes, different
-   * frequency gates:
+   * The writing flp's variant of the used-in list, for EVERY single character in `chars`
+   * at once — same two passes as findUsedInForCharacter, different frequency gates:
    *   - Pass 1 (`is_user = 1`): the user's own sorted vet words (≤4 chars) containing
    *     the character, with NO frequencyScore gate — words the learner chose are not
    *     vetted for commonality.
@@ -1160,101 +1414,77 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
    *     that are not already in the user's sorted vet, gated to frequencyScore 4–5 —
    *     stricter than the eip list's 3–5, so a dictionary word only fills a slot when
    *     it is genuinely everyday.
-   * Ordered saved-first, then commonality (unscored last), then shortest, then
-   * entryKey, so the leading window is stable. Only the leading window is ever read
-   * (no offset — the hint is not paginated).
+   * Up to `limit` per character, ordered by `usedInOrder`. Only the leading window is
+   * ever read (no offset — the hint is not paginated).
    *
    * Powers the writing flp's used-in hint, spoken by the hint pawn (`VocabEntry.writingUsedIn`;
    * client: hintPawn/pawnHints.ts → `pawnHintFor`, docs/HINT_PAWN.md).
-   * Chinese-only; [] for non-single-char input.
+   * Chinese-only. Keys of the result are the characters asked for; one with no words maps
+   * to []. Non-single-character inputs are ignored.
    *
-   * Referenced by: OnDeckVocabService.enrichWithUsedIn (writing bar only).
+   * Referenced by: OnDeckVocabService.enrichMultipleWithUsedIn (writing bar only).
    * Docs: docs/WRITING_PRACTICE_REWORK.md § 3b "Used-in hints".
    */
-  async findWritingUsedInForCharacter(
+  async findWritingUsedInForCharacters(
     userId: string,
-    character: string,
+    chars: string[],
     language: string,
     limit: number = 2
-  ): Promise<UsedInItem[]> {
-    if (language !== 'zh') return [];
-    if (!character) return [];
-    const chars: string[] = [...character];
-    if (chars.length !== 1) return [];
+  ): Promise<Map<string, UsedInItem[]>> {
+    return this.runPerCharacterUsedIn(writingUsedInSql, userId, chars, language, limit);
+  }
 
-    // Same two-pass shape as findUsedInForCharacter; only the frequency gates differ
-    // (pass 1 ungated, pass 2 4–5 instead of the shared outer 3–5).
+  /**
+   * The eip used-in preview (offset 0) for EVERY single character in `chars`, in ONE
+   * query: `unnest(chars)` LATERAL-joined to the same per-character query
+   * `findUsedInForCharacter` runs, so each character gets exactly the rows the single
+   * form would return. Exists so a deal enriches all its cards on one pool client rather
+   * than one each (docs/DEFERRED_WORK.md, scaling table item 2).
+   *
+   * Referenced by: OnDeckVocabService.enrichMultipleWithUsedIn.
+   */
+  async findUsedInForCharacters(
+    userId: string,
+    chars: string[],
+    language: string,
+    limit: number = 4
+  ): Promise<Map<string, UsedInItem[]>> {
+    return this.runPerCharacterUsedIn(usedInSql, userId, chars, language, limit);
+  }
+
+  /**
+   * Shared runner for the two batch used-in reads: dedupes the single-character inputs,
+   * runs `buildSql('c.ch')` once per character through a LATERAL join, and groups the rows
+   * back by character. The outer ORDER BY re-imposes `usedInOrder` because row order out
+   * of a LATERAL join is not guaranteed.
+   */
+  private async runPerCharacterUsedIn(
+    buildSql: (ch: string) => string,
+    userId: string,
+    chars: string[],
+    language: string,
+    limit: number
+  ): Promise<Map<string, UsedInItem[]>> {
+    const byChar = new Map<string, UsedInItem[]>();
+    if (language !== 'zh') return byChar;
+    const unique = [...new Set(chars.filter((c) => !!c && [...c].length === 1))];
+    if (unique.length === 0) return byChar;
+    for (const c of unique) byChar.set(c, []);
+
     const query: string = `
-      SELECT
-        m."vocabEntryId",
-        m."entryKey",
-        m.pronunciation,
-        m.definition,
-        m."definitionClusters",
-        m."selectedSense",
-        m."frequencyScore"
-      FROM (
-        -- Pass 1: the user's saved words (vet) containing the char. No frequency gate.
-        SELECT
-          ve.id AS "vocabEntryId",
-          ve."entryKey",
-          de.pronunciation,
-          de.definition,
-          de."definitionClusters",
-          ve."selectedSense",
-          de."frequencyScore",
-          1 AS is_user
-        FROM vocabentries_zh ve
-        LEFT JOIN LATERAL (
-          SELECT pronunciation, definitions->>0 AS definition, "definitionClusters", "frequencyScore"
-          FROM dictionaryentries_zh
-          WHERE word1 = ve."entryKey" AND language = ve.language
-          LIMIT 1
-        ) de ON true
-        WHERE ve."userId" = $1
-          AND ve.language = $2
-          AND ve."entryKey" <> $3
-          AND position($3 IN ve."entryKey") > 0
-          AND char_length(ve."entryKey") <= 4
-          AND ${vetSortedClause()}
-
-        UNION ALL
-
-        -- Pass 2: everyday dictionary words (frequencyScore 4–5) containing the char,
-        -- excluding the user's sorted vet words (already offered by pass 1). The clusters
-        -- travel so the resolvers' default-sense branch picks the reading (see the same
-        -- note in findUsedInForCharacter).
-        SELECT
-          NULL::int AS "vocabEntryId",
-          d.word1 AS "entryKey",
-          d.pronunciation,
-          d.definitions->>0 AS definition,
-          d."definitionClusters",
-          NULL::text AS "selectedSense",
-          d."frequencyScore",
-          0 AS is_user
-        FROM dictionaryentries_zh d
-        WHERE d.language = $2
-          AND char_length(d.word1) > 1
-          AND char_length(d.word1) <= 4
-          AND d.word1 <> $3
-          AND position($3 IN d.word1) > 0
-          AND d."frequencyScore" BETWEEN 4 AND 5
-          AND NOT EXISTS (
-            SELECT 1 FROM vocabentries_zh ve
-            WHERE ve."userId" = $1 AND ve.language = $2 AND ve."entryKey" = d.word1
-              AND ${vetSortedClause()}
-          )
-      ) m
-      ORDER BY m.is_user DESC, m."frequencyScore" DESC NULLS LAST, char_length(m."entryKey") ASC, m."entryKey" ASC
-      LIMIT $4
+      SELECT c.ch AS "forChar", u.*
+      FROM unnest($3::text[]) AS c(ch)
+      CROSS JOIN LATERAL (
+        ${buildSql('c.ch')}
+        LIMIT $4
+      ) u
+      ORDER BY c.ch, ${usedInOrder('u')}
     `;
-
-    const result = await this.dbManager.executeQuery<UsedInRow>(async (client) => {
-      return await client.query(query, [userId, language, chars[0], limit]);
+    const result = await this.dbManager.executeQuery<UsedInRow & { forChar: string }>(async (client) => {
+      return await client.query(query, [userId, language, unique, limit]);
     });
-
-    return result.recordset.map(toUsedInItem);
+    for (const row of result.recordset) byChar.get(row.forChar)?.push(toUsedInItem(row));
+    return byChar;
   }
 
   /**

@@ -49,7 +49,7 @@ The model is two phases:
 ## 2. What actually gates a card in the discover flows
 
 Layer: **service** — `server/services/StarterPacksService.ts`. Every supply query
-(`_fetchSupplyRows`, `listQuickMarkCards`) applies two hard gates:
+(`StarterPacksDAL.findSupplyRows`, `findQuickMarkPage`) applies two hard gates:
 
 | Gate | SQL fragment | Passing rows (dev zh) |
 |---|---|---|
@@ -504,7 +504,27 @@ both the runtime trigger and the manual CLI):
    a re-affirmation of an already-set flag — the promotion path still matters for the
    manual `--words=` CLI, which targets rows regardless of state. The word drops out of
    the candidate predicate and is complete where it was written. A step that exits non-zero aborts that word (no
-   promotion), leaving it a candidate for the next drain.
+   promotion), leaving it a candidate for the next drain, and the worker then exits **2**
+   (0 = every word ran clean, 1 = the runner itself crashed).
+
+**Failure visibility and back-off (runtime trigger).** A step that crashes never stamps,
+so its word stays a candidate and every validator lookup would re-spawn the worker. Two
+guards in `LazyEnrichmentService`:
+- The worker's stdout/stderr are appended to `server/logs/lazy-enrichment.log`, one
+  `=== <time> lazy-enrich "<word>" ===` header per spawn (`openWorkerLog`). A nonzero
+  exit, or a kill by signal, logs `[LazyEnrich] worker for "<word>" exited <code>` to the
+  server log.
+- That word is then skipped for an hour (`FAILURE_BACKOFF_MS`, the in-process
+  `failedUntil` map, like `inFlight`). Other words are unaffected; a restart clears it.
+
+Covered by `server/__tests__/lazyEnrichmentTrigger.test.ts`.
+
+**Steps run inside the backend container**, where `server/` is `/app` and the repo root
+is mounted separately at `/app/project-root`. A step that reads a repo-root file (the
+client dependency `node_modules/hanzi-writer-data`, a committed `src/` asset) must take
+the root from `scripts/backfill/shared/lib/repoRoot.js`, not by walking up from
+`__dirname`, which lands on `/`. `backfill-superposition-groups.js` did the latter until
+2026-11-09, so it crashed on every spawn and left every word a permanent candidate.
 
 Bounding spend: the runtime trigger fires **one word per validator open/sort**, deduped
 by the in-process `inFlight` set (concurrent triggers for the same word collapse to one
@@ -643,10 +663,18 @@ still surfaced *after* that step's batch completes and *before* the dependent
 - `database/migrations/110-add-sortable-to-zh.sql` — the `sortable` column + backfill + index (§3). **Reverted by `144-drop-sortable-from-zh.sql`.**
 - `server/services/LazyEnrichmentService.ts` — the request-time, validator-gated trigger
   (`triggerForWord`): zh + `isValidator` + manifest-incomplete gate, `inFlight` dedupe,
-  fire-and-forget worker spawn, best-effort PPE no-op (§5).
-- `server/services/StarterPacksService.ts` — `_supplyGate` (`_levelConfig` neighbour),
-  supply gates in `_fetchSupplyRows`, `listQuickMarkCards`, `getProgress`; card mapping
-  (`_rowsToDiscoverCards`), sort commit (`sortCard`) — fires the **on-sort** trigger (§5).
+  fire-and-forget worker spawn, worker output to `logs/lazy-enrichment.log`, one-hour
+  back-off after a failed worker (`failedUntil`), best-effort PPE no-op (§5).
+- `server/scripts/backfill/run-lazy-enrichment.js` — the worker; exit 2 when a word
+  stopped on a failed step (§5).
+- `server/scripts/backfill/shared/lib/repoRoot.js` — the host-vs-container repo root
+  every repo-root-reading step uses (§5).
+- `server/services/StarterPacksService.ts` — card mapping (`_rowsToDiscoverCards`), sort
+  commit (`sortCard`) — fires the **on-sort** trigger (§5). The supply gate itself is
+  `discoverSupplyGate` (`server/dal/shared/dictTable.ts`), applied in
+  `StarterPacksDAL.findSupplyRows` / `findQuickMarkPage` / `countDiscoverable`.
+- `server/dal/implementations/DictionaryDAL.ts` — `isLazyEnrichmentCandidate`: gate 3 of the
+  trigger (discoverable + `buildIncompletePredicate`) (§5).
 - `server/controllers/DictionaryController.ts` — `lookupTerm` fires the **on-open**
   trigger after responding (the eip drill-in / cdp lands here) (§5).
 - `server/scripts/backfill/shared/lib/requiredScripts.js` — the manifests (`REQUIRED_SCRIPTS_ZH`, `REQUIRED_SCRIPTS_ES`, `scriptsForLanguage`) + `buildIncompletePredicate` / `appliesTo` (§5).

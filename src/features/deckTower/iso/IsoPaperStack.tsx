@@ -5,6 +5,7 @@ import { frontContour, prism, toOpenPath, type WorldRect } from "./geometry";
 import type { IsoSurface } from "./light";
 import { useIsoPalette, useIsoProjector } from "./sceneContext";
 import { PAPER_SHEET_THICKNESS, paperStackHeight } from "./paperStackMetrics";
+import { IsoSnowCap, type SnowCover } from "./IsoSnowCap";
 
 /**
  * IsoPaperStack — a stack of notebook paper (docs/ISO_ART_FRAMEWORK.md § "IsoPaperStack").
@@ -45,9 +46,16 @@ interface IsoPaperStackProps {
     progress?: number;
     /** The surface the stack stands on. */
     surface: IsoSurface;
+    /**
+     * Where its shadow falls, when not on `surface` (docs/TOWER_SNOW.md § "The floor"): the
+     * top of the floor's snow it stands in. Null: no shadow (an object buried in the snow).
+     */
+    shadowReceiver?: IsoSurface | null;
+    /** Snow on the top sheet (IsoSnowCap), riding it up through a build-up. Undefined: bare. */
+    snow?: SnowCover;
 }
 
-const IsoPaperStack: React.FC<IsoPaperStackProps> = ({ rect, sheets, surface, progress = 1 }) => {
+const IsoPaperStack: React.FC<IsoPaperStackProps> = ({ rect, sheets, surface, shadowReceiver, progress = 1, snow }) => {
     const proj = useIsoProjector();
     const palette = useIsoPalette();
     const baseZ = surface.z;
@@ -90,7 +98,9 @@ const IsoPaperStack: React.FC<IsoPaperStackProps> = ({ rect, sheets, surface, pr
         <g className="iso-paper-stack">
             {/* Its height stated, so a stack only a sheet or two thick gets a sliver to match
                 rather than the full contact lift, which would float it (light.ts → `contactLift`). */}
-            <IsoShadow footprint={rect} casterZ={baseZ} casterHeight={height} receiver={surface} className="iso-paper-stack__shadow" />
+            {shadowReceiver !== null && (
+                <IsoShadow footprint={rect} casterZ={baseZ} casterHeight={height} receiver={shadowReceiver ?? surface} className="iso-paper-stack__shadow" />
+            )}
             <IsoSolid geometry={body} material={palette.paper} roundedEdge={palette.edgeLight} className="iso-paper-stack__body">
                 {seams && (
                     <path
@@ -105,6 +115,7 @@ const IsoPaperStack: React.FC<IsoPaperStackProps> = ({ rect, sheets, surface, pr
                 <path className="iso-paper-stack__rules" d={face.rules} fill="none" stroke={palette.paperRule} strokeWidth={0.75} strokeLinecap="round" />
                 <path className="iso-paper-stack__margin" d={face.margin} fill="none" stroke={palette.paperMargin} strokeWidth={0.75} strokeLinecap="round" />
             </IsoSolid>
+            {snow && <IsoSnowCap rect={rect} z={topZ} cover={snow} inset={0.03} />}
         </g>
     );
 };

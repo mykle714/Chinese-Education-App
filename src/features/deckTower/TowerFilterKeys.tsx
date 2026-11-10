@@ -6,9 +6,9 @@ import { FONTS } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
 import { keycapPressSx } from "../../theme/keycapPress";
 import { shadeHex } from "../../theme/shadeHex";
-import { roundedEdgeFillet, roundedEdgeRimLight } from "../../theme/roundedEdge";
 import { bandMaterial } from "./iso";
 import { TOWER_DECKS, type TowerDeck } from "./towerDecks";
+import { towerKeyShadow } from "./towerKeycap";
 import { collectionGlyph } from "../flashcards/collectionGlyph";
 import type { BuiltinCollectionEntry } from "../flashcards/builtinCollections";
 
@@ -74,23 +74,9 @@ const GROUND_SHADOW = "var(--tower-cards-ground-shadow)";
 const plateWall = (deck: TowerDeck, face: string) =>
     deck.plateWallSteps ? shadeHex(face, deck.plateWallSteps.right) : bandMaterial(face).right;
 
-/**
- * The key's diagonal wall and cast shadow, with the face `sunk` px down-right of its UP
- * position, and a hairline ROUNDED perimeter (theme/roundedEdge.ts — a 0.5px fillet over
- * the wall's first step, a 1px rim light on the face's top-left edge).
- * The wall is the face's outline stepped 1px along (1, 1), `WALL_UP_PX - sunk` copies in
- * solid wall colour (the card stock's `panelWall` technique, sortCardStock.ts). The shadow
- * lies on the ground, so it stays put while the face drops: its offset from the face
- * shrinks by `sunk` on both axes. Flush (`sunk` = WALL_UP_PX) leaves no wall and no fillet,
- * only the rim light and the shadow under the face.
- */
-const keyShadow = (face: string, wall: string, sunk: number) => {
-    const wallPx = WALL_UP_PX - sunk;
-    const fillet = wallPx > 0 ? [roundedEdgeFillet(face, wall)] : [];
-    const steps = Array.from({ length: wallPx }, (_, i) => `${i + 1}px ${i + 1}px 0 ${wall}`);
-    const cast = CAST_PX - sunk;
-    return [roundedEdgeRimLight(face), ...fillet, ...steps, `${cast}px ${cast}px 0 ${GROUND_SHADOW}`].join(", ");
-};
+/** The keycap's shadow (towerKeycap.ts, shared with the home screen's buttons). */
+const keyShadow = (face: string, wall: string, sunk: number) =>
+    towerKeyShadow(face, wall, sunk, { wallPx: WALL_UP_PX, castReachPx: CAST_REACH_PX }, GROUND_SHADOW);
 
 interface TowerFilterKeysProps {
     /** The lens's two built-in collections, in display order (`useCardLibrary` → `collections`). */

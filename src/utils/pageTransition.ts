@@ -59,8 +59,7 @@ export function supportsViewTransitions(): boolean {
 //          same clone the slide-down uses) shrinks into the circle over the destination.
 //
 // Used by: the Deck Tower's notebook paper stack ↔ the Writing Notebook
-// (docs/DECK_TOWER.md § "The notebook stack"), and its mini sort platform ↔ Add Cards
-// (docs/DECK_TOWER.md § "The sort platform").
+// (docs/DECK_TOWER.md § "The notebook stack").
 
 /** A point on screen, in viewport px (a `getBoundingClientRect` centre). */
 export interface ScreenPoint {
@@ -72,7 +71,7 @@ export interface ScreenPoint {
  * `state.circleFrom` off a circle launch, validated (nav state is untyped). The opened page
  * hands it back to its Back (LeafPage / NodePage `exitCircleTo`) so the circle closes onto
  * the point it grew from. Undefined after a reload or deep link — Back slides then.
- * Used by: WritingNotebookPage, AddCardsPage.
+ * Used by: WritingNotebookPage.
  */
 export function readCirclePoint(state: unknown): ScreenPoint | undefined {
     const p = (state as { circleFrom?: Partial<ScreenPoint> } | null)?.circleFrom;
@@ -97,6 +96,49 @@ export function circleCoverRadius(at: ScreenPoint, box: { left: number; top: num
 /** `clip-path` for a circle of `r` px at `at` (px in the clipped box's own coordinates). */
 export function circleClip(at: ScreenPoint, r: number): string {
     return `circle(${r.toFixed(1)}px at ${at.x.toFixed(1)}px ${at.y.toFixed(1)}px)`;
+}
+
+// ── The dash transition ───────────────────────────────────────────────────────
+// The Deck Tower's camera dash between worlds (useWorldPan.ts), played between two ROUTES:
+// the leaving page whips off sideways, speed lines stream past over empty sky while the
+// sky turns the arriving page's ground colour, and the arriving page slides in and brakes
+// into place. One set of numbers for both, so the two read as one move.
+//
+//   enter  useSlideNavigate(to, { dash })      — runPageDash (src/hooks/pageDash.ts)
+//   exit   NodePage `exitDash` → usePageSlide `exit` — the same runner, travelling back
+//
+// Used by: the Deck Tower's mini sort platform ↔ Add Cards (docs/DECK_TOWER.md § "The sort
+// platform"). Docs: docs/LEAF_NODE_PAGES.md § "The dash transition".
+
+/** The dash's timeline: out (ease-in, gathering speed) → cruise (empty sky) → in (ease-out). */
+export const DASH_MOTION = {
+    /** The scene whipping off screen from rest. */
+    outMs: 260,
+    /** Empty sky racing past while it turns the new colour. */
+    cruiseMs: 260,
+    /** The new scene sliding in and settling. */
+    inMs: 300,
+    /** p(τ) = τ² — useWorldPan's out phase from rest (easeInQuad). */
+    outEasing: "cubic-bezier(0.11, 0, 0.5, 0)",
+    /** 1 − (1 − u)² — useWorldPan's in phase (easeOutQuad). */
+    inEasing: "cubic-bezier(0.5, 1, 0.89, 1)",
+    /** useWorldPan's smoothstep sky blend (≈ easeInOutQuad). */
+    colourEasing: "cubic-bezier(0.45, 0, 0.55, 1)",
+} as const;
+
+/**
+ * What a dash launch carries in nav state (`state.dash`), so the opened page's Back can dash
+ * back the way it came. Only the streak colour: the time-of-day wash the launching page drew
+ * its own speed lines in, which the opened page has no way to compute.
+ */
+export interface DashLaunch {
+    lineColor: string;
+}
+
+/** `state.dash` off a dash launch, validated (nav state is untyped). Undefined after a reload or deep link — Back slides then. Used by: AddCardsPage. */
+export function readDashLaunch(state: unknown): DashLaunch | undefined {
+    const d = (state as { dash?: Partial<DashLaunch> } | null)?.dash;
+    return d && typeof d.lineColor === "string" ? { lineColor: d.lineColor } : undefined;
 }
 
 export function prefersReducedMotion(): boolean {

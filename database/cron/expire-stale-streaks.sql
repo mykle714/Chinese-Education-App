@@ -31,8 +31,8 @@
 -- floors at 1440; 3300 (55 h) floors at 2880 (48 h); anything under 1440 is
 -- unprotected and can still reach 0. Consequences worth knowing:
 --   * a checkpoint is ABSORBING. Once a balance lands exactly on one it can never be
---     debited again, so the wallet -- and the night market entitlement that Branch 2
---     derives from it -- freezes there for good, no matter how long the lapse runs.
+--     debited again, so the wallet freezes there for good, no matter how long the
+--     lapse runs.
 --     "An inactive account zeroes out within a week" is now true only below 24 h.
 --   * no high-water column is needed: the balance only rises by earning and falls by
 --     this cron, and this cron can no longer cross a checkpoint, so the checkpoint of
@@ -67,64 +67,14 @@
 -- the first time it hits 3 minutes.
 --
 -- Logging: when >= 1 (user, language) pair is penalized, a NOTICE line names the
--- count, user IDs, languages, stamped missed dates, and the number of night-market
--- occupants decayed. Idle ticks print only BEGIN / DO / COMMIT.
+-- count, user IDs, languages and stamped missed dates. Idle ticks print only
+-- BEGIN / DO / COMMIT.
 --
--- -- Night-market unlock decay (second branch) --------------------------------
--- In the SAME transaction that debits minutes, trim each penalized (user, language)
--- pair's night-market OCCUPANTS (nightmarketunlocks rows for THAT language) down to
--- target = unlocks(new_total_for_that_language). Each language grows its own market
--- (migration 130), so decay is partitioned by (userId, language) and one language's
--- lapse never touches another language's stalls. This mirrors the grant flow
--- (NightMarketPlacementService.grantUnlocks): earning minutes fills slots, losing
--- minutes frees them. Only OCCUPANTS are deleted -- placed templates
--- (nightmarkettemplatelocations) are append-only and NEVER removed, so an emptied
--- template simply renders its unoccupied version on the next layout read
--- (recompute-on-read settles the version; this SQL stays pure -- it never computes
--- a version). Freed slots return to the pool and a future grant backfills them.
---
--- The unlocks(m) schedule is NOT restated here. This file installs (CREATE OR REPLACE,
--- every tick) the SQL function nightmarket_unlocks_for_minutes(int) from a GENERATED
--- block below whose single source is server/dal/shared/unlockSchedule.ts, and the decay
--- CTE just calls it. To change a breakpoint: edit that TS table, run
--- `npm run gen:unlock-schedule-sql` (rewrites the block), redeploy this file. The guard
--- test src/__tests__/unlockScheduleSqlSync.test.ts fails while the block is stale.
+-- (Until 2026-11-09 a second branch here also decayed Night Market occupants and
+-- installed nightmarket_unlocks_for_minutes(). Night Market was removed and its tables
+-- dropped -- see docs/ARCHIVED_FEATURES.md.)
 
 BEGIN;
-
--- >>> BEGIN GENERATED: nightmarket_unlocks_for_minutes >>>
--- GENERATED — DO NOT EDIT BY HAND.
---   source:     server/dal/shared/unlockSchedule.ts (UNLOCK_BREAKPOINTS + steady state)
---   regenerate: npm run gen:unlock-schedule-sql
--- Guarded by src/__tests__/unlockScheduleSqlSync.test.ts, which fails if this block is stale.
-CREATE OR REPLACE FUNCTION nightmarket_unlocks_for_minutes(minutes int)
-RETURNS int
-LANGUAGE sql
-IMMUTABLE
-AS $fn$
-  SELECT GREATEST(0,
-    CASE
-      WHEN minutes >= 60 THEN 17 + floor((minutes - 60) / 60)::int
-      WHEN minutes >= 52 THEN 16
-      WHEN minutes >= 47 THEN 15
-      WHEN minutes >= 42 THEN 14
-      WHEN minutes >= 38 THEN 13
-      WHEN minutes >= 34 THEN 12
-      WHEN minutes >= 30 THEN 11
-      WHEN minutes >= 26 THEN 10
-      WHEN minutes >= 22 THEN 9
-      WHEN minutes >= 18 THEN 8
-      WHEN minutes >= 14 THEN 7
-      WHEN minutes >= 10 THEN 6
-      WHEN minutes >= 7 THEN 5
-      WHEN minutes >= 5 THEN 4
-      WHEN minutes >= 3 THEN 3
-      WHEN minutes >= 2 THEN 2
-      WHEN minutes >= 1 THEN 1
-      ELSE 0
-    END)
-$fn$;
--- <<< END GENERATED <<<
 
 DO $$
 DECLARE
@@ -132,7 +82,6 @@ DECLARE
   penalty_ids    uuid[];
   penalty_langs  text[];
   penalty_dates  date[];
-  decay_count    int;
 BEGIN
   WITH candidates AS (
     -- One candidate row per (user, language) progress row with something to lose.
@@ -215,49 +164,18 @@ BEGIN
     FROM final f
     WHERE p."userId" = f.user_id AND p.language = f.language
     RETURNING f.user_id, f.language, f.missed_date, f.tier
-  ),
-  -- Night-market decay: each penalized (user, language) pair's new unlock entitlement
-  -- from that language's post-debit total. Calls the generated function installed at the
-  -- top of this file, so the ladder is single-sourced from
-  -- server/dal/shared/unlockSchedule.ts rather than mirrored by hand here.
-  decay_targets AS (
-    SELECT user_id, language,
-           nightmarket_unlocks_for_minutes(new_total) AS target
-    FROM final
-  ),
-  -- Rank each pair's occupants randomly WITHIN ITS OWN MARKET; anything ranked
-  -- beyond `target` is surplus to delete. Partitioning by (userId, language) is what
-  -- keeps one language's lapse from trimming another language's stalls.
-  decay_ranked AS (
-    SELECT u.id AS unlock_id,
-           row_number() OVER (
-             PARTITION BY u."userId", u.language ORDER BY random()
-           ) AS rn,
-           dt.target
-    FROM nightmarketunlocks u
-    JOIN decay_targets dt
-      ON dt.user_id = u."userId" AND dt.language = u.language
-  ),
-  -- Delete surplus occupants at random (rn > target). Templates are untouched
-  -- (append-only); the unlocks->locations FK cascades the OTHER way, so no placement
-  -- is removed here.
-  decay_delete AS (
-    DELETE FROM nightmarketunlocks
-    WHERE id IN (SELECT unlock_id FROM decay_ranked WHERE rn > target)
-    RETURNING id
   )
-  -- Reference BOTH data-modifying CTEs so each executes; scalar sub-selects keep the
-  -- counts independent (progress_update drives the penalty log, decay_delete the decay count).
+  -- progress_update drives the penalty log. (penalty_insert is not referenced, but a
+  -- data-modifying CTE always runs to completion in Postgres whether or not it is read.)
   SELECT (SELECT COUNT(*)               FROM progress_update),
          (SELECT array_agg(user_id)     FROM progress_update),
          (SELECT array_agg(language)    FROM progress_update),
-         (SELECT array_agg(missed_date) FROM progress_update),
-         (SELECT COUNT(*)               FROM decay_delete)
-  INTO   penalty_count, penalty_ids, penalty_langs, penalty_dates, decay_count;
+         (SELECT array_agg(missed_date) FROM progress_update)
+  INTO   penalty_count, penalty_ids, penalty_langs, penalty_dates;
 
   IF penalty_count > 0 THEN
-    RAISE NOTICE 'inactivity-cron escalating-penalty % count=% user_ids=% languages=% missed_dates=% decayed_unlocks=%',
-                 now(), penalty_count, penalty_ids, penalty_langs, penalty_dates, decay_count;
+    RAISE NOTICE 'inactivity-cron escalating-penalty % count=% user_ids=% languages=% missed_dates=%',
+                 now(), penalty_count, penalty_ids, penalty_langs, penalty_dates;
   END IF;
 END
 $$;

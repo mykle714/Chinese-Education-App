@@ -19,7 +19,7 @@ describe('cycleChipFontPx', () => {
   });
 
   it('shrinks the long labels that actually forced the rule', () => {
-    // 'default' is the audio chip's; 'whisper' is the removed iw volume chip's, kept as a
+    // 'default' is the audio chip's; 'whisper' was the removed Immersive World volume chip's, kept as a
     // second seven-character case.
     expect(cycleChipFontPx('whisper')).toBeLessThan(CYCLE_CHIP_FONT_PX);
     expect(cycleChipFontPx('default')).toBe(cycleChipFontPx('whisper'));

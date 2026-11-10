@@ -21,7 +21,7 @@
  * Source: Claude Design project "Tower Tier 2 - Time of Day", the "Sort ·" artboards
  * (`GR` and the `.t2n .sx-sort` overrides).
  *
- * ⚠️ Outside the colour framework (like the tower's derived skies): night's platform and
+ * ⚠️ Outside the colour framework (like the tower's derived skies): night's ink and
  * night's slate keycap tones are design-picked hexes with no `COLORS` / `RAMP` token. They
  * live only here.
  *
@@ -29,7 +29,7 @@
  * `shadowTone`), deckTower/weatherSky.ts (the caller's day sky), deckTower/timeOfDay.ts (`phaseSky`, `towerLight`), deckTower/towerWorlds.ts
  * (`TOWER_WORLDS`). Depended on by: AddCardsPage.tsx, SortBins.tsx.
  */
-import { mixHex, shadowTone } from "../deckTower/iso";
+import { mixHex, shadowTone, type IsoWash } from "../deckTower/iso";
 import { phaseSky, towerLight } from "../deckTower/timeOfDay";
 import { TOWER_WORLDS } from "../deckTower/towerWorlds";
 import type { DayPhase, TimeOfDay } from "../../timeOfDay/dayPhase";
@@ -41,14 +41,10 @@ export interface SortLook {
     ground: string;
     /** A shadow cast on the ground (cards, keycaps, the slab footer) — the iso shadow rule. */
     groundShadow: string;
-    /** The bins' floating platforms. */
-    platform: string;
     /** Ink drawn straight on the ground: the header title and back arrow. */
     ink: string;
     /** Softer ink on the ground: each card's tier label, frequency dots and action icons. */
     inkSoft: string;
-    /** A bin's "0" printed on its empty platform. */
-    countEmpty: string;
     /** Keycap face (level pill, undo, skip). */
     keyFace: string;
     /** Keycap lip (the solid `0 3px 0` under its face). */
@@ -56,11 +52,16 @@ export interface SortLook {
     /** Keycap glyphs. */
     keyInk: string;
     /**
-     * How far an empty bin's dashed footprint is darkened from its deck colour (a
-     * `shadeHex` amount). Deeper at night: the night platform is grey, and the pale
-     * yellow footprint that reads on a white day platform all but vanishes on it.
+     * The tower's ambient wash at this time (`towerLight(time).wash` = `phaseWash`,
+     * src/timeOfDay/wash.ts): the identity by day, night's cool dim light after dark. The
+     * bins' band-coloured platforms and what is printed on them go through it, so they are
+     * lit exactly like the Deck Tower's Add Cards button (IsoSortPlatform, whose quadrants
+     * are the same band colours through the same wash) — user request 2026-11-09, "make
+     * sure the colours are consistent between night and day and between the button and the
+     * page". (Replaced `platformShade`, a 10% HSL darken at night that the button did not
+     * share.) The cards are not washed: they stay the dock's cream stock in every phase.
      */
-    footprintShade: number;
+    wash: IsoWash;
     /** The star field's opacity: the tower's own from-the-ground value at this hour. */
     stars: number;
     /** Whether meteors fly: the tower's own rule, so both skies turn them on together. */
@@ -72,29 +73,24 @@ const DAY_KEYS = { keyFace: COLORS.cardFace, keyWall: COLORS.cardWall, keyInk: C
 
 /**
  * Ink on the day ground, which IS the tower's sky: white, like the tower's own sky ink
- * (DeckTowerPage `skyInk` — the day wash is unlit, so it is plain white). `countEmpty` is
- * printed on the white platforms, so it keeps the dark day tone.
+ * (DeckTowerPage `skyInk` — the day wash is unlit, so it is plain white).
  */
-const SKY_INK = { ink: COLORS.white, inkSoft: COLORS.white, countEmpty: COLORS.textSecondary } as const;
+const SKY_INK = { ink: COLORS.white, inkSoft: COLORS.white } as const;
 
-type PhaseLook = Omit<SortLook, "groundShadow" | "footprintShade" | "stars" | "shootingStars">;
+type PhaseLook = Omit<SortLook, "groundShadow" | "wash" | "stars" | "shootingStars">;
 
-/** `SortLook.footprintShade` per phase — a number, so blended apart from the hexes. */
-const FOOTPRINT_SHADE: Record<DayPhase, number> = { day: 0.18, night: 0.45 };
 
 /** The fixed phase looks; `day.ground` and `night.ground` are replaced per weather in `lookFor`. */
 const PHASE_LOOK: Record<DayPhase, PhaseLook> = {
     // The main world's day sky itself (was the pale tint #E4F2FC until 2026-11-04) —
     // replaced by the weather's day sky in `lookFor`.
-    day: { ground: TOWER_WORLDS.core.sky, platform: COLORS.white, ...SKY_INK, ...DAY_KEYS },
+    day: { ground: TOWER_WORLDS.core.sky, ...SKY_INK, ...DAY_KEYS },
     // The tower's main-world night sky, so the page reads as the same sky; light ink, slate
     // keycaps. acp has no world of its own, so reading/writing's night skies do not apply.
     night: {
         ground: phaseSky(TOWER_WORLDS.core, "night"), // overridden by the weather's night sky
-        platform: "#E4E5E9",
         ink: "#EEF0F6",
         inkSoft: "#C3C8D6",
-        countEmpty: "#8F97AA",
         keyFace: "#2A3446",
         keyWall: "#121822",
         keyInk: "#EEF0F6",
@@ -119,8 +115,6 @@ export function sortLookAt(time: TimeOfDay, mainDaySky: string = TOWER_WORLDS.co
     const to = lookFor(time.to, mainDaySky);
     const mixed = {} as PhaseLook;
     for (const key of LOOK_KEYS) mixed[key] = time.t <= 0 ? from[key] : mixHex(from[key], to[key], time.t);
-    const t = Math.max(0, time.t);
-    const footprintShade = FOOTPRINT_SHADE[time.from] + (FOOTPRINT_SHADE[time.to] - FOOTPRINT_SHADE[time.from]) * t;
-    const { groundStars, shootingStars } = towerLight(time);
-    return { ...mixed, groundShadow: shadowTone(mixed.ground), footprintShade, stars: groundStars, shootingStars };
+    const { wash, groundStars, shootingStars } = towerLight(time);
+    return { ...mixed, groundShadow: shadowTone(mixed.ground), wash, stars: groundStars, shootingStars };
 }

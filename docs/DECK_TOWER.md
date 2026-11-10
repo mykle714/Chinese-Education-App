@@ -22,11 +22,25 @@ Sub-document: [DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md) — the d
 the plate button, the deck-transition registry (trap door) and the pawn-entrance registry
 (fall from the sky), all timed to the new pawn's landing.
 
+Sub-document: [TOWER_SNOW.md](./TOWER_SNOW.md): snow settling on the platform (floor, Learning
+tower, lever, corner fixtures) on page entry, kept per device until a trap door, a study,
+a sky drop, a lever pull, a fixture tap or a plate press clears it; the plate buried under
+the floor's snow; the pawn wading and its channel; flakes falling in front of the platform.
+
 Sub-document: [HINT_PAWN.md](./HINT_PAWN.md): the flp's **hint pawn**, a pawn on a tiny
 platform in the world's colour, in the session's bottom-left corner, which speaks the front
 card's hint (writing: the used-in words; main and reading: a wrong-streak study tip after
 3 misses in a row). Arrives on a session's first hint, can be swiped
 away for the rest of the td visit (`useHintPawnVisit`), and has a per-device switch in Settings.
+
+Sub-document: [HOME_SCREEN.md](./HOME_SCREEN.md) — the **home screen** the app opens on
+(once per launch): a stage of this page, laid over td's sky, with its own platform and pawn and
+a placeholder title over it; under it, a Dictionary key and the words "Swipe down to enter".
+**Dictionary** circles out to `/dictionary`, whose back arrow returns here.
+**Enter** (a swipe down toward the tower, `useEnterSwipe`, or a tap on the words) takes the camera down to the top of the deck, then scrolls down to the
+platform. The home stands above the tower: a fresh pull past the deck's top goes back up to
+it (momentum stops at the top; `useHomePull`). While it is up, the header, the footer and the world swipe are away, and td's opening
+grow, cooldown drops and banking run wait (`home/`, `useHomeEntrance`).
 
 Sub-document: [FOCUS_MODE.md](./FOCUS_MODE.md) — the **focus lever** in each platform's
 left floor corner on screen (`IsoLever`, `useFocusLever`, `useLeverMotion`; layout
@@ -54,19 +68,19 @@ Parent: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (sub-documents table).
 
 | Layer | File | Role |
 |---|---|---|
-| Page | `src/features/deckTower/DeckTowerPage.tsx` → `DeckTowerPage` | Picks the shown worlds, reads their counts, fits the viewBox to the world on screen (`scene` memo), runs one build-up per world, handles the world swipe and the scroll height shared across worlds, inside `MobileTabScreen` — whose header carries the world title (`title`, white via `headerTitleColor`) and is lifted above the scroller (`wrapHeader`) so its controls are tappable |
+| Page | `src/features/deckTower/DeckTowerPage.tsx` → `DeckTowerPage` | Picks the shown worlds, reads their counts, fits the viewBox to the world on screen (`scene` memo), runs one build-up per world (always at full height now) and the corner fixtures' grow-in, handles the world swipe and the scroll height shared across worlds, inside `MobileTabScreen` — whose header carries the world title (`title`, white via `headerTitleColor`) and is lifted above the scroller (`wrapHeader`) so its controls are tappable |
 | Page view | `src/features/deckTower/DeckTowerPlatform.tsx` → `DeckTowerPlatform`, `STARTLE_AT_CARDS` | The platform in one world's colours, with its tower, pawn(s) (depth-sorted, `pawnDepthRanks`), floor plate |
 | Page constants | `src/features/deckTower/towerPlatforms.ts` → `TOWER_LAYOUT`, `TowerPlatformLayout`, `FLOOR_Z`, `GROUND_Z` | The platform and the layout on it (the same in every world) |
 | Page constants | `src/features/deckTower/towerWorlds.ts` → `TOWER_WORLDS`, `WORLD_ORDER`, `TowerWorld` | The worlds: name, sky, space, platform tone, floor and ground surfaces (§ Worlds) |
 | Page logic | `src/features/deckTower/useWorldPan.ts` → `useWorldPan`, `WorldPanView` | The camera dash between worlds: which world is drawn, the scene's slide, speed-line strength, the blending palette (§ Worlds → The pan) |
 | Page | `src/features/deckTower/SpeedLines.tsx` → `SpeedLines`; `src/features/deckTower/WorldIndicator.tsx` → `WorldIndicator` | The dash's streaks; the floating bottom-corner arrows naming the neighbouring worlds |
-| Page logic | `src/features/deckTower/useBuildProgress.ts` → `useBuildProgress`, `buildTimeline` | A tower's build-up, 0 → 1 (or straight to 1 when `animate` is false) |
+| Page logic | `src/features/deckTower/useBuildProgress.ts` → `useBuildProgress`, `buildTimeline`; `useFixtureGrow`, `FIXTURE_GROW_MS` | A tower's build-up, 0 → 1 (or straight to 1 when `animate` is false — every caller passes false since 2026-11-09, so no tower builds up); the corner fixtures' own grow-in after a swap lands on Learning (§ The notebook stack, § The sort platform) |
 | Page | `src/features/deckTower/DeckTowerAvatar.tsx` → `DeckTowerAvatar` (skin: `src/minutePoints/dailyBanking/BankingAvatarButton.tsx` → `BankingAvatarButton` over `src/components/HeaderAvatarButton.tsx` → `HeaderAvatarButton`, whose only skin is 40px with a `SHADOW.float` rest shadow) | The learner's profile picture in the header's far-right corner (`headerTrailingActions`, right of the minute-points flame); a tap raises the `AccountSheet` (`src/pages/AccountSheet.tsx`). It is the daily banking run's ember destination (§ Daily banking) |
 | Page | `src/minutePoints/dailyBanking/DailyBankingContext.tsx` → `DailyBankingProvider`, `DailyBankingOptOut`; `BankingEmbers.tsx` → `BankingEmbers`; `src/features/deckTower/BankingAlwaysPlayToggle.tsx` → `BankingAlwaysPlayToggle` | The once-per-streak-day banking run in td's header, and its feature-tester chip row (§ Daily banking) |
 | Page logic | `src/features/deckTower/timeOfDay.ts` → `towerLight`, `litWorld`, `phaseSky`, `NIGHT_SKY`, `PHASE_STARS`; `src/timeOfDay/wash.ts` → `PHASE_LIGHT`, `phaseWash`; `useTimeOfDay.ts` → `useTimeOfDay`; the shared clock `src/timeOfDay/` → `dayPhase.ts` (`timeOfDayAt`), `sunTimes.ts` (`deviceLocation`, `sunDay`), `tzCoordinates.ts` (`TZ_COORDINATES`, generated by `scripts/generate-tz-coordinates.mjs`), `useDayClock.ts` (`useDayClock`, `TimeOfDayOverride`) | The time of day: day / night blended across the learner's real sunrise and sunset, each world's sky at that hour, and the wash over everything drawn on it (§ Time of day) |
 | Page | `src/features/deckTower/TimeOfDayToggle.tsx` → `TimeOfDayToggle`; `TesterChipRow.tsx` → `TesterChipRow`; `TesterSharedRow.tsx` → `TesterSharedRow`, `useTesterInline`; `testerChipStyle.ts` → `testerChipSx`, `TESTER_ROW_SX`, `TESTER_GROUP_SX` | The feature-tester chip group that pins a phase (§ Time of day → "Tester toggle"); `TesterChipRow` is the single-choice chip group every tester toggle uses; `TesterSharedRow` puts short groups on one row (§ Feature-tester rows) |
 | Page logic | `src/features/deckTower/towerWeather.ts` → `weatherEffect`, `isEffectless`, `weatherCloudCount`, `pinnedWeather`, `WeatherOverride`; `useTowerWeather.ts` → `useTowerWeather`; setting: `src/hooks/useWeatherEffectsSetting.ts` → `useWeatherEffectsSetting`, `useWeatherEffectsEnabled` | The learner's real weather over the sky: the particles to draw, how many clouds fly (cloudy only), the fetch, the per-device Settings switch and its location flow (§ Weather) |
-| Page | `src/features/deckTower/WeatherLayer.tsx` → `WeatherLayer`; `WeatherToggle.tsx` → `WeatherToggle`; `LightningStrikeChips.tsx`; `useLightningFlashes.ts`; `towerLightning.ts` | Rain / snow / the lightning flash inside SpaceBackdrop (fog is `iso/IsoFog.tsx`, over the platform); the feature-tester chip row that pins a kind; the lightning clock and its platform strikes, with their tester chips (§ Weather) |
+| Page | `src/features/deckTower/WeatherLayer.tsx` → `WeatherLayer`; `WeatherToggle.tsx` → `WeatherToggle`; `LightningStrikeChips.tsx`; `useLightningFlashes.ts`; `towerLightning.ts` | Rain / snow / the lightning flash inside SpaceBackdrop (fog is `iso/IsoFog.tsx`, over the platform; snow in front of the platform and settled snow are [TOWER_SNOW.md](./TOWER_SNOW.md)); the feature-tester chip row that pins a kind; the lightning clock and its platform strikes, with their tester chips (§ Weather) |
 | Server | `server/routes/weatherRoutes.ts`, `server/controllers/WeatherController.ts` → `getWeather`, `server/services/WeatherService.ts` → `WeatherService`, `weatherFromWmoCode`; `server/utils/geohashCenter.ts` → `geohashCenter`; `ArenaDAL.getGeoCell`; contract `server/contracts/wire.ts` → `WeatherKind`, `WeatherNow`, `WeatherResponse` | `GET /api/weather`: the stored geoCell's current weather from Open-Meteo, cached per cell (§ Weather → "Server") |
 | Page | `src/features/deckTower/ForcedBreakPicker.tsx` → `ForcedBreakPicker` | The feature-tester chip row under the time-of-day row that pins a world's breaks to one game, opening the visit on one (§ Forced game breaks) |
 | Page | `src/features/deckTower/SpaceBackdrop.tsx` → `SpaceBackdrop`, `SpaceBand` | The screen-space sky behind the scene, in the world's colour, which darkens into starry space as a tall tower is climbed (§ Sky → space) |
@@ -103,11 +117,11 @@ The platform geometry lives in `towerPlatforms.ts` and the worlds' colours in
 | `FLOOR_Z` (`towerPlatforms.ts`), `TowerWorld.floor` | The platform's top (z = 0). The stack and the pawns stand on it (its colour is the world's platform top) |
 | `TowerPlatformLayout.card` | A portrait 4.8 × ~6.93 (`CARD_W` × `CARD_D`) footprint, centred on the platform. `CARD_D` is derived from the flp card's proportions (`FLP_CARD_ASPECT`, 295 : 426, `src/features/flashcards/constants.ts`) because the study camera lands the top card exactly on the flp card (§ Studying the tower); it was 6.6 until 2026-10-24. Its corner radius, `CARD_W × FLP_CARD_CORNER_RATIO` (= 0.45), is shared with the flp card the same way — the flp sets it as a width-proportional `--card-radius` (`FlashCardSection` → `flpCardRadiusCss`; docs/SHELF_REDESIGN.md D14) |
 | `TowerPlatformLayout.pawnAt`, `.roam` | Where the pawn starts (front right of the tower), and where it wanders: the floor inside the rim, around the tower (the floor label is not an obstacle: the pawn steps up onto it — `DeckTowerPlatform` → `pawnSteps`, `IsoPawn` `steps`). The obstacles are listed back-to-front; `DeckTowerPlatform` keeps `pawnDepthRanks` in state and slots each pawn into the keyed children just before the first obstacle it stands behind (`depthRankAmong` — not a count of those it is in front of, which put a pawn on the tower's back-left in front of the tower because it was past the lever, then at the back-right corner), so it walks behind the tower rather than over it. The order follows the camera (`backToFront`): on the study dive, once the camera is over a face of the tower, what stands past that face — the lever, a pawn — goes behind the tower, whose top now hides the floor round its foot (ISO_ART_FRAMEWORK.md § IsoPawn → "Depth sorting") |
-| `STARTLE_AT_CARDS` (`DeckTowerPlatform.tsx`) | 50. When the build-up puts this many cards on a tower, its pawn is startled: it looks up, leaps away from the tower and a `!` pops over its head, stares up for a few seconds, then goes back to wandering (`IsoPawn` `startled`, `startledBy={layout.card}`). Decks under 50 never trigger it, and neither does a tower that is already at 50+ when the pawn first sees it: arriving in such a world (the remounted pawn was not watching it grow) or loading the page with one (the count reads 0 while it loads, so `DeckTowerPlatform`'s `towerCountKnown` holds `startled` at `null` until it lands, and `usePawnMotion` takes the first known value as a baseline, not a rise). Only a grow past 50 counts: a swap's build-up, or a resize's sky drop |
-| `IsoPawn` `tappable` (`DeckTowerPlatform` → `renderPawn`) | Tapping the pawn pops its `!` and makes it jump on the spot; it then stands until the bubble has gone. Taps while it is still in the air chain the jump higher, each leaving a light-blue double ring where its feet kicked off (ISO_ART_FRAMEWORK.md § IsoPawn → "Air ring"). An outgoing pawn (mid-swap) takes no taps (ISO_ART_FRAMEWORK.md § IsoPawn → "Poke") |
+| `STARTLE_AT_CARDS` (`DeckTowerPlatform.tsx`) | 50. When the build-up puts this many cards on a tower, its pawn is startled: it looks up, leaps away from the tower and a `!` pops over its head, stares up for a few seconds, then goes back to wandering (`IsoPawn` `startled`, `startledBy={layout.card}`). Decks under 50 never trigger it, and neither does a tower that is already at 50+ when the pawn first sees it: arriving in such a world (the remounted pawn was not watching it grow) or loading the page with one (the count reads 0 while it loads, so `DeckTowerPlatform`'s `towerCountKnown` holds `startled` at `null` until it lands, and `usePawnMotion` takes the first known value as a baseline, not a rise). Only a grow past 50 counts: a sky drop landing — a resize's, or a deck swap's new tower (DECK_TOWER_TRANSITIONS.md § "The new tower's sky drop") |
+| `IsoPawn` `tappable` (`DeckTowerPlatform` → `renderPawn`) | Tapping the pawn pops its `!` and makes it jump on the spot; it then stands until the bubble has gone. Taps while it is still in the air chain the jump higher. An outgoing pawn (mid-swap) takes no taps (ISO_ART_FRAMEWORK.md § IsoPawn → "Poke") |
 | `DeckTowerPlatform` → `pawnSteps`, `summitCards`, `summitHeld` | The tower's top is the pawn's **summit**: a tap while its feet are above the top throws it onto the deck, where it wanders (ISO_ART_FRAMEWORK.md § IsoPawn → "Summit"). When the height changes under it: **marks or a focus shrink** — it falls onto the new top, from the shrink's start (`summitCards`); **a sky drop** — it is thrown up as the drop lands; **a deck swap** — it falls with the tower, like any floor drop; **a study** — it stands still (`summitHeld`), stays out of the platform's fade, and rides the count card off and back on (`summitSpot`, `TowerCoverCard` `pawnAt`, § Studying the tower → "The count card"); **no cards left** — the top closes and it flies back to `pawnAt`, after any study. A world swipe remounts the pawn on the floor. Nothing else brings it down |
 | `CLOUD_BAND_CARDS` | Clouds (`IsoCloud`, `useCloudDrifts`) are **weather, not altitude**: they fly only under the `cloudy` weather kind (`towerWeather.ts` → `weatherCloudCount`; § Weather), in every world, whatever the card count. Rain, snow, storm and fog draw no clouds, by design. They drift slowly (about a minute per crossing) past the tower's four sides, their bases at the height of cards 150–200 (card k's underside is (k − 1) · `CARD_THICKNESS` up). `weatherCloudCount` sets how many may be in the sky at once — 2–3 for partly cloudy, 4 for overcast — with 4–14 s gaps between drifts. Every cloud traverses in from off screen; none spawns mid-sky when cloudy weather starts, and the slots' first drifts are staggered by ordinary 4–14 s gaps, so the band fills one cloud at a time (cloudy is the commonest weather, so it stays unobtrusive). A deck that stops inside the band lowers its top to `SKY_CEILING_ABOVE_TOP` (3 units) over its settled top (`skyBand`), so they drift by the tower and not empty sky; a deck under 150 keeps the whole band, above the framed scene and so out of sight. Back-side clouds are drawn first (before the stack, which hides them) and front-side clouds last, after the pawn's depth-sorted layers. They sit inside `IsoPlatform`, so they ride its 0.35-unit bob. Within each side they are sorted with `sortCloudsBackToFront`. Under reduced motion they still show, parked and still. Each cloud casts a glaze shadow on the floor and the ground just off the point below it (`IsoCloudShadow`, drawn by `SkyTraffic.tsx` → `SkyTrafficCloudShadows` through `DeckTowerPlatform`'s `cloudShadows` prop; ISO_ART_FRAMEWORK.md § IsoCloud → Shadow). Clouds and wind are scheduled and drawn by `SkyTraffic.tsx` (`SkyTrafficSource` runs both schedulers and publishes into a small store, `skyTrafficStore.ts`; the memoised `SkyTrafficLayer side="behind"|"front"` subscribes and draws one side), so a crossing starting or ending re-renders only those two layers, never the page |
-| `WIND_BAND_CARDS`, `WIND_GUSTS_MAX` | Wind gusts (`IsoWind`, `useWindGusts`) sweep past the tower's four sides with their baselines at the height of cards 350–400, in the empty sky between the clouds and space. A gust is two or three straight white streaks, the main one ending in a curl. It draws on head-first, then erases tail-first, over about 1.5–2.3 s. Up to 2 play at once, with 1–4 s gaps. Wind starts when the build-up puts the 350th card on the tower, so a deck under 350 never has wind; a deck short of 400 lowers the band's top the same way as the clouds' (`skyBand`). Back-side gusts are drawn after the back-side clouds, front-side gusts before the front-side clouds. Under reduced motion there is no wind |
+| `WIND_BAND_CARDS`, `WIND_GUSTS_MAX` | Wind gusts (`IsoWind`, `useWindGusts`) sweep past the tower's four sides with their baselines at the height of cards 350–400, in the empty sky between the clouds and space. A gust is two or three straight white streaks, the main one ending in a curl. It draws on head-first, then erases tail-first, over about 1.5–2.3 s. Up to 2 play at once, with 1–4 s gaps. Wind starts when the 350th card is on the tower (a sky drop counts from its impact), so a deck under 350 never has wind; a deck short of 400 lowers the band's top the same way as the clouds' (`skyBand`). Back-side gusts are drawn after the back-side clouds, front-side gusts before the front-side clouds. Under reduced motion there is no wind |
 | `SPACE_BAND_CARDS` | 450–650. Over this height band the sky darkens into space and stars fade in (§ Sky → space) |
 | `TowerPlatformLayout.notebook`, `.notebookRoam` | The Writing Notebook's paper stack (writing world only, § The notebook stack): a 1.2 × 1.55 portrait footprint in the floor's RIGHT corner on screen (high x, low y — the lever's corner mirrored), 1.45 units off the tower's right face so the pawn still passes between them. `notebookRoam` is `roam` with the stack appended as obstacle 2; `DeckTowerPlatform` uses it only on a platform that draws the stack |
 | `TowerPlatformLayout.sortBin`, `.sortBinRoam` | The mini sort platform (main world only, § The sort platform): a 1.36 × 1.7 footprint in the same right corner as the notebook, 1.4 units off the tower's right face. `sortBinRoam` is `roam` with it appended as obstacle 2 |
@@ -144,9 +158,10 @@ far taller than the screen. The page never zooms out to fit it:
   in the world on screen (plus `TOP_HEADROOM`, 9 units, so the top card clears the header
   and title) down to the platform shadow's lowest point plus `BOTTOM_MARGIN` (1.2 units, ≈24 viewBox px — raised from 0.4 on 2026-11-04 to leave sky for the bottom cues).
   The svg takes that aspect ratio (`style.aspectRatio`). It is fitted to the settled
-  tower, so nothing reflows during a build-up: it refits once, when the bar's counts
-  arrive (before it grows; until then it fits as 0 cards), and on arriving in another
-  world. The memo is keyed on that tower's count.
+  tower, so nothing reflows mid-animation: it refits once, when the bar's counts
+  arrive (until then it fits as 0 cards), and on arriving in another world. The memo is
+  keyed on that tower's count — the TALLER of a resize's two heights while one plays, and
+  mid-swap the new deck's count from `clearedMs`, before its sky drop starts.
 - **Cards' imprint.** The floor under the stack always carries an imprint of its cards,
   printed "0 cards" (`IsoCardImprint`, a floor decal before the plate, so it swings with
   the trap door; see [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md) § IsoCardImprint). The
@@ -155,9 +170,11 @@ far taller than the screen. The page never zooms out to fit it:
   count is still loading (that reads as 0): `DeckTowerPlatform` `showImprint`, set by
   `DeckTowerPage` from `towerCounts`. Code: `DeckTowerPlatform.tsx` →
   `DeckTowerPlatform` (`decals`).
-- **Build-up pace.** (Since 2026-10-24 no tower builds up on page load — main opens at its
-  last height instead, § Opening at the last height — so a build-up now only plays when a
-  deck swap grows a tower.) `buildTimeline` (driven by `useBuildProgress`) has two phases:
+- **Build-up pace (dormant).** No tower builds up any more: since 2026-10-24 main opens at
+  its last height (§ Opening at the last height), and since 2026-11-09 a deck swap's new
+  tower sky-drops in (DECK_TOWER_TRANSITIONS.md § "The new tower's sky drop"), so every
+  `useBuildProgress` caller passes `animate` false. The timeline is kept for now:
+  `buildTimeline` (driven by `useBuildProgress`) has two phases:
   - **Cruise:** a steady `BUILD_CARDS_PER_SECOND` (40), so every deck rises at the same
     speed and the duration scales with the deck.
   - **Settle:** the last `BUILD_DECEL_CARDS` (60) cards decelerate on a power-
@@ -342,7 +359,10 @@ A world whose goal is off is skipped, and if it goes off while it is on screen t
   the platform — up and away as the cards page rises, down out of view as a tall tower is
   climbed. A tap does the same as the swipe. Swipe and arrows are off (arrows hidden) while a pan or this world's deck
   swap runs.
-- **The pan** (`useWorldPan`, ~0.8 s; instant under reduced motion):
+- **The pan** (`useWorldPan`, ~0.8 s; instant under reduced motion). Its timings are
+  `DASH_MOTION` (`src/utils/pageTransition.ts`) and its streaks `speedLineField`
+  (`src/utils/speedLineField.ts`), both shared with the route **dash** that opens Add
+  Cards from the sort platform (§ The sort platform), so the two read as one move:
   1. `OUT_MS` (260): the scene whips off the far side (ease-in) as the speed lines gather.
      A swipe carries straight into this (`PanCarry`): the release hands over the scene's
      dragged offset and the finger's release speed (`useSwipeCommit`'s `SwipeRelease`, both
@@ -363,7 +383,7 @@ A world whose goal is off is skipped, and if it goes off while it is on screen t
   swaps when the drawn world switches (phase 2, while no scene is on screen). The plate does not press during a pan.
 - **Arriving.** The platform is keyed by world, so it mounts fresh with its pawn standing.
   Every world's tower is kept built whether on screen or not, at full height
-  (`useBuildProgress` `animate` false) — it only grows after a deck swap there. Main's
+  (`useBuildProgress` `animate` false). Main's
   tower opens at its last height (§ Opening at the last height); the skill worlds' do not.
 - **Scroll height.** One altitude shared by all worlds: the camera pans sideways, so
   arriving opens at the height the learner last scrolled to (`climb`, px above the
@@ -473,9 +493,11 @@ floor's right corner. It is the Writing Notebook's only entry point
   units, because one sheet is only ~1px thick.
 - **Animations: the tower's own.** It is driven by the tower's numbers, not its own. Leaving
   Learning on the trap door, it falls with the old tower (`fallSx(stackFalling)`). Arriving
-  at Learning, it waits off stage until the swap's `readyMs`, then builds up on the tower's
-  `stackProgress`: the top sheet first, the rest growing in under it (`IsoPaperStack`
-  `progress`, `paperStackHeight`). It fades with the platform during a study. Focus-lever
+  at Learning, it waits off stage until the swap's `readyMs`, then grows in on its own clock
+  while the new tower sky-drops in (`useFixtureGrow`, `FIXTURE_GROW_MS` 900 ms, ease-out
+  cubic → `fixtureProgress`): the top sheet first, the rest growing in under it
+  (`IsoPaperStack` `progress`, `paperStackHeight`). Anywhere else (page open, a world
+  arrival) it stands at full height. It fades with the platform during a study. Focus-lever
   resizes do not touch it, because they change the card count, not the notebook total.
 - **Shadow: the tower's rules.** It casts its own `IsoShadow` (classed
   `iso-paper-stack__shadow`), hidden by the same DeckTowerPage `.deck-tower-page__falling`
@@ -496,20 +518,21 @@ floor's right corner. It is the Writing Notebook's only entry point
 `src/hooks/useDiscoverNavigation.ts` → `sortPath`, `src/hooks/useCategoryCounts.ts`,
 `server/contracts/wire.ts` → `LEARN_NOW_LOW_THRESHOLD`.
 
-The **main** world's platform has acp's "To Learn" bin in miniature (`IsoSortPlatform`) in
-the floor's right corner — the corner the notebook stack takes on the writing world. It is
+The **main** world's platform has acp's four bins in miniature (`IsoSortPlatform`; acp's
+band-coloured bins, SORT_CARDS_REQUIREMENTS.md § 5.3) in the floor's right corner — the corner the notebook stack takes on the writing world. It is
 the Add Cards button ([SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md)).
 
-- **Look.** A thin white slab (`COLORS.white`, acp's day platform) lying flat on the
-  floor, with acp's empty-bin dashed footprint on it in the To Learn bin's collection colour
-  (`LEARNING_COLORS.main`), both washed for the time of day. One bin, no deck, no print: it
-  says "sort", not a count. Footprint 1.36 × 1.7 — acp's bin slab's proportions
+- **Look.** One thin slab lying flat on the floor, its four quadrants in the four bands'
+  colours (`CATEGORY_COLORS` Unfamiliar / Target / Comfortable / Mastered — acp's
+  platforms), washed for the time of day: Unfamiliar left, Target front, Comfortable
+  right, Mastered back, keeping acp's bin neighbours. No deck, no print: it says "sort",
+  not a count. Under snow one cap hides all four colours (docs/TOWER_SNOW.md). Footprint 1.36 × 1.7 — acp's bin slab's proportions
   (`SortBins.tsx` → `PLATFORM`) — 1.4 units off the tower's right face so the pawn still
   passes between.
 - **Shown when.** Only on the main world, only while the **Learning** tower is drawn
   (`stackDrawn && swap.towerDeck === "learn-now"`) — the notebook stack's rule. It falls
-  with the old tower on the trap door, and builds up with the new one on `stackProgress`:
-  the slab grows up out of the floor.
+  with the old tower on the trap door, and arriving it grows in on the notebook's clock
+  (`fixtureProgress`, from `readyMs`): the slab grows up out of the floor.
 - **Cards low: it jumps.** While the core Learning count (U+T+C, cooling or not —
   `builtinCollectionCount({ kind: "learn-now", world: "core" })` over
   `useCategoryCounts("core")`) is under `LEARN_NOW_LOW_THRESHOLD`, it makes one big jump
@@ -519,14 +542,17 @@ the Add Cards button ([SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md)
   tower's own off-cooldown figure (`DeckTowerPage` → `learningLow`). It reads `ok`, not `loaded`, so a failed fetch
   never sets it jumping. It stops while it falls and freezes with the tower's bob during a study;
   none under reduced motion. The count is fetched once per visit.
-- **Tap.** It opens `/discover/sort/:language` with the **circle transition** from the
-  slab's centre (`.iso-sort-platform__body`). The launch carries `state.exitTo = SORT_EXIT`
-  (`/`, `towerWorld: "core"`) and `state.circleFrom`, so acp's Back closes the
-  circle onto the platform and lands on main (`AddCardsPage` → `leave`, NodePage
-  `exitCircleTo`). The footer's **Flashcards tab** does the same on such a launch: it plays Back,
-  circle included, instead of jumping (NodePage `backOnFooterTab="deck"`,
-  `components/footerTabOverride.ts`; LEAF_NODE_PAGES.md § Footer tab overrides). Without `exitTo`, acp's Back falls back to
-  `/`'s main world.
+- **Tap.** It opens `/discover/sort/:language` with the **dash transition**
+  ([LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) § The dash transition): the world pan's camera
+  dash, travelling RIGHT — td whips off to the left, the speed lines stream past in this
+  world's washed `ISO.wind` (`light.wash`), and acp slides in from the right. The launch
+  carries `state.exitTo = SORT_EXIT` (`/`, `towerWorld: "core"`) and `state.dash`
+  (`{ lineColor }`), so acp's Back dashes LEFT back onto the tower and lands on main
+  (`AddCardsPage` → `leave`, `dashBack`; NodePage `exitDash`). The footer's **Flashcards
+  tab** does the same on such a launch: it plays Back, dash included, instead of jumping
+  (NodePage `backOnFooterTab="deck"`, `components/footerTabOverride.ts`; LEAF_NODE_PAGES.md
+  § Footer tab overrides). Without `exitTo` (a deep link, or a reload that lost the
+  state), acp's Back slides to `/`'s main world.
   Taps are ignored while a swap, pan, resize or study is running (`busy`). The tap target
   is the platform's hull grown by 0.3 units, and up to the top of its jump while hopping.
 - **Shadow, fog, rain.** Its shadow (`iso-sort-platform__shadow`) is hidden by the same
@@ -534,7 +560,7 @@ the Add Cards button ([SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md)
   fog piercer / rain solid up to its slab's top.
 - **Shared code with the notebook.** Both corner fixtures go through
   `DeckTowerPlatform` → `cornerButton` (the role/keyboard/hit-path wrapper and the circle
-  point), and both roams are built by `roamWithCornerFixture`. Never both on one platform.
+  point — only the notebook still uses the point), and both roams are built by `roamWithCornerFixture`. Never both on one platform.
 
 ## Corner fixture labels
 
@@ -565,7 +591,7 @@ graduates (70 visits and 14 days on this device), then the fixture stands alone.
   Across the run the block is centred on the fixture's x, capped so its second line stays
   inside the rim (`FIXTURE_LABEL_MAX_X`).
 - **Shown when.** Exactly when its fixture is drawn (§ The notebook stack / § The sort
-  platform rules), and only in the intro state. It fades in on the fixture's build-up
+  platform rules), and only in the intro state. It fades in on the fixture's grow-in
   (`progress`), swings away with the floor on the trap door, and fades with the platform
   during a study (it is a floor decal).
 - **Visits.** One `useSoftIntro` per fixture in `DeckTowerPlatform`, each `enabled` only
@@ -588,6 +614,7 @@ list has one entry today. Callers:
 | Action | Shrink | Grow |
 |---|---|---|
 | Focus lever ([FOCUS_MODE.md](./FOCUS_MODE.md) § 5) | focus on (the pile → today's set, ≤ 25) | focus off (today's set → the pile) |
+| Deck swap's new tower ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md) § "The new tower's sky drop") | — | 0 → the new deck's count at the slam, either deck, no camera move (`startResize(…, { camera: false })`) |
 | Climbing out of a study (§ Studying the tower) | none — the tower just stands at the lower figure | cards came back off cooldown mid-session |
 | Opening the page, main only (§ Opening at the last height) | none — the tower just stands at the lower figure | cards came off cooldown since the last visit |
 
@@ -604,10 +631,9 @@ list has one entry today. Callers:
   per world plays it, and DeckTowerPlatform draws it by `kind`. A new animation is an entry
   in a list, a `kind`, a branch in the player's clock and a branch in the renderer.
 - **The old height holds.** While a resize plays, the settled tower stands at `fromCards`
-  (`heldCards`), and the scene is fitted to the taller of the two heights, so the build-up
-  never sees the count change mid-animation. At the end the new count takes over. After
-  the first resize on main, a count change there no longer grows the tower from nothing
-  (`useBuildProgress`'s `animate`, read off `everResized`), since the resize animated it.
+  (`heldCards`, on either deck — a Mastered tower only ever has one through a swap's drop),
+  and the scene is fitted to the taller of the two heights, so nothing redraws the count
+  mid-animation. At the end the new count takes over.
 - **Busy.** While one plays (or holds), the plate, the lever, swipes and arrows
   are off.
 - **The focus lever's hold.** The lever's new figure comes from the server some time after
@@ -823,7 +849,7 @@ from:
 | `fog` | flat translucent white fog clouds — 2–4 skinny staggered pills each, bridged where they overlap by gaps with filleted (rounded, concave) ends — at three heights, rolling across the whole screen width (over the platform and the sky either side) in iso space (`iso/IsoFog.tsx`, field from `iso/fogClouds.ts` → `planFogClouds`; drawn by `DeckTowerPlatform` via its `fog` prop — not `WeatherLayer`) |
 | `drizzle` | very sparse short rain streaks (2–5 per 100k px² by intensity), plus small splashes on the platform (`iso/IsoRain.tsx`) |
 | `rain` | longer, faster rain streaks just denser than drizzle (5–8 per 100k px²), plus drops in front of the tower splashing on the platform and the tower's top (`iso/IsoRain.tsx`) |
-| `snow` | falling, swaying flakes |
+| `snow` | falling, swaying flakes; flakes also fall in front of the platform and settle on it (`iso/IsoSnow.tsx`), and snow **settles on the platform's components** on page entry and stays until cleared — [TOWER_SNOW.md](./TOWER_SNOW.md) |
 | `storm` | heavy rain (with `IsoRain`'s front drops and splashes) + a double-strike white flash every ~11 s ± 45%, each with a 1% chance to strike the platform (§ Lightning strikes) |
 
 - **Sky colour (main world only):** `weatherSky.ts` → `weatherDaySky` sets main's DAY sky

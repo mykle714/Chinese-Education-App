@@ -9,7 +9,7 @@ import type { UserGender } from '../types';
  * (`server/services/UserService.ts`), the authority. The client check exists only so a bad
  * date is caught at the field instead of as a 400 after submit.
  *
- * Referenced by: docs/IMMERSIVE_WORLD.md § 5.5.
+ * (Collected for Immersive World, removed 2026-11-09 — docs/ARCHIVED_FEATURES.md.)
  */
 
 /** The two answers, in the order both forms list them. `null` — "Prefer not to answer" — is the third. */

@@ -138,8 +138,7 @@ heading: it starts directly under the friend ID card (`src/features/friends/Frie
 * **Subtitle — the balance as a DURATION** ("3w 2d 4h 10m"): a minute point is a
   minute of study, and a duration sizes up at a glance where "32,650 minutes" does
   not — which is the whole job of a column being compared down a list. Formatted by
-  the shared `src/utils/formatDuration.ts` (`weeks: true`; the Night Market badge
-  uses the same function without weeks). The figure is
+  the shared `src/utils/formatDuration.ts` (`weeks: true`). The figure is
   `user_languages.totalMinutePoints`, the penalty-debited NET wallet
   ([STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md)), **not** the monotonic
   `lifetimeMinutesEarned` — the two diverge for any learner who has ever been
@@ -357,7 +356,7 @@ This document describes:
 `server/server.ts` (`app.use(friendRoutes)`),
 `src/api/friends.ts`,
 `src/features/friends/*`,
-`src/utils/formatDuration.ts` (shared with the Night Market badge),
+`src/utils/formatDuration.ts`,
 `src/routes/routeMeta.ts` (the four friends entries),
 `src/routes/registry.ts` (four `PAGE_COMPONENTS` entries),
 `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` (the `friends` row).
@@ -378,7 +377,7 @@ and the block columns — all planned),
 ## 8. Not built
 
 Deliberately out of scope for this pass — no friend-only content
-beyond the leaderboard's two numbers (no friend's decks, night market or streak), no notification when
+beyond the leaderboard's two numbers (no friend's decks or streak), no notification when
 a request arrives (the badge on the Friends tab is the only signal), and no
 friend-count limit.
 

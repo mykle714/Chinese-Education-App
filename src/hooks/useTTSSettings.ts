@@ -47,9 +47,9 @@ export type AudioMode = 'off' | AudioRoute;
  * the learner picked instead of saying "whatever we ship". It is a member of `TTSVoice`, so it
  * crosses to the server unchanged and shares the default voice's cache slots.
  *
- * ⚠️ It does NOT govern Immersive World's NPCs. A character's voice follows their gender
- * (docs/IMMERSIVE_WORLD.md § 6.4a) — this is the voice the app uses when it reads TO you:
- * flashcards, example sentences, game reveals.
+ * This is the voice the app uses when it reads TO you: flashcards, example sentences, game
+ * reveals. A caller that names its own voice overrides it (none does today; Immersive World's
+ * NPCs did — removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md).
  */
 export type NarrationVoice = 'female' | 'male';
 

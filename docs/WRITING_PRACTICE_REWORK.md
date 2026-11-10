@@ -370,14 +370,16 @@ plain `?` (`ForeignText` → `maskChar`, see below). For 你, a saved
 | mask by level | levels **1–3** (Snap / Trace / Step Through) show the **real character** in the hint: the card front already shows its whole outline, so there's nothing to hide. Levels 4–8 mask it. Derived from `levelBehavior.ts` → `previewShowsWholeCharacter(mode)` for the card's level (`writingLevelForMastery`), so the hint and the card's own preview can't disagree |
 
 Data path: the writing bar's loop and refill (`getDistributedWorkingLoop`,
-`getNextLibraryCardWithFallback`) pass `bar` into `enrichWithUsedIn`. On `writing` it attaches
-`VocabEntry.writingUsedIn` from `VocabEntryDAL.findWritingUsedInForCharacter`, alongside the
+`getNextLibraryCardWithFallback`) pass `bar` into `enrichMultipleWithUsedIn`. On `writing` it attaches
+`VocabEntry.writingUsedIn` from `VocabEntryDAL.findWritingUsedInForCharacters` (one query for
+every single-character card in the batch), alongside the
 regular `usedIn` the eip still uses after submit. Every other bar omits the field.
 
 Code:
-- `server/dal/implementations/VocabEntryDAL.ts` → `findWritingUsedInForCharacter`,
-  `toUsedInItem` (row mapper shared with `findUsedInForCharacter`)
-- `server/services/OnDeckVocabService.ts` → `enrichWithUsedIn`, `enrichMultipleWithUsedIn`
+- `server/dal/implementations/VocabEntryDAL.ts` → `findWritingUsedInForCharacters`,
+  `writingUsedInSql` (the per-character query), `toUsedInItem` (row mapper shared with
+  `findUsedInForCharacter`)
+- `server/services/OnDeckVocabService.ts` → `enrichMultipleWithUsedIn`
 - `server/contracts/wire.ts` → `VocabEntry.writingUsedIn`
 - `src/features/flashcards/FlashcardsLearnPage/hintPawn/pawnHints.ts` → `pawnHintFor`,
   `UsedInPawnHint` (the hint's data, mask by level); `hintPawn/PawnHintBody.tsx` (the words);

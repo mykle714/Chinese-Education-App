@@ -9,7 +9,10 @@ Parent: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (sub-documents table). It
 user is [DECK_TOWER.md](./DECK_TOWER.md), which uses `IsoScene`, `IsoPlatform`
 (`floating`), `IsoCardStack`, `IsoCardImprint`, `IsoFloorLabel`, `IsoPawn`, `IsoCloud` and `IsoWind`.
 The acp also imports it (`src/features/discover/SortBins.tsx`, which draws through its own
-`makeProjector`; `sortTimeOfDay.ts` → `mixHex`, `shadowTone`; `AddCardsPage.tsx` → `shadeHex`), and so
+`makeProjector`; `sortTimeOfDay.ts` → `mixHex`, `shadowTone`; `AddCardsPage.tsx` → `shadeHex`). Its decks'
+top faces are the one place HTML lies on an iso face: the real `MiniCard` in a `<foreignObject>`,
+mapped by `faceTransform` (`SortBins.tsx` → `DeckFace`; every other face print is SVG drawn in world
+units), and so
 does the flp's hint pawn (`hintPawn/HintPawn.tsx`: a tiny, non-bobbing `IsoPlatform` with an `IsoPawn`,
 [HINT_PAWN.md](./HINT_PAWN.md)).
 `IsoCarpet` (a low floor mat) and `IsoModeSwitch` (the Mix / Review floor switch) were deleted
@@ -46,7 +49,7 @@ The exemption covers iso scenes only; it is not a precedent for UI chrome.
 | Primitive | `IsoShadow.tsx` → `IsoShadow` | The only shadow drawer |
 | Primitive | `IsoSpacedText.tsx` → `IsoSpacedText` | Centred letter-spaced text that anchors the same in every engine (§ Objects → IsoSpacedText) |
 | Behaviour | `IsoLevitate.tsx` → `IsoLevitate` | Bobs an object up and down; its shadow breathes in sync |
-| Behaviour | `usePawnMotion.ts` → `usePawnMotion`, `depthRankAmong`, `pointInFrontOfRect`, `backToFront`, `PawnEntranceCue`, `PawnTapReaction`, `PawnActiveIdle`, `PawnAirRing` | The pawn's entrance, wander and startle, its idles, tap reactions and air rings, and depth-sorting a moving object among obstacles |
+| Behaviour | `usePawnMotion.ts` → `usePawnMotion`, `depthRankAmong`, `pointInFrontOfRect`, `backToFront`, `PawnEntranceCue`, `PawnTapReaction`, `PawnActiveIdle` | The pawn's entrance, wander and startle, its idles and tap reactions, and depth-sorting a moving object among obstacles |
 | Behaviour | `pawnIdles.ts` → `PawnIdleKind`, `PawnIdleCue`, `LASTING_IDLES`, `idlePose`, `flinchPose`, `SNEEZE_SNAP_MS`, `KNIT_CLICK_MS` | The idle animations' and the tap flinch's pose curves, pure (§ IsoPawn → "Idles and the flinch") |
 | Math | `pawnFigure.ts` → `pawnFigure`, `pawnVest`, `circleHullPath`, `HEAD_CENTRE` (also read by the flp hint pawn's bubble tail) | The pawn's body as a projected 3D capsule + sphere (§ IsoPawn → "View"); bent along a curved spine by `arch` (§ IsoPawn → "Back stretch"); the optional night vest (§ IsoPawn → "Vest") |
 | Behaviour | `pawnEntrances.ts` → `PawnEntrance`, `FALL_FROM_SKY`, `PAWN_ENTRANCES`, `pickPawnEntrance`, `entranceStartFor` | How a pawn arrives, as pure pose timelines timed by their landing ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md) § Pawn entrances) |
@@ -54,10 +57,10 @@ The exemption covers iso scenes only; it is not a precedent for UI chrome.
 | Behaviour | `useCloudDrifts.ts` → `useCloudDrifts`, `CloudDrift`, `CloudSky`, `sortCloudsBackToFront` | Schedules the clouds drifting past the tower: shapes, speed, timing, mid-sky openers |
 | Behaviour | `fogClouds.ts` → `planFogClouds`, `FogCloud`, `FogUnit`, `FogBridge`, `FogCover`, `FOG_LEVELS` | Shapes the fog clouds (staggered, bridged units) and plans their lanes across a screen box (§ IsoFog) |
 | Behaviour | `useWindGusts.ts` → `useWindGusts`, `WindGust`, `WindStrand`, `WindPt`, `WindSky` | Schedules the wind gusts: strand shapes, curl, timing, on-screen placement |
-| Object | `IsoPlatform.tsx`, `IsoCard.tsx`, `IsoCardStack.tsx`, `IsoCardImprint.tsx`, `IsoFloorPrint.tsx`, `IsoPaperStack.tsx`, `IsoSortPlatform.tsx`, `IsoCardRuns.tsx`, `IsoFloorLabel.tsx`, `IsoHatch.tsx`, `IsoLever.tsx`, `IsoSmokePuff.tsx`, `IsoPawn.tsx` (+ its `PawnIdleProps.tsx`, `PawnAirRing.tsx`), `IsoCloud.tsx`, `IsoCloudShadow.tsx`, `IsoWind.tsx`, `IsoFog.tsx`, `IsoRain.tsx`, `IsoLightningBolt.tsx`, `IsoBurnMark.tsx` | The things a scene is made of (one component each, below) |
+| Object | `IsoPlatform.tsx`, `IsoCard.tsx`, `IsoCardStack.tsx`, `IsoCardImprint.tsx`, `IsoFloorPrint.tsx`, `IsoPaperStack.tsx`, `IsoSortPlatform.tsx`, `IsoCardRuns.tsx`, `IsoFloorLabel.tsx`, `IsoHatch.tsx`, `IsoLever.tsx`, `IsoSmokePuff.tsx`, `IsoPawn.tsx` (+ its `PawnIdleProps.tsx`), `IsoCloud.tsx`, `IsoCloudShadow.tsx`, `IsoWind.tsx`, `IsoFog.tsx`, `IsoRain.tsx`, `IsoSnow.tsx`, `IsoSnowCap.tsx`, `IsoSnowFloor.tsx` (+ `snowTrail.ts`), `IsoLightningBolt.tsx`, `IsoBurnMark.tsx` | The things a scene is made of (one component each, below) |
 | Behaviour | `cardCollapse.ts` → `planCardCollapse`, `cardsShowingAt`, `fallMsFor`, `shadowLandTiming`, `CardCollapsePlan` | The pure plan for a stack losing cards and settling (§ IsoCardRuns) |
 | Rules | `light.ts` → `IsoSurface`, `shadowFootprint`, `shadowSpread`, `shadowTone`, `cloudShadowFootprint` | The light and the shadow rule |
-| Rules | `palette.ts` → `ISO` (incl. `yarn`, `airRing`), `shadeHex`, `mixHex`, `Material` | Colours (`mixHex` blends two colours continuously, e.g. the Deck Tower sky → space) |
+| Rules | `palette.ts` → `ISO` (incl. `yarn`), `shadeHex`, `mixHex`, `Material` | Colours (`mixHex` blends two colours continuously, e.g. the Deck Tower sky → space) |
 | Rules | `levitation.ts` → `BOB_HEIGHT`, `BOB_PERIOD_MS`, `frozenBobOffsetPx` | The bob, and reading back where a paused one stopped |
 | Math | `geometry.ts` | Projection and shape math (below) |
 | Math | `camera.ts` → `makeCameraProjector`, `dimetricView`, `CameraView` | A moving camera with perspective that reproduces the fixed view exactly at one setting (§ The camera) |
@@ -438,14 +441,28 @@ the Deck Tower's notebook stack (DECK_TOWER.md
 
 `src/features/deckTower/iso/IsoSortPlatform.tsx` → `IsoSortPlatform`;
 `sortPlatformMetrics.ts` → `sortPlatformTopZ`, `SORT_PLATFORM_JUMP`, `HOP_PERIOD_MS`,
-`FOOTPRINT_SHADE`; acp's empty-bin footprint is `SortBins.tsx` → `SortBin` (`sort-bins__footprint`).
+`MINI_RIM`. acp's four band-coloured bins (SortBins.tsx → `BIN_CELLS`;
+SORT_CARDS_REQUIREMENTS.md § 5.3) in miniature, as one slab.
 
-`{ rect, surface, deckColor, slabColor, progress?, hopping?, paused? }`. acp's EMPTY bin in
-miniature: a thin slab (0.28 units) lying flat on `surface` — standing up from it like any
-object on a floor, unlike IsoPlatform, whose top is pinned at z = 0 — with IsoPlatform's
-light rim bevel at this scale and on its top the dashed outline where a deck would stand,
-in `deckColor` darkened by `FOOTPRINT_SHADE` (acp's day value). Dash and stroke are floor
-units × `proj.unit`. It casts a standing object's `IsoShadow` (with `casterHeight`), classed
+`{ rect, surface, shadowReceiver?, quadrantColors, thickness?, buriedTo?, progress?, hopping?, paused?, snow? }`.
+`thickness` (default `SLAB_THICKNESS`) deepens the slab — the Deck Tower passes the floor
+snow's depth on a snowy floor, so its top lies flush with the snow's. `buriedTo` (the snow
+surface's z) clips the slab to above the snow line in the scene's frame (a clip outside
+the hop: the band the walls fill at rest, grown by `BURIED_EDGE_GROW` so no anti-aliased
+edge survives), and draws the top face again unclipped; so at rest no wall shows, and
+while it hops the part lifted out of the snow does.
+A thin slab (0.28 units) lying flat on `surface` — standing up from it like any object on a
+floor, unlike IsoPlatform, whose top is pinned at z = 0 — with IsoPlatform's light rim
+bevel at this scale (`platformTone`). Its four quadrants are each in one band's colour,
+`quadrantColors` in acp's bin order (Unfamiliar, Target, Comfortable, Mastered), placed to
+keep acp's S-piece neighbours: Unfamiliar left on screen, Target at the front, Comfortable
+right, Mastered at the back (`QUADRANT_CELLS`). Each quadrant is the whole slab drawn in its
+tone, clipped to its quarter's COLUMN (the screen hull of the vertical prism over the
+quarter, open past the slab on its outer sides), painted back to front (`backToFront`): the
+front column wins where two overlap, so the walls and top split exactly along the quarter
+lines while the slab keeps its one rounded outline. A column reaches `SEAM_OVERLAP` past a
+quarter line under a neighbour painted after it, so no hairline shows at the seams. `snow`
+is one `IsoSnowCap` over the whole top (all four colours hidden), inside the hop. It casts a standing object's `IsoShadow` (with `casterHeight`), classed
 `iso-sort-platform__shadow`. It is drawn in world z, never by a screen-y translate, so it
 stays right under a moving camera. `progress` (0 → 1) grows the slab up out of the surface.
 `hopping` plays one big jump (`SORT_PLATFORM_JUMP`, 1.6 units) with rebounds at 0.28 and
@@ -833,8 +850,8 @@ the shadow does not grow (`air` is clamped at 0) — the page fades it out inste
 pops and the feet are thrown straight up (`POKE_JUMP_HEIGHT`, 2.6 units) through the feet
 physics, so the jump lands in the plate launch's shrinking bounces. Taps count in the air
 too: each re-throws the feet from where they are, so quick taps climb with no ceiling, and
-gravity brings the pawn back down once they stop. Each of those mid-air re-throws leaves an
-**air ring** where the feet kicked off (below). A page can pick the reaction instead
+gravity brings the pawn back down once they stop. A mid-air re-throw leaves no mark (a
+kick-off ring was tried and removed 2026-11-09 as too loud). A page can pick the reaction instead
 (`onTap`, below). A walk stops where it is, and the pawn
 stands until the bubble has gone (`EMOTE_MS`), then wanders on. A startle keeps its
 timeline, with the jump on top of it. A tap is ignored during an entrance or an edge hop
@@ -851,18 +868,6 @@ back with one small rebound (`pawnIdles.ts` → `flinchPose`, `FLINCH_MS`). A ta
 are in the air always jumps, whatever `onTap` returns, so jumps still chain. Without `onTap`
 every tap is the jump with the "!" (the Deck Tower's pawns). Code: `usePawnMotion.ts` →
 `poke`, `onTap`; `IsoPawn.tsx` → `onTap`.
-
-**Air ring.** A jump thrown while the feet are already up (a chained poke) spawns a
-`PawnAirRing` at the feet's ground point and absolute height (`usePawnMotion` → `airRings`,
-`{ id, x, y, z }`). It is a little platform in the air, so a double jump reads as pushing off
-something: two concentric flat iso circles (`flatPath` of a round footprint, like the rain
-splash ring in IsoRain), `PAWN_FOOT_RADIUS` × 1.5 and × 2.4, stroked `ISO.airRing`
-(`COLORS.blueAccent`, owner's pick 2026-11-08). They swell "lightly" from 80% to 115% on a sine
-ease-out and fade over `AIR_RING_MS` (520 ms), the outer ring 70 ms behind the inner, like a
-ripple. The ring stays where it was kicked off (outside the `travel` group, behind the figure)
-and is unmounted on its outer ring's `animationend` (`dropAirRing`). It applies to every pawn,
-the Deck Tower's included; a ground jump has none. Code: `iso/PawnAirRing.tsx`,
-`iso/usePawnMotion.ts` → `poke`, `iso/IsoPawn.tsx`.
 
 **Idles and the flinch.** Each new `idle` cue (`PawnIdleCue` = `{ id, kind, at }`) plays an
 idle animation, the `idle` mode. Its pose is a pure curve (`pawnIdles.ts` → `idlePose`) of
@@ -1132,6 +1137,107 @@ pills, so the cut-out stays on the tower as the fog rolls under it. A piercer wh
 at or below a level is not cut, so a short tower sits wholly in the fog. Pawns are not
 piercers because they move every frame. A pawn's head can pick up a faint veil from fog
 behind it, which the owner accepted on 2026-11-04.
+
+### IsoRain
+
+`{ rect, floorZ, fall, solids?, ceilingY? }` (`iso/IsoRain.tsx`). Rain falling in front of
+what stands on a platform and splashing on it. A scene's sky rain sits behind its svg, so
+this layer draws only the drops whose column the platform or a solid would hide. Each drop
+has a landing point on open floor or on a solid's top (`openFloor.ts` → `openFloorSpot`),
+falls straight down the screen onto it, and splashes there with a flat iso ring and two
+droplets. Flat `ISO.rain`, unwashed, at the sky rain's opacity. A few `<path>`s are
+rewritten from one rAF loop, with sizes in CSS px converted every frame from the svg's
+screen matrix. Only the visible column is simulated. Nothing is drawn under reduced motion.
+The Deck Tower's use: [DECK_TOWER.md](./DECK_TOWER.md) § Weather.
+
+### IsoSnow
+
+`{ rect, floorZ, fall: IsoSnowFall, solids?, ceilingY? }` (`iso/IsoSnow.tsx`). IsoRain's
+snow counterpart, with the same landing rule and on-screen-only simulation. Flakes sway
+down, the sway easing out over the last 36 CSS px so each lands on its spot, then lie
+there fading (0.9 s) instead of splashing. They are round-capped dots in two radius
+buckets (small and large), plus the settled flakes, in flat unwashed `ISO.snow`. The flake
+look comes in `fall` (the Deck Tower passes the sky's `SNOW_*`, `towerWeather.ts`). Nothing
+is drawn under reduced motion. [TOWER_SNOW.md](./TOWER_SNOW.md) § Falling snow.
+
+### Snow
+
+Settled snow, drawn by each object itself (`iso/IsoSnowCap.tsx`, `iso/IsoSnowFloor.tsx`;
+[TOWER_SNOW.md](./TOWER_SNOW.md)). A snowy object is handed a `SnowCover`: present means
+snowy. While the snow is being brushed off, it carries `shed: { id, delayMs }`.
+
+- **`IsoSnowShed`** wraps every cover. Lying, it just draws it. Shedding (keyed by the
+  brush's id), after `delayMs`, the snow hops up, drops and fades over `SNOW_SHED_MS`,
+  while eight flakes spray out from `burstAt`. Under reduced motion a shedding cover
+  draws nothing.
+- **`SnowSlab`** `{ rect, z, depth, className, trail?, channelFloorZ?, holes?, children? }`: the base of every
+  flat cover. A slab of snow with thickness: an `IsoSolid` in `snowMaterial` (palette.ts:
+  the washed `snow` on top, walls stepped 0.07 / 0.15 like the platform's), with the
+  rounded edge. `trail` (a `SnowTrail`) ploughs the pawns' channel through it
+  (`snowChannel.ts` → `useSnowChannel`), drawn over the slab and clipped to its top face:
+  the channel's outline projected at the snow's top, in the lit wall tone, is the far wall,
+  and the same outline at `channelFloorZ` (default the base; clipped to the top one) is the
+  channel's floor of packed snow, in `shadowTone(snow)`. `holes` (world
+  rounded rects) are dug clean through: a mask opens the snow where each hole's outline at
+  the top and at the base overlap, so what was painted under the slab shows, and the rest
+  of the top outline is the hole's far wall. `children` print on the top.
+- **`IsoSnowCap`** `{ rect, z, cover, inset?, depth? }`: a `SnowSlab` of `SNOW_CAP_DEPTH`
+  (0.3, ~6 px) on a rounded-rect top face. Used by `IsoSortPlatform` `snow` (inside the hop
+  group) and `IsoPaperStack` `snow` (on the top sheet).
+- **`IsoCardSnow`** `{ rect, z, cover }`: a card's snow, an `IsoSnowCap` over the whole
+  top card (inset 0.03), hiding its print. Used by `IsoCardStack` `snow` (on the top card, riding the build-up) and the Deck Tower's
+  `TowerCoverCard`.
+- **`IsoBallSnow`** `{ cx, cy, r, cover }`: a dome standing proud of a ball's top, with a
+  scalloped lower edge, in screen space. A lip under it (the outline dropped a little, in
+  the snow's right-wall tone) gives it thickness. Used by `IsoLever` `snow` on the knob.
+- **`IsoFloorSnow`** `{ rect, z, slide?, trail?, drift? }`: a `SnowSlab` of
+  `FLOOR_SNOW_DEPTH` (0.4, ~8 px) over a platform's whole floor, out to
+  its outer edge (rim bevel buried; the snow's walls stand flush on the platform's). It is passed as a floor decal, so it swings with a trap door, and
+  whatever decal is drawn before it lies buried under it. `slide` 0 → 1 slides it toward
+  the door's free edge (+x, accelerating) and fades it. `drift` `{ rect, rise, cover? }` is the
+  snow over something raised buried under it (the Deck Tower's plate): lying, a slab `rise`
+  tall on the sheet's top, ploughing the same `trail` down to the region's top
+  (`channelFloorZ`); shedding, a hole through the sheet with the drift and the sheet
+  under it playing the brush-off over it (`IsoSnowShed`); with no cover, just the hole.
+- **`IsoSnowSkirt`** `{ rect, z, height, shadow?, casterHeight? }`: the floor's snow banked
+  round the base of an object standing in it, drawn right after the object. It paints the
+  prism's walls from `z` up to `z + min(FLOOR_SNOW_DEPTH, height)` (hull minus top face,
+  even-odd) in the snow's top tone: the snow lying in front of those walls. With `shadow`,
+  an object taller than the snow gets the part of its shadow (cast on the snow's top) that
+  falls inside the band painted again over it, clipped to it.
+- **The channel** (`snowChannel.ts`). Recording and drawing are split by the store:
+  `useSnowTrailRecorder(trail, walkers, enabled)` runs one rAF loop that reads each
+  walker's point ref (`SnowWalker`; IsoPawn `floorSpot`, or the Deck Tower's `summitSpot`
+  for the tower's top) and extends that walker's run every 0.08 units of travel; a walker
+  whose ref is null, or that is airborne (`SnowWalker` `airborne`, IsoPawn / usePawnMotion
+  `airborne`: feet physics above `AIRBORNE_MIN`, a flight, an edge hop), ends its run. It notifies the store's `listeners` at most every
+  `REDRAW_MS` (100 ms). Each `SnowSlab` with that `trail` subscribes (`useSnowChannel`)
+  and rewrites its own three paths — so the floor's sheet, a drift and a cap plough by
+  the same code. Each run is offset to both sides by the
+  pawn's body radius (`pawnFigure.ts` → `PAWN_BODY_RADIUS`), with round ends, broken at
+  every sharp turn (one whose inner offset would fold, or past `MAX_SMOOTH_TURN`) into stretches whose round ends overlap there
+  (so a sharp turn is round, not notched; a one-point run is a circle), and drawn
+  into the slab. So the pawn ploughs a channel its own width, packed snow at the bottom.
+  A slab repaints on each notify and when the projection or its heights change. **Cost:** the paths are
+  re-rasterized on every repaint of the scene svg (each frame while snow falls), so their
+  size is what makes a long-lived trail slow. Each run is simplified first
+  (`simplifyRun`, Ramer–Douglas–Peucker within `SIMPLIFY_TOLERANCE` 0.012), its outlines
+  and projected paths are cached on the run (`runCache`: only the runs being extended are
+  redone), and each slab takes only the runs whose bounds reach it. The store (`snowTrail.ts` → `SnowTrail`, `newSnowTrail`,
+  `capSnowTrail`, `MAX_TRAIL_POINTS`) is the caller's, so the channel outlasts a remount.
+- **Shadows on snow.** A scene whose floor is snowy passes the floor surface recoloured to
+  the snow (`{ ...floor, color: palette.snow }`) as each standing object's `surface`, so
+  their opaque shadows are the snow's shadow tone. While the snow lies, the objects that
+  take `shadowReceiver` (`IsoCardStack`, `IsoPaperStack`, `IsoSortPlatform`) are handed the
+  snow's TOP as it (null — no shadow — for one shorter than the snow).
+- **Wading.** IsoPawn `snowDepth` (usePawnMotion): the floor's snow depth; a `PawnStep`
+  may set its own `snowDepth` (0 = bare; a summit never takes the floor's, an ordinary step
+  inherits it, lifted with the step as a drift is). Wherever the depth under the pawn is
+  above 0, the snow line is that depth over the surface it stands on (`z0 + lift`), and the
+  figure is clipped to everything above it in front of it (`pawnFigure.ts` →
+  `pawnSnowClip`, the near half of the body's circle at the snow's top, levelled out past
+  its side points), so its bottom is hidden in the snow, and it casts no shadow (nor shows
+  its shaded decals). Off while the floor drops.
 
 ### IsoLightningBolt
 

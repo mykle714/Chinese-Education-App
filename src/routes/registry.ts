@@ -10,7 +10,7 @@ import { FLAGGED_OFF_PATHS, ROUTE_META, type RouteMeta } from "./routeMeta";
  * runtime consumers — Layout, FooterPresenter and pageTransition — none of which
  * needs a single page component. Keeping the components here means those three, and
  * the unit tests, can import the table without pulling the ENTIRE page tree
- * (including Pixi, via NightMarketEnginePage) into their module graph. That import
+ * into their module graph. That import
  * weight is what made the old inline-in-App.tsx table untestable.
  *
  * It is still ONE list: `routeMeta.ts` owns every row, and this file only supplies
@@ -83,16 +83,9 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   "/flashcards/card/:id": lazy(() => import("../features/flashcards/VocabCardDetailPage")),
   "/dictionary/card/:word": lazy(() => import("../features/dictionary/DictionaryCardDetailPage")),
   "/discover/sort/:language": lazy(() => import("../features/discover/AddCardsPage")),
-  "/night-market": lazy(() => import("../features/nightmarket/NightMarketEnginePage")),
-  "/night-market/user/:userId": lazy(() => import("../features/nightmarket/NightMarketVisitPage")),
   "/tester-dashboard": lazy(() => import("../pages/TesterDashboardPage")),
   "/settings": lazy(() => import("../pages/SettingsPage")),
   "/settings/account": lazy(() => import("../pages/AccountSecurityPage")),
-  "/night-market/template-editor": lazy(() => import("../features/nightmarket/TemplateEditorPage")),
-  "/night-market/template-sandbox": lazy(() => import("../features/nightmarket/TemplateSandboxPage")),
-  "/immersive-world/scene-editor": lazy(() => import("../features/immersiveworld/IWSceneEditorPage")),
-  "/immersive-world": lazy(() => import("../features/immersiveworld/play/IWWorldPage")),
-  "/immersive-world/:sceneId": lazy(() => import("../features/immersiveworld/play/IWPlayPage")),
   "/font-lab": lazy(() => import("../pages/fontLab/FontLabPage")),
   "/flashcards": lazy(() => import("../features/flashcards/FlashcardsPage")),
   "/profile": lazy(() => import("../pages/ProfilePage")),

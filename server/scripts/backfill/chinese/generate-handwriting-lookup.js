@@ -49,18 +49,10 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { REPO_ROOT } from '../shared/lib/repoRoot.js';
 import db from '../../../db.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SERVER_DIR = path.resolve(__dirname, '..', '..', '..');
-
-// ⚠️ PATHS DIFFER BETWEEN HOST AND CONTAINER — same probe as its sibling
-// generator; see that file's note for why.
-const CONTAINER_REPO_ROOT = '/app/project-root';
-const REPO_ROOT = fs.existsSync(CONTAINER_REPO_ROOT)
-  ? CONTAINER_REPO_ROOT
-  : path.resolve(SERVER_DIR, '..');
+// Host vs container layout (repo root mounted at /app/project-root): shared/lib/repoRoot.js.
 
 const OUTPUT_DIR = path.join(REPO_ROOT, 'src', 'assets', 'handwriting');
 const INDEX_FILE = path.join(OUTPUT_DIR, 'glyph-lookup.bin');

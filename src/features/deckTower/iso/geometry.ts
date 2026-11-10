@@ -5,7 +5,7 @@
  * ── The projection ────────────────────────────────────────────────────────────
  * Dimetric, tilted VIEW_PITCH from straight down: world +x runs down-RIGHT on screen, world
  * +y runs down-LEFT, and +z is straight UP. Slightly more top-down than the Night Market's
- * 2:1 grid (docs/NIGHT_MARKET_FEATURE.md § Coordinate System), which was this kit's view
+ * 2:1 grid (that feature is removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md), which was this kit's view
  * until 2026-10-31 and is pitch 60°:
  *
  *     sx = (x − y) · unit

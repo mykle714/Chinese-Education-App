@@ -174,7 +174,7 @@ so nothing breaks.
   (Manual `startViewTransition` + `flushSync` because this app uses the component
   `<BrowserRouter>`/`<Routes>`, where React Router's `<Link viewTransition>` does
   not fire one.) Used by td's cards page → cdp (`DeckTowerPage` → `onOpenTowerCard`) and
-  its sort platform / notebook stack (circle, below), `useOpenWordCard`, Dictionary and Reader list taps,
+  its notebook stack (circle, below) and sort platform (dash, below), `useOpenWordCard`, Dictionary and Reader list taps,
   Friends / Study Challenge / Arena pages, Account → Settings → Account security, and
   `WordSearchHubItem`. The Bento hubs (Menu, Games) do **not** use it — their
   tiles navigate plainly. ⚠️ Several of those pages also call it from their **back**
@@ -185,7 +185,11 @@ so nothing breaks.
   `animation: none` so the old page is **held static** beneath (z-index below the
   new). The footer bar carries its own `view-transition-name: app-footer`, so it
   is captured as a separate group and morphs independently instead of riding the
-  page slide.
+  page slide. ⚠️ A named group is lifted OUT of the phone frame (the frame's
+  `overflow: hidden` no longer clips it), so on desktop a footer sliding in or out moves
+  outside the phone card. The circle transition therefore drops the name
+  (`:root[data-vt-dir="circle"] .mobile-footer { view-transition-name: none; }`): there the
+  footer stays in the root snapshot, clipped by the frame and revealed by the circle.
 - **Fallback:** browsers without view transitions (or forward navigations not routed
   through `slideNavigate`) fall back to `usePageSlide`'s own rAF enter slide (over a
   blank frame). **Back never slides the destination in** — a `POP` navigation (the ←
@@ -208,7 +212,9 @@ one transition.
   view transition with `data-vt-dir="circle"`, whose CSS holds both snapshots still (new
   over old). Once the transition is `ready` it animates the new snapshot's `clip-path`
   from JS (`pseudoElement: "::view-transition-new(root)"`), because the point is only
-  known at the tap.
+  known at the tap. The footer is not its own group here (its `view-transition-name` is
+  dropped under `data-vt-dir="circle"`), so a footer arriving with the page is revealed by
+  the circle and clipped by the phone frame, rather than sliding up outside it on desktop.
 - **Exit:** the page passes the point back as `LeafPage` `exitCircleTo`. `usePageSlide`'s
   exit makes its usual clone over the destination, but clips it to a shrinking circle
   instead of sliding it down. The point is shifted into the phone frame's box, because the
@@ -218,9 +224,52 @@ one transition.
 - **Reduced motion, or no view transitions:** a plain navigation, with no circle.
 - **Node pages too.** `NodePage` takes the same `exitCircleTo`, so a node page opened with
   the circle closes the same way (its Back otherwise slides right).
+- **Used by:** the Deck Tower's notebook paper stack ↔ the Writing Notebook
+  (DECK_TOWER.md § The notebook stack). (The sort platform ↔ Add Cards used it until
+  2026-11-09; it now dashes, below.)
+
+### The dash transition (the world pan, between routes)
+
+`src/hooks/pageDash.ts` → `runPageDash`; `src/utils/pageTransition.ts` → `DASH_MOTION`,
+`DashLaunch`, `readDashLaunch`; `src/utils/speedLineField.ts` → `speedLineField`;
+`useSlideNavigate` (`dash`); `NodePage` `exitDash`; `usePageSlide` → `freezeClone`.
+
+The Deck Tower's camera dash between worlds (DECK_TOWER.md § Worlds → The pan) played from
+one route to another, on the pan's own numbers (`DASH_MOTION`: 260 ms out, ease-in → 260 ms
+of empty sky → 300 ms in, ease-out) and its own streak field (`speedLineField`, which
+`SpeedLines` also draws):
+
+1. **Out.** A frozen clone of the leaving page (the same `freezeClone` the exit slide uses,
+   which also copies scroll offsets) whips off the side the camera leaves, over a sky in the
+   leaving page's claimed ground (`--surface-ground`, useThemeColor). The speed lines gather.
+   The navigation happens at t = 0, so the destination mounts beneath the sky (skip-enter
+   latch armed).
+2. **Cruise.** Empty sky, lines at full strength, blending into the ground the arriving page
+   now claims.
+3. **In.** The arriving page — LIVE, not a snapshot: the route element, the phone frame's
+   first child — is raised over the sky and slides in, braking; the lines die away.
+
+- **Not a view transition.** Imperative DOM in the phone frame (`.mobile-demo-frame`):
+  the sky + clone at z 50, the arriving page at z 51 for the in phase, the lines at z 52 —
+  all under the footer pill (z 100), which does not move, as in the pan. The sky blocks taps
+  on the hidden destination until it slides in.
+- **Enter:** `slideNavigate(to, { dash: { from, lineColor }, state: { dash: { lineColor } } })`
+  — `from` is any element inside the current page; the camera travels RIGHT.
+- **Exit:** `NodePage` `exitDash` (the `DashLaunch` read back with `readDashLaunch`) runs the
+  dash travelling LEFT instead of `usePageSlide`'s exit. Lives in NodePage, not usePageSlide,
+  because pageDash imports usePageSlide's latch and `freezeClone`.
+- **Streak colour travels in nav state**, because the opened page cannot compute the
+  launching page's time-of-day wash. A reload or deep link that loses it falls back to the slide.
+- **Reduced motion, no Web Animations, or no phone frame:** a plain navigation.
+- **Entrances held until seen.** The destination mounts at t = 0, hidden, so its CSS entrance
+  animations (acp's card dock slide-in, its bins and toolbar) would finish unseen. While it is
+  hidden the frame carries `page-dash-hold` (rule in `src/index.css`), which pauses every CSS
+  animation in the route page — delays included, late-mounting elements too; a paused
+  `backwards`-fill animation holds its first frame. Released at the in phase, they play as
+  the page slides in. JS-driven motion (td's tower build-up, `useBuildProgress`) is not held
+  and still runs partly unseen.
 - **Used by:** the Deck Tower's mini sort platform ↔ Add Cards (a node page;
-  DECK_TOWER.md § The sort platform), and the Deck Tower's notebook paper stack ↔ the Writing Notebook
-  (DECK_TOWER.md § The notebook stack).
+  DECK_TOWER.md § The sort platform).
 
 ## Slide hook
 
@@ -250,10 +299,9 @@ animate. Returns `{ surfaceRef, style, exit }`:
   `src/components/overlayHost.ts`.) Overlays that dim are hosted at the frame too, OUTSIDE
   the page surface, so the clone does not carry them: they vanish on navigation rather
   than sliding off (docs/UX_AND_NAVIGATION.md § Dimming the background). (Bubble Match's stage is DOM, not canvas, so the clone copies cleanly.
-  Caveat: Night Market renders a Pixi.js **canvas**, which `cloneNode` does not
-  copy — its exit clone shows the dark background + DOM header overlay but not the
-  live scene during the brief down-slide. Acceptable since the destination beneath
-  is what matters; revisit with the View Transitions API if it ever looks wrong.)
+  Caveat: a page that renders a **canvas** would lose it in the clone — `cloneNode`
+  does not copy canvas pixels. No leaf page does today; the Night Market did, until it
+  was removed 2026-11-09.)
 - **Skip-enter latch:** makes a page mount **static** (in place, no rAF slide) so
   something else owns the motion. It is armed (`armSkipNextEnter`) by (a) `exit`,
   so the destination sits static beneath the departing clone, and (b)
@@ -283,9 +331,9 @@ prop. Instead the page on screen may claim ONE tab while it is mounted: a tap on
 runs the page's handler and the footer does not navigate. The claim is dropped on unmount.
 
 `NodePage` `backOnFooterTab` is the one packaged use: a tap on that tab plays the page's own
-Back (`exit(onBack, exitCircleTo)`), so a page whose Back leads where the tab does leaves the
+Back (`exit(onBack, exitCircleTo)`, or the dash with `exitDash`), so a page whose Back leads where the tab does leaves the
 same way either way. Today only **acp opened from the Deck Tower** sets it (`"deck"`), so
-the Flashcards tab closes the circle onto the tower's sort platform rather than jumping
+the Flashcards tab dashes back onto the tower rather than jumping
 (DECK_TOWER.md § The sort platform). Every other tap, and every other page, navigates as
 before.
 
@@ -362,7 +410,6 @@ own-animation pages) are neither archetype.
 | `/games/match-speed` | `MatchSpeedPage` | Leaf |
 | `/community` | `CommunityPage` | Node (reached from the Menu popover; Menu tab stays lit) |
 | `/tester-dashboard` | `TesterDashboardPage` | Leaf |
-| `/night-market` | `NightMarketEnginePage` | Leaf |
 | `/settings` | `SettingsPage` | Leaf (normally read as AccountSheet's Settings tab; `/settings/account`'s Back lands here) |
 
 > Game rows are not written out in `routeMeta.ts` — `GAME_ROUTE_META` derives one

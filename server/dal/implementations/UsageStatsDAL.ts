@@ -29,10 +29,9 @@ import type {
  *                                          learner chose (docs/PROVISIONAL_CARDS.md)
  *   game wins           wins
  *   writing practice    writing_practice_completions
- *   immersive world     iw_scene_runs (by "startedAt")
  *   AI dictionary       dictionary_ai_usage (SUM(count) — one row per user per day)
  *   recent learners     users ⋈ refresh_tokens ⋈ userminutepoints ⋈ vet ⋈
- *                       category_promotions ⋈ iw_scene_runs ⋈ wins, one row per learner
+ *                       category_promotions ⋈ wins, one row per learner
  *
  * The database runs in UTC, so `ts::date` on a timestamptz is already the UTC day.
  * refresh_tokens is never purged (RefreshTokenDAL only revokes), so sign-in history
@@ -165,9 +164,6 @@ export class UsageStatsDAL implements IUsageStatsDAL {
        SELECT 'writingPractice', COUNT(*)::int, COUNT(DISTINCT "userId")::int
          FROM writing_practice_completions WHERE "completedAt" >= $1::date AND "completedAt" < $2::date + 1
        UNION ALL
-       SELECT 'immersiveWorld', COUNT(*)::int, COUNT(DISTINCT "userId")::int
-         FROM iw_scene_runs WHERE "startedAt" >= $1::date AND "startedAt" < $2::date + 1
-       UNION ALL
        SELECT 'aiDictionary', COALESCE(SUM(count), 0)::int, COUNT(DISTINCT "userId")::int
          FROM dictionary_ai_usage WHERE "usageDate" BETWEEN $1::date AND $2::date`,
       [since, until]
@@ -237,13 +233,6 @@ export class UsageStatsDAL implements IUsageStatsDAL {
          WHERE "minutesEarned" > 0 AND "streakDate" BETWEEN $1::date AND $2::date
          GROUP BY 1
        ),
-       iw AS (
-         -- Runs STARTED: the row is inserted when a run begins, so this is plays.
-         SELECT "userId", COUNT(*) AS runs
-         FROM iw_scene_runs
-         WHERE "startedAt" >= $1::date AND "startedAt" < $2::date + 1
-         GROUP BY 1
-       ),
        won AS (
          -- One JSON array per learner: [{ game, wins }], most-won first. Wins, not
          -- plays — the wins table is the only per-round record a game writes.
@@ -267,14 +256,12 @@ export class UsageStatsDAL implements IUsageStatsDAL {
               COALESCE(opens.sign_ins, 0)::int       AS "signIns",
               COALESCE(sorted.cards, 0)::int         AS "cardsSorted",
               COALESCE(climbed.steps, 0)::int        AS velocity,
-              COALESCE(iw.runs, 0)::int              AS "iwRuns",
               COALESCE(won.games, '[]'::jsonb)       AS "gameWins"
        FROM users u
        LEFT JOIN opens   ON opens."userId"   = u.id
        LEFT JOIN studied ON studied."userId" = u.id
        LEFT JOIN sorted  ON sorted."userId"  = u.id
        LEFT JOIN climbed ON climbed."userId" = u.id
-       LEFT JOIN iw      ON iw."userId"      = u.id
        LEFT JOIN won     ON won."userId"     = u.id
        WHERE opens."userId" IS NOT NULL OR studied."userId" IS NOT NULL
        ORDER BY opens.last_seen DESC NULLS LAST, minutes DESC, u.name

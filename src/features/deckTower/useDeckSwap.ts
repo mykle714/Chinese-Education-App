@@ -16,11 +16,11 @@ import { otherTowerDeck, type TowerDeckId } from "./towerDecks";
  *
  *   0 ── PLATE_SETTLE_MS ──▶ t = 0 ──────── clearedMs ──── readyMs ──── durationMs
  *   plate + title       door drops, old     old tower      new pawn LANDS,  rebound
- *   switch to the new   tower + pawn fall;  gone: scene    new tower starts ends:
- *   deck at once; the   old pawn pops "!";  refits to the  growing          settled
- *   plate pops back up  new pawn mounted,   new deck
- *                                           hidden until its
- *                                           entrance starts
+ *   switch to the new   tower + pawn fall;  gone: scene    the page sky-    ends:
+ *   deck at once; the   old pawn pops "!";  refits to the  drops the new    settled
+ *   plate pops back up  new pawn mounted,   new deck       tower (DeckTowerPage)
+ *                       hidden until its
+ *                       entrance starts
  *                                    (optional impactMs — the trap door's is clearedMs: the tower
  *                                     hits a floor below the screen and cards splatter up)
  *

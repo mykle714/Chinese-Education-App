@@ -163,7 +163,7 @@ No new tables/columns. Both destinations already exist in
 | → right          | `already-learned`  | upsert vet row + 8/8 on the **core** tracks (reading/writing stay 0) → core band `Mastered` |
 
 Because both write a vet row, and the supply query excludes any word the user
-has a vet row for (`_fetchSupplyRows` `NOT EXISTS (vet …)`,
+has a vet row for (`StarterPacksDAL.findSupplyRows` `NOT EXISTS (vet …)`,
 `StarterPacksService.ts`), **cards already in the user's library/mastered
 never appear in Quick Mark** — satisfying the "never override progress the user
 already made" requirement automatically. (A swiped card leaves the grid at once — §6 — and
@@ -175,10 +175,11 @@ existing `undoSort`, the same reversal Add Cards uses.
 ## 5. Supply query
 
 Service method `listQuickMarkCards(language, userId, level, cursor, limit=100)`
-(`server/services/StarterPacksService.ts`):
+(`server/services/StarterPacksService.ts`), whose query is
+`StarterPacksDAL.findQuickMarkPage` (`server/dal/implementations/StarterPacksDAL.ts`):
 
 - `WHERE de.language = $1 AND <supplyGate> AND <validPredicate>` — the supply gate is
-  `_supplyGate()`: `de.discoverable = TRUE`, for every language (the zh-only `sortable`
+  `discoverSupplyGate()` (`server/dal/shared/dictTable.ts`): `de.discoverable = TRUE`, for every language (the zh-only `sortable`
   bar was retired by migration 144 — see docs/DISCOVER_FLOW.md § Card supply gate)
 - `AND <levelExpr> = $level`  (exact level, no ±drift)
 - `AND NOT EXISTS (vet row for this user/word[/pos])`  — excludes already-sorted

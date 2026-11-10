@@ -45,9 +45,10 @@ folder: any feature may consume it.
 
 | Id | Where | Intro | Graduated | Thresholds |
 |---|---|---|---|---|
-| `sortDifficultyCaption` | acp toolbar level pill — `AddCardsPage` `difficultyCaption` / `LevelCaption` | "DIFFICULTY" caption under the pill | the pill alone (Tower Tier 2 design) | 7 visits + 7 days |
+| `sortDifficultyCaption` | acp toolbar level pill — `AddCardsPage` `difficultyCaption` / `LevelCaption` | "DIFFICULTY →" caption left of the pill, pointing at it | the pill alone (Tower Tier 2 design) | 7 visits + 7 days |
 | `towerSortLabel` | td main world's mini sort platform — `DeckTowerPlatform` `fixturePrint` (`FIXTURE_PRINT.sortBin`) | "ADD MORE / CARDS →" printed in white on the floor in front of it, reading toward it (`IsoFloorPrint`) | the slab alone | 70 visits + 14 days |
 | `towerNotebookLabel` | td writing world's notebook paper stack — `DeckTowerPlatform` `fixturePrint` (`FIXTURE_PRINT.notebook`) | "WRITING / NOTEBOOK" + a hung "→" printed into the floor in front of it, reading toward it | the stack alone | 70 visits + 14 days |
+| `towerSnowCover` | td settled snow — `DeckTowerPage` `snowCoverText` → `DeckTowerPlatform` `snow.coverText` ([TOWER_SNOW.md](./TOWER_SNOW.md) § Covering text) | snow leaves text readable: plate bare, si print + imprint drawn over the floor's snow, top card's snow on its rim only | snow covers the plate, the prints and the top card's print | 4 visits + 1 day |
 | `pawnDismissCue` | flp hint pawn's speech bubble — `PawnHintBody` `DismissCue`, resolved by `HintPawn` → `DismissCueSoftIntro` | "Tap / to / dismiss" cue in the bubble's bottom-right corner ([HINT_PAWN.md](./HINT_PAWN.md) § Dismissing) | no cue, and no space reserved for it: the line / cpcd words take its width. The bubble is still one tap target | 49 visits + 14 days |
 
 ## 3. Storage

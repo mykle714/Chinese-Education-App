@@ -26,7 +26,7 @@ For a user who has **never sorted any card**, the server picks cards in
 1. `estimateLevel(userId, language)` returns **1** — a fresh user has zero mastered
    and zero learning cards, so level 1 is the first *uncleared* level
    (`StarterPacksService.ts`).
-2. `_fetchSupplyRows` selects discoverable cards ordered **nearest-level-first**
+2. `StarterPacksDAL.findSupplyRows` selects discoverable cards ordered **nearest-level-first**
    around the estimate (`StarterPacksService.ts`):
 
    ```sql
@@ -41,7 +41,7 @@ So today the beginner order is an accident of two things: the curated `difficult
 arbitrary (whatever `id` the row happened to get on import). **That arbitrary
 within-band order is exactly what we want to replace with a hand-crafted one.**
 
-Filters applied to the supply (all in `_fetchSupplyRows`):
+Filters applied to the supply (all in `StarterPacksDAL.findSupplyRows`):
 
 - `de.discoverable = TRUE`
 - valid difficulty: `de."difficulty" ~ '^[1-6]$'`
@@ -189,7 +189,7 @@ navigation lives in [DISCOVER_FLOW.md](./DISCOVER_FLOW.md)).
 
 ## Code references
 
-- `server/services/StarterPacksService.ts`
-  - `estimateLevel` (fresh user → level 1)
-  - `_fetchSupplyRows` (the ORDER BY we are changing)
-  - `_levelConfig` (`levelExpr`, `validPredicate`)
+- `server/services/StarterPacksService.ts` → `estimateLevel` (fresh user → level 1)
+- `server/dal/implementations/StarterPacksDAL.ts`
+  - `findSupplyRows` (the ORDER BY we are changing)
+  - `LEVEL_EXPR`, `VALID_LEVEL` (the level encoding)

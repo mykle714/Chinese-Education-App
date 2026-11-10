@@ -64,9 +64,9 @@ const AUDIO_MODE_OPTIONS = AUDIO_MODE_ORDER.map((value) => ({ value, ...AUDIO_MO
 // attempt to name the provider voice ("Wavenet A") describes nothing they can judge.
 //
 // The subtitles carry the ONE thing that is not audible from the sample: that this is the
-// app's reading voice and not the voice of the people in Immersive World, who are cast by
-// character (docs/IMMERSIVE_WORLD.md § 6.4a). Said once, on the default row, rather than
-// twice.
+// app's reading voice, not a character's. That distinction was written for Immersive World's
+// NPCs (removed 2026-11-09 — docs/ARCHIVED_FEATURES.md); the copy still says it. Said once, on
+// the default row, rather than twice.
 const NARRATION_VOICE_COPY: Record<NarrationVoice, { title: string; subtitle: string }> = {
     female: {
         title: 'Female',
@@ -413,8 +413,8 @@ function SettingsBody() {
                 </SettingsSection>
 
                 {/* ── About you — gender + date of birth (migration 164) ──────────
-                    Asked at signup; editable here. Read by Immersive World (the
-                    learner's body, and how NPCs address them). Its own component —
+                    Asked at signup; editable here. Collected for Immersive World
+                    (removed 2026-11-09); nothing reads it today. Its own component —
                     see AboutYouSections — to keep this page from growing further. */}
                 <AboutYouSections />
 

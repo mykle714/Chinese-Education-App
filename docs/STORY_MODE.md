@@ -6,6 +6,13 @@
 > marked **PROPOSED** is still a draft; the open questions are collected in § 13. Do not build
 > from this doc until § 13's 🔴 questions are answered.
 
+> ⚠️ **Immersive World, which this design leans on, was removed from `main` on 2026-11-09.**
+> Every `server/services/iw/*` file, the `iw_scenes` table, `docs/IMMERSIVE_WORLD.md` ("iw §")
+> and the `users.isTemplateAuthor` grant cited below now exist only on the
+> `archive/night-market-immersive-world` branch — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md).
+> Read those citations as "port from the archive", and re-ask Q21 (no authoring grant exists
+> today beyond `isFeatureTester` / `isAdmin`).
+
 **Working name:** "Story Mode". The two variants under test are called **Authored** and
 **Improvised** throughout this doc (rename freely — see Q1).
 
@@ -40,7 +47,7 @@ model, see § 5.3 for how they are recorded). Authored endings are exhaustive by
 
 ### 1a. What it is NOT (PROPOSED)
 
-- **Not Immersive World.** iw ([IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md)) is a walkable scene
+- **Not Immersive World.** iw (archived — see banner) is a walkable scene
   with voiced NPCs; the target language is the *control interface* and latency is the hard
   constraint. Story Mode is a **reading surface** — text on a page, no avatar, no voice by
   default, no ~500 ms budget. It reuses a lot of iw's server plumbing (§ 5) but none of its
@@ -166,7 +173,7 @@ sort packs ([SORT_PACKS_IMPLEMENTATION.md](./SORT_PACKS_IMPLEMENTATION.md) § 2.
 content as code. Consequences:
 
 - **The editor is on the critical path.** iw found its editor was the biggest piece of
-  phase 1 ([IMMERSIVE_WORLD.md](./IMMERSIVE_WORLD.md) § 12); expect the same here. Phasing
+  phase 1 (archived iw doc § 12); expect the same here. Phasing
   (§ 11) now starts with it.
 - **Gate:** `users.isTemplateAuthor`, the existing authoring grant (Q21: reuse it, or a new
   `isStoryAuthor` grant?).
@@ -424,7 +431,7 @@ one hand-written graph and one improvised over it (Q20).
 
 ## 12. Referenced code (keep in sync)
 
-Nothing in Story Mode exists yet. It plans to reuse:
+Nothing in Story Mode exists yet. It plans to reuse (the `iw/*` files are on the archive branch only — see the banner):
 
 - `server/services/iw/modelLadder.ts` → `getIwLadder`, `buildIwLadder`: model access (§ 5.2)
 - `server/services/iw/turnBudget.ts` → `IWTurnBudget`, `checkUtterance`: precedent for the turn/daily caps (§ 5.6)

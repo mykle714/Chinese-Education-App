@@ -93,7 +93,7 @@ const MAX_FRAME_GAP_MS = 100;
  * diving into a study unmounts td's header, and the run keeps its clock and finishes
  * unseen (the embers draw nothing once an anchor is gone; it is already stamped seen).
  */
-function useDailyBankingRun(store: FrameStore): void {
+function useDailyBankingRun(store: FrameStore, held: boolean): void {
     const { user, token } = useAuth();
     // "Always play" is honoured only while testing features are on (useTestingFeatures).
     const testingFeatures = useTestingFeatures();
@@ -105,7 +105,9 @@ function useDailyBankingRun(store: FrameStore): void {
     useEffect(() => { tokenRef.current = token; }, [token]);
 
     useEffect(() => {
-        if (!user?.id) return;
+        // Held (td's home screen is up — docs/HOME_SCREEN.md § "What waits"): the run is
+        // stamped seen as it starts, so starting it unseen would lose it for the day.
+        if (!user?.id || held) return;
         let cancelled = false;
         let rafId = 0;
 
@@ -156,16 +158,19 @@ function useDailyBankingRun(store: FrameStore): void {
         };
         // Stable identities only: user id + language. A language switch re-checks, and
         // replays for the other language if its run is owed (Q3).
-    }, [user?.id, testingFeatures, language, store]);
+    }, [user?.id, testingFeatures, language, store, held]);
 }
 
-/** Mounted by DeckTowerPage around its screen. Only td plays the banking run. */
-export function DailyBankingProvider({ children }: { children: React.ReactNode }) {
+/**
+ * Mounted by DeckTowerPage around its screen. Only td plays the banking run.
+ * `held`: the run waits (td's home screen covers the header); it starts once released.
+ */
+export function DailyBankingProvider({ children, held = false }: { children: React.ReactNode; held?: boolean }) {
     const value = useMemo<DailyBankingContextValue>(
         () => ({ store: createFrameStore(), anchors: { flame: { current: null }, avatar: { current: null } } }),
         []
     );
-    useDailyBankingRun(value.store);
+    useDailyBankingRun(value.store, held);
     return <DailyBankingContext.Provider value={value}>{children}</DailyBankingContext.Provider>;
 }
 

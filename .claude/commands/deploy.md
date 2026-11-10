@@ -216,7 +216,7 @@ docker-compose -f docker-compose.ppe.yml up --build -d
 
 # Schedules (PPE only) — idempotent; installs/refreshes BOTH hourly systemd USER
 # timers from the git-tracked unit templates in database/cron/:
-#   cow-maintenance  HH:01  inactivity penalty + template prune  (docs/STREAK_EXPIRATION_CRON.md)
+#   cow-maintenance  HH:01  inactivity penalty + challenge expiry (docs/STREAK_EXPIRATION_CRON.md)
 #   cow-arena        HH:06  resolve then form arenas             (docs/ARENA_FEATURE.md § 10)
 # NO SUDO — it writes to ~/.config/systemd/user, which the deploy user owns.
 # Never run it with sudo (it refuses: root's units would not run this user's jobs).

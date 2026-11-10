@@ -117,7 +117,7 @@ interface BeginnerKeyboardHostProps {
   /** Reports how much bottom screen space this surface occupies, in CSS px. */
   onInsetChange?: (height: number) => void;
   /**
-   * Author-only (§ 6w): float the recognizer debug-dump button over the surface.
+   * Feature-tester-only (§ 6w): float the recognizer debug-dump button over the surface.
    * Decided by the provider, which is the layer that holds auth.
    */
   debug?: boolean;

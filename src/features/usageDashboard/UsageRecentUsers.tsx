@@ -17,7 +17,7 @@ import { gameLabel } from "./usageFormat";
  *
  * Each row: name + relative "last seen", a muted detail line (days studied / opened +
  * languages), then a four-cell figure strip — sign-ins, minutes studied, cards sorted,
- * velocity — and a play line (Immersive World runs + wins per game), all over the
+ * velocity — and a play line (wins per game), all over the
  * selected window.
  */
 
@@ -48,12 +48,11 @@ function detailLine(u: UsageUserRow): string {
 }
 
 /**
- * "Immersive World 2 runs · Word Search 3 wins · Match Speed 1 win", or "" when the
+ * "Word Search 3 wins · Match Speed 1 win", or "" when the
  * learner played nothing. Games are WINS, not plays — the app logs no lost rounds.
  */
 function playLine(u: UsageUserRow): string {
     const parts: string[] = [];
-    if (u.iwRuns > 0) parts.push(`Immersive World ${u.iwRuns} ${u.iwRuns === 1 ? "run" : "runs"}`);
     for (const g of u.gameWins) parts.push(`${gameLabel(g.game)} ${g.wins} ${g.wins === 1 ? "win" : "wins"}`);
     return parts.join(" · ");
 }

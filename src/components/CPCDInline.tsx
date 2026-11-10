@@ -43,9 +43,8 @@ interface CPCDInlineProps {
  * ⚠️ WHEN TO REACH FOR IT. Inline is for a name or label that must stay on ONE
  * line of chrome — it costs a row's width instead of a row's height. It is NOT the
  * layout for anything the learner is meant to study: a stacked reading is easier to
- * map syllable-to-character, which is the whole point of cpcd. The first caller is
- * the iw speaker caption inside a speech bubble, where a stacked reading would sit
- * directly above the spoken line's own stacked reading.
+ * map syllable-to-character, which is the whole point of cpcd. The first caller was
+ * Immersive World's speaker caption inside a speech bubble (removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md).
 
  *
  * ⚠️ INLINE IS DELIBERATELY SMALLER THAN THE STACKED LAYOUTS AT THE SAME `size`.
@@ -56,7 +55,6 @@ interface CPCDInlineProps {
  * Reached through `ForeignText layout="inline"`, never imported directly —
  * ForeignText is the public container (see its header).
  *
- * Referenced by: docs/IMMERSIVE_WORLD.md § 5.3a.
  */
 const CHAR_FONT_SIZE: Record<CPCDSize, string> = { xs: "14px", sm: "18px", smd: "21px", md: "24px", lg: "28px", xl: "36px" };
 const PINYIN_FONT_SIZE: Record<CPCDSize, string> = { xs: "10px", sm: "12px", smd: "14px", md: "15px", lg: "17px", xl: "21px" };

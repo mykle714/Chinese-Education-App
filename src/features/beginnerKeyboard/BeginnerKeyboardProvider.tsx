@@ -77,7 +77,6 @@ import {
   isEligibleField,
   lockedSourceOf,
   isKeepOpenTarget,
-  isKeyboardDisabledPath,
   type EditableField,
 } from './eligibility';
 import { BeginnerKeyboardInsetContext, INSET_CSS_VARIABLE } from './insetContext';
@@ -126,17 +125,15 @@ function writeStoredSource(source: KeyboardSource): void {
 export default function BeginnerKeyboardProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const location = useLocation();
-  // Two gates, both wholesale: the account's language, and the route. A disabled
-  // route (the two authoring editors) suppresses the listeners entirely rather
-  // than filtering per field, so nothing on those pages can raise the bar —
-  // including their portalled dialogs, which sit outside the page's DOM subtree.
-  const enabled =
-    user?.selectedLanguage === SUPPORTED_LANGUAGE && !isKeyboardDisabledPath(location.pathname);
-  // § 6w: the recognizer debug dump rides the same `isTemplateAuthor` grant as
-  // the night-market and iw editors. The check is here because this is the only
-  // layer in the feature that touches auth — pushing it down would make the
-  // keyboard itself untestable without an auth context.
-  const debug = !!user?.isTemplateAuthor;
+  // One gate, wholesale: the account's language. (A second, ROUTE gate suppressed the
+  // keyboard on the desktop Night Market / Immersive World authoring editors; it went with
+  // those features on 2026-11-09.)
+  const enabled = user?.selectedLanguage === SUPPORTED_LANGUAGE;
+  // § 6w: the recognizer debug dump rides the `isFeatureTester` grant (it rode
+  // `isTemplateAuthor` until that column was dropped, migration 185). The check is
+  // here because this is the only layer in the feature that touches auth — pushing
+  // it down would make the keyboard itself untestable without an auth context.
+  const debug = !!user?.isFeatureTester;
 
   // The field text is inserted into, and whether the surface is currently up.
   // They are separate because the exit is animated; see the header note.

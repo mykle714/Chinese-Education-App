@@ -25,32 +25,6 @@ import type { KeyboardSource } from './KeyboardSwitchBar';
 const ALLOWED_INPUT_TYPES = new Set(['text', 'search', '']);
 
 /**
- * Routes the keyboard never offers itself on, matched against `location.pathname`.
- *
- * These are the desktop-only, template-author-only AUTHORING surfaces (the night
- * market template editor and the immersive-world scene editor). Every field on
- * them holds authoring metadata — a scene name, a tile id, a numeric size — that
- * is typed in English or ASCII, so a handwriting bar covering the bottom of a
- * dense three-column tool is pure obstruction.
- *
- * This is a PATH exclusion rather than the `off` attribute because both pages
- * open MUI dialogs and menus, which render through a portal into `document.body`
- * and therefore escape the attribute's `closest()` inheritance. One entry per
- * page here beats chasing every portal.
- */
-const DISABLED_PATHS = new Set([
-  '/night-market/template-editor',
-  '/immersive-world/scene-editor',
-]);
-
-/** Is the beginner keyboard switched off wholesale for this route? */
-export function isKeyboardDisabledPath(pathname: string): boolean {
-  // Tolerate a trailing slash so '/x' and '/x/' behave the same.
-  const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
-  return DISABLED_PATHS.has(normalized);
-}
-
-/**
  * The one attribute this feature reads off the page, with two values:
  *
  *   `off`  — never raise the keyboard on this field (or anything inside it).

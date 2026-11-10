@@ -185,8 +185,9 @@ function RegisterPage() {
                     />
 
                     {/* ── About you (migration 164) — gender + date of birth ─────────
-                        Both required, both with "Prefer not to answer". Read by Immersive
-                        World only; see src/utils/demographics.ts for the shared copy. */}
+                        Both required, both with "Prefer not to answer". Collected for
+                        Immersive World (removed 2026-11-09) — nothing reads them today; see
+                        src/utils/demographics.ts for the shared copy. */}
                     <Box className="register-page__about-you" sx={{ mt: 3 }}>
                         <Typography className="register-page__about-you-purpose" variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
                             {DEMOGRAPHICS_PURPOSE}

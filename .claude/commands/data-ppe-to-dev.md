@@ -12,7 +12,7 @@ a stale snapshot. Refresh dev *down* from PPE; never restore these dumps upward.
 > machine this operation feels like a push, from dev it feels like a pull. `ppe-to-dev`
 > reads the same on both.
 
-Structurally this mirrors [`/template-pull`](./template-pull.md) (PPE half = SOURCE,
+Structure: PPE half = SOURCE,
 Local half = TARGET, transport = Git LFS — the dumps travel through the repo even
 though the dev box can now SSH to PPE, so both checkouts keep the same snapshot).
 

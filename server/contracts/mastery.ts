@@ -524,9 +524,46 @@ export function marksToWrite(track: ReviewMark[] | undefined, isCorrect: boolean
  * goal who sorts a card as known still sees an empty Write bar on it.
  */
 export function coreMasteredTypedMarkHistory(timestamp: string): TypedMarkHistory {
+  return coreSeededTypedMarkHistory(WINDOW, timestamp);
+}
+
+/**
+ * Seed history with `positives` correct marks on EACH core track (recognition AND
+ * production), reading/writing left empty — the general form of
+ * `coreMasteredTypedMarkHistory` (which is this at `positives = 8`).
+ *
+ * Seeding both tracks equally keeps the card balanced, like the Mastered seed, so the
+ * flp has no lopsided "weak track" to chase on day one. Clamped to [0, WINDOW].
+ */
+export function coreSeededTypedMarkHistory(positives: number, timestamp: string): TypedMarkHistory {
+  const n = Math.max(0, Math.min(WINDOW, Math.floor(positives)));
   const h: TypedMarkHistory = {};
+  if (n === 0) return h;
   for (const t of WORLD_MARK_TYPES.core) {
-    h[t] = Array.from({ length: WINDOW }, () => ({ timestamp, isCorrect: true }));
+    h[t] = Array.from({ length: n }, () => ({ timestamp, isCorrect: true }));
   }
   return h;
 }
+
+/**
+ * How many positives per core track each acp sort bucket seeds — the learner's own
+ * verdict on a word, one bucket per utcm band (docs/SORT_CARDS_REQUIREMENTS.md § 8).
+ * Each value lands the card MID-band rather than on a cut line, per the core pbh
+ * formula `min(6, max) + min/3` (see `coreProgressBarHeight`):
+ *
+ *   | bucket            | per track | core pbh | band        |
+ *   |-------------------|-----------|----------|-------------|
+ *   | `library`         | 0         | 0        | Unfamiliar  |
+ *   | `target`          | 3         | 4.0      | Target      |
+ *   | `comfortable`     | 5         | 6.67     | Comfortable |
+ *   | `already-learned` | 8         | 8.67→8   | Mastered    |
+ *
+ * Keys are `DiscoverSortBucket` wire values (wire.ts); `skip` never writes a vet row.
+ * Depended on by: server/services/StarterPacksService.ts → `sortCard`.
+ */
+export const SORT_BUCKET_CORE_POSITIVES = {
+  'library': 0,
+  'target': 3,
+  'comfortable': 5,
+  'already-learned': WINDOW,
+} as const;

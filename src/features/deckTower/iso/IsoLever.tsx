@@ -1,6 +1,7 @@
 import React from "react";
 import IsoHatch from "./IsoHatch";
 import IsoSolid from "./IsoSolid";
+import { IsoBallSnow, type SnowCover } from "./IsoSnowCap";
 import { prism, toPath, type WorldRect } from "./geometry";
 import { LEVER_HOLE } from "./hatchGeometry";
 import type { IsoSurface } from "./light";
@@ -55,9 +56,14 @@ interface IsoLeverProps {
     air?: PawnEntranceFrame;
     /** The ball's colour; omitted = `ISO.leverKnob` (red). A world whose sky is red passes a contrasting one. */
     knob?: string;
+    /**
+     * Snow on the ball (IsoBallSnow; docs/TOWER_SNOW.md § "The focus lever") — only the
+     * ball holds snow. It rides the ball through every pull, sink and fall. Undefined: bare.
+     */
+    snow?: SnowCover;
 }
 
-const IsoLever: React.FC<IsoLeverProps> = ({ at, surface, inside, pull, sink, hatch, air, knob }) => {
+const IsoLever: React.FC<IsoLeverProps> = ({ at, surface, inside, pull, sink, hatch, air, knob, snow }) => {
     const proj = useIsoProjector();
     const palette = useIsoPalette();
     const knobColor = knob ?? palette.leverKnob;
@@ -118,6 +124,7 @@ const IsoLever: React.FC<IsoLeverProps> = ({ at, surface, inside, pull, sink, ha
                         />
                         {/* The knob: a plain ball in the world's knob colour. */}
                         <circle className="iso-lever__knob" cx={tip.x} cy={tip.y} r={knobPx} fill={knobColor} />
+                        {snow && <IsoBallSnow cx={tip.x} cy={tip.y} r={knobPx} cover={snow} />}
                     </>
                 );
             }}

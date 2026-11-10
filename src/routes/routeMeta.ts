@@ -8,7 +8,7 @@ import { isFeatureEnabled } from "../../server/contracts/featureFlags";
  * question the app asks about a route EXCEPT which component renders it (that join
  * lives in ./registry.ts, so this file stays free of page imports and can be read by
  * Layout, FooterPresenter, pageTransition and the tests without dragging the whole
- * page tree — Pixi included — into their module graph).
+ * page tree into their module graph).
  *
  * ── Why this exists ────────────────────────────────────────────────────────────
  * Adding one page used to require edits to FOUR files that each independently
@@ -51,7 +51,7 @@ import { isFeatureEnabled } from "../../server/contracts/featureFlags";
  *   'any'     — any signed-in account, including public/demo ones. The common case.
  *   'account' — a full (non-public) account. Public accounts are bounced to "/".
  *
- * Feature-level gates (isValidator, isFeatureTester, isTemplateAuthor, isAdmin) are NOT expressed here: those
+ * Feature-level gates (isValidator, isFeatureTester, isAdmin) are NOT expressed here: those
  * pages use 'any' and enforce their own gate inside the page, with the server
  * enforcing it too. Putting them here would let the generic isPublic redirect
  * pre-empt the specific gate.
@@ -63,8 +63,7 @@ export type RouteAccess = "open" | "any" | "account";
  *
  *   'frame' — the shared phone-frame surface (MobileDemoFrame): full-bleed on
  *             mobile, a centred phone card on desktop.
- *   'plain' — full-height, no chrome (auth pages, the desktop-only Night Market
- *             authoring tools, 404).
+ *   'plain' — full-height, no chrome (auth pages, the font lab, 404).
  */
 export type RouteShell = "frame" | "plain";
 
@@ -195,10 +194,6 @@ const PAGE_ROUTES: RouteMeta[] = [
   { path: "/discover/sort/:language", access: "any", shell: "frame", chrome: "node", footerTab: "deck", footerStyle: "slab" },
 
   // ── Leaf pages (slide up, no footer) ──
-  { path: "/night-market", access: "any", shell: "frame", chrome: "leaf" },
-  // Read-only visit to another user's market, from their profile page. A LEAF like the
-  // owner's page (docs/USER_PROFILE_PAGE.md § Night market visit).
-  { path: "/night-market/user/:userId", access: "any", shell: "frame", chrome: "leaf" },
   {
     path: "/tester-dashboard",
     access: "any",
@@ -219,46 +214,6 @@ const PAGE_ROUTES: RouteMeta[] = [
     shell: "frame",
     chrome: "leaf",
     note: "Artboard 11b — the write-heavy half of settings (password + delete). Reached only from the chevron row at the foot of /settings, so it matches its parent's access: the password form and the delete flow both authenticate on their own request.",
-  },
-
-
-  // ── Desktop-only Night Market authoring tools (plain shell) ──
-  {
-    path: "/night-market/template-editor",
-    access: "any",
-    shell: "plain",
-    chrome: "none",
-    note: "Template-author-only (migration 115); the page and the backend both enforce it. Desktop-only and outside the phone frame, so no page transition.",
-  },
-  {
-    path: "/night-market/template-sandbox",
-    access: "any",
-    shell: "plain",
-    chrome: "none",
-    note: "Same gate as the editor above.",
-  },
-  {
-    path: "/immersive-world/scene-editor",
-    access: "any",
-    shell: "plain",
-    chrome: "none",
-    note: "The iw scene editor (docs/IMMERSIVE_WORLD.md § 12 phase 1d). Template-author-only (migration 115), enforced in ImmersiveWorldSceneService and mirrored as UX on the page. Desktop-only three-column authoring surface — plain shell for the width, no page transition.",
-  },
-
-  // ── Immersive World (§ 14 Q9: its own hp destination, not a Games tile) ──
-  {
-    path: "/immersive-world",
-    access: "any",
-    shell: "frame",
-    chrome: "leaf",
-    note: "The learner's scene list (docs/IMMERSIVE_WORLD.md § 12 phase 2). ORDER IS LOAD-BEARING: `findRoute` takes the FIRST row whose pattern matches, so both rows here sit BELOW the exact /immersive-world/scene-editor row — otherwise :sceneId would swallow the editor and give an author a leaf shell with no width.",
-  },
-  {
-    path: "/immersive-world/:sceneId",
-    access: "any",
-    shell: "frame",
-    chrome: "leaf",
-    note: "One scene, running. A LEAF: the down-arrow is the only way out, and the page owns its whole surface (canvas + bubbles + composer). No footer — a walkable board must not lose its bottom rows to one.",
   },
 
 
@@ -318,21 +273,6 @@ const GAME_ROUTE_META: RouteMeta[] = ROUTED_GAMES.map((g) => ({
 export const FLAGGED_OFF_PATHS: ReadonlySet<string> = new Set<string>([
   ...(isFeatureEnabled("community") ? [] : ["/community"]),
   ...(isFeatureEnabled("arena") ? [] : ["/arena"]),
-  // Night Market takes four rows: the market, the read-only visit to someone else's
-  // market, and the two desktop authoring tools. The authoring tools go with it because
-  // they author this feature's content — `isTemplateAuthor` answers a different question
-  // ("may you author?") and is not a substitute for the flag.
-  ...(isFeatureEnabled("nightMarket")
-    ? []
-    : [
-        "/night-market",
-        "/night-market/user/:userId",
-        "/night-market/template-editor",
-        "/night-market/template-sandbox",
-      ]),
-  ...(isFeatureEnabled("immersiveWorld")
-    ? []
-    : ["/immersive-world", "/immersive-world/:sceneId", "/immersive-world/scene-editor"]),
   ...(isFeatureEnabled("writingNotebook") ? [] : ["/flashcards/writing/notebook"]),
   ...(isFeatureEnabled("studyChallenge")
     ? []

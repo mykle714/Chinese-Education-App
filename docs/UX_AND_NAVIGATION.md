@@ -15,7 +15,7 @@ specific doc.
 | **eip bottom-sheet gestures** | [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) | `SheetPanel`'s height model: three stops (0 / default / max) with the default height as the floor, one snap rule, the resize-vs-scroll mode lock, and release momentum that stops at the default height instead of dismissing. |
 | **Add Cards (Discover flow)** | [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) | `/discover/sort/:language` drag-to-sort page (acp), a Deck drill-in reached from td's sort platform: node page (back arrow → `/`, keeps the footer with Deck lit), hosting the Quick Mark panel and skipped-cards sheet. |
 | **Soft introductions (si)** | [SOFT_INTRODUCTION.md](./SOFT_INTRODUCTION.md) | A minor UI element styled one way (intro) for a learner's first encounters, then another (graduated) once both a visit count and a day count are met. Per-device localStorage only; feature testers pick Auto / Force intro / Force graduated in Settings → "Soft introductions" (under "Enable testing features"). |
-| **Deck Tower** | [DECK_TOWER.md](./DECK_TOWER.md) | `/`, the app's landing page and the footer's Flashcards tab: the Learning deck (off-cooldown cards) drawn as an isometric tower of cards on a platform, in the "Good Job!" art style (flat three-tone shading, no outlines). Built from the iso art framework. Tapping the floor plate switches to the Mastered deck through an animated transition ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md)). Tapping the Learning tower studies it in place — the camera dives onto the top card and the flp is laid over it, no route change (§ Studying the tower). |
+| **Deck Tower** | [DECK_TOWER.md](./DECK_TOWER.md) | `/`, the app's landing page and the footer's Flashcards tab: the Learning deck (off-cooldown cards) drawn as an isometric tower of cards on a platform, in the "Good Job!" art style (flat three-tone shading, no outlines). Built from the iso art framework. Tapping the floor plate switches to the Mastered deck through an animated transition ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md)). Tapping the Learning tower studies it in place — the camera dives onto the top card and the flp is laid over it, no route change (§ Studying the tower). Once per launch it opens on the **home screen** ([HOME_SCREEN.md](./HOME_SCREEN.md)): a stage of td with no header or footer, whose Dictionary key circles out to `/dictionary` (whose back arrow returns to td) and whose "Swipe down to enter" (a swipe, or a tap on the words) shifts down into the tower; a fresh pull past the deck's top goes back up to it. |
 | **Iso art framework** | [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md) | The "Good Job!"-style SVG kit in `src/features/deckTower/iso/`: projection and geometry, one component per object (platform, card, card stack, pawn), the single light and the one shadow rule (`IsoShadow`), levitation, and the palette. |
 
 ---
@@ -70,11 +70,8 @@ content into `userSelect: "text"` (desktop-gated) when called out.
 
 ### Pan/zoom surfaces
 
-Two surfaces let the user move a camera over a world larger than the screen, and they
-are built differently on purpose:
+One surface lets the user move a camera over a world larger than the screen:
 
-* **Night market** (`src/features/nightmarket/`) — Pixi, isometric, hundreds of sprites
-  with per-frame animation. It needs a scene graph.
 * **Memory Map** (`src/games/memory-map/MemoryMapWorld.tsx`) — plain DOM, one CSS
   `transform` on a world div, no rAF loop. It is capped at 50 absolutely-positioned
   word nodes (`MEMORY_MAP_CAPACITY`), which is what makes that safe: nothing to cull,
@@ -82,9 +79,9 @@ are built differently on purpose:
   centre of the viewport, plus a zoom** rather than as a pixel offset, so a run saved on
   one screen size resumes looking at the same place on another.
 
-A future pan/zoom surface should follow whichever of these its content resembles — and
-should not grow a *second* Pixi host if it needs one; borrow the night market's
-(`pixiRuntime.ts`).
+A future pan/zoom surface with DOM-sized content should follow it. One that needs a scene
+graph (hundreds of animated sprites) should start from the archived Night Market Pixi host
+(`pixiRuntime.ts`, removed 2026-11-09 — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)) rather than a fresh abstraction.
 
 > ⚠️ **`@use-gesture` drag + pinch on touch — two traps, same symptom.** Both present as
 > "panning is broken on mobile" (see MEMORY_MAP_GAME.md § 14.5):
@@ -564,7 +561,6 @@ hold.
 | `SheetPanel` (modal: eip, acp, both cdps, compare) | frame; scrim 1200 / sheet 1201 (+2 per stack depth) | `src/components/sheet/SheetPanel.tsx` |
 | `MinimizablePopup` → `GameEndPopup`, `ProvisionalSortOffer`, `ProvisionalSortDonePopup`, Memory Map's inspect popup | frame; 200 / 210 (flp's exit offer 1400) | `src/components/MinimizablePopup.tsx` |
 | `ChallengeSheet`, `SteppedHelpPopup` | frame; 1200 / 1300 | `src/features/studyChallenge/ChallengeSheet.tsx`, `src/components/SteppedHelpPopup.tsx` |
-| Immersive World intro card + interaction popup | frame; 200 | `src/features/immersiveworld/play/IWSceneIntroCard.tsx`, `IWPlayPage.tsx` |
 | `ChallengeRoundScoreboard` | `nearestOverlayHost` — the leaf Surface, which already fills the screen on a footerless game page; 1200 | `src/games/runtime/ChallengeRoundScoreboard.tsx` |
 | `ProvisionalCardsNotice` | `position: fixed` inside a transformed leaf Surface (flp, games), which makes the Surface its containing block — the whole screen; 1400 | `src/components/ProvisionalCardsNotice.tsx` |
 

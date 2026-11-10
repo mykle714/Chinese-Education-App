@@ -46,6 +46,12 @@ RUN npm ci --only=production && npm cache clean --force
 # full dev dependency tree (typescript, tsx, etc.), bloating the image.
 COPY --from=build /app/dist ./dist
 
+# The TTS disk cache's mount point (TTS_CACHE_DIR, docker-compose.ppe.yml → tts_cache).
+# Created HERE, owned by nodejs, because a fresh named volume copies the image directory's
+# ownership on first mount — without it the volume comes up root-owned and the nodejs
+# user cannot write a single clip.
+RUN mkdir -p /app/cache/tts
+
 # Change ownership to nodejs user
 RUN chown -R nodejs:nodejs /app
 USER nodejs

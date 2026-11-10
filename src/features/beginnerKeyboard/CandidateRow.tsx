@@ -44,8 +44,8 @@
  * flanked by two arrow buttons that page it by ~80% of its visible width.
  *
  * That behaviour is no longer implemented here: it lives in
- * `useHorizontalScrollArrows` + `ScrollArrow`, shared with the iw composer's hint
- * tray, which needed the identical pattern. All this file still supplies is the
+ * `useHorizontalScrollArrows` + `ScrollArrow`, extracted when Immersive World's composer
+ * hint tray (removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md) needed the identical pattern. All this file still supplies is the
  * per-mode accent colour the arrows take.
  *
  * ─────────────────────────────────────────────────────────────────────────────

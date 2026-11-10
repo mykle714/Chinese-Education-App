@@ -2,10 +2,12 @@ import React, { useMemo } from "react";
 import { Box } from "@mui/material";
 import { keyframes } from "@mui/material/styles";
 import { ISO } from "./iso";
+import { speedLineField } from "../../utils/speedLineField";
 
 /**
  * SpeedLines — the horizontal streaks that sell the Deck Tower's camera dash between
- * worlds (docs/DECK_TOWER.md § "Worlds → The pan").
+ * worlds (docs/DECK_TOWER.md § "Worlds → The pan"), and — turned vertical (`axis="y"`) —
+ * the home screen's shifts (docs/HOME_SCREEN.md § "Enter", § "Back to home").
  *
  * Layer: page-private component (feature module `src/features/deckTower`). Screen space,
  * not iso: a full-stage overlay of flat white bars racing across, opposite to the
@@ -14,22 +16,9 @@ import { ISO } from "./iso";
  *
  * Flat white like IsoWind's strokes (`ISO.wind`), no gradients — the iso style.
  *
- * Depends on: iso/palette.ts (`ISO.wind`). Depended on by: DeckTowerPage.tsx.
+ * Depends on: iso/palette.ts (`ISO.wind`), src/utils/speedLineField.ts (the lanes, shared with
+ * the page dash — src/hooks/pageDash.ts). Depended on by: DeckTowerPage.tsx (the pan and the home shift).
  */
-
-/** How many streaks are on screen. */
-const LINE_COUNT = 16;
-
-/** A deterministic PRNG (mulberry32) so the field is the same on every pan. */
-function seededRandom(seed: number): () => number {
-    let a = seed >>> 0;
-    return () => {
-        a = (a + 0x6d2b79f5) >>> 0;
-        let r = Math.imul(a ^ (a >>> 15), 1 | a);
-        r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
-        return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
-    };
-}
 
 /** A streak crossing from just past the right edge to just past the left one. */
 const streakLeftward = keyframes`
@@ -40,10 +29,24 @@ const streakRightward = keyframes`
     from { transform: translateX(-110%); }
     to   { transform: translateX(110vw); }
 `;
+/** Vertical (`axis="y"`): a streak falling from just above the top edge to just past the bottom one. */
+const streakDownward = keyframes`
+    from { transform: translateY(-110%); }
+    to   { transform: translateY(110vh); }
+`;
+const streakUpward = keyframes`
+    from { transform: translateY(110vh); }
+    to   { transform: translateY(-110%); }
+`;
 
 interface SpeedLinesProps {
-    /** The camera's travel: +1 right (so the streaks race LEFT), −1 left. */
+    /**
+     * The camera's travel. Horizontal: +1 right (so the streaks race LEFT), −1 left.
+     * Vertical: +1 UP (so the streaks race DOWN — the return to home), −1 DOWN (streaks race UP — Enter).
+     */
     direction: -1 | 1;
+    /** "x" (default): the world pan's horizontal dash. "y": the same field turned vertical. */
+    axis?: "x" | "y";
     /** 0 → 1, the dash's strength (opacity of the whole field). */
     strength: number;
     /** The overlay's bottom edge (the footer bar's height), matching the scroller's. */
@@ -52,21 +55,12 @@ interface SpeedLinesProps {
     color?: string;
 }
 
-const SpeedLines: React.FC<SpeedLinesProps> = ({ direction, strength, bottom, color = ISO.wind }) => {
-    // Each streak's lane, length, weight, speed and phase — fixed per mount.
-    const lines = useMemo(() => {
-        const rand = seededRandom(41);
-        return Array.from({ length: LINE_COUNT }, (_, i) => ({
-            id: i,
-            topPct: 4 + rand() * 88,
-            widthPct: 18 + rand() * 34,
-            heightPx: 2 + Math.round(rand() * 2),
-            durationMs: 260 + rand() * 220,
-            delayMs: -rand() * 480,
-            opacity: 0.45 + rand() * 0.45,
-        }));
-    }, []);
-    const streak = direction > 0 ? streakLeftward : streakRightward;
+const SpeedLines: React.FC<SpeedLinesProps> = ({ direction, strength, bottom, color = ISO.wind, axis = "x" }) => {
+    // Each streak's lane, length, weight, speed and phase — the shared field, so the page
+    // dash (src/hooks/pageDash.ts) draws the same streaks. Fixed per mount.
+    const lines = useMemo(speedLineField, []);
+    const vertical = axis === "y";
+    const streak = vertical ? (direction > 0 ? streakDownward : streakUpward) : direction > 0 ? streakLeftward : streakRightward;
 
     return (
         <Box
@@ -80,10 +74,11 @@ const SpeedLines: React.FC<SpeedLinesProps> = ({ direction, strength, bottom, co
                     className="deck-tower-page__speed-line"
                     sx={{
                         position: "absolute",
-                        left: 0,
-                        top: `${l.topPct}%`,
-                        width: `${l.widthPct}%`,
-                        height: l.heightPx,
+                        // Vertical: the same lanes turned 90° — the lane's position runs across, its length down.
+                        left: vertical ? `${l.topPct}%` : 0,
+                        top: vertical ? 0 : `${l.topPct}%`,
+                        width: vertical ? l.heightPx : `${l.widthPct}%`,
+                        height: vertical ? `${l.widthPct}%` : l.heightPx,
                         borderRadius: l.heightPx,
                         backgroundColor: color,
                         opacity: l.opacity,

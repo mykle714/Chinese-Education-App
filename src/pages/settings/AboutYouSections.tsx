@@ -17,11 +17,12 @@ import {
  * Both save on the tap, like every other row on the page — there is no Save button anywhere in
  * Settings, and a form that needed one here would be the odd one out.
  *
- * `null` is a real answer ("Prefer not to answer"), not a missing one: selecting it sends null
- * and the learner goes back to the pre-164 behaviour (default iw body, no description to NPCs).
+ * `null` is a real answer ("Prefer not to answer"), not a missing one: selecting it sends null.
+ * (No feature reads these today; Immersive World did — removed 2026-11-09, archived in
+ * docs/ARCHIVED_FEATURES.md.)
  *
  * Layer: page-owned (only SettingsPage renders it), split out because SettingsPage is already
- * well past the ~300-line mark. Depended on by: docs/IMMERSIVE_WORLD.md § 5.5.
+ * well past the ~300-line mark.
  */
 export function AboutYouSections() {
     const { user, updateDemographics } = useAuth();

@@ -228,8 +228,9 @@ export function reportTap(
 /**
  * Report one window of rendered-frame statistics from an animated surface.
  *
- * WHY THIS EXISTS: the Night Market scale question ("does it hold up at 1,000
- * pedestrians?") cannot be answered by any of the record kinds above. Event
+ * WHY THIS EXISTS: a render-cost question (it was the Night Market's "does it hold up at
+ * 1,000 pedestrians?"; that feature was removed 2026-11-09, so this has no caller today)
+ * cannot be answered by any of the record kinds above. Event
  * Timing measures *interactions*; a scene that renders at 8fps with nobody
  * touching it produces no interaction records at all and looks perfectly healthy.
  * Frame cost has to be reported by the thing doing the rendering.
@@ -255,7 +256,7 @@ export function reportTap(
  * `localStorage.perfDiag = "1"`. A load test therefore needs BOTH that flag and
  * nmpPerf enabled; see docs/CLIENT_PERF_DIAGNOSTICS.md § "Frame records".
  *
- * @param surface   What was rendering, for grouping ("night-market").
+ * @param surface   What was rendering, for grouping (e.g. a route slug).
  * @param meanMs    Mean frame time across the window.
  * @param worstMs   Longest single frame in the window.
  * @param frames    Frames observed — a window of 1 frame is noise, so it is dropped.

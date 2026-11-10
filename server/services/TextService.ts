@@ -2,7 +2,7 @@ import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
 import { Text, TextCreateData, TextUpdateData } from '../types/index.js';
 import { ValidationError, NotFoundError } from '../types/dal.js';
-import { dbManager } from '../dal/base/DatabaseManager.js';
+import type { ITextDAL } from '../dal/interfaces/ITextDAL.js';
 import { sanitizeDocumentContent } from '../utils/sanitizeContent.js';
 import { deriveDocumentTitle, documentTitleSource } from '../utils/documentTitle.js';
 import {
@@ -23,11 +23,14 @@ const MAX_DOCUMENTS_PER_USER = 500;
 /**
  * Text Service - Contains all business logic for text/document operations
  * Handles validation, authorization, and text management for the Reader feature
+ *
+ * LAYER: service — no SQL. `texts` reads and writes go through `ITextDAL`.
  */
 export class TextService {
   constructor(
     private userDAL: IUserDAL,
-    private dictionaryDAL: IDictionaryDAL
+    private dictionaryDAL: IDictionaryDAL,
+    private textDAL: ITextDAL
   ) {}
 
   /**
@@ -70,28 +73,19 @@ export class TextService {
     const title = await this.deriveTitle(safeContent, language);
 
     // id and createdAt are filled by Postgres defaults (uuid_generate_v4, now()).
-    const result = await dbManager.executeQuery<Text>(async (client) => {
-      return await client.query(
-        `INSERT INTO texts ("userId", title, content, language, "characterCount", "isUserCreated")
-         VALUES ($1, $2, $3, $4, $5, true)
-         RETURNING *`,
-        [userId, title, safeContent, language, characterCount]
-      );
+    const created = await this.textDAL.insertUserText({
+      userId, title, content: safeContent, language, characterCount,
     });
-
-    if (result.recordset.length === 0) {
-      throw new Error('Failed to create text');
-    }
 
     console.log(`[TEXT-SERVICE] ✅ Created new user document:`, {
       userId: `${userId.substring(0, 8)}...`,
-      textId: result.recordset[0].id,
+      textId: created.id,
       title,
       language,
       characterCount
     });
     
-    return result.recordset[0];
+    return created;
   }
 
   /**
@@ -117,42 +111,24 @@ export class TextService {
       throw new ValidationError('System texts cannot be edited');
     }
     
-    // Calculate new character count if content is being updated
-    const characterCount = updateData.content 
-      ? updateData.content.length 
-      : existingText.characterCount;
-    
-    // Build dynamic update query
-    const updates: string[] = [];
-    const values: any[] = [];
-    let paramIndex = 1;
-    
-    if (updateData.title !== undefined) {
-      updates.push(`title = $${paramIndex++}`);
-      values.push(updateData.title.trim());
+    // Nothing to change (neither field): return the document as it is. TextController
+    // already rejects an empty body with 400; this guards any other caller, because
+    // `TextDAL.updateFields` refuses an update that names no column.
+    if (updateData.title === undefined && updateData.content === undefined) {
+      return existingText;
     }
-    
-    if (updateData.content !== undefined) {
+
+    // Language is immutable after creation - cannot be updated (validateUpdateData).
+    const updated = await this.textDAL.updateFields(textId, {
+      title: updateData.title?.trim(),
       // Defense-in-depth: neutralize control chars / HTML before storing.
-      updates.push(`content = $${paramIndex++}`);
-      values.push(sanitizeDocumentContent(updateData.content));
-      updates.push(`"characterCount" = $${paramIndex++}`);
-      values.push(characterCount);
-    }
-    
-    // Language is immutable after creation - cannot be updated
-    
-    values.push(textId);
-    
-    // Update text in database
-    const result = await dbManager.executeQuery<Text>(async (client) => {
-      return await client.query(
-        `UPDATE texts SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
-        values
-      );
+      content: updateData.content !== undefined ? sanitizeDocumentContent(updateData.content) : undefined,
+      // Counted on the RAW content, as createText does. `!== undefined` (not truthiness),
+      // so clearing a document to "" records 0 rather than keeping the old count.
+      characterCount: updateData.content !== undefined ? updateData.content.length : undefined,
     });
-    
-    if (result.recordset.length === 0) {
+
+    if (!updated) {
       throw new NotFoundError('Text not found after update');
     }
     
@@ -162,7 +138,7 @@ export class TextService {
       updatedFields: Object.keys(updateData)
     });
     
-    return result.recordset[0];
+    return updated;
   }
 
   /**
@@ -185,13 +161,7 @@ export class TextService {
       throw new ValidationError('System texts cannot be deleted');
     }
     
-    // Delete text from database
-    const result = await dbManager.executeQuery(async (client) => {
-      return await client.query(
-        'DELETE FROM texts WHERE id = $1',
-        [textId]
-      );
-    });
+    const deleted = await this.textDAL.deleteById(textId);
     
     console.log(`[TEXT-SERVICE] ✅ Deleted user document:`, {
       userId: `${userId.substring(0, 8)}...`,
@@ -199,21 +169,14 @@ export class TextService {
       title: existingText.title
     });
     
-    return result.rowsAffected > 0;
+    return deleted;
   }
 
   /**
    * Get text by ID
    */
   async getTextById(textId: string): Promise<Text | null> {
-    const result = await dbManager.executeQuery<Text>(async (client) => {
-      return await client.query(
-        'SELECT * FROM texts WHERE id = $1',
-        [textId]
-      );
-    });
-    
-    return result.recordset.length > 0 ? result.recordset[0] : null;
+    return this.textDAL.findById(textId);
   }
 
   /**
@@ -230,23 +193,15 @@ export class TextService {
     // Use user's selected language or default to Chinese
     const language = user.selectedLanguage || 'zh';
     
-    // Get user's texts for the language
-    const result = await dbManager.executeQuery<Text>(async (client) => {
-      return await client.query(
-        `SELECT * FROM texts 
-         WHERE language = $1 AND "userId" = $2
-         ORDER BY "createdAt" DESC`,
-        [language, userId]
-      );
-    });
+    const texts = await this.textDAL.findByUserAndLanguage(userId, language);
     
     console.log(`[TEXT-SERVICE] 📚 Retrieved texts for user:`, {
       userId: `${userId.substring(0, 8)}...`,
       language,
-      totalTexts: result.recordset.length
+      totalTexts: texts.length
     });
     
-    return result.recordset;
+    return texts;
   }
 
   /**
@@ -259,16 +214,7 @@ export class TextService {
       throw new NotFoundError('User not found');
     }
     
-    const result = await dbManager.executeQuery<Text>(async (client) => {
-      return await client.query(
-        `SELECT * FROM texts 
-         WHERE "userId" = $1 AND "isUserCreated" = true
-         ORDER BY "createdAt" DESC`,
-        [userId]
-      );
-    });
-    
-    return result.recordset;
+    return this.textDAL.findUserCreated(userId);
   }
 
   /**
@@ -295,13 +241,7 @@ export class TextService {
    * system documents never eat into the allowance.
    */
   private async countUserCreatedTexts(userId: string): Promise<number> {
-    const result = await dbManager.executeQuery<{ count: string }>(async (client) => {
-      return await client.query(
-        'SELECT COUNT(*)::text AS count FROM texts WHERE "userId" = $1 AND "isUserCreated" = true',
-        [userId]
-      );
-    });
-    return parseInt(result.recordset[0]?.count ?? '0', 10);
+    return this.textDAL.countUserCreated(userId);
   }
 
   // Private helper methods

@@ -156,6 +156,10 @@ async function main() {
   console.log(`Found ${candidates.length} candidate word(s):\n`);
 
   let promoted = 0;
+  // Words whose run stopped on a failed step. Drives the exit code: the runtime trigger
+  // (LazyEnrichmentService) reads a nonzero exit as "this word failed" and backs off
+  // instead of re-spawning on every validator lookup.
+  let failedWords = 0;
   for (const row of candidates) {
     const approved = approvedByRow.get(row.id) || new Set();
     const steps = pendingSteps(row, approved);
@@ -187,7 +191,7 @@ async function main() {
         break;
       }
     }
-    if (!ok) continue;
+    if (!ok) { failedWords++; continue; }
 
     // Re-read the row's stamps and promote iff the manifest is now satisfied.
     const c2 = await db.getClient();
@@ -215,10 +219,13 @@ async function main() {
   }
 
   console.log(`\n${'='.repeat(48)}`);
-  console.log(`Candidates: ${candidates.length}  |  Promoted: ${promoted}  |  Mode: ${mode}`);
+  console.log(`Candidates: ${candidates.length}  |  Promoted: ${promoted}  |  Failed: ${failedWords}  |  Mode: ${mode}`);
   console.log('='.repeat(48) + '\n');
+  return failedWords;
 }
 
+// Exit codes: 0 = every word ran clean (or dry run); 2 = at least one word stopped on a
+// failed step (see the per-word ✗ lines); 1 = the runner itself crashed.
 main()
-  .then(() => process.exit(0))
+  .then((failedWords) => process.exit(failedWords ? 2 : 0))
   .catch((err) => { console.error('run-lazy-enrichment failed:', err); process.exit(1); });

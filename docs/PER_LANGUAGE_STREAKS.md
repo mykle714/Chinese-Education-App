@@ -12,7 +12,7 @@ table rename (145) shipped 2026-08-16. See § 5 for the cron.
 > the same `migrate.sh` run.
 
 Every unit of study progress — the streak, the minute-point wallet, the
-inactivity penalty, and the Night Market it funds — is scoped to a **single
+inactivity penalty — is scoped to a **single
 language**. A user studying `zh` and `es` has two fully independent tracks that
 never read or write each other's state.
 
@@ -51,7 +51,7 @@ language-dimensioned.
 |---|---|---|
 | `userId` | uuid, FK → `users(id)` ON DELETE CASCADE | |
 | `language` | varchar(10) | PK part 2 |
-| `totalMinutePoints` | integer NOT NULL DEFAULT 0 | **NET** wallet for this language — penalty-debited, floored at the balance's **24-hour checkpoint** (`floor(total/1440)*1440`), which is 0 below 1440. Funds this language's Night Market. |
+| `totalMinutePoints` | integer NOT NULL DEFAULT 0 | **NET** wallet for this language — penalty-debited, floored at the balance's **24-hour checkpoint** (`floor(total/1440)*1440`), which is 0 below 1440. |
 | `currentStreak` | integer NOT NULL DEFAULT 0 | Consecutive qualifying days **in this language**. |
 | `lastStreakDate` | date | Last local day this language crossed the 3-min threshold. Advanced **only** by the increment path; the cron never touches it. |
 | `lastPenaltyDate` | date | Cron idempotency guard — at most one penalty per (user, language) per local day. |
@@ -76,17 +76,11 @@ columns would create a second, silently-stale source of truth.
 > ⚠️ Do not reintroduce reads of these columns — they do not exist. `IUserDAL` no
 > longer exposes them; use `IUserLanguagesDAL`.
 
-### 1.3 Night Market gains a language dimension
+### 1.3 Night Market language dimension *(retired)*
 
-Each language grows its **own market**. Both placement tables get `language`:
-
-- `nightmarkettemplatelocations` + `language varchar(10) NOT NULL`; the unique
-  corner index becomes `(userId, language, offsetCol, offsetRow)` so the same
-  grid corner can host a stall in each language's market.
-- `nightmarketunlocks` + `language varchar(10) NOT NULL`.
-
-`unlocksForMinutes()` (`server/dal/shared/unlockSchedule.ts`) is unchanged — it
-is a pure curve; it is simply now called with a per-language wallet.
+Migration 130 also added `language` to the Night Market tables
+(`nightmarkettemplatelocations`, `nightmarketunlocks`). Those tables were dropped with the
+feature by migration 185 (2026-11-09) — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md).
 
 ### 1.4 Backfill rule
 
@@ -101,9 +95,8 @@ back to `users.selectedLanguage` for users with no rows at all.
   `lastStreakDate = NULL`** — hence cron-exempt until first studied under the new
   system. No language is retroactively penalized for history it was never
   independently tracked through.
-- All existing Night Market placements and unlocks are attributed to the primary
-  language, so each user's current market is preserved intact as their primary
-  language's market.
+- All existing Night Market placements and unlocks were attributed to the primary
+  language (those tables no longer exist — § 1.3).
 - **Historical penalties are re-attributed** (step 3c). The pre-130 cron stamped
   debits onto `COALESCE(users."selectedLanguage", 'zh')` at tick time, unrelated
   to where the minutes were earned — e.g. michael's 15-minute penalty for
@@ -170,13 +163,10 @@ Each tick, per (user, language) with points to lose and a non-null
 independent tracks decay independently. Because the wallets are separate, the two
 debits do not compound against a shared balance.
 
-### 2.3 Night Market decay — per language
+### 2.3 Night Market decay — per language *(retired)*
 
-The decay branch runs in the same transaction and trims each penalized
-**(user, language)** pair's occupants to `unlocksForMinutes(new_total_for_that_language)`,
-deleting surplus `nightmarketunlocks` rows **partitioned by (userId, language)**.
-Placements remain append-only and are never deleted; an emptied template renders
-its unoccupied version on the next layout read.
+The cron's per-language occupant-decay branch was removed with the Night Market
+(2026-11-09) — [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md).
 
 ### 2.4 Leaderboard — global, Σ of wallets
 
@@ -195,18 +185,14 @@ an already-small user base (only 2 of 13 users have non-`zh` history).
 | Layer | File | Change |
 |---|---|---|
 | **Migration** | `database/migrations/130-per-language-streaks.sql` | New table, night-market `language` columns, backfill |
-| **Cron** | `database/cron/expire-stale-streaks.sql` | Per-(user, language) candidates; decay partitioned by language |
+| **Cron** | `database/cron/expire-stale-streaks.sql` | Per-(user, language) candidates |
 | **DAL (new)** | `server/dal/implementations/UserLanguagesDAL.ts` | Wallet + streak state CRUD, keyed `(userId, language)` |
 | **DAL** | `server/dal/implementations/UserDAL.ts` | Remove points/streak methods (was lines 174-431) |
 | **DAL** | `server/dal/implementations/UserMinutePointsDAL.ts` | `getMinutesForDate` retained for leaderboard only |
-| **DAL** | `server/dal/implementations/NightMarketPlacementDAL.ts` | All placement/unlock queries take `language` |
-| **Shared** | `server/dal/shared/unlockSchedule.ts` | Unchanged (pure curve) |
 | **Service** | `server/services/UserMinutePointsService.ts` | Threshold + streak advance per language |
-| **Service** | `server/services/NightMarketPlacementService.ts` | `grantUnlocks`/`reconcileUnlocks` take `language` |
 | **Service** | `server/services/LeaderboardService.ts` | Rank on Σ wallets, streak = max |
 | **Client** | `src/minutePoints/useMinutePoints.ts` + sync/storage | Wallet & streak are per selected language |
 | **Client** | `src/components/StreakCounter.tsx`, `TimeDisplay.tsx` | Show selected language's streak/balance |
-| **Client** | `src/features/nightmarket/nightMarketLayoutApi.ts`, `useMarketWorld.ts` | Layout read carries `language`; the load effect keys on `isAuthenticated` + `language` (never `token`) |
 | **Controller util (new)** | `server/utils/languageParam.ts` | `resolveLanguage` / `resolveWriteLanguage`, extracted from `UserMinutePointsController` when a second controller needed them |
 
 ### Removed API
@@ -221,7 +207,6 @@ requested language.
 This document is referenced by:
 - [MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md) — the minute-points domain
 - [STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md) — the cron's contract
-- [NIGHT_MARKET_FEATURE.md](./NIGHT_MARKET_FEATURE.md) — market is now per-language
 
 ---
 
@@ -229,7 +214,7 @@ This document is referenced by:
 
 - Studying Spanish no longer keeps a Chinese streak alive, and vice versa.
 - Switching languages swaps the whole home-screen snapshot: balance, gross earned,
-  today's minutes, streak — and the Night Market renders a different continent.
+  today's minutes, streak.
 - A language you have never studied to 3 minutes is never penalized (it has no
   `lastStreakDate`), so a second language cannot start bleeding points on its own.
 - Neglecting two languages at once debits both on the same hourly tick, from their

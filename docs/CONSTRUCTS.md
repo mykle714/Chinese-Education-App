@@ -182,7 +182,7 @@ Defined in `src/engine/market/nightMarketRegistry.ts`.
 
 Streets are authored as `Street { isNorthSouth, start, end, offset, width }` and expanded to tiles by `streetTiles()` in `src/engine/market/tileRegistry.ts`. `buildTilesFromStreets()` then deduplicates by priority and stamps `street` + `intersectingStreets` onto each surviving tile.
 
-> **Future layout source:** the tiles above are authored today via the hand-written tile/street registry. The template system ([NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md), DESIGN stage) will replace that registry as the source of truth — the tile and street graphs will be computed from tiled, placed templates instead.
+> **Layout source:** the tiles are no longer authored in the hand-written tile/street registry (its `STREETS`/`TILES`/`DEMO_STALLS` are empty). The live tile and street graphs are computed from tiled, placed templates by `src/engine/market/marketWorld.ts#buildMarketWorld` → `streetRecovery.ts#recoverStreets` ([NIGHT_MARKET_TEMPLATES.md](./NIGHT_MARKET_TEMPLATES.md)).
 
 ### Two graphs are derived from tiles
 

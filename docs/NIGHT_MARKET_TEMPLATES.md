@@ -5,13 +5,16 @@
 > that feature. `users.isTemplateAuthor` is a separate question — the grant says who may
 > author, the flag says whether the feature exists. Each tile and endpoint tests both.
 
-> **Status: DESIGN — authoring built, runtime not yet built.** This doc specifies the
+> **Status: authoring BUILT, runtime BUILT (slices 1–4).** This doc specifies the
 > template system that is the *authoring source* for a user's Night Market layout.
-> **Authoring exists**: validators paint templates in the desktop editor
+> **Authoring**: template authors paint templates in the desktop editor
 > ([NIGHT_MARKET_TEMPLATE_EDITOR.md](./NIGHT_MARKET_TEMPLATE_EDITOR.md)), persisted to
-> the DB catalog `nightmarkettemplatedefinitions` (migrations 107–109). The **runtime
-> that consumes the catalog** (placement → street recovery → graph feeding → render) is
-> not yet built; cross-references to that code are forward-looking.
+> the DB catalog `nightmarkettemplatedefinitions` (migrations 107–109). **Runtime**:
+> placement (`server/dal/shared/templatePlacement.ts`), stitching + street recovery +
+> graph feeding (`src/engine/market/marketWorld.ts`, `streetRecovery.ts`) and
+> recompute-on-read version selection (`server/dal/shared/versionSelection.ts`) have
+> landed; per-item status lives in the
+> [runtime plan's status tracker](./NIGHT_MARKET_TEMPLATE_RUNTIME_PLAN.md#status-tracker).
 >
 > **Two design decisions are locked (this settles the earlier "code registry" and
 > per-cell-trigger TBDs):**

@@ -7,7 +7,8 @@ dropped. Both were already behind feature flags that were OFF (`nightMarket` sin
 2026-09-25, `immersiveWorld` since launch) — see `server/contracts/featureFlags.ts`.
 
 - Branch: `archive/night-market-immersive-world`
-- Tag:    `archive/night-market-immersive-world-2026-11-09` (immutable pointer to the same commit)
+- Tag:    `archive/night-market-immersive-world-2026-11-09` (points at the branch's first archive
+  commit; the branch head adds corrections to this file only — read REVIVAL.md from the branch)
 - `main` keeps a pointer doc: `docs/ARCHIVED_FEATURES.md`
 
 Everything in this tree still builds and runs as it did on 2026-11-09. To revive a
@@ -38,12 +39,12 @@ Copy these back as-is.
 - `src/features/immersiveworld/` — scene editor + `play/` (`IWWorldPage`, `IWPlayPage`)
 - `src/engine/market/` — the shared iso engine (isometric math, terrain, tilesets, templates,
   stitching, graphs, pedestrians, camera)
-- `src/engine/iw/`
+- `src/engine/iw/`, and `src/engine/__tests__/enginePurity.test.ts` (the whole `src/engine/` tree)
 - `src/hooks/useCameraControls.ts`, `usePixiPedestrians.ts`, `useArrowPagedIndex.ts`
 - `src/__tests__/`: `anchorFlankBan`, `cameraFit`, `cameraFollow`, `cameraZoom`,
   `continentSeal`, `houseStrips`, `placeholderAreaSync`, `templateTouchPreference`,
-  `unlockScheduleSqlSync` tests
-- `src/assets/` folders used only by NM/IW (iso tilesets, house/ped sprites, `iw-popups/`)
+  `unlockScheduleSqlSync`, `capDeprioritization`, `maximinSpreadBounds` tests
+- `src/assets/free-assets/`, `src/assets/test-assets/` (incl. `lumeish/`), `src/assets/iw-popups/`
 - `scripts/normalize-lumeish.mjs`
 - npm deps: `pixi.js`, `@pixi/react`
 
@@ -57,7 +58,8 @@ Copy these back as-is.
 - `config/nightMarketRegistry.ts`, `config/iwNpcs.ts`, `contracts/iw.ts`, `contracts/iwLineGuard.ts`,
   `types/nightMarket.ts`, `types/iwNpc.ts`
 - Scripts: `scripts/night-market/prune-dangling-templates.ts`, `scripts/iw-turn-probe.ts`,
-  `scripts/iw-transcript.js`, `scripts/bench/npc-latency/`
+  `scripts/iw-transcript.js`, `scripts/iw-route-probe.js`, `scripts/bench/npc-latency/`,
+  `scripts/generate-unlock-schedule-sql.ts` (+ npm scripts `gen:unlock-schedule-sql`, `gen:lumeish-assets`)
 - Tests: `server/__tests__/iw*.test.ts`, `versionSelection.test.ts`
 
 **Ops / tooling**
@@ -80,16 +82,18 @@ Copy these back as-is.
 | `src/components/menuPopover/menuDestinations.ts` | Night Market / Immersive World rows; Template Editor / Sandbox / Scene Editor author rows | menu entry points |
 | `src/features/profile/UserProfilePage.tsx` | "Visit night market" button → `/night-market/user/:userId` | the only way to visit another user's market |
 | `src/constants.ts` + `src/minutePoints/eligibility.ts` | `/immersive-world` prefix in the minute-earning admit list + exclusion | IW play earned minutes |
-| `src/features/beginnerKeyboard/eligibility.ts` | editor routes in the BK opt-out list | desktop editors used the OS keyboard |
+| `src/features/beginnerKeyboard/eligibility.ts` (`isKeyboardDisabledPath`) + `BeginnerKeyboardProvider.tsx` | route opt-out list for the two editors, and the BK debug dump's `isTemplateAuthor` gate | desktop editors used the OS keyboard |
+| `src/minutePoints/eligibility.ts` | `MINUTE_POINTS_EXCLUDED_EXACT_PAGES` (`src/constants.ts`) | carved the IW scene list + editor out of the `/immersive-world` prefix |
 | `src/data/tips.ts` | Night Market tip | tip box |
 | `database/cron/expire-stale-streaks.sql` | `nightmarket_unlocks_for_minutes()` + the `decay_targets`/`decay_ranked`/`decay_delete` CTEs | trims occupants on a penalty |
 | `database/cron/cow-maintenance.service.template`, `install-timers.sh` | second `ExecStart` running `dist/scripts/night-market/prune-dangling-templates.js` | dangling-template prune |
 | `database/init/01-init-schema.sql`, `database/deploy/01-schema.sql` | NM/IW tables, `users."isTemplateAuthor"` | fresh-DB schema |
 
 **Kept on `main`** (generic enough to survive, though IW was their first caller):
-TTS `voice` option and the audio-paced reveal hooks (`src/services/tts/*`, `useTTS.ts`),
+TTS `voice` option, `prepare()` and the audio-paced reveal hooks, the `english-first`
+dictionary ranking (the IW hint tray's), (`src/services/tts/*`, `useTTS.ts`),
 `DictionaryDAL` segment helper used for tappable NPC lines, `users.gender` /
-`users."dateOfBirth"` (migration 164 — collected in Settings), the Beginner Keyboard
+`users."birthDate"` (migration 164 — asked at Register and in Settings, now with no reader), the Beginner Keyboard
 inset/transition machinery.
 
 ## 4. Database
@@ -110,8 +114,8 @@ cron file). The Beginner Keyboard debug dump moved to `isFeatureTester`.
 revival starts with an empty catalog.
 
 The original migrations (47, 107–109, 112–118, 130's NM part, 158–163, 167) stay in
-`database/migrations/` on `main` as history; the drop is the migration that follows them
-on `main` (see `docs/ARCHIVED_FEATURES.md` there for its number).
+`database/migrations/` on `main` as history; the drop is migration
+**185** (`database/migrations/185-drop-night-market-and-immersive-world.sql` on `main`).
 
 ## 5. Reviving a feature — checklist
 

@@ -16,13 +16,13 @@ CLAUDE.md § "Nonstandard deploys need a temp runbook"; the deploy procedure its
 > `schema_migrations` and `migrate.sh --dry-run`, and treat any disagreement as this
 > file (or the runbook banner) being stale.
 
-PPE is current through migration **182** (2026-11-04). Latest code deploy: `c5541a9` (2026-11-04, migrations 181 + 182 — applied by `migrate.sh` before the rebuild).
+PPE is current through migration **186** (2026-11-09). Latest code deploy: `6a227da` (2026-11-09, migrations 185 + 186 — applied by `migrate.sh` AFTER the rebuild, per the NM/IW runbook).
 
 ## Open runbooks
 
 | Runbook | What | Status | Still open because |
 |---|---|---|---|
-| [NM_IW_REMOVAL_DEPLOY_RUNBOOK.md](./NM_IW_REMOVAL_DEPLOY_RUNBOOK.md) | Night Market + Immersive World removal: drop migration **185** (8 tables, `users."isTemplateAuthor"`, `nightmarket_unlocks_for_minutes`) AFTER the rebuild; `install-timers.sh` required (maintenance unit loses its prune step) | **Not yet deployed** (written 2026-11-09) | Whole deploy pending |
+| [NM_IW_REMOVAL_DEPLOY_RUNBOOK.md](./NM_IW_REMOVAL_DEPLOY_RUNBOOK.md) | Night Market + Immersive World removal: drop migration **185** (8 tables, `users."isTemplateAuthor"`, `nightmarket_unlocks_for_minutes`) AFTER the rebuild; `install-timers.sh` required (maintenance unit loses its prune step) | Deployed 2026-11-09 (`6a227da`; 185 + 186 applied after the rebuild; checks 1–5 passed) | Check 6: the first `cow-maintenance` run on the new unit (00:01 tick) must succeed |
 | [CLUSTER_V11_DEPLOY_RUNBOOK.md](./CLUSTER_V11_DEPLOY_RUNBOOK.md) | Clusterer zh v11 / es v5 (translation-test prompt). **No migration**; re-stamp unflagged zh rows on PPE | Deployed 2026-10-30 (28,210 re-stamped, 93 held back; manifest sync ✅; 0 `selectedSense` on flagged words) | Step 3 heals (est `senseDict` re-tags, flagged words' `longDefinition`) await a user decision |
 | [EXAMPLE_SENTENCE_TARGET_INDEX_DEPLOY_RUNBOOK.md](./EXAMPLE_SENTENCE_TARGET_INDEX_DEPLOY_RUNBOOK.md) | Example-sentence target index + per-occurrence tags. **No migration**; needs the manual `--locate-targets` heal on PPE | Deployed + healed 2026-10-10 (161 rows tagged, 15 deliberate-repeat residue) | Someone must open 了's est on PPE and see 心中**了**然 underlined |
 | [MEMORY_MAP_SLOTS_DEPLOY_RUNBOOK.md](./MEMORY_MAP_SLOTS_DEPLOY_RUNBOOK.md) | Memory Map slot tree (migration **173**, contract) | Deployed 2026-10-06 | Someone must open Memory Map on PPE and see a full, tilted 50-tile map |

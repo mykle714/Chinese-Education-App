@@ -1,7 +1,9 @@
 # TEMPORARY — Deploy runbook: Night Market + Immersive World removal (migration 185)
 
-> **Delete this file once PPE is verified.** Status: **NOT YET DEPLOYED** (written
-> 2026-11-09). Context: [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md).
+> **Delete this file once PPE is verified.** Status: **DEPLOYED 2026-11-09** (`6a227da`; 185 + 186 via `migrate.sh`
+> after the rebuild; checks 1–5 passed, check 6 awaits the first HH:01 tick). Written 2026-11-09.
+> Note: 185 carries its own `BEGIN`/`COMMIT`, so `migrate.sh` printed two harmless
+> "transaction in progress" warnings. Context: [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md).
 
 Why this needs a runbook even though it ships under the standard `/deploy`: it changes
 the **systemd maintenance unit** (a cron change) and drops tables, and the order of those two

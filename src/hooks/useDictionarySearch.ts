@@ -51,16 +51,15 @@ interface UseDictionarySearchResult {
  * want only the first page (the community search bar, DictionaryWordSearch) pass a smaller
  * `limit` and never call `loadMore`.
  *
- * `initial.search` seeds the query on mount so a caller can RESTORE it (the dictionary page
- * persists it across leaving and re-entering the page). Only the first page is restored —
- * appended pages are not, so a restored scroll position past page one clamps to its end.
+ * Every caller starts from an empty query. (An `initial.search` seed existed for the
+ * Dictionary page to restore its query after a round trip through the read-only
+ * dictionary cdp; that page was deleted 2026-11-10, and with it the round trip.)
  */
 export function useDictionarySearch(
   limit: number = 50,
-  initial?: { search?: string },
 ): UseDictionarySearchResult {
-  const [searchInput, setSearchInputState] = useState(initial?.search ?? "");
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(initial?.search ?? "");
+  const [searchInput, setSearchInputState] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [entries, setEntries] = useState<DictionaryEntry[]>([]);
   const [segmentGroups, setSegmentGroups] = useState<SegmentGroup[]>([]);
   const [loading, setLoading] = useState(false);

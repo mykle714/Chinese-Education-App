@@ -6,13 +6,18 @@ import {
     BREAK_PROMPTS,
     GROWTH_TOAST_MS,
     PROMPT_AUDIO_GAP_MS,
+    runResultTiers,
 } from "./constants";
+import { useActiveRunClock } from "../runtime/useActiveRunClock";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import ForeignText from "../../components/ForeignText";
 import MinimizablePopup from "../../components/MinimizablePopup";
 import MemoryMapWorld, { type ViewportSize } from "./MemoryMapWorld";
 import MemoryMapPrompt from "./MemoryMapPrompt";
 import { GameFrame } from "../shared/GameFrame";
+import { GameCountdown } from "../shared/GameCountdown";
+import { useGameCountdown } from "../shared/useGameCountdown";
+import { useBackgroundPause } from "../runtime/useBackgroundPause";
 import { useMemoryMapRun } from "./useMemoryMapRun";
 import { useAuth } from "../../AuthContext";
 import { DEFAULT_CHINESE_FONT_ID } from "../../types";
@@ -54,14 +59,18 @@ export interface MemoryMapStageProps {
  * chrome, selection, narration, the break's quota and the inspect popup.
  *
  * ── THERE IS NO WINNING AND NO LOSING ────────────────────────────────────────
- * No medals, no wins row, no `POST /api/users/me/wins`, and no personal best on the
- * break's results card. The only outputs a run has are the reading marks it
- * emits and the colours it leaves behind. That is the game.
+ * No wins row, no `POST /api/users/me/wins`, and no personal best on the break's results
+ * card. A finished break is GRADED, though: a speed tier and an accuracy tier on the
+ * results card (docs/GAMES_FEATURE.md § Run tiers). Beyond that, the only outputs a run
+ * has are the reading marks it emits and the colours it leaves behind.
  *
- * ── AND NO PAUSE-ON-BACKGROUND ───────────────────────────────────────────────
- * Every other game calls `useBackgroundPause`. Memory Map deliberately does NOT (Q22).
- * That rule exists to stop a CLOCK draining while the app is backgrounded; this game has
- * no clock and no timed state, so the pause would protect nothing.
+ * ── A HIDDEN CLOCK, PAUSED ON BACKGROUND ─────────────────────────────────────
+ * The speed tier needs a duration, so the break keeps a stopwatch of active time
+ * (`useActiveRunClock`) from the first `playing` render until the break stops taking
+ * answers. Nothing on the board shows it or reacts to it. It holds while the app is
+ * backgrounded (the app-wide `useBackgroundPause` rule), which reverses Q22's
+ * "no clock, so no pause": the pause now protects the speed tier. The inspect popup and
+ * the growth toast do NOT hold it.
  *
  * ── AND NO CARD BASELINE ─────────────────────────────────────────────────────
  * There is no entry in `CARD_BASELINES` and no provisional top-up (§ 10). A small library
@@ -154,6 +163,25 @@ const MemoryMapStage: React.FC<MemoryMapStageProps> = ({
     const goal = Math.min(BREAK_PROMPTS, found + uncoloured);
     /** The break has stopped taking answers and is about to close. */
     const [ending, setEnding] = useState<"done" | "left" | null>(null);
+
+    /**
+     * The pre-run 3·2·1 (src/games/shared/GameCountdown.tsx), over the map and its first
+     * prompt. Runs ONCE per break, the first time the run reaches `playing` — a later
+     * `complete → playing` reshuffle is mid-break and does not count down again. Null
+     * until then, true while counting, false after the release.
+     */
+    const [counting, setCounting] = useState<boolean | null>(null);
+    if (run.phase === "playing" && counting === null) setCounting(true);
+    const isCounting = counting === true && run.phase === "playing" && ending === null;
+    const { paused: countdownBackgrounded } = useBackgroundPause(isCounting);
+    const countdownStep = useGameCountdown({
+        active: isCounting,
+        paused: countdownBackgrounded,
+        onRelease: () => setCounting(false),
+    });
+
+    /** The speed tier's hidden stopwatch: runs while the break takes answers. */
+    const runClock = useActiveRunClock(run.phase === "playing" && ending === null && counting === false);
 
     /**
      * The word ARMED by a first tap and awaiting its confirming tap (§ 3.3a).
@@ -308,7 +336,8 @@ const MemoryMapStage: React.FC<MemoryMapStageProps> = ({
     const targetId = run.target?.vocabEntryId ?? null;
     const quotaMet = found >= goal && found > 0;
     useEffect(() => {
-        if (run.phase !== "playing" || targetId === null || quotaMet) return;
+        // The first prompt's word waits for the countdown's release.
+        if (run.phase !== "playing" || targetId === null || quotaMet || counting !== false) return;
         const target = run.target;
         if (!target) return;
         let cancelled = false;
@@ -326,8 +355,8 @@ const MemoryMapStage: React.FC<MemoryMapStageProps> = ({
         return () => {
             cancelled = true;
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on target identity only (see above)
-    }, [run.phase, targetId]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on target identity (+ the countdown release) only (see above)
+    }, [run.phase, targetId, counting]);
 
     /**
      * The prompt bar's speaker: replay the target's word (§ 3.1a). MANUAL narration
@@ -366,6 +395,8 @@ const MemoryMapStage: React.FC<MemoryMapStageProps> = ({
             const mapDone = uncoloured === 0;
             onRunEnded?.({
                 title: ending === "left" ? "Run ended" : mapDone ? "Map complete!" : "Finished!",
+                // The clock stopped when `ending` was set, so the hold is not billed.
+                tiers: ending === "left" ? null : runResultTiers(runClock.readElapsedMs(), breakTally),
                 score: `${found} word${found === 1 ? "" : "s"} found`,
                 details: [
                     `${breakTally.green} knew it · ${breakTally.orange} recovered · ${breakTally.red} missed`,
@@ -492,6 +523,7 @@ const MemoryMapStage: React.FC<MemoryMapStageProps> = ({
                             <DelayedCircularProgress />
                         </Box>
                     )}
+                    <GameCountdown step={countdownStep} classPrefix="memory-map-stage" />
                 </GameFrame>
             )}
 

@@ -1,4 +1,5 @@
 import React from "react";
+import { Box } from "@mui/material";
 import PageHeader, { HeaderIconButton } from "../../../components/PageHeader";
 import AudioModeChip from "../../../components/AudioModeChip";
 import { COLORS } from "../../../theme/colors";
@@ -36,6 +37,14 @@ interface TowerStudyHeaderProps {
     onUndo: () => void;
     /** The icon-layout editor is open: undo is disabled while it is. */
     editMode: boolean;
+    /**
+     * A game break's area is up: its own header row (GameBreakChrome) is drawn at these
+     * same spots from the first frame of the grow, so this header steps aside — kept in
+     * the layout (`visibility`, so nothing under it moves) but invisible and untappable,
+     * and WITHOUT its flame: every flame runs its own minute-points accrual tick, and the
+     * break's row has the one flame while it is up.
+     */
+    hidden: boolean;
 }
 
 /** The header's ink over the sky — the tower page header's (DeckTowerPage `headerTitleColor`). */
@@ -48,9 +57,14 @@ const TowerStudyHeader: React.FC<TowerStudyHeaderProps> = ({
     onBack,
     onUndo,
     editMode,
+    hidden,
 }) => (
+    // `display: contents` keeps PageHeader the flex child it always was; `visibility`
+    // inherits through it.
+    <Box className="tower-study-header" sx={{ display: "contents", visibility: hidden ? "hidden" : "visible" }}>
     <PageHeader
         onBack={onBack}
+        showFlame={!hidden}
         // A lateral arrow, not the drill-in chevron: the learner is still on the tower
         // page, and back flies the camera out rather than closing a page.
         arrowDirection="left"
@@ -73,6 +87,7 @@ const TowerStudyHeader: React.FC<TowerStudyHeaderProps> = ({
             </>
         }
     />
+    </Box>
 );
 
 export default TowerStudyHeader;

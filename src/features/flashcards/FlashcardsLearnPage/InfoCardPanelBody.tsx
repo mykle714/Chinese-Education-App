@@ -1,6 +1,5 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
-import { type CPCDSize } from "../../../components/ForeignText";
 import { sheetEdgeFadeSx, TAB_SWIPE_TRANSITION } from "../../../components/sheet/sheetStyled";
 import { trackScrollEdgeFade } from "../../../components/scrollEdgeFade";
 import OverlayScrollbar, { hiddenNativeScrollbarSx } from "../../../components/OverlayScrollbar";
@@ -9,9 +8,7 @@ import { tabAvailability } from "./infoCardTabAvailability";
 import SheetSegmentedTabs from "../../../components/sheet/SheetSegmentedTabs";
 import { restingTabTransform, useTabSwipeTrack } from "../../../components/sheet/useTabSwipeTrack";
 import { TAB_LABELS } from "../constants";
-import EipEntryHeader from "./EipEntryHeader";
 import { useEipColors } from "./useEipPalette";
-import type { LearningToggleState } from "../../../hooks/useLearningToggle";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
 
 // Resting track offset for a tab: the track is (N·100%) wide with N equal
@@ -34,34 +31,26 @@ export interface InfoCardPanelBodyProps {
     // opens the eip for that segment's headword. Omit to keep the popup a
     // passive tooltip.
     onExampleSegmentClick?: (segment: string) => void;
-    onSpeak?: (entry: VocabEntry) => void;
-    // The Learning TOGGLE (glowing "+" ⇄ "Added!") under the speaker — the eip's only
-    // add control outside the Dictionary eip. The dictionary cdp's inline panel only; the Dictionary page's eip
-    // draws its Learning key in the sheet's trail row instead (EipAddKey).
-    learning?: LearningToggleState;
-    // Skip the entry header: the eip SHEET draws it in its upper panel (EipUpperPanel),
-    // above the tab shelf. Inline hosts (the cdps) leave it off and get the header here.
-    hideEntryHeader?: boolean;
+    // No entry header and no `onSpeak` / `learning` / `headerCpcdSize` / `hideEntryHeader`:
+    // the only host is the eip SHEET (InfoCardSection), which draws the header in its upper
+    // panel (EipUpperPanel). The inline header these served belonged to the read-only
+    // dictionary cdp, deleted 2026-11-10.
     // Speaker callback for an example sentence. When provided, each sentence
     // block in the Examples tab renders a SpeakerButton in its top-right
     // corner. Undefined hides the buttons (TTS disabled in settings).
     onSpeakSentence?: (text: string, pronunciation?: string) => void;
-    // Text currently being narrated by useTTS, or null when idle. The header
-    // speaker spins when it matches the current entry; each sentence speaker
-    // spins when it matches that sentence's Chinese text.
+    // Text currently being narrated by useTTS, or null when idle. Each sentence
+    // speaker spins when it matches that sentence's Chinese text.
     speakingKey?: string | null;
-    // Size of the headword CPCD in the entry header. Defaults to "md" (bottom-
-    // sheet variant); the centered popup variant passes "sm" for a tighter card.
-    headerCpcdSize?: CPCDSize;
     // The scrollable content area's touchAction. Bottom-sheet variant passes
     // "pan-y": SheetPanel decides resize-vs-scroll on the gesture's first move
     // and expresses "scroll" by letting the browser pan the pane natively, which
     // `none` would forbid outright (see InfoCardSection). The popup variant
     // leaves it "auto" — nothing intercepts its touchmoves at all.
     scrollTouchAction?: React.CSSProperties["touchAction"];
-    // When provided, the props returned by this call are spread onto the entry
-    // header so it shares the grabber's drag-to-resize gesture. useDrag's
-    // filterTaps keeps icon taps (speaker, +, etc.) working normally.
+    // When provided, the props returned by this call are spread onto the sub-tab
+    // strip so it shares the sheet's drag-to-resize gesture. useDrag's filterTaps
+    // keeps tab-selection taps working normally.
     headerDragBind?: () => Record<string, unknown>;
     // Which definitionClusters sense the panel is showing — an index into
     // sortedSenseClusters(currentEntry), owned by the host (useEipTabs, per entry tab)
@@ -69,12 +58,19 @@ export interface InfoCardPanelBodyProps {
     // and the definition tab's long definition / commonality. Display-only here: the
     // pick is made on the card face's SensePicker.
     selectedSenseIndex?: number;
-    // Appends Synonyms + Related Words to the definition tab. cdps only — see
+    // Appends Synonyms + Related Words to the definition tab. Saved-card cdp + Dictionary
+    // eip — see
     // InfoCardTabContent's `showSynonymsRelated` for why it is a section and not a tab.
     showSynonymsRelated?: boolean;
     // Content pinned to the bottom of the definition tab — see InfoCardTabContent's
-    // `definitionFooter`. Dictionary cdp only (its word-tools rail).
+    // `definitionFooter`. Dictionary eip only (its word-tools rail).
     definitionFooter?: React.ReactNode;
+    // A right-swipe past the FIRST sub-tab (Definitions) — the eip sheet passes "pop back
+    // one word" while the trail has a word below the showing one. Undefined (the trail's
+    // root, or a host with no trail) keeps that edge rubber-banding. Forwarded to
+    // useTabSwipeTrack's `onSwipePastFirst`. Docs: docs/EIP_SHEET_GESTURES.md
+    // § Swiping past the first sub-tab goes back one word.
+    onSwipeBack?: () => void;
 }
 
 // Imperative handle exposing the two elements the bottom-sheet wrapper needs:
@@ -89,11 +85,11 @@ export interface InfoCardPanelBodyHandle {
 }
 
 /**
- * Shared inner content of the EIP: entry header (CPCD + English + sense picker +
- * speaker), underline tab strip, and the scrollable tab body (definition / examples /
- * breakdown-or-used-in). Hosted by InfoCardSection (the bottom-sheet wrapper on the
- * flp/acp/saved-card cdp) and mounted inline by DictionaryCardDetailPage — anything
- * that changes here shows up on every host.
+ * Shared inner content of the EIP: the sub-tab strip and the scrollable tab body
+ * (definition / examples / breakdown-or-used-in). Hosted only by InfoCardSection (the
+ * bottom-sheet eip on the flp, acp, saved-card cdp and Dictionary page), which draws the
+ * entry header itself in its upper panel. The read-only dictionary cdp mounted this
+ * inline, with its own header, until it was deleted 2026-11-10.
  *
  * The forwarded ref exposes both the gesture-root wrapper and the inner
  * scrollable Box so wrappers that need to hook scroll mechanics (sheet does)
@@ -117,17 +113,14 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
     onBreakdownItemClick,
     onUsedInItemClick,
     onExampleSegmentClick,
-    onSpeak,
-    learning,
     onSpeakSentence,
     speakingKey,
-    headerCpcdSize = "md",
     scrollTouchAction = "auto",
     headerDragBind,
     selectedSenseIndex,
     showSynonymsRelated,
     definitionFooter,
-    hideEntryHeader,
+    onSwipeBack,
 }, ref) {
     const rootRef = useRef<HTMLDivElement | null>(null);
     // Clipping viewport around the sliding tab track. NOT itself scrollable —
@@ -164,6 +157,7 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
         onGestureStart: () => warmPanesRef.current(),
         // The entry-jump effect pins the track itself for one frame.
         pinnedRef: entryJumpRef,
+        onSwipePastFirst: onSwipeBack,
     });
 
     useImperativeHandle(ref, () => ({
@@ -292,23 +286,6 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                 },
             }}
         >
-            {/* Entry header: headword + English translation + speaker icon. When the bottom-sheet wrapper passes headerDragBind, this row also acts
-                as a drag-to-resize handle (useDrag's filterTaps keeps taps on
-                speaker/+ icons working). */}
-            {!hideEntryHeader && (
-            <EipEntryHeader
-                entry={currentEntry}
-                showPinyinColor={showPinyinColor}
-                cpcdSize={headerCpcdSize}
-                onSpeak={onSpeak}
-                speakingKey={speakingKey}
-                learning={learning}
-                selectedSenseIndex={selectedSenseIndex}
-                {...(headerDragBind ? headerDragBind() : {})}
-                sx={headerDragBind ? { touchAction: "none", cursor: "grab" } : undefined}
-            />
-            )}
-
             {/* Content tab strip — the design's sunken segmented track. Also acts as a drag-to-resize handle
                 (same bindHeaderDrag as the header) so a vertical drag started
                 on the tabs resizes the sheet on desktop too — on touch the

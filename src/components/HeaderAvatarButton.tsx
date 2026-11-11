@@ -28,7 +28,7 @@ import { SHADOW } from "../theme/shadows";
 //
 // GLOW: the td daily banking run charges this button up as embers land in it
 // (docs/DAILY_MINUTE_BANKING.md § 3, § 7). Drawn as a `COLORS.fireActive` halo — the
-// flame's orange arriving in the avatar — deliberately NOT the lowSupplyGlow recipe —
+// flame's orange arriving in the avatar —
 // appended to the `SHADOW.float` rest shadow. The host never passes it directly:
 // `BankingAvatarButton` subscribes to the run and forwards `glowPx`, so the run's
 // per-frame updates stay inside that leaf.

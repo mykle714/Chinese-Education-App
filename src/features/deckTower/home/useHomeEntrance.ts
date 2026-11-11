@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DASH_MOTION, prefersReducedMotion } from "../../../utils/pageTransition";
+import { carriedOutPlan, outDistanceAt, type OutPlan } from "../useWorldPan";
 
 /**
  * useHomeEntrance — the home screen's state, and the two camera moves between it and the Deck
@@ -29,6 +30,10 @@ import { DASH_MOTION, prefersReducedMotion } from "../../../utils/pageTransition
  *   return   The world shift UP to the home — `enter` mirrored: the tower slides DOWN off the
  *            bottom; the cruise (`onCruise("return")`: the page parks the scroller back on the
  *            platform line, the home's own state); the home comes down in from above.
+ *            The pull that starts it CARRIES ON (`ShiftCarry`, the world pan's `PanCarry`
+ *            idea): on iOS the release leaves the tower stretched down by the rubber band and
+ *            still moving, so the out phase starts from that offset at that speed instead of
+ *            the band snapping back and the slide restarting from rest.
  *
  * Under reduced motion both moves cut straight to their end.
  *
@@ -54,11 +59,25 @@ export interface HomeShiftFrame {
     altitudeT: number;
 }
 
-const REST_FRAME: HomeShiftFrame = { homeY: 0, towerY: 1, speed: 0, altitudeT: 0 };
-const SHIFT_MS = DASH_MOTION.outMs + DASH_MOTION.cruiseMs + DASH_MOTION.inMs;
+/**
+ * A gesture's motion handed to a shift so its out phase continues it (the pull home's
+ * rubber band). Unsigned, in stage heights, along the leaving scene's own way off.
+ */
+export interface ShiftCarry {
+    /** How far the leaving scene already is toward off screen (0–1). */
+    shift: number;
+    /** Its speed that way at release, stage heights per ms. */
+    velocity: number;
+}
 
-/** easeInQuad / easeOutQuad / smoothstep — the world pan's own curves (useWorldPan). */
-const easeIn = (u: number) => u * u;
+const REST_FRAME: HomeShiftFrame = { homeY: 0, towerY: 1, speed: 0, altitudeT: 0 };
+/** The uncarried out phase: the plain ease-in over `DASH_MOTION.outMs`. */
+const FROM_REST = carriedOutPlan(0, 0);
+
+/** A shift's total length for a given out phase. */
+const shiftMs = (out: OutPlan) => out.ms + DASH_MOTION.cruiseMs + DASH_MOTION.inMs;
+
+/** easeOutQuad / smoothstep — the world pan's own curves (useWorldPan). */
 const easeOut = (u: number) => 1 - (1 - u) * (1 - u);
 const smooth = (u: number) => u * u * (3 - 2 * u);
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
@@ -66,18 +85,22 @@ const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 /**
  * A shift at `ms` into it. `enter`: the home leaves UP, the tower arrives from BELOW (the
  * camera goes down). `return`: the tower leaves DOWN, the home arrives from ABOVE (it goes up).
+ * `out` is the out phase (`carriedOutPlan`; from rest unless a gesture carries into it).
  */
-export function shiftFrameAt(ms: number, direction: HomeShiftDirection = "enter"): HomeShiftFrame {
-    const { outMs, cruiseMs, inMs } = DASH_MOTION;
+export function shiftFrameAt(ms: number, direction: HomeShiftDirection = "enter", out: OutPlan = FROM_REST): HomeShiftFrame {
+    const { cruiseMs, inMs } = DASH_MOTION;
+    const outMs = out.ms;
     // The leaving scene's travel (0 → 1) and the arriving one's remaining distance (1 → 0).
     let leave = 1;
     let arrive = 1;
     let speed = 1;
     let altitudeT = 0;
     if (ms < outMs) {
-        const u = ms / outMs;
-        leave = easeIn(u);
-        speed = u;
+        const tau = Math.max(0, ms);
+        leave = outDistanceAt(out, tau);
+        // The streaks gather on the clock (linear from rest); a carried start, already part-way
+        // off, brings them in at least as strong as the scene's travel.
+        speed = Math.max(tau / outMs, leave - out.start);
     } else if (ms < outMs + cruiseMs) {
         altitudeT = smooth((ms - outMs) / cruiseMs);
     } else {
@@ -157,8 +180,11 @@ export interface HomeEntrance {
     frame: HomeShiftFrame;
     /** Start the Enter move. Ignored unless the home stage is up. */
     enter: () => void;
-    /** Go back up to the home. Ignored unless td is fully in charge (`done`). */
-    returnHome: () => void;
+    /**
+     * Go back up to the home. Ignored unless td is fully in charge (`done`). `carry` is the
+     * pull's motion at release (the rubber band's stretch and speed), continued by the shift.
+     */
+    returnHome: (carry?: ShiftCarry) => void;
 }
 
 export function useHomeEntrance({ shown, scrollerRef, onCruise, descentTarget, onPlaced, onLanded, onHome }: UseHomeEntranceArgs): HomeEntrance {
@@ -198,18 +224,29 @@ export function useHomeEntrance({ shown, scrollerRef, onCruise, descentTarget, o
     }, [scrollerRef, land]);
 
     /** Plays one shift, then `after`. */
-    const playShift = useCallback((direction: HomeShiftDirection, after: () => void) => {
+    const playShift = useCallback((direction: HomeShiftDirection, after: () => void, carry?: ShiftCarry) => {
+        const out = carry ? carriedOutPlan(carry.shift, carry.velocity) : FROM_REST;
+        const total = shiftMs(out);
+        // The shift's first frame commits WITH its phase. `frame` still holds the rest pose
+        // (Enter's start: tower parked below, home on screen), which for a return is the
+        // wrong end — rendering it for even one frame flashed the home in and the tower out
+        // before the slide began.
+        setFrame(shiftFrameAt(0, direction, out));
         setPhase(direction);
-        const start = performance.now();
+        // The clock starts on the first animation frame, after that commit has landed: the
+        // commit mounts the home stage (a return) or reveals the tower (Enter), which can take
+        // a frame or two on a phone, and a clock already running would skip the slide ahead.
+        let start = -1;
         let cruising = false;
         const tick = (now: number) => {
+            if (start < 0) start = now;
             const ms = now - start;
-            if (!cruising && ms >= DASH_MOTION.outMs) {
+            if (!cruising && ms >= out.ms) {
                 cruising = true;
                 cb.current.onCruise(direction);
             }
-            setFrame(shiftFrameAt(ms, direction));
-            if (ms < SHIFT_MS) raf.current = requestAnimationFrame(tick);
+            setFrame(shiftFrameAt(ms, direction, out));
+            if (ms < total) raf.current = requestAnimationFrame(tick);
             else after();
         };
         raf.current = requestAnimationFrame(tick);
@@ -227,13 +264,13 @@ export function useHomeEntrance({ shown, scrollerRef, onCruise, descentTarget, o
         playShift("enter", descend);
     }, [phase, land, descend, playShift]);
 
-    const returnHome = useCallback(() => {
+    const returnHome = useCallback((carry?: ShiftCarry) => {
         if (phase !== "done") return;
         if (prefersReducedMotion()) {
             cb.current.onCruise("return");
             return atHome();
         }
-        playShift("return", atHome);
+        playShift("return", atHome, carry);
     }, [phase, playShift, atHome]);
 
     return { phase, frame, enter, returnHome };

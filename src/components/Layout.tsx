@@ -1,13 +1,9 @@
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect } from "react";
 import { Box } from "@mui/material";
 import { useLocation } from "react-router-dom";
 import MobileDemoFrame from "./MobileDemoFrame";
 import { routeShell } from "../routes/routeMeta";
 import { clearSkipNextEnter } from "../hooks/usePageSlide";
-import {
-    isDictionarySpacePath,
-    resetDictionaryBrowseState,
-} from "../features/dictionary/dictionaryBrowseState";
 
 interface LayoutProps {
     children: ReactNode;
@@ -15,7 +11,7 @@ interface LayoutProps {
 
 // Global app shell. There is no navigation chrome here anymore — the hamburger
 // drawer / desktop sidebar were removed in favor of the footer tabs
-// (Deck / Menu / Arena / Dictionary — src/components/MobileFooter.tsx). Every page now
+// (Flashcards / Lessons / Dictionary / Menu — src/components/MobileFooter.tsx). Every page now
 // owns its own header (a back arrow for drill-ins, or MobileTabScreen's header
 // for the footer-tab hubs).
 //
@@ -34,20 +30,6 @@ function Layout({ children }: LayoutProps) {
     // it never bleeds into a later page. See usePageSlide.
     useEffect(() => {
         clearSkipNextEnter();
-    }, [location.pathname]);
-
-    // Clear the persisted dictionary browse state (query/page/scroll) the first
-    // time the user navigates OUT of the Dictionary space. The state is meant to
-    // survive the list ⇄ card-detail drill-in only, so we reset on the transition
-    // from an in-space pathname to an out-of-space one. This covers every exit
-    // uniformly: a back arrow out of the space, a footer-tab tap, and browser back.
-    const wasInDictionarySpace = useRef(isDictionarySpacePath(location.pathname));
-    useEffect(() => {
-        const nowInSpace = isDictionarySpacePath(location.pathname);
-        if (wasInDictionarySpace.current && !nowInSpace) {
-            resetDictionaryBrowseState();
-        }
-        wasInDictionarySpace.current = nowInSpace;
     }, [location.pathname]);
 
     // Which shell this route renders inside comes from the `shell` field in

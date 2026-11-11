@@ -180,6 +180,15 @@ function getSnapshot(): TTSSettings {
     return currentSettings;
 }
 
+/**
+ * The current settings, read OUTSIDE React — for code that plays sound from a timer
+ * rather than from a component (the game countdown's beeps, src/services/sfx/). Same
+ * store as the hook, so it can never disagree with the audio chip.
+ */
+export function readTTSSettings(): TTSSettings {
+    return getSnapshot();
+}
+
 /** Server render / prerender has no localStorage — hand back the defaults. */
 function getServerSnapshot(): TTSSettings {
     return DEFAULT_SETTINGS;

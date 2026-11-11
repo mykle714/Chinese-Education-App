@@ -14,7 +14,7 @@ interface WordSearchHintBarProps {
     ready: boolean;
     /** Spend a charge (reveal the next unit of the least-hinted unfound word). */
     onHint: () => void;
-    /** The reveal itself — `WordSearchHintRow`. Fills the row's right-hand slot. */
+    /** The reveal itself — `WordSearchHintRow`. Fills the row's left-hand slot. */
     children?: React.ReactNode;
 }
 
@@ -26,9 +26,9 @@ interface WordSearchHintBarProps {
  * the button in the page header, the meter absolutely centred in the HUD, the reveal on
  * its own row under the gloss list. They are a single mechanic — you bank charges by
  * finding words, you spend one, you get letters — and splitting them across the chrome
- * meant the player had to assemble that from three unrelated-looking widgets. Reading
- * left to right the row now states it: press this, you have this many, here is what you
- * bought.
+ * meant the player had to assemble that from three unrelated-looking widgets. The row
+ * now states it in one place: what you bought on the left, and on the right the button
+ * with its charges under it (swapped 2026-11-10 — the button used to lead on the left).
  *
  * It also gets the button out of the page header, which is where the redesign wants only
  * settings-shaped controls (docs/SHELF_REDESIGN.md § A2b). A hint is a game ACTION, so it
@@ -64,6 +64,17 @@ const WordSearchHintBar: React.FC<WordSearchHintBarProps> = ({ units, ready, onH
                 borderTop: `1px solid ${COLORS.rowBorder}`,
             }}
         >
+            {/* `.rv` — what the charges bought. On the LEFT (swapped 2026-11-10, so the
+                button sits on the right in right-thumb reach); it takes the row's spare
+                width and is allowed to shrink, so a long mask crowds itself rather than
+                the button. */}
+            <Box
+                className="word-search__hint-reveal"
+                sx={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center" }}
+            >
+                {children}
+            </Box>
+
             {/* `.hb` + `.chg` stacked: the button, and under it the banked charges as a
                 row of bars exactly as wide as the button. The column shrink-wraps to the
                 button (the bars are `flex: 1` with `minWidth: 0`, so they contribute no
@@ -138,15 +149,6 @@ const WordSearchHintBar: React.FC<WordSearchHintBarProps> = ({ units, ready, onH
                         );
                     })}
                 </Box>
-            </Box>
-
-            {/* `.rv` — what the charges bought. Pushed to the right edge and allowed to
-                shrink, so a long mask crowds itself rather than the button. */}
-            <Box
-                className="word-search__hint-reveal"
-                sx={{ marginLeft: "auto", minWidth: 0, display: "flex", alignItems: "center" }}
-            >
-                {children}
             </Box>
         </Box>
     );

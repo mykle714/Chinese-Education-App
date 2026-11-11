@@ -56,7 +56,8 @@ like the tower's own cards:
   rather than on a deck.
 - **Content stops at the panel.** `CardFaceSide`'s inner clip box takes `--card-panel-clip`,
   so icons, text and the sense chip are cut at the panel's edge, and text wraps at its width
-  (`--card-panel-width`, `--card-stock-inset` padding on the front). The writing flp's face
+  less a content gutter on a basic-layout face (`--card-content-width`; `--card-stock-inset` +
+  `--card-content-gutter` padding on the front — see CARD_ICON_LAYOUT.md). The writing flp's face
   pads itself further by the rim plus `PANEL_CONTENT_GAP` (`insetPad`, never less than its
   plain-flp padding), so its rows sit a little in from the edge.
   Stock **mini** cards follow the same rule: `sortCardStockSx` sets `--card-panel-clip` on
@@ -95,8 +96,8 @@ lag at night.
 | flp study header + audio chip | `TowerStudyHeader.tsx` (`tone="bare"`) | DECK_TOWER.md § "Studying the tower" → "The audio chip" |
 | acp's on-deck cards, its skipped-cards sheet and td's cards page (rim + panel, drawn as one thick panel: a 4px wall with a hairline rounded edge (`src/theme/roundedEdge.ts`) and a near-solid cast shadow on the ground, no outline) | `src/features/discover/sortCardStock.ts` → `sortCardStockSx` | SORT_CARDS_REQUIREMENTS.md § 4.5, § 5.1a |
 | td's cards page under the platform (the same stock on `MiniVocabCard` `stock`, with the mastery strip, no levitation; an own-colour card fills the panel via `--mini-card-panel`) | `src/features/deckTower/TowerCardsPage.tsx` → `TOWER_CARD_STOCK` | DECK_TOWER.md § "The cards page" |
-| Slab footer (`footerStyle: "slab"` in `src/routes/routeMeta.ts`: `/` (td), `/dictionary`, both cdps, acp) | `src/components/MobileFooter.tsx` | DECK_TOWER.md § Footer |
-| Tier 2 time-of-day ground (the page ground tints with the hour; the slab follows): `/dictionary`, both cdps | `src/timeOfDay/useTier2Look.ts` → `useTier2Look` | DECK_TOWER.md § Time of day |
+| Slab footer (`footerStyle: "slab"` in `src/routes/routeMeta.ts`: `/` (td), `/dictionary`, the cdp, acp) | `src/components/MobileFooter.tsx` | DECK_TOWER.md § Footer |
+| Tier 2 time-of-day ground (the page ground tints with the hour; the slab follows): `/dictionary`, the cdp | `src/timeOfDay/useTier2Look.ts` → `useTier2Look` | DECK_TOWER.md § Time of day |
 
 ## Still bento
 

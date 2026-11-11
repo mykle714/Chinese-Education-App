@@ -72,7 +72,9 @@ both on purpose (CLAUDE.md § Terminology).
 ## The mini card
 
 `src/components/MiniCard.tsx` (`MiniCard`, `MiniCardFrequencyBadge`), `miniCardFace.ts`
-(`miniCardFaceSx`, `MINI_CARD_RING`, `MINI_CARD_WIDTH` / `HEIGHT` / `RADIUS`).
+(`miniCardFaceSx`, `MINI_CARD_RING`, `MINI_CARD_WIDTH` / `HEIGHT` / `RADIUS`, and the
+contents' geometry: `MINI_CARD_CONTENT_LAYOUT`, `MINI_CARD_BAR_STRIP`, `DEFINITION_*`,
+`miniCardDefinitionBottom`).
 
 The 92×132 tile is the app's one mini preview card. `MiniVocabCard` (the library grid),
 `QuickMarkCard` (provisional sort offer), `ChallengeWordCard` (a challenge word set) and
@@ -82,6 +84,15 @@ pop-in) and its contents: icon slot, word (`ForeignText`), 2-line definition and
 optional mastery strip. Wrappers pass plain display values plus `children` overlays
 (corner badges, action buttons). The **mastery strip is opt-in** (`masteryBar`; only
 `MiniVocabCard` passes it); omitting it gives the strip's height back to the definition.
+
+**Its SVG twin.** `MiniCardSvg` (`src/components/MiniCardSvg.tsx`) draws the same face —
+tile, ring, icon, cpcd word, two-line gloss — as native SVG, for the acp's iso deck tops
+(`SortBins.tsx` → `DeckFace`), where WebKit mis-paints HTML inside a transformed
+`<foreignObject>`. It places the contents by hand (`miniCardSvgLayout.ts` →
+`layoutMiniCardSvg`) from `miniCardFace.ts`'s geometry and `cpcdLayout.ts`'s cpcd tables and
+pinyin solver — the numbers `MiniCard` and `CPCDRow` render with — so changing those reaches
+both. Changing anything else about the card's contents (a new element, a new style) must be
+mirrored in `miniCardSvgLayout.ts`. It does not draw the mastery strip, icon layers or overlays.
 
 The library grid prints the card on the Deck Tower's card stock (`MiniVocabCardGrid`
 `cardStock` → `MiniVocabCard` `stock`); see DECK_TOWER.md § "The cards page".

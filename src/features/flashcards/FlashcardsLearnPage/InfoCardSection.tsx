@@ -63,6 +63,11 @@ interface InfoCardSectionProps {
     // showing word; return false on the last one so SheetPanel dismisses); the cdp, which
     // has no trail, passes nothing and the ✕ just closes the panel. See SheetPanel.
     onCloseX?: () => boolean | void;
+    // Back one word on the trail, fired by a right-swipe past the first sub-tab
+    // (InfoCardPanelBody → useTabSwipeTrack `onSwipePastFirst`). Hosts pass it only while
+    // there IS a word below the showing one, so the root keeps its rubber-band edge. Not
+    // wired into the Compare crumb (CompareWorkspace has no sub-tab track).
+    onSwipeBack?: () => void;
     // Draw the minute-points flame beside the ✕. True on every STUDY surface that mounts
     // this panel (flp, acp, cdp) — the panel covers the page header, flame included.
     showMinutePoints?: boolean;
@@ -128,13 +133,14 @@ const ENTRY_SLIDE_TRAVEL_PCT = 34;
 const ENTRY_SLIDE_MS = 280;
 const ENTRY_SLIDE_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 
-// Where, between the open height and the max, an eip release flips from "spring back to
-// the open height" to "grow to max" — forwarded to SheetPanel's `collapseThresholdRatio`.
-// 0.25 = a quarter of the way up (0.6 → 0.7 of the screen at the default open height), so a
-// short upward pull maximizes. SheetPanel's 0.5 midpoint made the pull up feel like it
-// wasn't taking. The same line governs the way down: from max, the sheet must come below
-// it before a release collapses to the open height. Docs: docs/EIP_SHEET_GESTURES.md.
-const EIP_COLLAPSE_THRESHOLD_RATIO = 0.25;
+// How far an eip maximize / shrink must travel, as a share of the gap between the open
+// height and max, before a release commits — forwarded to SheetPanel's `snapCommitShare`.
+// DIRECTIONAL, like td's tower ↔ cards snap (towerScroll.ts → SNAP_COMMIT_SHARE, the same
+// 0.25): pulling up from the open height, a quarter of the gap (0.6 → 0.7 of the screen at
+// the default open height) maximizes; pulling down from max, a quarter of the gap
+// (1 → 0.9) shrinks back to the open height. Short of that it springs back to the stop it
+// left. Docs: docs/EIP_SHEET_GESTURES.md § "Height model".
+const EIP_SNAP_COMMIT_SHARE = 0.25;
 
 // Re-export the handle under the original name so callers don't need to update.
 export type InfoCardSectionHandle = SheetPanelHandle;
@@ -163,6 +169,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     selectedSenseIndex,
     tabStrip,
     onCloseX,
+    onSwipeBack,
     showMinutePoints,
     entryTabId,
     entryTabIndex,
@@ -239,7 +246,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
             depth={depth}
             initialHeight={initialHeight}
             defaultHeightRatio={defaultHeightRatio}
-            collapseThresholdRatio={EIP_COLLAPSE_THRESHOLD_RATIO}
+            snapCommitShare={EIP_SNAP_COMMIT_SHARE}
             bodyRef={panelRef}
             // Fold selectedTab into the key: InfoCardPanelBody's scrollable
             // element is the ACTIVE tab's pane (each pane scrolls on its own),
@@ -363,8 +370,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                             selectedSenseIndex={selectedSenseIndex}
                             showSynonymsRelated={showSynonymsRelated}
                             definitionFooter={definitionFooter}
-                            // The entry header is drawn in the upper panel (above).
-                            hideEntryHeader
+                            onSwipeBack={onSwipeBack}
                             // `pan-y`, NOT `none`. SheetPanel decides between growing the sheet
                             // and scrolling the pane on the gesture's first committed move, and
                             // it expresses "scroll" by NOT calling preventDefault — the browser

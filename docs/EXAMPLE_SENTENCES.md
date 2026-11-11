@@ -278,10 +278,8 @@ speaker button had each drifted onto only the eip):
 
 - **eip Examples tab** — `InfoCardTabContent.tsx` (`tabIndex === 1`), mounted by
   `InfoCardPanelBody`. This is now the ONLY host: it covers the flp, acp, the saved-card
-  cdp (which since 2026-08-24 raises the eip in a sheet, `VocabCardDetailPage` →
-  `InfoCardSection`) and the read-only dictionary cdp (which since 2026-10-10 mounts the
-  panel inline, `features/dictionary/DictionaryCardDetailPage.tsx`; its old
-  `VocabCardSections` copy is deleted).
+  cdp and the Dictionary page (the last three through `EipSheet` → `InfoCardSection`).
+  Tapping a segment pushes that word as a crumb on the eip word trail on every host.
 
 Each per-sentence card carries: a top-right `SpeakerButton` (gated on
 `onSpeakSentence`; all three surfaces pass `useTTS`'s `speakSentence` directly —

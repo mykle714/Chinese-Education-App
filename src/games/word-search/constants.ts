@@ -3,7 +3,7 @@ import type { CPCDSize } from "../../components/ForeignText";
 import type { MarkType } from "../../types";
 import { formatTimeMs } from "../../utils/timeUtils";
 import { WORD_SEARCH_BOARDS, type WordSearchBoardId } from "../../../server/contracts/wire";
-import type { Medal } from "./types";
+import { gradeSpeed, type RunTiers, type SpeedTierLadder } from "../shared/runTiers";
 
 /** Target words on the standard board. Older saves can hold another count (`savedWordCount`). */
 export const TOTAL_WORDS = WORD_SEARCH_BOARDS.standard.words;
@@ -232,25 +232,24 @@ export const GRID_EDGE_PX = GRID_MARGIN + GRID_BOX_PADDING;
 export const MISS_FLASH_MS = 320;
 
 /**
- * Medal thresholds by total completion time on a 9-word board, best-first. The last
- * tier is the floor (unbounded) — because play is untimed you always finish, just at
- * the lowest tier if slow. Tunable. See doc §5.
+ * Speed tiers by total completion time on a 9-word board, best-first
+ * (src/games/shared/runTiers.ts: tier 1 is the best; past the last cutoff is tier 7).
+ * Word Search keeps no accuracy tier (a miss swipe is not counted).
+ * ⚠️ PLACEHOLDERS: the old medal lines (gold 60s, silver 120s) spread over seven tiers,
+ * to be tuned from play data. See doc §5.
  */
-export const MEDAL_THRESHOLDS: { medal: Medal; maxSeconds: number; emoji: string }[] = [
-    { medal: "gold", maxSeconds: 60, emoji: "🥇" },
-    { medal: "silver", maxSeconds: 120, emoji: "🥈" },
-    { medal: "bronze", maxSeconds: Infinity, emoji: "🥉" },
-];
+export const SPEED_TIERS: SpeedTierLadder = {
+    maxMs: [45_000, 60_000, 90_000, 120_000, 180_000, 240_000],
+};
 
 /**
- * Resolve a completion time (seconds) to its medal tier. A medal asks for the same pace on
- * every board, so the thresholds scale with the word count: gold on the 7-word compact
- * board is 46s, not the 9-word board's 60.
+ * A finished board's tiers. The cutoffs scale with the word count so a tier asks for the
+ * same pace on every board: tier 2 on the 7-word compact board is ~46.7s, not the 9-word
+ * board's 60. Null for a run left early (no finish time).
  */
-export function medalForTime(seconds: number, wordCount: number = TOTAL_WORDS): { medal: Medal; emoji: string } {
-    const scale = wordCount / TOTAL_WORDS;
-    const tier = MEDAL_THRESHOLDS.find((t) => seconds <= t.maxSeconds * scale) ?? MEDAL_THRESHOLDS[MEDAL_THRESHOLDS.length - 1];
-    return { medal: tier.medal, emoji: tier.emoji };
+export function runResultTiers(finished: boolean, finalMs: number, wordCount: number = TOTAL_WORDS): RunTiers | null {
+    if (!finished) return null;
+    return { speed: gradeSpeed(finalMs, SPEED_TIERS, finalMs * (TOTAL_WORDS / wordCount)) };
 }
 
 /**
@@ -265,10 +264,8 @@ export function personalBestMode(mode: WordSearchMode, board: WordSearchBoardId)
 // Match Speed became a third caller — import it from there.
 
 /** The flp break's results-card heading (docs/FLP_GAME_BREAKS.md § 5b). */
-export function runResultTitle(finished: boolean, finalMs: number, wordCount: number = TOTAL_WORDS): string {
-    if (!finished) return "Run ended";
-    const { medal, emoji } = medalForTime(Math.floor(finalMs / 1000), wordCount);
-    return `${emoji} ${medal[0].toUpperCase()}${medal.slice(1)}!`;
+export function runResultTitle(finished: boolean): string {
+    return finished ? "Finished!" : "Run ended";
 }
 
 /** The results card's headline figure. A run left early has no finish time to show. */

@@ -10,6 +10,7 @@ import { SAFE_TOP } from "../../theme/safeArea";
 import { claimThemeColor } from "../../hooks/useThemeColor";
 import { frameOverlayHost, nearestOverlayHost } from "../overlayHost";
 import { useKeyboardInset } from "../../features/beginnerKeyboard/useKeyboardInset";
+import { directionalSnapTarget, nextSnapDirection, type SnapDirection } from "../../utils/directionalSnap";
 
 // Imperative handle exposing the gesture-root wrapper and the inner scrollable
 // container of whatever body a SheetPanel renders. SheetPanel attaches its
@@ -116,14 +117,15 @@ interface SheetPanelProps {
         requestClose: () => void;
         dismiss: () => void;
     }) => React.ReactNode);
-    // Where, between the lower stop and the max, a release stops springing back
-    // up and collapses instead. 0.5 (default) = the midpoint rule: whichever
-    // stop is nearer wins. A SMALLER value makes the panel collapse from a much
-    // lower height — the sheet has to be pulled most of the way down before it
-    // will spring back up, so a partial pull-down reads as "close it". Only the
-    // {lower stop, max} choice is affected; a modal panel's dismiss floor (its
-    // default height) is untouched.
-    collapseThresholdRatio?: number;
+    // How far a release must have travelled between the lower stop and the max, as a
+    // share of that gap, before it commits to the stop it was HEADING for — measured
+    // from the stop it left (src/utils/directionalSnap.ts). Growing: past this share
+    // above the lower stop, it goes on to max. Shrinking: past this share below max, it
+    // goes on to the lower stop. Short of that it springs back. 0.5 (default) is the
+    // plain nearest-stop rule either way; a SMALLER value makes both trips easier (the
+    // eip passes 0.25). Only the {lower stop, max} choice is affected; a modal panel's
+    // dismiss floor (its default height) is untouched.
+    snapCommitShare?: number;
     // Tap handler for the sheet's ✕ (SheetCloseX, top-right of the chrome). Optional:
     // with nothing passed the ✕ simply dismisses the sheet.
     //
@@ -312,22 +314,23 @@ function inverseRubberBand(visible: number, limit: number): number {
 }
 
 // Shared snap rule used by every release path (grabber drag, touch release,
-// momentum decay): below default → dismiss (0); at or above it → the lower
-// stop if the sheet sits below `collapseRatio` of the way up to the max,
-// otherwise the max. The default height is the floor — there is no resting
-// stop between 0 and it.
+// momentum decay): below default → dismiss (0); at or above it → the
+// DIRECTIONAL two-stop rule shared with td's tower ↔ cards snap
+// (src/utils/directionalSnap.ts → directionalSnapTarget). `direction` is the way
+// the height was last moving (+1 growing, −1 shrinking, 0 unknown): growing, it
+// maximizes once `commitShare` of the gap above the default height; shrinking,
+// it drops back to the default once `commitShare` of the gap below max; short of
+// that it springs back to the stop it left. The default height is the floor —
+// there is no resting stop between 0 and it.
 //
-// `collapseRatio` of 0.5 is the plain nearest-stop rule; anything smaller moves
-// the collapse point DOWN, so the sheet keeps springing open until it has been
-// pulled well past halfway.
+// `commitShare` of 0.5 is the plain nearest-stop rule whichever way it moved.
 //
 // A PERSISTENT panel (minH > 0) has no dismiss stop at all: `defaultH` IS
 // `minH`, nothing can go below it, so the rule degrades to "collapse to minH or
 // grow to max" via the same comparison.
-function computeSnapTarget(h: number, defaultH: number, maxH: number, minH: number, collapseRatio: number): number {
+function computeSnapTarget(h: number, defaultH: number, maxH: number, minH: number, direction: SnapDirection, commitShare: number): number {
     if (h < defaultH && minH === 0) return 0;
-    const collapseBelow = defaultH + (maxH - defaultH) * collapseRatio;
-    return h < collapseBelow ? defaultH : maxH;
+    return directionalSnapTarget(h, defaultH, maxH, direction, commitShare);
 }
 
 // Module-level set of currently mounted panel depths. The window-level wheel
@@ -352,7 +355,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     depth = 0,
     bodyRef,
     bodyKey,
-    collapseThresholdRatio = 0.5,
+    snapCommitShare = 0.5,
     children,
     title,
     onCloseX,
@@ -476,9 +479,15 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     const minHeightRef = useRef(minHeight);
     minHeightRef.current = minHeight;
     // Read from settle() without re-binding it when the prop changes.
-    const collapseRatioRef = useRef(collapseThresholdRatio);
-    collapseRatioRef.current = collapseThresholdRatio;
-    // Read through a ref for the same reason as collapseThresholdRatio: writeMergeChrome is
+    const commitShareRef = useRef(snapCommitShare);
+    commitShareRef.current = snapCommitShare;
+    // The way the sheet's (virtual) height was last moved by a gesture — finger,
+    // header drag or momentum — for settle()'s directional rule. Written in
+    // writeVirtualHeight (every gesture-driven height write goes through it; the
+    // animated snaps call writeHeight directly and so never touch it), reset to 0
+    // when a new gesture grabs the sheet so a stale direction cannot leak into it.
+    const snapDirectionRef = useRef<SnapDirection>(0);
+    // Read through a ref for the same reason as snapCommitShare: writeMergeChrome is
     // a stable callback called from touchmove/momentum frames, so it must not be rebuilt
     // (and its listeners re-bound) just because a prop identity changed.
 
@@ -775,7 +784,8 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             defaultHeightRef.current,
             maxHeight(),
             minHeightRef.current,
-            collapseRatioRef.current,
+            snapDirectionRef.current,
+            commitShareRef.current,
         );
         if (target === 0) {
             dismiss();
@@ -796,10 +806,14 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         const maxH = maxHeight();
         const canOverstretch = allowOverstretch && squeezeOnOverstretchRef.current;
         const h = clamp(v, minH, maxH);
+        const prevVirtual = heightRef.current + overstretchRef.current;
         // Set BEFORE writeHeight, which places the telescope from it.
         overstretchRef.current = canOverstretch ? Math.max(0, v - maxH) : 0;
         writeHeight(h);
-        return h + overstretchRef.current;
+        const nextVirtual = h + overstretchRef.current;
+        // Remember which way the gesture is moving the sheet (jitter-filtered).
+        snapDirectionRef.current = nextSnapDirection(snapDirectionRef.current, prevVirtual, nextVirtual);
+        return nextVirtual;
     }, [maxHeight, writeHeight]);
 
     // Grow/shrink by a raw gesture delta (positive = grow). `minH` is the floor
@@ -897,6 +911,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             if (first) {
                 stopMomentum();
                 dragStartHeightRef.current = null;
+                snapDirectionRef.current = 0;
             }
             if (dragStartHeightRef.current === null) {
                 // Nothing has moved yet — leave any open/snap animation alone.
@@ -987,6 +1002,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             lastTouchY = e.touches[0].clientY;
             samples = [{ y: lastTouchY, t: e.timeStamp }];
             gestureMode = null;
+            snapDirectionRef.current = 0;
         };
 
         const onTouchMove = (e: TouchEvent) => {

@@ -102,5 +102,3 @@ export interface WordSearchResponse {
 /** A cell coordinate in the grid. */
 export type Coord = [number, number];
 
-/** Awarded medal tier for a completed board (by total time). */
-export type Medal = "gold" | "silver" | "bronze";

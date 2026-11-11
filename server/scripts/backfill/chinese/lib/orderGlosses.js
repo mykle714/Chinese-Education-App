@@ -171,6 +171,7 @@ Requirements:
 - ${MAX_FIRST_GLOSS_LEN} characters or fewer total.
 - Reads like a clean dictionary headword gloss, NOT a sentence. No trailing period.
 - No parentheticals, no usage notes, no examples.
+- ONE gloss, not a list: no semicolons, and do not join two synonyms ("to keep on; continue" is wrong — pick one).
 - Base it on the most prototypical modern sense; the provided definitions (already ordered most- to least-useful) are your guide.
 
 Return ONLY a JSON object, no explanation:

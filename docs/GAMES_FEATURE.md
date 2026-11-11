@@ -53,14 +53,14 @@ Mini-games that reinforce vocabulary and character learning.
   - **Word Search** (`/games/word-search`) — see [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md).
   - **Match Speed** (`/games/match-speed`) — see [MATCH_SPEED_GAME.md](./MATCH_SPEED_GAME.md).
     One hub tile, one mode (Study Mix). A tap-to-match recognition speed drill: 2 columns × 6 rows (foreign |
-    English), how fast can you complete 30 pairs, board refills every 3s until they are all dealt, medals by finish time.
+    English), how fast can you complete 30 pairs, board refills every 3s until they are all dealt, speed + accuracy tiers (§ Run tiers).
   - **Speed Reading** (break-only) — see
     [SPEED_READING_GAME.md](./SPEED_READING_GAME.md). A **reading** drill: pinyin
     + definition + audio at the top, then two word options — the real word and
     one where a single character has been swapped for another real character from
     the player's library. The only **race** format in the set: a fixed 20 rounds
-    with a count-**up** clock, medals by finishing TIME (lower is better), and a
-    3-second penalty per wrong answer (shown as a red +3s floating from the tap).
+    with a count-**up** clock, a speed tier by finishing TIME (lower is better) and an
+    accuracy tier by correct answers (§ Run tiers). A wrong answer costs no time.
     Every round must be answered — it has **no Skip**.
   - **Hydra Bubbles** (`/games/hydra-bubbles`) — see
     [§ Game: Hydra Bubbles](#game-hydra-bubbles-gameshydra-bubbles) and
@@ -73,7 +73,7 @@ Mini-games that reinforce vocabulary and character learning.
     **BUILT 2026-10-06, no migration.** A drag-and-drop **stopwatch**: the perimeter of the
     play panel is lined with grey square keycap-hole buckets each holding an English dd, the
     run's 20 foreign words are dealt as a pile in the middle, and the player drags any word
-    into its meaning's bucket (or leaves it anywhere) — medals by finishing time. **Moded** like Word Search:
+    into its meaning's bucket (or leaves it anywhere) — speed + accuracy tiers (§ Run tiers). **Moded** like Word Search:
     the hub tile is Pinyin (production, challenge-eligible); No Pinyin (reading, zh only)
     has no host today (its flp break adapter is built but switched off).
 
@@ -465,15 +465,18 @@ inherits a shell from it.
   layer owning the scrim, the card chrome (× button), the corner puck, and the
   FLIP-style collapse animation between them. The **page** owns the `minimized`
   flag and the card's content (title / message / actions), passed as `children`;
-  `classPrefix` keeps each game's BEM classes distinct. Word Search renders it
-  directly; Bubble Match, Match Speed and Bucket Drop wrap it (`BubbleMatchEndPopup`,
-  `MatchSpeedEndPopup`, `BucketDropEndPopup`) to pin their prefix. Routed pages only — a
-  break-only game has no end popup (its results go to the flp's card).
+  `classPrefix` keeps each game's BEM classes distinct. **Bubble Match is its one game
+  caller today** (`BubbleMatchEndPopup`); `ChallengeRoundScoreboard` shares the shell. The
+  Match Speed, Word Search and Bucket Drop end popups (`MatchSpeedEndPopup`,
+  `BucketDropEndPopup`, Word Search's inline win card) were **deleted 2026-11-10** with
+  the medals, along with their Play Again and Match Speed's cleanup mode: every game runs
+  as an flp break, whose results go to the break's card (§ Run tiers,
+  [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 5b). Their routed pages, behind the OFF
+  `standaloneGames` flag, now end on a frozen board ([DEFERRED_WORK.md](./DEFERRED_WORK.md)).
   **Minimizing is opt-in**: pass `onMinimize`/`onRestore` and the × button and the
   corner puck appear; omit them and neither is rendered, so the popup is modal and its
   own buttons are the only exits. The rule is "minimizable iff the board is still worth
-  uncovering" — Bubble Match, Match Speed and Word Search all have a post-run cleanup
-  mode.
+  uncovering" — Bubble Match's post-loss cleanup mode.
   **The puck docks into the game frame's corner**, not the screen's: `GameEndPopup`
   passes `puckAnchorSelector=".game-frame"` to `MinimizablePopup`, which measures that
   element (the enclosing match, else one inside the popup's parent — the phone frame,
@@ -489,6 +492,9 @@ inherits a shell from it.
   (TTS) is the only audio (docs/AUDIO_PLAYBACK.md § 7).
 - **`useBackgroundPause.ts`** — the app-wide backgrounding pause, which resumes by
   itself on return (§ Backgrounding pauses the clock).
+- **`useActiveRunClock.ts`** — a hidden stopwatch of accumulated active time built on
+  `useBackgroundPause`, read once at run end. Memory Map's speed tier (§ Run tiers);
+  Superposition and Writing Grid keep inline copies of the same pattern.
 - **The Study Challenge round runner** — five files, and the largest thing in here:
   - **`challengeScoring.ts`** — the pure, React-free spec runner (events → score +
     itemised breakdown). Written so the server can adopt it verbatim for live mode.
@@ -535,11 +541,12 @@ Presentational only; nothing here holds state.
   to the edge used to look like it had left the app. It is also `position: relative`, so a
   game's own overlays (a countdown, a pause veil) stop at the panel's rounded edge instead
   of covering its margin, and it gives a physics surface **one** element to measure for
-  bounds. Under a `GameFrameExitContext` provider (`gameFrameExit.ts`) it also draws a
-  host's exit as a back arrow at the study header's arrow position — only the flp game break provides one
-  (its Leave; docs/FLP_GAME_BREAKS.md § 6), so on a game's own route nothing extra shows.
-  A provider also means the game is the whole screen, so the frame drops its inset, corner
-  and line, and `GameTimer` / `GameHud` drop their tint and hairline. (A `tone="tower"` gold-slab
+  bounds. Under a `GameFrameHostContext` provider (`gameFrameExit.ts`) — only the flp game
+  break provides one (docs/FLP_GAME_BREAKS.md § 6) — the game is the whole screen: the frame
+  drops its inset, corner and line, `GameTimer` / `GameHud` drop their tint and hairline,
+  the content fades in (the break's header row, drawn by the break area, was up through the
+  circle grow), and `exitRowTrailing` portals game controls into that row. On a game's own
+  route nothing extra shows. (A `tone="tower"` gold-slab
   variant existed unused and was removed 2026-11-04.)
 - **`GameHud`** (`.hud`) + **`GameHudLabel`** (`.hud .lab`) — the bordered strip of mono
   facts across the panel's top. `space-between`, so the child count is load-bearing: two
@@ -797,7 +804,7 @@ Two deliberate exceptions, both correct:
 - **Word Search bonus words** (a real det headword the player traced that isn't a
   target) use raw `definitions->>0`. There is no `vet` row for them — they aren't
   the player's cards — so they follow the standard det-fallback rule (index 0),
-  the same as discover cards and the read-only dictionary cdp.
+  the same as discover cards and the Dictionary page's eip.
 
 ### No two cards may share a dd in one round
 
@@ -864,6 +871,53 @@ If it composes a round from another source (a Study Challenge word set riding a
 game's slots, say), it must apply the same key — and a client-side composer needs a
 `ddCollisionKey` twin in `src/utils/definitionUtils.ts` that normalizes identically.
 
+### The countdown
+
+Every flp break game opens on a **3 · 2 · 1** over its readable opening board: Match Speed,
+Word Search, Writing Grid, Superposition, Speed Reading and Memory Map. (Bucket Drop's
+adapter is switched off and has none.) The opening board gets a beat to be read, and the
+run's clock starts on the release, so no reading time is billed. There is **no "Go!" card**.
+The release is the dim lifting, with its own beep (owner, 2026-11-10; until then Match
+Speed and Writing Grid showed 3·2·1·Go, four steps).
+
+- **The dim covers the whole screen.** It is portaled to the phone frame
+  (`useScreenOverlayHost`, z 150), so Leave's row and the status band dim with the board.
+  Until 2026-11-10 it dimmed only the game panel and left Leave's row lit.
+- **Leave stays usable.** The dim is pointer-transparent. A second layer, the **input
+  shield**, is rendered in place inside the game's `GameFrame` at z 5, under the exit row
+  (z 6), and swallows taps aimed at the board. So during the count the Leave arrow and the
+  audio chip work and the board does not. `<GameCountdown>` must be a direct child of the
+  `GameFrame`.
+- **Sound.** A tick per digit and a different release beep, which honour the audio chip
+  ([AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md) § 7a).
+- **Timing.** `COUNTDOWN_STEPS` × `COUNTDOWN_STEP_MS` (3 × 700 ms). `paused`
+  (backgrounding) freezes the count; the step that was up gets its full time again on
+  resume, and its tick is not replayed.
+- **The lent-cards notice comes first.** `ProvisionalCardsNotice` lives inside the break
+  area's stacking context, under the frame-level dim, so a Stage with a notice keeps the
+  countdown inactive until the notice is dismissed (`active: … && !noticeOpen`). It does
+  not pause the count behind the notice.
+- **How each Stage holds its run:**
+
+| Game | Starts when | Held during the count |
+|---|---|---|
+| Match Speed | the pool is dealt (`phase: "countdown"`) | the board is `frozen`; the stopwatch starts at `"playing"` |
+| Writing Grid | the deal lands (`phase: "countdown"`) | read-only Phase 1; `startStopwatch` on release |
+| Word Search | `startBoard` / `restoreBoard` (`counting`) | the clock is started then paused; `counting` feeds `clockPaused` and the challenge round's `paused` |
+| Superposition | the tiles are scattered (`handleMeasured`) | `running` is false: no stopwatch, no hint |
+| Speed Reading | the first round is built (`counting`) | `counting` feeds `clockPaused` (the origin shift un-bills it); no pick, no narration of round 1 |
+| Memory Map | the first `playing` render, once per break | `useActiveRunClock` waits; the first prompt's word waits |
+
+A Leave during the count takes each game's existing Leave path. Match Speed, Word Search,
+Superposition and Speed Reading end the run, so the results card shows an empty run. Writing
+Grid and Memory Map (with nothing found yet) close the break with no run, because their
+Leave treats a not-yet-started run as "nothing to report". Each Stage gates `active` on its
+live phase, so the dim goes down with the run either way.
+
+*Code:* `src/games/shared/useGameCountdown.ts` → `useGameCountdown`, `COUNTDOWN_STEPS`,
+`COUNTDOWN_STEP_MS`; `src/games/shared/GameCountdown.tsx` → `GameCountdown`;
+`src/services/sfx/countdownSounds.ts` → `playCountdownSound`.
+
 ### Popups pause the clock
 
 **The rule:** no game's clock — or whatever else in that game advances on its own
@@ -875,9 +929,9 @@ it to whatever moves on its own:
 
 | Game | `clockPaused` is true while | What freezes | Code |
 | --- | --- | --- | --- |
-| Match Speed | the provisional notice is open | the 3·2·1 countdown **and** the run clock | `MatchSpeedStage.tsx` (`clockPaused`, the countdown effect, the run-clock effect) |
-| Word Search | the provisional notice is open | the count-up clock, via the existing `pauseTimer`/`resumeTimer` pair | `WordSearchStage.tsx` (`clockPaused`, `clockPausedRef`, the pause effect) |
-| Speed Reading | the provisional notice is open | the count-up clock — `startAtRef` is pushed forward by the paused span on resume | `SpeedReadingStage.tsx` (`clockPaused`, `pausedAtRef`, the pause effect) |
+| Match Speed | the provisional notice is open | the run clock (the 3·2·1 countdown does not start until the notice is dismissed — § The countdown) | `MatchSpeedStage.tsx` (`clockPaused`, `useGameCountdown`, the run-clock effect) |
+| Word Search | the provisional notice is open, or the countdown is up (`counting`) | the count-up clock, via the existing `pauseTimer`/`resumeTimer` pair | `WordSearchStage.tsx` (`clockPaused`, `clockPausedRef`, the pause effect) |
+| Speed Reading | the provisional notice is open, or the countdown is up (`counting`) | the count-up clock — `startAtRef` is pushed forward by the paused span on resume | `SpeedReadingStage.tsx` (`clockPaused`, `pausedAtRef`, the pause effect) |
 | Bubble Match | the provisional notice is open | the bubble launcher, the descending ceiling and the overfill loss check | `BubbleMatchPage.tsx` (`clockPaused`) → `BubbleStage.tsx` (`paused`, `pausedRef`, `stepFrame`, the launch interval) |
 | Bucket Drop | the provisional notice is open | the count-up stopwatch (banked into `activeMsRef` per running segment) and pickup | `BucketDropStage.tsx` (`clockPaused`, `clockRunning`, `activeMsRef`) → `BucketDropBoard` (`paused`) |
 
@@ -891,8 +945,9 @@ Three consequences worth keeping in mind when adding a popup or a game:
   settings-sheet pause source on 2026-08-28 when that sheet was deleted — its
   replacements are header chips, which leave the board playable and correctly do
   **not** pause ([AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md)).
-- **End-of-run popups are irrelevant.** The end popup and `ProvisionalSortOffer`
-  only ever open once the run is scored and the clock has already stopped.
+- **End-of-run surfaces are irrelevant.** The break's results card, Bubble Match's end
+  popup and `ProvisionalSortOffer` only ever open once the run is scored and the clock
+  has already stopped.
 - **Resume must not pay the pause back.** A count-up clock moves its origin forward
   (Speed Reading), banks each stretch of play (Match Speed's hidden stopwatch) or uses an explicit
   pause/resume pair (Word Search); the rAF field re-bases its frame clock every
@@ -976,6 +1031,52 @@ would let one player freeze the other's game. It does not: live mode runs an
 **unpausable AFK forfeit timer** alongside the paused game (next section), so
 pausing never benefits the player who does it. Keeping the rule absolute means no
 game needs a live-mode branch in its timer code.
+
+### Run tiers
+
+A finished run is graded on two axes, **speed** and **accuracy**, each with **seven
+numbered tiers**. They replaced the gold / silver / bronze medals on 2026-11-10. Tiers are
+bare numbers for now ("Speed 3"); names and art are to come.
+
+- **Tier 1 is the best, tier 7 the lowest.** Every *finished* run lands on a tier on each
+  axis it has: tier 7 catches everything past tier 6's cutoff, so there is no untiered
+  finish (unlike the old no-medal outcome).
+- **An unfinished run gets no tiers.** Left early (an flp break's Leave), ran out of cards,
+  or (Bucket Drop) a short pool: the results card says "Run ended" / "Out of cards" with no
+  chips. That is the caller's decision; the engine only grades.
+- **Ladders are per game.** A ladder is six cutoffs, best-first. Speed cutoffs are finish
+  times in ms (lower is better); accuracy cutoffs are the right-answer share 0–1 (higher is
+  better). Each game owns its `SPEED_TIERS` and, where it counts errors, its
+  `ACCURACY_TIERS`, in its `constants.ts`. **Every cutoff is a placeholder** until tuned
+  from play data.
+- **Wins are not gated on a tier.** Any finished run logs its win
+  (`POST /api/users/me/wins`) in the games that keep wins.
+- **Display:** two large outlined panels under the results card's heading, **speed stacked
+  above accuracy** (`RunTierPanels`), and nothing else on a finished run's card. Each panel
+  is a big tier numeral beside its axis label and figure: **speed** shows the run's time and
+  the personal best; **accuracy** shows "correct/attempts · percent". A game with no accuracy
+  tier shows only the speed panel. The time shown is always the real one, even where the
+  grade uses a scaled time (Word Search, Memory Map).
+
+| Game | Speed graded on | Accuracy graded on |
+|---|---|---|
+| Match Speed | time to 30 pairs | pairs / match attempts |
+| Word Search | time to find every word, scaled to the 9-word board | — (misses not counted) |
+| Speed Reading | raw time for 20 rounds (the +3s wrong-answer penalty was removed) | correct / 20 |
+| Bucket Drop | finishing time (full pool only) | clean drops / all drops |
+| Writing Grid | total active time | — |
+| Superposition | time to build the 4 characters | — |
+| Memory Map | hidden active-time clock, scaled to a full `BREAK_PROMPTS` quota | "knew it" (green) / words found |
+
+Bubble Match and Hydra Bubbles never had medals and have no tiers.
+
+Code: `src/games/shared/runTiers.ts` → `RunTier`, `RunTiers`, `SpeedResult`,
+`AccuracyResult`, `gradeSpeed`, `gradeAccuracy`, `formatAccuracy` (on `speedTierFor` /
+`accuracyTierFor`); `src/games/shared/RunTierPanels.tsx`; `src/games/shared/PersonalBestLine.tsx`
+(`align`); each game's `constants.ts` → `SPEED_TIERS`, `ACCURACY_TIERS`, `runResultTiers`
+(Writing Grid and Superposition call `gradeSpeed` from their Stage); `src/games/runtime/useActiveRunClock.ts` (Memory Map's
+clock); `src/games/flpBreak/types.ts` → `FlpBreakResults.tiers`.
+Docs that depend on it: [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 5b, and each game's doc.
 
 ### Challenge-eligible games: the `challengeScoring` contract
 
@@ -1161,10 +1262,9 @@ for a rAF loop, Match Speed / Speed Reading for a timer-driven board.
    with `POST /api/users/me/wins` if the hub should show a win badge.
 5. Add the route to `MINUTE_POINTS_ELIGIBLE_PAGES` (and the start-on-entry subset)
    in `src/constants.ts` so play time accrues points and streak.
-6. Reuse `GameEndPopup` for the won/lost card. Pass `onMinimize`/`onRestore` only
-   if the game has a post-run cleanup mode worth uncovering the board for;
-   otherwise omit them and the popup is modal. (A break-only game skips this step: its
-   results go to the flp's card through `onRunEnded`.)
+6. Report the run through the break's `onRunEnded` with a `tiers` value: give the game a
+   `SPEED_TIERS` ladder (and `ACCURACY_TIERS` if it counts errors) in its `constants.ts`
+   (§ Run tiers). Games run as flp breaks, so there is no end popup to build.
 7. **Derive one `clockPaused` boolean from every pause source** — input-blocking
    popups *and* backgrounding — and feed it to everything that advances on its own.
    Express elapsed time as accumulated active time, never `now − startedAt`. See
@@ -1264,7 +1364,7 @@ Renaming a `gameId` counts as removing one game and adding another. Don't.
 Second game (built). Find 12 of your own vocab words — shown as English glosses —
 hidden as snaking (orthogonal) paths in a 9×6 grid of colored-pinyin (cpcd)
 characters. Drag or tap to trace; any valid multi-char selection pops a
-dictionary info-card + audio. Count-up timer → medal on completion. Reuses
+dictionary info-card + audio. Count-up timer → speed tier on completion (§ Run tiers). Reuses
 Bubble Match's pool + fallback distribution, adds a substring de-dup pass and a
 server-side snaking grid generator (`GET /api/onDeck/wordSearchGrid`). Full
 spec + file map: → [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md).
@@ -1302,7 +1402,7 @@ Sharing it leaks in two directions, and both are real today:
   pinyin — also strips pinyin from Hydra Bubbles and Match Speed, neither of which the
   learner touched, and neither of which changes track to match.
 * **Between a drill and its reference material.** The flp owns
-  `flashcard.learn-settings`, and the cdp, the acp and the dictionary cdp read it as a
+  `flashcard.learn-settings`, and the cdp, the acp and the Dictionary page's eip read it as a
   *reading* preference. A game that writes that key is editing the learner's flashcard
   display from inside a game.
 
@@ -1310,7 +1410,7 @@ The rule, and how much of it already holds:
 
 | Surface | Where its pinyin preference lives |
 |---|---|
-| flp (+ cdp, acp, dictionary cdp) | `useFlashcardLearnSettings` — **unchanged**; the flp keeps this key and becomes its only writer |
+| flp (+ cdp, acp, Dictionary eip) | `useFlashcardLearnSettings` — **unchanged**; the flp keeps this key and becomes its only writer |
 | **Word Search** | ✅ already per-game — a property of the MODE (`MODE_CONFIGS`, `src/games/word-search/constants.ts`). The precedent. |
 | **Memory Map** | ✅ already per-game — never draws pinyin at all (since 2026-10-06 it renders bare measured characters, not `ForeignText`); it is a reading map |
 | **Speed Reading** | ✅ already per-game — hardcoded false; the prompt would spoil itself |
@@ -1839,6 +1939,6 @@ makes sense because its run has a fixed length; Hydra's does not.
 ## Game: Bucket Drop (`/games/bucket-drop`)
 
 Drag each word from the pile into the perimeter bucket holding its meaning, against a
-count-up clock; 20 words, medals by time. The whole design — perimeter geometry, the
+count-up clock; 20 words, speed + accuracy tiers (§ Run tiers). The whole design — perimeter geometry, the
 the free-roaming pile, marks, modes, challenge scoring — is
 [BUCKET_DROP_GAME.md](./BUCKET_DROP_GAME.md). Code: `src/games/bucket-drop/`.

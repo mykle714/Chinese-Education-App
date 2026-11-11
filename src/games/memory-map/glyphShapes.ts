@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { FONTS } from "../../theme/fonts";
+import { resolveFontFamily } from "../../utils/canvasText";
 import { WEIGHT } from "../../theme/scale";
 import { bowOffsets, type ShapePart } from "../../../server/services/memoryMapLayout";
 import { OUTLINE_PX, PIXELS_PER_WORLD_UNIT } from "./constants";
@@ -60,10 +61,7 @@ export interface MeasuredWord {
  */
 export function mapFontFamily(language: string): string {
     if (language === "es") return FONTS.sans;
-    const live = getComputedStyle(document.documentElement).getPropertyValue("--cjk-font").trim();
-    if (live) return live;
-    const fallback = /^var\(--cjk-font,\s*(.*)\)$/.exec(FONTS.cjk);
-    return fallback ? fallback[1] : FONTS.cjk;
+    return resolveFontFamily(FONTS.cjk);
 }
 
 /** The weight the map draws at — bold, as it always has. */

@@ -166,10 +166,6 @@ const MatchSpeedCard: React.FC<MatchSpeedCardProps> = ({
     if (state === "wrong") {
         background = WRONG_CARD_BG;
         textColor = WRONG_CARD_INK;
-    } else if (state === "partner-hint") {
-        // Cleanup-mode "here's your partner" hint — deliberately the same green as a
-        // correct match, so the two games teach one visual vocabulary.
-        background = CORRECT_CARD_BG;
     } else if (state === "selected") {
         // `.msc.pick`: the design fills the selected card AND gives it a 2px ink edge (v2).
         // The edge is cardKeySx's ring; the key staying down is the rest of the pick.

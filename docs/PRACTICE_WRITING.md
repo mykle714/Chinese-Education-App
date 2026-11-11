@@ -56,11 +56,11 @@ outside its boundary, because the drill acts on the WORD, not on the card. Hosts
   handler), so the popup never opens over an unrevealed answer.
 - **vocab cdp** — `src/features/flashcards/VocabCardDetailPage.tsx`
 - **Dictionary page eip** — `src/features/flashcards/FlashcardsLearnPage/EipSheet.tsx`
-  (`showWordTools`, from `src/features/dictionary/DictionaryPage.tsx`) — and the
-  **dictionary cdp** (`src/features/dictionary/DictionaryCardDetailPage.tsx`). The
-  exception to "above the card": neither has a card, so the rail sits at the **bottom of
+  (`showWordTools`, from `src/features/dictionary/DictionaryPage.tsx`). The
+  exception to "above the card": it has no card, so the rail sits at the **bottom of
   the eip's definition tab** (`definitionFooter`, 2026-10-10). Both pills show; a det
-  entry with no vet row records no Writing mark
+  entry with no vet row records no Writing mark (`WordToolsRail` passes
+  `vocabEntryId={entry.id || undefined}`)
 
 **Removed placements.** The compact `icon` button that stacked above the speaker on the
 card face (`ChineseBlock`'s `showWriting` prop) was deleted on 2026-08-28 — a relic of
@@ -371,8 +371,8 @@ Verify (and the level isn't already completed).
 **Writing marks.** Every Verify hands `{ level, perChar }` to `onWritingResult`
 (`usePracticeWriting`), which posts ONE writing mark on the word's card carrying that
 payload; the server fans it out onto each character's own card behind the anti-farming
-gate (WRITING_PRACTICE_REWORK.md § 3a). The dictionary cdp passes no card, so it marks
-nothing.
+gate (WRITING_PRACTICE_REWORK.md § 3a). A Dictionary-eip word with no vet row has no card,
+so it marks nothing.
 
 **Post-Verify guide reveal.** A successful or failed Verify flips `verifyRevealed`,
 which forces the grey guide visible on **every** panel — single, focused, and all

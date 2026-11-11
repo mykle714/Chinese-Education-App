@@ -211,10 +211,10 @@ need to decide. A 502/503 for an upstream failure would make the distinction che
 
 | | |
 |---|---|
-| **What** | Roughly ten call sites still write `boxShadow: 2 \| 3 \| 4 \| 6` — MUI's own elevation index, which resolves to MUI's default **pure-black** shadow ladder. Convert them to `SHADOW` (`src/theme/shadows.ts`) like every other card and floating surface. Sites as of 2026-11-08 (9): `src/components/FlashCard.tsx` (4), `src/features/flashcards/FlashcardsPage.tsx` (3), `src/games/word-search/WordSearchGrid.tsx`, `src/components/CpcdPopup.tsx`. (`VocabDisplayCard` and `SegmentedSentenceDisplay` have been converted; `VocabEntryCards.tsx` was deleted.) |
+| **What** | Roughly ten call sites still write `boxShadow: 2 \| 3 \| 4 \| 6` — MUI's own elevation index, which resolves to MUI's default **pure-black** shadow ladder. Convert them to `SHADOW` (`src/theme/shadows.ts`) like every other card and floating surface. Sites as of 2026-11-10 (2): `src/games/word-search/WordSearchGrid.tsx`, `src/components/CpcdPopup.tsx`. (`VocabDisplayCard` and `SegmentedSentenceDisplay` have been converted; `VocabEntryCards.tsx` was deleted.) |
 | **Why deferred** | Split out of the D13 shadow adoption on 2026-08-24 to keep that pass reviewable. It is a different KIND of edit: the `rgba(...)` sites were a mechanical find-and-replace, but a numeric elevation carries no information about what the surface IS, so each one has to be read and assigned a role token by hand (`raised`? `float`? `menu`?). Several are also on components that predate the redesign and may be deleted rather than converted |
 | **Cost of leaving it** | These are **invisible to the obvious check**: a `grep` for `rgba(0` over `src/` now comes back almost clean, which reads as "the shadow migration is done" when ten surfaces are still on MUI's black ladder. That false all-clear is the real cost — more than the visual drift, which is subtle |
-| **Trigger** | Whichever entry next touches one of those files (`FlashCard` and `VocabDisplayCard` in particular are old and un-converted), or a deliberate sweep. Do it with `git grep -nE "boxShadow: [0-9]"` rather than from this list, which will go stale |
+| **Trigger** | Whichever entry next touches one of those files (`VocabDisplayCard` in particular is old and un-converted), or a deliberate sweep. Do it with `git grep -nE "boxShadow: [0-9]"` rather than from this list, which will go stale |
 | **References** | `src/theme/shadows.ts` → `SHADOW`; docs/SHELF_REDESIGN.md § D13 (the three rules and the role names) |
 
 ### 15. The arena's twelve division rungs all look identical
@@ -469,12 +469,22 @@ were deleted from the code. Docs: [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md),
 
 | | |
 |---|---|
-| **What** | The Spanish half of the 2026-11-03 long-dd fix, which shipped for zh only. (1) Run `server/scripts/backfill/shared/patch-long-cluster-glosses.js --lang=es` on the 449 es cluster leads over 20 displayed chars (dry-run verified, never written). (2) Change the es step 4 manifest gate in `server/scripts/backfill/shared/lib/requiredScripts.js` from `when: 'multiDef'` to `'multiDefOrLongLead'`; zh got this fix and es did not, so **no single-gloss es row is ever planned for step 4** (34 discoverable rows, e.g. *agradecido* "grateful, thankful, appreciative, obliged, indebted"). Add the long-lead disjunct to `HAS_WORK_CLAUSE` in `spanish/backfill-process-definitions-array.js` too. (3) Port zh's "a failed short gloss leaves the row unstamped" fix to the es step 4. (4) Replace the es step 4's hand-copied `generateShortGloss` / `pass1Sort` with the shared ones (`chinese/lib/orderGlosses.js`, `shared/lib/senseShortGloss.js` → `askShortGloss`). That duplication is how fix (2) was missed. (5) `ddt` strips `(…)` but not Wiktionary's `[+…]` usage notes: 51 es cluster leads show e.g. *acabar* "to end up [+gerund]". (6) *venir*'s clusters lead with Wiktionary sense headings ("Senses relating to literal movement."), which is a source-import defect |
+| **What** | The Spanish half of the 2026-11-03 long-dd fix, which shipped for zh only. (1) Run `server/scripts/backfill/shared/patch-long-cluster-glosses.js --lang=es` on the 449 es cluster leads over 20 displayed chars (dry-run verified, never written). (2) Change the es step 4 manifest gate in `server/scripts/backfill/shared/lib/requiredScripts.js` from `when: 'multiDef'` to `'multiDefOrLongLead'`; zh got this fix and es did not, so **no single-gloss es row is ever planned for step 4** (34 discoverable rows, e.g. *agradecido* "grateful, thankful, appreciative, obliged, indebted"). Add the long-lead disjunct to `HAS_WORK_CLAUSE` in `spanish/backfill-process-definitions-array.js` too. (3) Port zh's "a failed short gloss leaves the row unstamped" fix to the es step 4. (4) Replace the es step 4's hand-copied `generateShortGloss` / `pass1Sort` with the shared ones (`chinese/lib/orderGlosses.js`, `shared/lib/senseShortGloss.js` → `askShortGloss`). That duplication is how fix (2) was missed. (5) `ddt` strips `(…)` but not Wiktionary's `[+…]` usage notes: 51 es cluster leads show e.g. *acabar* "to end up [+gerund]". (6) *venir*'s clusters lead with Wiktionary sense headings ("Senses relating to literal movement."), which is a source-import defect. (7) The es step 4's hand-copied short-gloss prompt and validator lack the 2026-11-10 "no semicolon" rule that zh got (`validateShortGloss` in `shared/lib/senseShortGloss.js`, the step-4 prompt in `chinese/lib/orderGlosses.js`); fix (4) picks it up for free |
 | **Already in place** | The es clusterer already runs the per-sense short-gloss step on every new clustering (`spanish/backfill-cluster-definitions.js` → `run`, `shortenLongLeads`). That code was dry-run tested but has not written a row |
 | **Why deferred** | All Spanish work is paused until further notice (CLAUDE.md § Multi-Language Support) |
 | **Cost of leaving it** | Spanish cards and sense lists keep their long headlines; every es word the cron promotes with a single long gloss arrives without a short one |
 | **Trigger** | Spanish work resumes |
 | **References** | [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) § "Short lead gloss per sense"; [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) § 3 |
+
+### 37. Verify the SVG mini card's Spanish headword (paused with all Spanish work, 2026-11-10)
+
+| | |
+|---|---|
+| **What** | `MiniCardSvg` (the acp iso deck face, MiniCard drawn as native SVG) lays a Latin-script headword out by hand — `src/components/miniCardSvgLayout.ts` → `layoutPlainWord`: one bold `plainFontSize` line centred in the body, or, for a word wider than the body, wrapped lines start-aligned across it (what ForeignText's flex-wrapped span does in HTML). Written to mirror the HTML but never compared against it on an es card |
+| **Why deferred** | All Spanish work is paused (CLAUDE.md § Multi-Language Support); the zh path was built and unit-tested (`src/__tests__/miniCardSvgLayout.test.ts`) |
+| **Cost of leaving it** | A long es headword on an acp deck face may wrap or align slightly differently from the dock card it came from |
+| **Trigger** | Spanish work resumes |
+| **References** | [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) § 5.3 (the deck); `src/components/MiniCardSvg.tsx` |
 
 ### 36. Scaling: where server load concentrates, and what breaks first
 
@@ -510,6 +520,42 @@ study time**, not with open tabs.
 | 9 | **Blockers to running more than one backend.** One Node process (`server/Dockerfile`); in-memory `express-rate-limit` stores (`server/middleware/rateLimits.ts`); local-disk TTS cache; nginx `proxy_pass` with no `upstream`/keepalive and `Connection 'upgrade'` forced on every `/api` request | Checked (process, limiters); nginx checked | Shared store (Redis or Postgres) for limiters; nginx `upstream` with `keepalive`; then cluster/replicas |
 | 10 | **No query timeouts.** No `statement_timeout` or `idle_in_transaction_session_timeout` in `server/`, `database/` or either compose file, so one runaway query or leaked transaction holds a pool client indefinitely | Checked | Set both on the pool (`server/db-config.ts`) or as role defaults |
 | 11 | **Tables that grow without bound.** `refresh_tokens` (an insert per refresh; `RefreshTokenDAL` never deletes), `category_promotions`, `wins`, `discover_skips`, `focus_daily_snapshots` | Inferred | Retention sweep in the hourly `cow-maintenance` timer, starting with expired/revoked refresh tokens |
+
+### 38. Routed game pages end on a frozen board (no end card)
+
+*Added 2026-11-10, when the medals became run tiers.*
+
+| | |
+|---|---|
+| **What** | The standalone end popups of Match Speed (`MatchSpeedEndPopup`), Word Search (its inline win card) and Bucket Drop (`BucketDropEndPopup`) were deleted, with Play Again and Match Speed's cleanup mode. Their routed pages (`/games/match-speed`, `/games/word-search`, `/games/bucket-drop`) still exist and now end on a frozen board with no results and no replay. Before `standaloneGames` is switched back on, give those pages an end card (reuse `RunTierPanels` and the break's `FlpBreakResults`) or archive standalone games entirely |
+| **Why deferred** | Every game runs as an flp break; the routed pages are unreachable while `standaloneGames` is OFF |
+| **Cost of leaving it** | None while the flag is off. Flipping it on ships a dead end |
+| **Trigger** | Any plan to turn `standaloneGames` back on |
+| **References** | `server/contracts/featureFlags.ts` → `FEATURE_FLAGS.standaloneGames`; `src/games/match-speed/MatchSpeedStage.tsx`, `src/games/word-search/WordSearchStage.tsx`, `src/games/bucket-drop/BucketDropStage.tsx`; GAMES_FEATURE.md § Layer 2 (`GameEndPopup`), § Run tiers |
+
+### 39. Tune the run-tier cutoffs and name the tiers
+
+*Added 2026-11-10.*
+
+| | |
+|---|---|
+| **What** | Every `SPEED_TIERS` / `ACCURACY_TIERS` ladder is a placeholder (the old medal lines spread over seven tiers, or a guess where a game had no medals), and tiers display as bare numbers. Tune each ladder from play data and give the tiers their names/art. Also: Speed Reading personal bests recorded before 2026-11-10 include the removed +3s wrong-answer penalty, so they are slower than or equal to a raw-time equivalent — decide whether to reset them (`game_personal_bests` rows for `speed-reading`) |
+| **Why deferred** | The owner asked for numbered tiers first and will set the details later |
+| **Cost of leaving it** | Tier spread may be lopsided; stale Speed Reading bests are easy to beat |
+| **Trigger** | The owner's tier-detail pass |
+| **References** | `src/games/shared/runTiers.ts`; each game's `constants.ts` → `SPEED_TIERS`, `ACCURACY_TIERS`; GAMES_FEATURE.md § Run tiers |
+
+### 40. One hidden active-time stopwatch
+
+*Added 2026-11-10.*
+
+| | |
+|---|---|
+| **What** | `src/games/runtime/useActiveRunClock.ts` (Memory Map) is the third copy of the `accumulatedRef` / `runningSinceRef` stopwatch; Superposition (`SuperpositionStage.tsx` → `holdStopwatch`) and Writing Grid (`WritingGridStage.tsx` → `holdStopwatch`) inline the same pattern. Move both onto the hook |
+| **Why deferred** | Out of scope for the tier rework that added the hook |
+| **Cost of leaving it** | Three copies of a correctness-sensitive clock to keep in step |
+| **Trigger** | Next change to either game's clock |
+| **References** | the files above; GAMES_FEATURE.md § Backgrounding pauses the clock |
 
 ## Recently closed
 

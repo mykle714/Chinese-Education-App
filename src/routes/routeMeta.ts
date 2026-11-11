@@ -111,7 +111,7 @@ export interface RouteMeta {
 
 /** Every non-game route. Order is irrelevant — React Router ranks by specificity. */
 const PAGE_ROUTES: RouteMeta[] = [
-  // ── Footer-tab destinations ── (left to right: Flashcards · Arena · Dictionary · Menu)
+  // ── Footer-tab destinations ── (left to right: Flashcards · Lessons · Dictionary · Menu)
   {
     path: "/",
     access: "any",
@@ -122,12 +122,13 @@ const PAGE_ROUTES: RouteMeta[] = [
     note: "The Deck Tower (docs/DECK_TOWER.md) — the app's landing page and first footer tab. It took `/` on 2026-11-04, when the old Home (the fdp), the Reading/Writing Centers, Decks and the collection pages were deleted; `/deck-tower`, its address until then, is gone.",
   },
   {
-    path: "/arena",
+    path: "/lessons",
     access: "any",
     shell: "frame",
     chrome: "tab",
-    footerTab: "arena",
-    note: "A footer tab since 2026-11-04 (it was a Menu drill-in). Hidden with its row when the `arena` flag is off — see FLAGGED_OFF_PATHS and MobileFooter's ARENA_TAB_ON.",
+    footerTab: "lessons",
+    footerStyle: "slab",
+    note: "Took Arena's footer slot on 2026-11-10. A \"coming soon\" placeholder (src/features/lessons/LessonsPage.tsx) until the lessons feature is designed. Styled as a td Tier-2 page (useTier2Look ground) and wears the slab footer, like the Dictionary.",
   },
   {
     path: "/dictionary",
@@ -140,8 +141,16 @@ const PAGE_ROUTES: RouteMeta[] = [
   },
 
   // ── Node pages (slide from the right) ──
-  // Reader, Games, Friends and Community are reached from Menu, so they keep
+  // Reader, Arena, Friends and Community are reached from Menu, so they keep
   // the Menu tab lit.
+  {
+    path: "/arena",
+    access: "any",
+    shell: "frame",
+    chrome: "node",
+    footerTab: "menu",
+    note: "A Menu drill-in again since 2026-11-10 (a footer tab 2026-11-04 → 11-10, when Lessons took the slot). Hidden with its Menu row when the `arena` flag is off — see FLAGGED_OFF_PATHS and menuDestinations.ts.",
+  },
   // Was `chrome: "tab"`, which contradicted both this comment block and the page:
   // CommunityPage renders <NodePage>, so it drew a back arrow and slid OUT to the
   // right on back, but got no slide on the way IN (routeSlideDir returns null for
@@ -180,10 +189,10 @@ const PAGE_ROUTES: RouteMeta[] = [
     note: "The one FOOTERLESS node page (docs/UX_AND_NAVIGATION.md § Reader) — it still slides in from the right.",
   },
 
-  // Card-detail pages keep the tab of wherever they were reached from: a library card
-  // from the Deck Tower's cards page, a dictionary card from the Dictionary.
+  // The card detail page is a drill-in from the Deck Tower's cards page, so it keeps the
+  // Flashcards tab. (The Dictionary's read-only `/dictionary/card/:word` was deleted
+  // 2026-11-10 — a dictionary word is shown only in the eip sheet.)
   { path: "/flashcards/card/:id", access: "any", shell: "frame", chrome: "node", footerTab: "deck", footerStyle: "slab" },
-  { path: "/dictionary/card/:word", access: "any", shell: "frame", chrome: "node", footerTab: "dictionary", footerStyle: "slab" },
 
   // Add Cards — the Discover hub (`/discover`) was deleted 2026-10-17, so acp is a
   // drill-in from the Deck Tower (the main world's sort platform) and lights the Flashcards tab. The
@@ -224,10 +233,6 @@ const PAGE_ROUTES: RouteMeta[] = [
     chrome: "none",
     note: "Dev-only type labs (src/pages/fontLab/FontLabPage.tsx) — a shell over two modes: Chinese (FONTS.cjk) and Info type (FONTS.label, the overline voice). Not linked from any menu; reachable by typing the URL. Plain shell because each lab owns its own scroll container and needs the width for the compare grid.",
   },
-
-  // ── Full-account-only pages ──
-  { path: "/flashcards", access: "account", shell: "plain", chrome: "none" },
-  { path: "/profile", access: "account", shell: "plain", chrome: "none" },
 
   // ── Unauthenticated ──
   { path: "/login", access: "open", shell: "plain", chrome: "none" },

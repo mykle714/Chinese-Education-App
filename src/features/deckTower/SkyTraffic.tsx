@@ -1,5 +1,6 @@
 import { memo, useLayoutEffect, useSyncExternalStore } from "react";
 import {
+    IsoBalloon,
     IsoCloud,
     IsoCloudShadow,
     IsoWind,
@@ -34,7 +35,7 @@ import type { SkyTrafficStore } from "./skyTrafficStore";
  * render re-renders none of them (their props are stable).
  *
  * Layer: page-private components (feature module `src/features/deckTower`).
- * Depends on: iso/useCloudDrifts.ts, iso/useWindGusts.ts, iso/IsoCloud.tsx, iso/IsoWind.tsx.
+ * Depends on: iso/useCloudDrifts.ts, iso/useWindGusts.ts, iso/IsoCloud.tsx, iso/IsoBalloon.tsx, iso/IsoWind.tsx.
  * Depended on by: DeckTowerPage.tsx. Docs: docs/DECK_TOWER.md § "The scene".
  */
 
@@ -48,6 +49,8 @@ interface SkyTrafficSourceProps {
     windActive: boolean;
     maxClouds: number;
     maxGusts: number;
+    /** Feature testing: each change spawns one red balloon now (useCloudDrifts → `balloonRequest`). */
+    balloonRequest: number;
 }
 
 /** Runs the schedulers and publishes their travellers; draws nothing. */
@@ -60,8 +63,9 @@ export const SkyTrafficSource = memo(function SkyTrafficSource({
     windActive,
     maxClouds,
     maxGusts,
+    balloonRequest,
 }: SkyTrafficSourceProps) {
-    const drifts = useCloudDrifts({ proj, active: cloudsActive, sky: cloudSky, maxInSky: maxClouds });
+    const drifts = useCloudDrifts({ proj, active: cloudsActive, sky: cloudSky, maxInSky: maxClouds, balloonRequest });
     const gusts = useWindGusts({ proj, active: windActive, sky: windSky, maxGusts });
     // A layout effect, so a crossing that starts is drawn in the same frame it is scheduled.
     useLayoutEffect(() => {
@@ -84,7 +88,10 @@ interface SkyTrafficLayerProps {
  */
 export const SkyTrafficLayer = memo(function SkyTrafficLayer({ store, side, opacity }: SkyTrafficLayerProps) {
     const { clouds, gusts } = useSyncExternalStore(store.subscribe, store.get);
-    const cloudEls = clouds.filter((c) => c.side === side).map((c) => <IsoCloud key={`cloud-${c.id}`} drift={c} />);
+    // A drift is almost always a cloud; now and then it is the red balloon (useCloudDrifts → `BALLOON_CHANCE`).
+    const cloudEls = clouds
+        .filter((c) => c.side === side)
+        .map((c) => (c.kind === "balloon" ? <IsoBalloon key={`balloon-${c.id}`} drift={c} /> : <IsoCloud key={`cloud-${c.id}`} drift={c} />));
     const windEls = gusts.filter((g) => g.side === side).map((g) => <IsoWind key={`wind-${g.id}`} gust={g} />);
     return (
         <g className={`deck-tower-page__sky-${side}`} opacity={opacity < 1 ? opacity : undefined}>

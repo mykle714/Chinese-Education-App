@@ -281,8 +281,8 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
   `alreadyApproved={!aiGenerated}` (the `aiGenerated` prop IS the caller's
   `!entry.definitionsApproved`, so its inverse is exactly "already approved" — same
   signal that drives the AI-generated border/tint/badge). Wired from
-  `VocabCardDetailBody.tsx` and `InfoCardPanelBody.tsx` (both pass
-  `entry.entryKey`/`entry.language`). **Not** wired from `CompareWorkspace.tsx` — its
+  `FlashcardsLearnPage/InfoCardTabContent.tsx` (the eip Definition tab, passing
+  `entry.entryKey`/`entry.language`) — the only det-backed host. **Not** wired from `CompareWorkspace.tsx` — its
   `LongDefinitionDisplay` renders the AI word-comparison paragraph
   (docs/WORD_COMPARE_FEATURE.md), which has no backing det field at all.
 - **Meta-strip chips** (migration 132): `src/features/flashcards/MetaChipLabel.tsx`
@@ -419,8 +419,7 @@ the host palette's card fill in a 1px orange inset ring, 14px radius, no tint, w
   `useEipColors().card/.ink`) it draws the AI card; without it (CompareWorkspace) the
   tinted surface + inline badge.
 - `DefinitionFacts.tsx`'s grouped all-unapproved block draws the AI card (below).
-- The **three meta-strip chips** in `VocabCardDetailBody.tsx` and
-  `InfoCardPanelBody.tsx` each get **only** `aiGeneratedSurfaceSx` (border/tint, no
+- The **three meta-strip chips** in `DefinitionFacts.tsx` (the eip Definition tab) each get **only** `aiGeneratedSurfaceSx` (border/tint, no
   badge) when their OWN flag is falsy — a lighter mark since a chip is a small,
   glanceable value rather than a block of prose. Before migration 132 only the POS
   chip was ever clearable (off `definitionsApproved`) and the other two were
@@ -452,9 +451,9 @@ the host palette's card fill in a 1px orange inset ring, 14px radius, no tint, w
 > widen, heighten, or reflow the element it annotates, or displace any of its text.
 > When adding a new mount point, position it, don't inline it.
 
-All three surfaces (eip Definition tab, cdp) inherit this automatically since
-`VocabCardDetailBody`/`InfoCardPanelBody` are the shared components behind both
-card-detail pages.
+Every surface (the eip Definition tab on every host, the saved-card cdp included) inherits
+this automatically: the eip panel (`InfoCardPanelBody` → `InfoCardTabContent` →
+`DefinitionFacts`) is the one component behind all of them.
 
 > **The twin strips are gone (2026-08-24).** The cdp's and the eip's meta strips were
 > hand-maintained twins — ~90 lines each, identical down to the comments — held together
@@ -595,18 +594,18 @@ regeneration loop and a validator's work — treat it as load-bearing.
 - Inline Approve/Flag UI: `src/components/ValidateFlagButtonsView.tsx` (shared
   presentation) + `src/components/ValidateFlagButtons.tsx` (det-field wrapper),
   `src/api/http.ts` (`apiPost`/`apiDelete`/`apiGet`), wired from `src/features/flashcards/ExampleSentenceList.tsx`
-  and `src/components/LongDefinitionDisplay.tsx` (via `src/features/flashcards/VocabCardDetailBody.tsx` +
-  `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`), and
+  and `src/components/LongDefinitionDisplay.tsx` (via
+  `src/features/flashcards/FlashcardsLearnPage/InfoCardTabContent.tsx`), and
   `src/features/flashcards/MetaChipLabel.tsx` (one chip's caption + its validator pair;
   passes `senseLabel` for a per-sense Commonality chip), hosted by
-  `src/features/flashcards/DefinitionFacts.tsx` (the `.dfx` block both card-detail
-  surfaces render)
+  `src/features/flashcards/DefinitionFacts.tsx` (the `.dfx` block the eip Definition tab
+  renders)
 - Backfill guard: `server/scripts/backfill/run-log.js` (`validatedClause`)
 - Read-path surfacing: `server/dal/implementations/DictionaryDAL.ts`
   (`fetchApprovedSentenceContents`/`isSentenceHumanApproved` for `humanApproved`;
   `enrichFieldApprovalsBatch`/`fetchApprovedEntryFieldContents` for the four
   `EntryApprovalFlags` booleans + `approvedSenseFrequencyLabels`), `src/features/flashcards/ExampleSentenceList.tsx`,
-  `src/components/LongDefinitionDisplay.tsx`, `src/features/flashcards/VocabCardDetailBody.tsx`,
-  `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`,
+  `src/components/LongDefinitionDisplay.tsx`,
+  `src/features/flashcards/FlashcardsLearnPage/InfoCardTabContent.tsx`,
   `src/theme/aiGeneratedStyling.ts` + `src/components/AiGeneratedBadge.tsx` (shared
   with `AiDictionaryEntryCard.tsx`)

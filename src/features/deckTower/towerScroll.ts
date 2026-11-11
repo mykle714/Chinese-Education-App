@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, type RefObject } from "react";
 import { prefersReducedMotion } from "./iso";
+import { directionalSnapTarget, nextSnapDirection, type SnapDirection } from "../../utils/directionalSnap";
 
 /**
  * towerScroll — td's scroller and its PLATFORM LINE (docs/DECK_TOWER.md § "Scrolling" and
@@ -98,12 +99,6 @@ const SNAP_MS = 380;
  * above the cards line goes on to the platform. Short of that it springs back.
  */
 const SNAP_COMMIT_SHARE = 0.25;
-/**
- * A scroll step smaller than this does not change the remembered direction, px — so the
- * last jitter of a finger lifting (or a decelerating fling's sub-pixel frames) cannot flip
- * a deliberate scroll's direction.
- */
-const DIRECTION_MIN_STEP_PX = 2;
 
 /**
  * Where a scroll resting in the snap zone glides to (see `useTowerCardsScroll`, behaviour
@@ -111,16 +106,9 @@ const DIRECTION_MIN_STEP_PX = 2;
  * (towards the platform), 0 unknown — which falls back to the halfway point.
  * Pure, so the rule is unit-testable apart from the DOM.
  */
-export const snapTargetOf = (top: number, platformLine: number, cardsLine: number, direction: -1 | 0 | 1): number => {
-    const zone = cardsLine - platformLine;
-    const breakpoint =
-        direction > 0
-            ? platformLine + zone * SNAP_COMMIT_SHARE // heading down: commit early to the cards
-            : direction < 0
-              ? cardsLine - zone * SNAP_COMMIT_SHARE // heading up: commit early to the platform
-              : platformLine + zone / 2;
-    return top < breakpoint ? platformLine : cardsLine;
-};
+export const snapTargetOf = (top: number, platformLine: number, cardsLine: number, direction: SnapDirection): number =>
+    // The rule itself is shared with the sheet's maximize / shrink (src/utils/directionalSnap.ts).
+    directionalSnapTarget(top, platformLine, cardsLine, direction, SNAP_COMMIT_SHARE);
 
 /** Ease-in-out cubic: the cue's and the up arrow's glides start from rest and end at rest. */
 const easeInOutCubic = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
@@ -326,7 +314,7 @@ export function useTowerCardsScroll({ scrollerRef, headerLayerRef, cardsPageRef,
         let restoreFrame = 0;
         let settleTimer = 0;
         /** +1 = last moving down (scrollTop rising), −1 = up, 0 = not known yet. */
-        let lastDirection: -1 | 0 | 1 = 0;
+        let lastDirection: SnapDirection = 0;
         /** The current drag's recent scroll samples (for its release velocity). */
         let dragSamples: ScrollSample[] = [];
 
@@ -405,7 +393,7 @@ export function useTowerCardsScroll({ scrollerRef, headerLayerRef, cardsPageRef,
             // way the learner is heading.
             if (!enabledRef.current || isPlacedRef.current(top)) return;
             // Finger-driven steps count too: a drag's direction is the learner's intent.
-            if (Math.abs(top - prev) >= DIRECTION_MIN_STEP_PX) lastDirection = top > prev ? 1 : -1;
+            lastDirection = nextSnapDirection(lastDirection, prev, top);
             if (touching) {
                 // Only the last stretch of the drag is ever read; keep a few frames of it.
                 dragSamples.push({ t: performance.now(), top });

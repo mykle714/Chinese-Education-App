@@ -55,7 +55,7 @@ kind — a case in `PawnHintBody` → `CpcdRowContent`.
 ### Wrong-streak
 
 Code: `pawnHints.ts` → `hasWrongStreak`, `wrongStreakHint`, `meetsCondition`;
-`pawnHintLines.ts` → `WRONG_STREAK_LINES`, `REVEAL_MORE_INFO`; `useWorkingLoop.ts` (the
+`pawnHintLines.ts` → `WRONG_STREAK_LINES`; `useWorkingLoop.ts` (the
 in-session patch).
 
 - **Trigger:** the newest `WRONG_STREAK_LENGTH` (3) marks of the world's tracks are all
@@ -80,10 +80,10 @@ in-session patch).
 | `compare` | none | compare it with a similar card (the Compare button above the card) |
 | `focus` | none | focus on just this card and hold the answer until next time |
 
-- Every tip that points **into the eip** (breakdown, examples) ends with
-  `REVEAL_MORE_INFO` (Dismiss this dialogue box to reveal the {More Info} button!), because
-  the bubble covers the More Info pill until it is tapped closed. Customize and Compare are
-  on the word-tools rail above the card in main and reading, so they do not carry it.
+- The tips that point **into the eip** (breakdown, examples) name More Info but carry no
+  "dismiss this bubble" instruction (removed, owner 2026-11-10), even though the bubble
+  covers the More Info pill until it is tapped closed. Customize and Compare are on the
+  word-tools rail above the card in main and reading.
 - **Button keywords in Red Salmon** (owner, 2026-11-08). A word in a tip that names a
   button in the app (More Info, Breakdown, Customize, Compare) is wrapped in braces in the
   copy, `{More Info}`, and drawn in `COLORS.keywordInk` (`#E8604C`, a deep salmon outside
@@ -149,8 +149,9 @@ Code: `HintPawn` → `arrival`, `riseIn`, `hintPawnDrop`, `firstBubbleAt`.
   next hint grows a new one after `HINT_MOTION.enterDelayMs`.
 - **Parking** (the visit to that tower ends) sends the pawn home. The next dive replays the
   arrival on its first hint.
-- **Unseen** (the count card over the cards, a game break's card or game, the icon editor)
-  hides everything at once without leaving. The bubble pops (hidden) and regrows once the
+- **Unseen** (the count card over the cards, the icon editor) hides everything at once
+  without leaving. A game break is different: the pawn stays over the break's card and
+  leaves with an animation when the game starts (§ Game breaks). The bubble pops (hidden) and regrows once the
   card is seen again.
 - Reduced motion: the rise becomes a fade.
 
@@ -232,6 +233,28 @@ Every tap restarts the idle minute and ends a doze or knit. Then:
   tap.
 - **No "!"**: passing `onTap` turns off IsoPawn's "!" emote, and the ouch replaces it. The
   Deck Tower's pawns keep the "!".
+
+## Game breaks
+
+Code: `HintPawn` → `away`, `returning`, `RETURN_MS`; `FlashcardsLearnPage.tsx` → the
+`HintPawn` props, `PAWN_AWAY_PHASES`; the phases are `gameBreak/useGameBreak.ts` →
+`GameBreakPhase` ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md)).
+
+- **The break's card** (`title` phase): the pawn **stays** in its corner, over the break's
+  card, with **no bubble**. The page passes a null hint, because the word card the hint
+  was about is covered. No arrival starts here either.
+- **Play** sends it **away** (owner, 2026-11-10): the dismissing swipe's throw (§ Dismissing
+  — `LEAVE_MS`, off the left edge, turning), but **not** a dismissal. It starts on the tap
+  (`playPending`), before the game's prefetch settles, so a slow prefetch doesn't hold it
+  back. The bubble, idles and ouch are off while it is away, and it takes no touches.
+  `away` stays set through `growing`, `playing`, `shrinking`, `results` and `leaving`.
+- **Back:** once the cards return (`skipping` after the results card, or `cards` after
+  Leave), it **slides back in from the left** (`RETURN_MS` 420 ms, the throw in reverse
+  with a slight overshoot; owner, 2026-11-10). The hint bubble then regrows, with its back
+  stretch.
+- **Skip** on the break's card never sends it away: the cards uncover and it just stays.
+- Reduced motion: the same throw and slide as the dismissing swipe (which has no
+  reduced-motion variant either).
 
 ## Night vest
 

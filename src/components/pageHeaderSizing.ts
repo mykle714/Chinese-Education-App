@@ -4,12 +4,12 @@ import { HEADER_FIRE_GLYPH_PX } from "../minutePoints/FireCount";
 
 /**
  * The page header's back-arrow geometry, for a surface that must draw the same arrow in the
- * same place with no `PageHeader` mounted (`GameFrame`'s exit, the flp game break:
- * docs/FLP_GAME_BREAKS.md § 6). Kept in a component-free module so PageHeader.tsx and
- * GameFrame.tsx stay Fast Refresh boundaries, and so the two arrows cannot drift apart.
+ * same place with no `PageHeader` mounted (the flp game break's header row:
+ * docs/FLP_GAME_BREAKS.md § 6). Kept in a component-free module so the components stay
+ * Fast Refresh boundaries, and so the two arrows cannot drift apart.
  *
  * Read by: `PageHeader` (SIZE_SPEC.dense, the back icon), `AudioModeChip` (the outlined skin),
- * `GameFrame` (`GameFrameExitButton`, `GameFrameExitTitle`).
+ * `GameBreakChrome` (features/flashcards/…/gameBreak: the break's whole row).
  */
 
 /** The lateral back arrow's Material Symbols glyph and size. */
@@ -20,7 +20,7 @@ export const BACK_ARROW_PX = 24;
 export const DENSE_HEADER_PAD_TOP_PX = 23;
 export const DENSE_HEADER_PAD_X_PX = 22;
 
-/** The `dense` header's title size and tracking, shared with `GameFrame`'s exit title. */
+/** The `dense` header's title size and tracking, shared with the game break's title (GameBreakChrome). */
 export const DENSE_HEADER_TITLE_PX = 21;
 export const DENSE_HEADER_TITLE_TRACKING = "-0.018em";
 
@@ -39,6 +39,12 @@ export const HUB_HEADER_TITLE_TRACKING = "-0.025em";
 
 /** The gap between the back arrow and the title it is grouped with, px. */
 export const BACK_GROUP_GAP_PX = 9;
+
+/**
+ * The `dense` header's gap between its right-slot controls, px. Shared with a game break's
+ * header row (GameBreakChrome), which redraws that right slot.
+ */
+export const DENSE_HEADER_RIGHT_GAP_PX = 10;
 
 /**
  * The outlined audio chip's glyph and vertical padding, px (`AudioModeChip`). Deliberately
@@ -75,8 +81,11 @@ export const outlinedChipSx = (ink: string) =>
         fontSize: OUTLINED_CHIP_TEXT_PX,
     }) as const;
 
-/** The outlined chip's box height: glyph + vertical padding + a 1px outline each way. */
-const OUTLINED_CHIP_HEIGHT_PX = OUTLINED_CHIP_ICON_PX + 2 * OUTLINED_CHIP_PAD_Y_PX + 2;
+/**
+ * The outlined chip's box height: glyph + vertical padding + a 1px outline each way. Also
+ * the height a control sharing a game break's Leave row takes (SuperpositionHintButton).
+ */
+export const OUTLINED_CHIP_HEIGHT_PX = OUTLINED_CHIP_ICON_PX + 2 * OUTLINED_CHIP_PAD_Y_PX + 2;
 
 /**
  * The tower study header's row height = its TALLEST child, which is either the outlined

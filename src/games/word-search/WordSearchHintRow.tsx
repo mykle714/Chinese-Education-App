@@ -109,7 +109,7 @@ function buildMask(syllableUnits: string[][], revealCount: number): string {
 }
 
 /**
- * The REVEAL — what a spent hint bought. It fills the right-hand `.rv` slot of the
+ * The REVEAL — what a spent hint bought. It fills the left-hand `.rv` slot of the
  * `.hintbar` row (docs/SHELF_REDESIGN.md § 13); it used to be a row of its own between
  * the gloss list and the grid, which cost a whole line of board height to show nothing
  * most of the time.
@@ -154,7 +154,9 @@ const WordSearchHintRow: React.FC<WordSearchHintRowProps> = ({ word, revealCount
             className="word-search__hint-row"
             sx={{
                 display: "flex",
-                justifyContent: "flex-end",
+                // Starts at the row's left edge — the reveal leads the hint row, the
+                // button sits at its right end.
+                justifyContent: "flex-start",
                 alignItems: "baseline",
                 gap: "7px",
                 minWidth: 0,

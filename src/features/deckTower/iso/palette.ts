@@ -184,6 +184,14 @@ export const ISO = {
      */
     cloud: material(COLORS.white, 0.06, 0.14),
 
+    /**
+     * The rare red balloon (IsoBalloon) that sometimes drifts by in place of a cloud:
+     * `redMk`, the red ramp's mark (the focus lever's knob red), its two darker tones
+     * stepped down with `shadeHex` — the same flagged divergence as every other wall tone.
+     * Its string is `ink`.
+     */
+    balloon: material(COLORS.redMk, 0.1, 0.22),
+
     /** Wind gusts (IsoWind): flat white strokes, softened by IsoWind's own opacity. */
     wind: COLORS.white,
 

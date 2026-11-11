@@ -1,22 +1,13 @@
+import { createPortal } from "react-dom";
 import { Box } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
 import { Label } from "../../components/primitives";
 import { COLORS, RAMP } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
-import { LEADING, SIZE, TRACKING, WEIGHT } from "../../theme/scale";
+import { SIZE, TRACKING } from "../../theme/scale";
 import { ON_ACCENT_INK, ON_ACCENT_LINE, useGameSurfaceHue } from "./gameSurface";
 import TimerEyeToggle from "./TimerEyeToggle";
-import { useGameFrameExit, type GameFrameExit } from "./gameFrameExit";
-import Icon from "../../components/Icon";
-import {
-    BACK_ARROW_ICON,
-    BACK_ARROW_PX,
-    BACK_GROUP_GAP_PX,
-    DENSE_HEADER_PAD_X_PX,
-    DENSE_HEADER_TITLE_PX,
-    DENSE_HEADER_TITLE_TRACKING,
-    TOWER_STUDY_BACK_ARROW_TOP_PX,
-} from "../../components/pageHeaderSizing";
+import { GAME_FRAME_HOST_FADE_IN_MS, useGameFrameHost } from "./gameFrameExit";
 
 /**
  * GAME SURFACE CHROME (docs/SHELF_REDESIGN.md § A6, classes `.play` / `.hud` / `.timer`).
@@ -57,6 +48,14 @@ export interface GameFrameProps {
     children: React.ReactNode;
     className?: string;
     sx?: SxProps<Theme>;
+    /**
+     * Under a break host only: game controls for the break's header row, portaled into it
+     * just LEFT of the audio chip and the flame (Superposition's hint button, Writing Grid's
+     * phase label). They fade in with the rest of the game. Size them to the outlined
+     * chip's height (`OUTLINED_CHIP_HEIGHT_PX`) so the row reads as one header. Ignored on
+     * a game's own route. (The row itself is the host's: GameBreakChrome.)
+     */
+    exitRowTrailing?: React.ReactNode;
 }
 
 /**
@@ -68,19 +67,19 @@ export interface GameFrameProps {
  * the CSS is the artboard's header height plus its gap, not a number the app should
  * hardcode.
  */
-export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx }) => {
+export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx, exitRowTrailing }) => {
     const hue = useGameSurfaceHue();
-    // A host-provided exit (an flp game break's Leave — gameFrameExit.ts). Null on a
-    // game's own route, where the page header's Back is the way out.
-    const exit = useGameFrameExit();
+    // The flp game break hosting this panel (gameFrameExit.ts). Null on a game's own route.
+    const host = useGameFrameHost();
     return (
     <Box
         className={className ? `game-frame ${className}` : "game-frame"}
         sx={[
             {
-                // Anchors any overlay a game draws over its own board (a countdown, a
-                // pause veil) to the PANEL rather than to the page, so the scrim stops
-                // at the panel's rounded edge instead of covering its margin.
+                // Anchors any overlay a game draws over its own board (a pause veil, the
+                // countdown's input shield) to the PANEL rather than to the page. The
+                // countdown's DIM is the exception: it portals to the phone frame and
+                // covers the whole screen (GameCountdown.tsx).
                 position: "relative",
                 flex: 1,
                 minHeight: 0,
@@ -93,100 +92,37 @@ export const GameFrame: React.FC<GameFrameProps> = ({ children, className, sx })
                 overflow: "hidden",
                 display: "flex",
                 flexDirection: "column",
-                // A host's exit means the game is the screen (an flp break): the panel's
-                // boundary would be the phone's, so its inset, corner and line go. Its strips
-                // lose their band too (GameTimer, GameHud): they sit straight on the ground.
-                ...(exit && { margin: 0, borderRadius: 0, border: "none" }),
+                // A host means the game is the screen (an flp break): the panel's boundary
+                // would be the phone's, so its inset, corner and line go. Its strips lose
+                // their band too (GameTimer, GameHud): they sit straight on the ground.
+                // And it FADES IN: the break's header row was already up through the grow
+                // (GameBreakChrome), so only the game's own content arrives here.
+                ...(host && { margin: 0, borderRadius: 0, border: "none", ...hostFadeInSx }),
             },
             ...(Array.isArray(sx) ? sx : [sx]),
         ]}
     >
         {children}
-        {exit && (
-            <>
-                <GameFrameExitButton label={exit.label} onExit={exit.onExit} />
-                <GameFrameExitTitle title={exit.title} />
-            </>
+        {host?.trailingSlot && exitRowTrailing && createPortal(
+            <Box className="game-frame__row-trailing" sx={{ display: "flex", alignItems: "center", ...hostFadeInSx }}>
+                {exitRowTrailing}
+            </Box>,
+            host.trailingSlot,
         )}
     </Box>
     );
 };
 
 /**
- * The exit arrow's invisible tap margin, px: the glyph alone is a 21px target, and a mid-game
- * thumb misses that. The margin grows the button outward, so the glyph stays put.
+ * The fade a hosted game's content arrives with (GameFrame, its row controls, GameCentered):
+ * the break's header row is already up when the game mounts (GameBreakChrome), so only the
+ * content needs to arrive. `both` fill, so the first painted frame is already transparent.
+ * Opacity only, so it never fights a game's own transforms.
  */
-const GAME_FRAME_EXIT_TAP_SLOP_PX = 8;
-
-/**
- * The host's exit control: the flp study header's back arrow, redrawn at the same place on
- * screen, same glyph and size (pageHeaderSizing.ts). The header it replaces is covered by
- * the game, and the frame starts just below the status bar, as the header's padding does.
- * The glyph takes the default header ink, not the tower header's white: the break's ground
- * is white, not the sky.
- *
- * ⚠️ The left edge of the top strip is this button's. A strip that puts its OWN content there
- * collides with it: a `GameHud`'s first label and `GameTimer`'s eye. Such a game must make
- * room before it is offered as an flp break (Writing Grid's strip pins its one label right).
- *
- * Above any in-panel overlay (Match Speed's countdown is zIndex 5), so the player can always
- * leave. `label` names the button for a screen reader. No outline, like the header's arrow.
- */
-const GameFrameExitButton: React.FC<Omit<GameFrameExit, "title">> = ({ label, onExit }) => (
-    <Box
-        component="button"
-        type="button"
-        className="game-frame__exit"
-        aria-label={label}
-        onClick={onExit}
-        sx={{
-            position: "absolute",
-            top: `${TOWER_STUDY_BACK_ARROW_TOP_PX - GAME_FRAME_EXIT_TAP_SLOP_PX}px`,
-            left: `${DENSE_HEADER_PAD_X_PX - GAME_FRAME_EXIT_TAP_SLOP_PX}px`,
-            zIndex: 6,
-            display: "flex",
-            padding: `${GAME_FRAME_EXIT_TAP_SLOP_PX}px`,
-            border: "none",
-            backgroundColor: "transparent",
-            cursor: "pointer",
-        }}
-    >
-        <Icon className="game-frame__exit-icon" name={BACK_ARROW_ICON} size={BACK_ARROW_PX} />
-    </Box>
-);
-
-/**
- * The game's name beside the exit arrow, in the `dense` page header's type, so a break reads
- * as a page with a header. It is not part of the button: a mis-tap on it during a live run
- * must fall through to the game, not end the run.
- *
- * Every break game keeps the arrow's row clear (`GAME_FRAME_EXIT_CLEARANCE_PX` or
- * `GAME_FRAME_EXIT_ARROW_BOTTOM_PX`), and Writing Grid pins its phase label right.
- */
-const GameFrameExitTitle: React.FC<{ title: string }> = ({ title }) => (
-    <Box
-        className="game-frame__exit-title"
-        sx={{
-            position: "absolute",
-            top: `${TOWER_STUDY_BACK_ARROW_TOP_PX}px`,
-            left: `${DENSE_HEADER_PAD_X_PX + BACK_ARROW_PX + BACK_GROUP_GAP_PX}px`,
-            zIndex: 6,
-            height: `${BACK_ARROW_PX}px`,
-            display: "flex",
-            alignItems: "center",
-            fontFamily: FONTS.sans,
-            fontSize: `${DENSE_HEADER_TITLE_PX}px`,
-            fontWeight: WEIGHT.semibold,
-            letterSpacing: DENSE_HEADER_TITLE_TRACKING,
-            lineHeight: LEADING.tight,
-            color: COLORS.onSurface,
-            whiteSpace: "nowrap",
-            pointerEvents: "none",
-        }}
-    >
-        {title}
-    </Box>
-);
+const hostFadeInSx = {
+    animation: `game-frame-host-fade-in ${GAME_FRAME_HOST_FADE_IN_MS}ms ease-out both`,
+    "@keyframes game-frame-host-fade-in": { from: { opacity: 0 }, to: { opacity: 1 } },
+} as const;
 
 export interface GameHudProps {
     /** Typically two or three `GameHudLabel`s. Spread apart, first left, last right. */
@@ -200,8 +136,8 @@ export interface GameHudProps {
     divider?: boolean;
     className?: string;
     /**
-     * Escape hatch for a HUD that is not the default row of facts — e.g. Writing Grid's
-     * break strip, pinned right and sized to the Leave arrow's row. (Speed Reading's
+     * Escape hatch for a HUD that is not the default row of facts — e.g. Match Speed's
+     * score, pinned right. (Speed Reading's
      * COLUMN HUD, a round label over a tick grid, was the original user; it was removed
      * 2026-11-04.) Reach for this only when the strip genuinely differs; the row form is
      * the one every game should start from.
@@ -220,7 +156,7 @@ export interface GameHudProps {
 export const GameHud: React.FC<GameHudProps> = ({ children, divider = true, className, sx }) => {
     const hue = useGameSurfaceHue();
     // On screen (an flp break's frame) the strip sits straight on the ground: no band.
-    const flat = useGameFrameExit() !== null;
+    const flat = useGameFrameHost() !== null;
     return (
     <Box
         className={className ? `game-hud ${className}` : "game-hud"}
@@ -427,7 +363,7 @@ export const GameTimer: React.FC<GameTimerProps> = ({
     className,
 }) => {
     const hue = useGameSurfaceHue();
-    const onScreen = useGameFrameExit() !== null;
+    const onScreen = useGameFrameHost() !== null;
     return (
     <Box
         className={className ? `game-timer ${className}` : "game-timer"}
@@ -533,6 +469,8 @@ export interface GameCenteredProps {
  */
 export const GameCentered: React.FC<GameCenteredProps> = ({ children, className }) => {
     const hue = useGameSurfaceHue();
+    // Under a break host the message arrives after the grow, like the board it stands in for.
+    const hosted = useGameFrameHost() !== null;
     return (
         <Box
             className={className ? `game-centered ${className}` : "game-centered"}
@@ -548,6 +486,7 @@ export const GameCentered: React.FC<GameCenteredProps> = ({ children, className 
                 pb: 3,
                 textAlign: "center",
                 color: hue ? ON_ACCENT_INK : COLORS.onSurface,
+                ...(hosted && hostFadeInSx),
             }}
         >
             {children}

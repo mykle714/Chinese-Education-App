@@ -17,7 +17,7 @@ import { edgeFadeAboveBand, edgeFadeBelowBand, edgeFadeMaskSx, trackScrollEdgeFa
 import { COLORS } from "../theme/colors";
 
 // Shared layout shell for every footer-tab page (Deck — the Deck Tower, which runs it
-// non-scrolling —, Menu, Arena, Dictionary) and, through NodePage, the node drill-ins. It encodes two design rules so individual pages don't
+// non-scrolling —, Lessons, Dictionary) and, through NodePage, the node drill-ins. It encodes two design rules so individual pages don't
 // have to re-implement them:
 //
 //   1. Scroll-away header — the page header lives INSIDE the scroll area (as its

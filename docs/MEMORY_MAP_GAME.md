@@ -39,7 +39,7 @@ where all the design cost sits:
 |---|---|---|
 | Server state | none (Word Search saves a board to `localStorage`) | **a durable per-user slot tree** in two tables |
 | Run | fixed and short (20 rounds / 30 seconds / one grid) | **the whole map** — 50 words, save-backed, resumable |
-| Outcome | win/lose, medals, a wins counter | **neither** — the only outputs are reading marks and a colour |
+| Outcome | win/lose, run tiers, a wins counter | **no win/lose and no wins** — reading marks, a colour, and a speed + accuracy tier on the break's results card (§ 5) |
 
 ---
 
@@ -778,9 +778,26 @@ is not lost when the game closes inside those 400 ms (`useMemoryMapRun` → `pen
 
 ## 5. Completion
 
-There is **no winning and no losing**: no medals, no `POST /api/users/me/wins`, no
-personal best. A break that completes the map (fewer than five words were left) ends onto
-the break's results card like any other; the next break reshuffles (§ 4a).
+There is **no winning and no losing**: no `POST /api/users/me/wins`, no personal best. A
+break that completes the map (fewer than five words were left) ends onto the break's results
+card like any other; the next break reshuffles (§ 4a).
+
+### Run tiers
+
+A finished break is graded, like every break game ([GAMES_FEATURE.md § Run
+tiers](./GAMES_FEATURE.md)): two chips, 1 = best … 7, from
+`src/games/memory-map/constants.ts` → `runResultTiers`. A break ended by Leave is
+"Run ended" with no tiers.
+
+- **Speed** (`SPEED_TIERS`, ⚠️ placeholders 15 s · 25 s · 35 s · 50 s · 70 s · 100 s): the
+  break's active time, scaled to a full `BREAK_PROMPTS` quota (`elapsed × 5 / found`), so a
+  map-finishing break on fewer words asks for the same pace per word.
+- **Accuracy** (`ACCURACY_TIERS`, ⚠️ placeholders 100% · 95% · 90% · 80% · 70% · 60%):
+  green ("knew it") words ÷ words found; orange (recovered) and red (missed) count against it.
+- **The clock** is hidden: `src/games/runtime/useActiveRunClock.ts` → `useActiveRunClock`,
+  running while `run.phase === "playing"` and the break has not started `ending`, so the
+  `BREAK_END_HOLD_MS` beat is not billed. It holds while the app is backgrounded
+  (`useBackgroundPause`, reversing Q22). The inspect popup and growth toast do not hold it.
 
 ---
 
@@ -994,7 +1011,7 @@ map plus an in-progress run is exactly the state a silent-refresh reload would d
 | Wins | **none** |
 | Study Challenge | **not eligible** — it marks `reading`, and the challenge pool is recognition/production only ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 5.4) |
 | flp game break | **on the reading flp** — the learner's own map and saved run, 5 words per break (§ 4a, FLP_GAME_BREAKS.md § 4b) |
-| Pause on background | **deliberately skipped.** The rule exists to stop a *clock* draining while the app is backgrounded. Memory Map has no clock and no timed state, so `useBackgroundPause` would protect nothing. Documented here so its absence is not later "fixed" |
+| Pause on background | **yes, since 2026-11-10** — the hidden speed-tier clock (`useActiveRunClock`, § 5 Run tiers) composes `useBackgroundPause`. Until then it was deliberately skipped (Q22): with no clock there was nothing to protect |
 
 ---
 
@@ -1038,7 +1055,7 @@ map plus an in-progress run is exactly the state a silent-refresh reload would d
 | Q19 | The vet FK problem | **Split per language**, `_zh` / `_es`, which buys a real FK (§ 8) |
 | Q20 | `islandId` | **Not stored** — geometry is the truth (§ 2.4). *Since 2026-10-06 the tree is: an island is a root plus everything grown from it.* |
 | Q21 | Hub collection selector | **Moot** — the selector was deleted, and the game has no hub tile (break-only) |
-| Q22 | Pause on background | **Skipped**, with the reason documented (§ 10) |
+| Q22 | Pause on background | ~~**Skipped**, with the reason documented (§ 10)~~ — **reversed 2026-11-10**: the speed tier added a hidden run clock, so backgrounding must not bill it; `useActiveRunClock` pauses on background (§ 5 Run tiers) |
 | Q23 | Colour-blind redundancy | **None** — hue only, accepted knowingly (§ 3.3) |
 | Q24 | Empty map | **Empty state** (§ 6) — reachable only when nothing can be lent; no CTA since the game became break-only |
 | Q25 | Header during a run | Was progress count + gear → Restart. **Moot**: break-only, no header and no Restart (§ 6) |

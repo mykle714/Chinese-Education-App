@@ -1,26 +1,24 @@
-import React, { Suspense, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import React, { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Box } from "@mui/material";
-import { SAFE_BOTTOM } from "../../../../theme/safeArea";
+import { SAFE_BOTTOM, SAFE_TOP } from "../../../../theme/safeArea";
 import DelayedCircularProgress from "../../../../components/DelayedCircularProgress";
 import { useBlockEdgeSwipe } from "../../../../hooks/useBlockEdgeSwipe";
 import { useScreenOverlayHost } from "../../../../hooks/useScreenOverlayHost";
 import { flpBreakGameFor } from "../../../../games/flpBreak";
-import { BREAK_AREA_MOTION } from "./breakMotion";
+import { BREAK_AREA_MOTION, circleCoverDiameter, prefersReducedMotion } from "./breakMotion";
 import { COLORS } from "../../../../theme/colors";
 import { gameBreakFrameFor } from "./GameBreakFrame";
+import GameBreakChrome, { type BreakChromeWave } from "./GameBreakChrome";
+import { GameBreakHostContext, type GameBreakHost } from "./gameBreakHost";
 import type { UseGameBreakReturn } from "./useGameBreak";
 
 /** Above the footer bar (100); below `MinimizablePopup`'s 200, so a game's popups stay on top. */
 const GAME_BREAK_Z_INDEX = 120;
 
-function prefersReducedMotion(): boolean {
-    return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-}
-
-/** Size `circle` to pass `area`'s corners from its centre, plus a pixel so no antialiased corner survives. */
+/** Size `circle` to pass `area`'s corners from its centre (`circleCoverDiameter`). */
 function sizeCircleToCover(circle: HTMLElement, area: HTMLElement): void {
-    const diameter = Math.ceil(Math.hypot(area.clientWidth, area.clientHeight)) + 2;
+    const diameter = circleCoverDiameter(area);
     circle.style.width = `${diameter}px`;
     circle.style.height = `${diameter}px`;
     circle.style.margin = `${-diameter / 2}px`;
@@ -35,7 +33,12 @@ function sizeCircleToCover(circle: HTMLElement, area: HTMLElement): void {
  *   - this component animates the GROW: a circle of the game's ground grows out of the
  *     screen's middle over the still-visible break card. `transform`, not an animated
  *     `clip-path`, so the compositor runs it. It must start from nothing and end past the
- *     corners, hence the radius below. The game mounts on the finished circle;
+ *     corners, hence the radius below. The header row (GameBreakChrome: Leave, the game's
+ *     name, the audio chip, the flame) is up from the grow's first frame, its ink turning
+ *     dark as the circle passes under it; the game mounts on the finished circle and its
+ *     content fades in (GameFrame under a host);
+ *   - Leave DURING the grow cancels the break (`beginLeave` → `leaving`): the circle
+ *     freezes where it is and falls away with the area;
  *   - it animates the SHRINK when a run ends (`shrinking`), the grow in reverse: the Stage
  *     fades to the circle at full size, which closes back onto the break's card, already
  *     showing the results underneath;
@@ -62,6 +65,28 @@ const GameBreakArea: React.FC<{
 
     const adapter = planned ? flpBreakGameFor(planned.candidate.game.gameId) : null;
 
+    // The grow animation, so a Leave mid-grow can freeze it where it is.
+    const growRef = useRef<Animation | null>(null);
+    // The circle finished growing: the area is the game's white ground from here on.
+    const [grown, setGrown] = useState(false);
+    useEffect(() => {
+        if (phase === "playing") setGrown(true);
+    }, [phase]);
+
+    // THE HOST HANDSHAKE (gameBreakHost.ts). Leave is drawn by the area from the grow on;
+    // while a Stage is mounted it does what the Stage says (it may end a run), otherwise —
+    // the grow, the Stage's lazy load — it ends the break itself.
+    const stageExitRef = useRef<(() => void) | null>(null);
+    const registerExit = useCallback((onExit: (() => void) | null) => {
+        stageExitRef.current = onExit;
+    }, []);
+    const handleLeave = useCallback(() => {
+        if (stageExitRef.current) stageExitRef.current();
+        else beginLeave();
+    }, [beginLeave]);
+    const [trailingSlot, setTrailingSlot] = useState<HTMLElement | null>(null);
+    const breakHost = useMemo<GameBreakHost>(() => ({ registerExit, trailingSlot }), [registerExit, trailingSlot]);
+
     // Mandatory while any game is on screen (CLAUDE.md § Touch & Scroll): an edge swipe
     // would navigate out of the session mid-run.
     useBlockEdgeSwipe(true);
@@ -82,6 +107,7 @@ const GameBreakArea: React.FC<{
             easing: BREAK_AREA_MOTION.growEasing,
             fill: "both",
         });
+        growRef.current = animation;
         // A cancelled grow (unmount mid-flight) leaves nothing to advance.
         animation.finished.then(finishGrow, () => undefined);
         // Once per area: it exists for exactly one break, and `host` settles once.
@@ -124,8 +150,10 @@ const GameBreakArea: React.FC<{
     }, [phase]);
 
     // FALL, on `leaving`; the break ends when it lands (or at once under reduced motion).
+    // From a half-finished grow the circle freezes first and falls with the area.
     useEffect(() => {
         if (phase !== "leaving") return;
+        growRef.current?.pause();
         const el = areaRef.current;
         if (!el || prefersReducedMotion() || typeof el.animate !== "function") {
             finishLeave();
@@ -143,8 +171,15 @@ const GameBreakArea: React.FC<{
     }, [phase]);
 
     const Frame = useMemo(() => (planned ? gameBreakFrameFor(planned.candidate.game.hue) : null), [planned]);
-    // The circle is the ground while it moves; the flp shows round it.
-    const circling = phase === "growing" || phase === "shrinking";
+    // The circle is the ground while it moves (and while a cancelled grow falls away with
+    // it frozen part-way); the flp shows round it.
+    const circling = phase === "growing" || phase === "shrinking" || (phase === "leaving" && !grown);
+    // The header row's ink (GameBreakChrome § THE INK SWAP), from the same phase.
+    const chromeWave: BreakChromeWave =
+        phase === "growing" ? "in"
+        : phase === "shrinking" ? "out"
+        : phase === "leaving" && !grown ? "paused"
+        : "dark";
 
     return (
         <>
@@ -185,6 +220,11 @@ const GameBreakArea: React.FC<{
                             }}
                         />
                     )}
+                    {/* The status bar's band, so the body (the game and the header row over it)
+                        starts below it — as the study header's padding does. */}
+                    <Box className="flp-game-break__status-spacer" sx={{ flexShrink: 0, height: SAFE_TOP }} />
+                    <GameBreakHostContext.Provider value={breakHost}>
+                    <Box className="flp-game-break__body" sx={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
                     {planned && adapter && Frame && gameBreak.stageMounted && (
                         <Box
                             ref={stageRef}
@@ -210,6 +250,19 @@ const GameBreakArea: React.FC<{
                             </Suspense>
                         </Box>
                     )}
+                    {planned && adapter && (
+                        <GameBreakChrome
+                            title={planned.candidate.game.title}
+                            showAudioChip={!adapter.hidesAudioChip?.(planned.candidate)}
+                            sideways={adapter.sideways === true}
+                            wave={chromeWave}
+                            areaRef={areaRef}
+                            onLeave={handleLeave}
+                            onTrailingSlot={setTrailingSlot}
+                        />
+                    )}
+                    </Box>
+                    </GameBreakHostContext.Provider>
                 </Box>,
                 host,
             )}

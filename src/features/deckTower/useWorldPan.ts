@@ -86,7 +86,7 @@ export interface PanCarry {
  * `ms`: p(τ) = start + v0·τ + accel·τ². From rest that is the plain ease-in; with a
  * carry it starts part-way and already moving.
  */
-interface OutPlan {
+export interface OutPlan {
     ms: number;
     start: number;
     v0: number;
@@ -94,19 +94,33 @@ interface OutPlan {
 }
 
 /**
- * Fit the out phase to a carry. The time is what an ease-in from rest would take over the
- * remaining distance, cut short if the carried speed alone covers it sooner — so `accel`
- * is never negative and the scene never slows down on its way out. A drag that already
- * took the scene fully off screen (the drag can outrun the finger) has no out phase left.
+ * Fit a dash's out phase to a carry, in unsigned screen fractions: the scene already `start`
+ * of the way off (0–1) and moving off at `v0` per ms. The time is what an ease-in from rest
+ * would take over the remaining distance, cut short if the carried speed alone covers it
+ * sooner — so `accel` is never negative and the scene never slows down on its way out. A
+ * scene already fully off screen (a drag can outrun the finger) has no out phase left.
+ * With no carry (0, 0) it is the plain ease-in over `DASH_MOTION.outMs`.
+ *
+ * Shared by the world pan (`outPlan`, a sideways swipe) and the home screen's return
+ * (home/useHomeEntrance.ts, the pull past the deck's top carrying its rubber band on —
+ * docs/HOME_SCREEN.md § "Back to home").
  */
-function outPlan(direction: -1 | 1, carry: PanCarry | undefined): OutPlan {
-    // Only motion TOWARD the exit counts; a finger flicking back the other way carries nothing.
-    const start = Math.min(1, Math.max(0, -direction * (carry?.shift ?? 0)));
-    const v0 = Math.max(0, -direction * (carry?.velocity ?? 0));
-    const remaining = 1 - start;
+export function carriedOutPlan(start: number, v0: number): OutPlan {
+    const s = Math.min(1, Math.max(0, start));
+    const v = Math.max(0, v0);
+    const remaining = 1 - s;
     let ms = OUT_MS * Math.sqrt(remaining);
-    if (v0 * ms > remaining) ms = remaining / v0;
-    return { ms, start, v0, accel: ms > 0 ? (remaining - v0 * ms) / (ms * ms) : 0 };
+    if (v * ms > remaining) ms = remaining / v;
+    return { ms, start: s, v0: v, accel: ms > 0 ? (remaining - v * ms) / (ms * ms) : 0 };
+}
+
+/** The out phase as distance covered (0 → 1) `tau` ms into it. */
+export const outDistanceAt = (out: OutPlan, tau: number): number =>
+    Math.min(1, out.start + out.v0 * tau + out.accel * tau * tau);
+
+/** The world pan's out phase: only motion TOWARD the exit counts; a flick back carries nothing. */
+function outPlan(direction: -1 | 1, carry: PanCarry | undefined): OutPlan {
+    return carriedOutPlan(-direction * (carry?.shift ?? 0), -direction * (carry?.velocity ?? 0));
 }
 
 interface PanPlan {
@@ -131,8 +145,7 @@ function panView(plan: PanPlan, e: number, paletteOf: (id: TowerWorldId) => Worl
     let sceneShiftX: number;
     let speed: number;
     if (e < out.ms) {
-        const tau = Math.max(0, e);
-        const p = Math.min(1, out.start + out.v0 * tau + out.accel * tau * tau); // gathers speed as it leaves
+        const p = outDistanceAt(out, Math.max(0, e)); // gathers speed as it leaves
         sceneShiftX = -d * p;
         speed = p;
     } else if (e < out.ms + CRUISE_MS) {

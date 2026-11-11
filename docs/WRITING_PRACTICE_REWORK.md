@@ -97,15 +97,15 @@ or hub tile (`src/games/registry.ts`; `languages: ["zh"]`, game flag `writing-gr
 `WritingGridStage` owns the run; `WRITING_GRID_BREAK` and `WritingGridBreakStage`
 (`src/games/flpBreak/`) are its one host. The deal is seeded with the working loop and may
 arrive prefetched; the run reports to the flp's results card (`onRunEnded`) — there is no
-end popup and no Play Again. The personal best records on a finished run, and a win logs on
-a medalled one.
+end popup and no Play Again. The personal best records on a finished run, and so does a win
+(every finished board; wins are not gated on a tier).
 
 ### Flow (`src/games/writing-grid/WritingGridStage.tsx`)
 `loading → (empty) → countdown → arrange → write → ended`
-1. **Countdown** — 3·2·1·Go over the readable board (Match Speed's steps); no time billed.
+1. **Countdown** — 3·2·1 over the readable board (the shared countdown, GAMES_FEATURE.md § "The countdown"); no time billed.
 2. **Phase 1, arrange** — the stopwatch runs (accumulated active time; backgrounding
    pauses it, `useBackgroundPause`). It is never on screen during a run: it exists for the
-   finish time, medal and personal best, which the end of the run reports. The current phase
+   finish time, speed tier and personal best, which the end of the run reports. The current phase
    ("Phase 1" / "Phase 2") is the one label of a `GameHud` strip, pinned right
    (`writing-grid__phase-strip`); in a break the strip is the study header's row, level with
    Leave's arrow. Drag a character to another slot: the 8 cells are one
@@ -158,8 +158,8 @@ a medalled one.
    Tap a cell → `WritingFocusEditor` at its slot's level;
    tap out → top-1 Verify → ✓ / ✗ (the verdict stamp below), and a writing mark on the character's own card
    (`surface: "writing-grid"`). A ✗ cell reopens as a fresh attempt (new ink, new clock).
-4. **End** — every cell ✓ stops the stopwatch. Time, medal (`medalForWritingGrid`), personal
-   best; a win (`writingGrid` key) is logged per medalled board. The board shows every
+4. **End** — every cell ✓ stops the stopwatch. Time, speed tier (`SPEED_TIERS` via
+   `speedTierFor`), personal best; a win (`writingGrid` key) is logged per finished board. The board shows every
    cell's **own canvas** — the learner's ink over the character's **full still shadow**
    on every slot regardless of level (L4–L8 included, though they never showed one while
    writing; Snap keeps its snapped strokes), pinyin at the bottom centre
@@ -171,13 +171,13 @@ a medalled one.
    drawing is verified (top-1) and the cell's ✓ / ✗ updates, but **no mark is sent** —
    the run's marks were already emitted while it was timed (`WritingGridStage` →
    `handleCellDone`, its `practice` branch). Closing unchanged, or cleared and left empty,
-   keeps the cell's drawing and verdict (`sameInk`). The time, medal and personal best are
+   keeps the cell's drawing and verdict (`sameInk`). The time, tier and personal best are
    final and never change.
 5. **Leave** — the break's Leave ends a live run early, with no confirm
    (`WritingGridStage` → `endRunEarly`): the stopwatch stops, any open canvas is discarded
    unchecked, and the results card reads "*N* of 8 written" (the ✓ count frozen at that
-   moment, `gaveUpCorrect`) instead of the time — **no medal, no personal best, no win, and
-   no marks** beyond the cells already checked. Left during Phase 1, the screen keeps
+   moment, `gaveUpCorrect`) instead of the time — **"Run ended", no tiers, no personal best, no win,
+   and no marks** beyond the cells already checked. Left during Phase 1, the screen keeps
    showing Phase 1 on the way out (`leftDuringArrange`). Before the run has started, Leave
    simply closes the break.
 
@@ -199,8 +199,11 @@ a medalled one.
   `provisional` row when new), whose id is the `cardId` a check marks, and whose `ownCard`
   says whether that row is one of the learner's sorted cards.
 
-Medals (estimates, tune from play data): gold ≤ 2:00, silver ≤ 3:30, bronze ≤ 6:00, none
-beyond — `WRITING_GRID_MEDAL_THRESHOLDS_MS`.
+Speed tiers (1 = best … 7; placeholders, tune from play data): 1:30 · 2:00 · 2:45 · 3:30 ·
+4:45 · 6:00, slower is tier 7 — `src/games/writing-grid/constants.ts` → `SPEED_TIERS`
+(client-only; the old `medalForWritingGrid` / `WRITING_GRID_MEDAL_THRESHOLDS_MS` left
+`server/contracts/writingGrid.ts` on 2026-11-10). No accuracy tier. Shared model:
+[GAMES_FEATURE.md § Run tiers](./GAMES_FEATURE.md).
 
 Code: `src/games/writing-grid/` (`WritingGridStage`, `WritingGridBoard`,
 `gridOrder`, `constants`), `src/games/flpBreak/writingGridBreak.ts`, `WritingGridBreakStage.tsx`, `src/api/writingGrid.ts`, `server/contracts/writingGrid.ts`,
@@ -216,9 +219,10 @@ Direction and unit per game: `server/contracts/personalBests.ts` → `PERSONAL_B
 |---|---|---|
 | Word Search | completion ms (lower) | `pinyin` / `no-pinyin` |
 | Match Speed (`match-speed-30`) | finish time, ms (lower) | `mixed` (`PERSONAL_BEST_MODE`; the old `review` / `challenge` rows were deleted by migration 182) |
-| Speed Reading | total ms incl. penalties (lower) | `default`; finished runs only |
+| Speed Reading | raw finish ms (lower) | `default`; finished runs only. Bests recorded before 2026-11-10 include the removed +3 s/wrong penalty |
 | Hydra Bubbles | matches (higher) | `default` |
 | Writing Grid | completion ms (lower) | `default` |
+| Superposition | completion ms (lower) | `default` |
 | Bucket Drop | completion ms (lower) | `pinyin` / `no-pinyin`; full 20-word runs only, never a challenge round |
 
 Bubble Match (performance floor + ceiling) and Memory Map have none. Study Challenge rounds
@@ -230,7 +234,7 @@ are never recorded (they are dealt from the round's set).
 - Client: `src/api/personalBests.ts`; `src/games/shared/usePersonalBest.ts` (`record` once
   per run, `reset` on a new run); `src/games/shared/PersonalBestLine.tsx` (end-screen row,
   "New best!" pill, optional `unitLabel`).
-- Separate from `wins`, which only gets a row on a win/medal.
+- Separate from `wins`, which gets a row per finished run in the games that log wins.
 
 ---
 
@@ -447,7 +451,7 @@ needs only `word1`, so enrichment is not a prerequisite.
 
 - **Writing Grid Phase 2 prompt.** Settled 2026-10-04: L1–L3 show the shadow preview,
   L4–L8 show tone-coloured pinyin + dd (§ 2, Flow step 3).
-- **Medals and 500 ms/stroke** are estimates to tune from play data.
+- **Speed tier cutoffs and 500 ms/stroke** are estimates to tune from play data.
 - **Read cost.** `compute_writing_mastery` is a per-row subquery per character; ~0.1 ms/row
   on dev (a 475-card library ≈ +50 ms). Fine today; a LATERAL join is the next step if it
   shows up in the perf telemetry.

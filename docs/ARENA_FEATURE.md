@@ -80,8 +80,9 @@ Relationship to the two boards that already exist:
 
 ## 2. Surfaces
 
-One page, a **footer tab** ([NAVIGATION.md](./NAVIGATION.md)): `MobileTabScreen`, no back
-arrow, no slide.
+One page, a **Menu drill-in** ([NAVIGATION.md](./NAVIGATION.md) § Menu): `NodePage` (built on
+`MobileTabScreen`), back arrow → history else `/` (`navigateBackOr`), slides in from the right,
+lights the Menu tab. It was a footer tab 2026-11-04 → 2026-11-10, until Lessons took the slot.
 
 **The page's design is `Arena Flow - Shelf System.html`** in the user's Claude Design
 project — 15 artboards plus a state map, covering every state rather than the single
@@ -91,12 +92,12 @@ rationales it overrode. Read that entry before "fixing" anything on this page th
 inconsistent with the rest of the app — several things are, on purpose.
 
 ⚠️ **The header lives INSIDE the division banner.** `ArenaPage` passes `wrapHeader` to
-`MobileTabScreen`, so the title and actions are drawn on the full-bleed plate rather
+`NodePage` (→ `MobileTabScreen`), so the title and actions are drawn on the full-bleed plate rather
 than above it. The banner is the page's masthead, not a card on it.
 
 | Route | Component | What it is |
 |---|---|---|
-| `/arena` | `src/features/arena/ArenaPage.tsx` | The board. `chrome: "tab"`, `footerTab: "arena"` |
+| `/arena` | `src/features/arena/ArenaPage.tsx` | The board. `chrome: "node"`, `footerTab: "menu"` |
 
 The footer's **Arena** tab (`src/components/MobileFooter.tsx` → `TABS`, icon
 `emoji_events` on the slab, second of Flashcards · Arena · Dictionary · Menu) is the only entry;
@@ -1380,7 +1381,7 @@ No change to `userminutepoints` or any vet table.
 | Client (shared) | `src/components/SteppedHelpPopup.tsx` + `steppedHelp.ts` | the stepped explainer, shared with Study Challenge (§ 2.4) |
 | Client (shared) | `src/components/NodePage.tsx` / `MobileTabScreen.tsx` | `wrapHeader`, which exists for this page's banner |
 | Client (shared) | `src/components/leaderboard/Board.tsx` | `Board` / `BoardRow` / `BoardZone` — the ranked-table primitive. **Not** the friends person row; see § 2.1 for why that plan was dropped |
-| Client | `src/components/MobileFooter.tsx` (`ARENA_TAB_ON`), `src/routes/routeMeta.ts`, `src/routes/registry.ts` | the footer tab and the route |
+| Client | `src/components/menuPopover/menuDestinations.ts` (`useMenuDestinations`), `src/routes/routeMeta.ts`, `src/routes/registry.ts` | the Menu row and the route |
 
 ### Endpoints
 

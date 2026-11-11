@@ -65,11 +65,10 @@ The destination therefore appears static beneath a departing page. `onBack` is n
 
 ### 1.5 State on the way back
 
-A page that remounts on Back loses its component state. One store brings it back today:
-
-| Store | Keyed on | Survives | Used by |
-|---|---|---|---|
-| `dictionaryBrowseState` (`src/features/dictionary/dictionaryBrowseState.ts`) | a **route space** (`isDictionarySpacePath`) | any move inside `/dictionary` and `/dictionary/card/*`; cleared by `Layout` on exit | `DictionaryPage` |
+A page that remounts on Back loses its component state. No store brings it back today. (The
+last one, the Dictionary's route-space singleton `dictionaryBrowseState`, was deleted
+2026-11-10: a Dictionary result opens the eip sheet over the list instead of navigating, so
+the list is never left and remounted.)
 
 Per-entry keying (on `location.key`) is the model for new pages (§ 2.3). The app's per-entry store (`backRestore.ts`) was deleted with its only hosts, the card-grid pages, so td's cards page does **not** restore its scroll, search or filter on Back (DECK_TOWER.md § The cards page). The two primitives it used (`SheetPanel` → `restoreHeight`, `MiniVocabCardGrid` → `revealImmediately`) are deleted too; a page that restores again must re-add them.
 
@@ -180,7 +179,6 @@ This is also the fallback source for Rule 1's first-entry case.
 | Page | File | Arrow | R1 | R3 restore | Guard |
 |---|---|---|---|---|---|
 | Card detail (saved) | `VocabCardDetailPage.tsx` | `navigate(-1)` | ⚠️ no idx guard (its delete is guarded) | — | — |
-| Card detail (dictionary) | `DictionaryCardDetailPage.tsx` | `navigate(-1)` | ⚠️ no idx guard | — | — |
 | Deck Tower | `DeckTowerPage.tsx` at `/` | tab root (Deck) | — | ✅ world restored on POP (`useRememberTowerWorld` stamps `towerWorld` into its entry); ⚠️ cards page not restored | — |
 | User profile | `UserProfilePage.tsx` | `navigate(-1)` | ⚠️ no idx guard | — | — |
 | Add Cards | `AddCardsPage.tsx` → `leave` | `state.exitTo` (td's `SORT_EXIT`, dashing back onto the tower — NodePage `exitDash`), else `navigate("/")` with `towerWorld: "core"`; set mode `exitToOrigin` (`-1`, else `?from=`, else `/`) | ✅ set mode (idx-guarded) | — | done popup (arrow-independent) ✅ |
@@ -204,7 +202,7 @@ This is also the fallback source for Rule 1's first-entry case.
    - lets a following browser Back return to the page just left.
 
    *Guess at intent:* the parent should be "held beneath" like a forward drill-in. *Proposed:* switch to Rule 1 (`navigate(-1)` with fallback), keeping `ChallengeDetailPage`'s `state.from` as its fallback.
-2. **Three `navigate(-1)` arrows have no first-entry guard:** both cdps and `UserProfilePage`. Opened from a shared link or after a reload, the arrow leaves the app. `PageHeader`'s default `onBack` has the same problem. *Proposed:* the Rule 1 helper, `navigateBackOr` (the saved cdp's `handleDelete` already uses it).
+2. **Two `navigate(-1)` arrows have no first-entry guard:** the saved-card cdp and `UserProfilePage`. Opened from a shared link or after a reload, the arrow leaves the app. `PageHeader`'s default `onBack` has the same problem. *Proposed:* the Rule 1 helper, `navigateBackOr` (the saved cdp's `handleDelete` already uses it).
 3. **td's cards page is not restored on Back.** Returning from a cdp remounts td on the platform line with the search, sort and filter reset. On iOS this is also the § 1.6 snapshot mismatch. *Proposed:* a per-entry snapshot (Rule 3) of the cards page's climb, search, sort and filter.
 4. **The Reader document has no guard for an inline edit.** `ReaderDocumentPage` → `handleBack` leaves mid-edit with nothing said. Add a Rule 4 confirm if an unsaved edit is worth protecting.
 
@@ -215,7 +213,7 @@ This is also the fallback source for Rule 1's first-entry case.
 
 ### 3.4 Dictionary browse state
 
-The dictionary's singleton also restores on a *forward* re-entry within the space, and it clears on any exit, so "Back" and "come here again" behave the same there. Moving it onto per-entry keys is not planned.
+None: the Dictionary page never navigates away to show a result (it raises the eip sheet), so its query and scroll live in plain component state. The route-space singleton that used to restore them was deleted 2026-11-10.
 
 ---
 
@@ -226,7 +224,7 @@ The dictionary's singleton also restores on a *forward* re-entry within the spac
 | § 1.2 History model | React Router `useLocation` (`key`, `state`), `useNavigationType`; `AddCardsPage.tsx` → `exitToOrigin`, `VocabCardDetailPage.tsx` → `handleDelete` (`history.state.idx`) |
 | § 1.3 Arrow mechanics | `src/hooks/usePageSlide.ts` (`exit`, `armSkipNextEnter`, `clearSkipNextEnter`); `src/components/LeafPage.tsx`, `NodePage.tsx` (`handleBack`); `src/components/PageHeader.tsx` (default `onBack`); `src/components/Layout.tsx` (latch clear) |
 | § 1.4 Motion | `src/hooks/useSlideNavigate.ts`; `src/utils/pageTransition.ts` (`routeSlideDir`); `usePageSlide.ts` (`POP` start-in-place) |
-| § 1.5 / Rule 3 State | `src/features/dictionary/dictionaryBrowseState.ts` |
+| § 1.5 / Rule 3 State | none (no restoring store exists) |
 | § 1.6 Platform | `src/hooks/useBlockEdgeSwipe.ts` |
 | Rule 2 | `src/games/runtime/ChallengeRoundScoreboard.tsx`; access bounce in `TesterDashboardPage`; `BubbleMatchPage`, `WordSearchPage` launch guards |
 | Rule 4 | `src/games/runtime/useGameBack.ts`; `useChallengeRound.ts` (unmount / `pagehide` finalise); `IWSceneEditorPage.tsx` → `handleBack`; `FlashcardsLearnPage.tsx` → `handleBack` + `ProvisionalSortOffer` |

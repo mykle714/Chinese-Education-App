@@ -13,6 +13,7 @@ import {
     DENSE_HEADER_PAD_X_PX,
     DENSE_HEADER_TITLE_PX,
     DENSE_HEADER_TITLE_TRACKING,
+    DENSE_HEADER_RIGHT_GAP_PX,
     HUB_HEADER_PAD_TOP_PX,
     HUB_HEADER_PAD_X_PX,
     HUB_HEADER_TITLE_PX,
@@ -95,7 +96,7 @@ const SIZE_SPEC: Record<PageHeaderSize, SizeSpec> = {
     hub: { padTop: HUB_HEADER_PAD_TOP_PX, padBottom: 0, padX: HUB_HEADER_PAD_X_PX, titleSize: HUB_HEADER_TITLE_PX, titleTracking: HUB_HEADER_TITLE_TRACKING, rightGap: 11 },
     node: { padTop: 23, padBottom: 0, padX: 22, titleSize: 24, titleTracking: "-0.02em", rightGap: 11 },
     // Tighter right gap too: the whole point of `dense` is that the line is full.
-    dense: { padTop: DENSE_HEADER_PAD_TOP_PX, padBottom: 0, padX: DENSE_HEADER_PAD_X_PX, titleSize: DENSE_HEADER_TITLE_PX, titleTracking: DENSE_HEADER_TITLE_TRACKING, rightGap: 10 },
+    dense: { padTop: DENSE_HEADER_PAD_TOP_PX, padBottom: 0, padX: DENSE_HEADER_PAD_X_PX, titleSize: DENSE_HEADER_TITLE_PX, titleTracking: DENSE_HEADER_TITLE_TRACKING, rightGap: DENSE_HEADER_RIGHT_GAP_PX },
     // ⚠️ The leaf band is DELIBERATELY deeper than the design's `21px 18px 0`
     // (2026-09-05). At 17px (now 20px) the leaf title is the smallest in the app, so the same
     // padding that reads as generous under a 24px hub title read as cramped here —
@@ -292,7 +293,10 @@ const PageHeader: React.FC<PageHeaderProps> = ({
                 so two live headers on such a page would count every second twice. Today
                 nothing renders two (every call site is one page = one header, and the
                 branchy pages return them from mutually exclusive branches) — keep it
-                that way rather than adding a second header to a page.
+                that way rather than adding a second header to a page. The rule is really
+                one mounted FLAME: an flp game break draws one outside any PageHeader
+                (GameBreakChrome), so the flp hides its study header, flame included
+                (TowerStudyHeader `hidden`), for exactly the phases the break's area is up.
 
                 EXCEPTION (2026-10-09): `trailingContent` renders AFTER the flame. Only
                 the Deck Tower passes it (the profile picture that raises the

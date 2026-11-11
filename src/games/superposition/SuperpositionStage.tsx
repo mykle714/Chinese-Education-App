@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { Button, Typography } from "@mui/material";
 import { GameCentered, GameFrame } from "../shared/GameFrame";
-import { GAME_FRAME_EXIT_ARROW_BOTTOM_PX } from "../shared/gameFrameExit";
+import { GameCountdown } from "../shared/GameCountdown";
+import { useGameCountdown } from "../shared/useGameCountdown";
+import { GAME_FRAME_EXIT_CLEARANCE_PX } from "../shared/gameFrameExit";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
 import { usePersonalBest } from "../shared/usePersonalBest";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
@@ -13,13 +15,13 @@ import type { WritingGridDealRequest } from "../../api/writingGrid";
 import { useTTS } from "../../hooks/useTTS";
 import { formatTimeMs } from "../../utils/timeUtils";
 import { WRITING_LEVEL_COUNT } from "../../../server/contracts/writingLevels";
-import { BACK_ARROW_PX } from "../../components/pageHeaderSizing";
 import { buildTiles, lockFinishedStacks, moveTile, pickHintPair, scatterTiles, stackKey, type BoardCharacter, type Tile } from "./board";
 import SuperpositionBoard from "./SuperpositionBoard";
 import SuperpositionExitButton from "./SuperpositionExitButton";
 import SuperpositionHintButton from "./SuperpositionHintButton";
 import SuperpositionHints from "./SuperpositionHints";
-import { GAME_ID, HINT_BUTTON_PX, HINT_COOLDOWN_SECONDS, LOOKALIKE_TOLERANCE_UNITS, SPAWN_MARGIN_UNITS, SPAWN_SPREAD_UNITS, TILE_UNITS } from "./constants";
+import { GAME_ID, HINT_COOLDOWN_SECONDS, LOOKALIKE_TOLERANCE_UNITS, SPAWN_MARGIN_UNITS, SPAWN_SPREAD_UNITS, SPEED_TIERS, TILE_UNITS } from "./constants";
+import { gradeSpeed } from "../shared/runTiers";
 import type { GameStageFrameProps } from "../types";
 import type { FlpBreakResults } from "../flpBreak/types";
 
@@ -40,9 +42,7 @@ export interface SuperpositionStageProps {
     onCardCleared?: (cardId: number) => void;
 }
 
-/** The hint button's top edge: on the Leave arrow's row, centred on the arrow. */
-const HINT_TOP_PX = GAME_FRAME_EXIT_ARROW_BOTTOM_PX - (BACK_ARROW_PX + HINT_BUTTON_PX) / 2;
-/** The gap between the hint button and the word info below it. */
+/** The gap between Leave's row (arrow, hint button, audio chip) and the word info below it. */
 const INFO_GAP_PX = 4;
 
 /** The characters of a board, with their stroke data. Null if any failed to load. */
@@ -109,6 +109,12 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
     const [finalMs, setFinalMs] = useState(0);
     // Set when the run ended through Leave: how many characters stood finished by then.
     const [leftWith, setLeftWith] = useState<number | null>(null);
+    /**
+     * The pre-run 3·2·1 is up (src/games/shared/GameCountdown.tsx). Armed once the tiles
+     * are scattered (`handleMeasured`), so the count runs over the real board, not over
+     * tiles piled at 0,0. While it is set the run is not `running`: no stopwatch, no hint.
+     */
+    const [counting, setCounting] = useState(false);
 
     // ── Deal ─────────────────────────────────────────────────────────────────────
     // Keyed on isAuthenticated, never the token (CLAUDE.md "Never reload on token refresh").
@@ -133,6 +139,7 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
                 setHintedTileIds([]);
                 setHintSecondsLeft(0);
                 setLeftWith(null);
+                setCounting(false);
                 setPhase(playable ? "playing" : "empty");
             })
             .catch((err) => {
@@ -162,6 +169,7 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
             spreadUnits: SPAWN_SPREAD_UNITS,
         }));
         setPlaced(true);
+        setCounting(true);
     }, []);
 
     // A locked stack moves as one (`moveTile`), on top of the pile.
@@ -178,8 +186,10 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
     }, []);
 
     // ── Stopwatch: accumulated ACTIVE time ───────────────────────────────────────
-    const running = phase === "playing";
-    const { paused: backgroundPaused } = useBackgroundPause(running);
+    // Live = playing and past the countdown. The background listener covers the countdown
+    // too (`phase === "playing"`), so the count holds while the app is away.
+    const running = phase === "playing" && !counting;
+    const { paused: backgroundPaused } = useBackgroundPause(phase === "playing");
     const accumulatedRef = useRef(0);
     const runningSinceRef = useRef<number | null>(null);
     const holdStopwatch = () => {
@@ -191,6 +201,14 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
         if (backgroundPaused) holdStopwatch();
         else if (runningSinceRef.current === null) runningSinceRef.current = Date.now();
     }, [backgroundPaused, running]);
+
+    // 3·2·1 over the scattered board; the stopwatch starts on release (`running`). Gated on
+    // "playing", so a Leave mid-count takes the dim down with the run.
+    const countdownStep = useGameCountdown({
+        active: counting && phase === "playing",
+        paused: backgroundPaused,
+        onRelease: () => setCounting(false),
+    });
 
     // ── Marks and the end ────────────────────────────────────────────────────────
     // A finished character is a locked stack, and a lock never opens, so a finish stands
@@ -291,7 +309,8 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
     // The break's Leave: a live run ends with what stands finished; during inspection
     // it acts as the → button, so a won run is still reported.
     const leaveBreak = () => {
-        if (running) endRun(finishedChars.size);
+        // `phase`, not `running`: a Leave during the countdown still ends the run (0 built).
+        if (phase === "playing") endRun(finishedChars.size);
         else if (phase === "inspecting") finishInspecting();
         else if (phase !== "ended") onDone();
     };
@@ -304,6 +323,7 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
         const left = leftWith !== null;
         onRunEnded?.({
             title: left ? "Run ended" : "Finished!",
+            tiers: left ? null : { speed: gradeSpeed(finalMs, SPEED_TIERS) },
             score: left
                 ? `${leftWith} of ${characters.length} built`
                 : `All ${characters.length} built in ${formatTimeMs(finalMs)}`,
@@ -347,29 +367,32 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
                 // (the break's frame already drops them; stated here so the board never
                 // depends on that). The word info is drawn on the grid, starting below
                 // Leave's arrow, top-left.
-                <GameFrame className="superposition__frame" sx={{ touchAction: "none", margin: 0, borderRadius: 0, border: "none" }}>
+                // The hint button rides Leave's row, just left of the audio chip
+                // (GameFrame `exitRowTrailing`). Nothing left to hint once the board is complete.
+                <GameFrame
+                    className="superposition__frame"
+                    sx={{ touchAction: "none", margin: 0, borderRadius: 0, border: "none" }}
+                    exitRowTrailing={
+                        phase === "playing" && (
+                            <SuperpositionHintButton
+                                secondsLeft={hintSecondsLeft}
+                                ready={hintSecondsLeft === 0 && hintPair !== null}
+                                onHint={showHint}
+                            />
+                        )
+                    }
+                >
                     <SuperpositionBoard
                         tiles={tiles}
                         hintedTileIds={hintedTileIds}
                         locked={phase !== "playing"}
                         info={
-                            <>
-                                <SuperpositionHints
-                                    words={words}
-                                    finishedChars={finishedChars}
-                                    topInsetPx={HINT_TOP_PX + HINT_BUTTON_PX + INFO_GAP_PX}
-                                    onSpeak={speakWord}
-                                />
-                                {/* Nothing left to hint once the board is complete. */}
-                                {phase === "playing" && (
-                                    <SuperpositionHintButton
-                                        secondsLeft={hintSecondsLeft}
-                                        ready={hintSecondsLeft === 0 && hintPair !== null}
-                                        topPx={HINT_TOP_PX}
-                                        onHint={showHint}
-                                    />
-                                )}
-                            </>
+                            <SuperpositionHints
+                                words={words}
+                                finishedChars={finishedChars}
+                                topInsetPx={GAME_FRAME_EXIT_CLEARANCE_PX + INFO_GAP_PX}
+                                onSpeak={speakWord}
+                            />
                         }
                         onMeasured={handleMeasured}
                         onMove={handleMove}
@@ -377,6 +400,7 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
                     />
                     {/* Inspection's exit: an "Exit →" pill that inflates in. */}
                     {phase === "inspecting" && <SuperpositionExitButton onClick={finishInspecting} />}
+                    <GameCountdown step={countdownStep} classPrefix="superposition" />
                 </GameFrame>
             )}
         </Frame>

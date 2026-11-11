@@ -39,7 +39,8 @@ import { useTTSSettings, type AudioMode } from "../hooks/useTTSSettings";
  * like the header's other icons.
  *
  * Used by: TowerStudyHeader (the flp), AddCardsPage (acp), BubbleMatchHeader
- * (Bubble Match + Hydra Bubbles), MatchSpeedHeader, WordSearchHeader, BucketDropStage.
+ * (Bubble Match + Hydra Bubbles), MatchSpeedHeader, WordSearchHeader, BucketDropStage, and
+ * GameBreakChrome (an flp game break's header row; a white and a dark copy for its ink swap).
  * Documented in: docs/AUDIO_PLAYBACK.md.
  */
 

@@ -2,7 +2,8 @@ import React, { useLayoutEffect, useRef, useState } from "react";
 import { faceTransform } from "./geometry";
 import { shadowTone, type IsoSurface } from "./light";
 import { useIsoProjector } from "./sceneContext";
-import IsoSpacedText, { useFontLoadEpoch } from "./IsoSpacedText";
+import IsoSpacedText from "./IsoSpacedText";
+import { useFontLoadEpoch } from "../../../hooks/useFontLoadEpoch";
 import { FONTS } from "../../../theme/fonts";
 import { WEIGHT } from "../../../theme/scale";
 

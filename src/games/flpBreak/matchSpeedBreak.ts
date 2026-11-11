@@ -1,4 +1,4 @@
-import { lazy } from "react";
+import { lazyWithPreload } from "../runtime/lazyWithPreload";
 import { fetchGamePool, type GamePoolResponse } from "../../api/gamePool";
 import { POOL_DISTRIBUTION } from "../match-speed/constants";
 import { matchSpeedPoolRequest } from "../match-speed/poolRequest";
@@ -25,5 +25,5 @@ export const MATCH_SPEED_BREAK: FlpBreakGame<GamePoolResponse> = {
             seedIds: context.seedIds,
             flpBreak: true,
         })),
-    Stage: lazy(() => import("./MatchSpeedBreakStage")),
+    Stage: lazyWithPreload(() => import("./MatchSpeedBreakStage")),
 };

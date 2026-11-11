@@ -2,8 +2,6 @@ export const API_BASE_URL = import.meta.env.MODE === 'production'
   ? ''
   : 'http://localhost:5000';
 
-export const FLASHCARD_CONTENT_UPDATE_DELAY = 300; // ms — halfway through the 600ms flip animation
-
 // Minute Points Configuration
 // Matched as path prefixes (see useMinutePoints) so parameterized child routes
 // like `/discover/sort/:language` are covered automatically.
@@ -16,22 +14,22 @@ export const FLASHCARD_CONTENT_UPDATE_DELAY = 300; // ms — halfway through the
 // MinutePointsFireBadge / PageHeader.
 //
 // ── The card detail pages and the whole dictionary ARE study surfaces (2026-09-04) ──
-// `/flashcards/card` (the saved-card cdp) and `/dictionary` (the search page AND the
-// read-only dictionary cdp under it) accrue. A cdp is where a learner reads the
+// `/flashcards/card` (the saved-card cdp) and `/dictionary` (the search page, whose
+// results open in the eip sheet) accrue. A cdp is where a learner reads the
 // definition, the breakdown, the example sentences and the comparison of a word — the
 // same reading the eip does on the flp, which has always earned. Looking a word up and
 // reading what comes back is studying; the line this list draws is study vs. NAVIGATION,
 // and neither is a place you merely pick from a list.
 //
-// `/dictionary` is deliberately a PREFIX covering both of its routes (`/dictionary` and
-// `/dictionary/card/:word`) — unlike `/flashcards`, whose descendants are browse screens
-// and which therefore sits in the EXACT list below. Add a browse-shaped route under
-// `/dictionary` and this prefix would wrongly admit it.
+// `/dictionary` is a PREFIX. It used to cover a second route, the read-only dictionary
+// cdp at `/dictionary/card/:word` (deleted 2026-11-10); today it matches only the search
+// page. Add a browse-shaped route under `/dictionary` and this prefix would wrongly admit
+// it — move it to the EXACT list below at that point.
 //
 // This is also what makes the COMPARE sheet earn. Compare has no route of its own
 // (docs/WORD_COMPARE_FEATURE.md — it is a panel raised over the page you are on), so it
 // cannot be listed here; it earns because every surface that can open it now accrues —
-// the flp, the acp, and both cdps. Anything that later hosts the compare sheet from a
+// the flp, the acp, the Dictionary page and the saved-card cdp. Anything that later hosts the compare sheet from a
 // non-earning page would break that, so keep the two lists in step.
 //
 // Accrual still requires INTERACTION (`useActivityDetection`, 15s window): a cdp or a
@@ -45,9 +43,7 @@ export const FLASHCARD_CONTENT_UPDATE_DELAY = 300; // ms — halfway through the
 // must not earn), and earns through a study-surface CLAIM while a session is up
 // (src/minutePoints/studySurface.ts). The four break-only games (Speed Reading, Memory
 // Map, Writing Grid, Superposition) have no route of their own any more; they earn as
-// part of that same flp session. The legacy desktop
-// flashcards page at exactly '/flashcards' IS a study surface and is listed in
-// MINUTE_POINTS_ELIGIBLE_EXACT_PAGES below instead.
+// part of that same flp session.
 export const MINUTE_POINTS_ELIGIBLE_PAGES = [
   '/flashcards/card',
   '/dictionary',
@@ -60,13 +56,6 @@ export const MINUTE_POINTS_ELIGIBLE_PAGES = [
   '/games/bucket-drop',
   // The Writing Notebook (docs/WRITING_NOTEBOOK.md) — handwriting practice, not a game.
   '/flashcards/writing/notebook'
-];
-
-// Eligible pages matched EXACTLY, with no descendants. For a study surface whose path
-// is a parent of unrelated browsing routes — currently only the legacy desktop
-// flashcards page, whose children under /flashcards are all browse screens.
-export const MINUTE_POINTS_ELIGIBLE_EXACT_PAGES = [
-  '/flashcards'
 ];
 
 // Subset of eligible pages that should start accruing time on entry, WITHOUT

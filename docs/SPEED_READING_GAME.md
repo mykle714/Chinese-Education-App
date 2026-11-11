@@ -1,7 +1,7 @@
 # Speed Reading (flp break only)
 
 > **STATUS: BUILT.** The game is registered in `GAME_REGISTRY` and playable. What
-> remains is **tuning by eye**: the medal thresholds and the wrong-answer penalty
+> remains is **tuning by eye**: the speed and accuracy tier cutoffs
 > are placeholders until someone plays it — see [§ What still needs tuning](#what-still-needs-tuning).
 
 Fourth game. The player is shown a word's pinyin, definition, and audio, plus
@@ -23,7 +23,7 @@ fast a known word is recognised under a clock. It emits **reading** marks.
 `TARGET_ROUNDS` (20) rounds, the clock counts **up**, and the score is the
 finishing time — **lower is better**. There is no time cap. This replaced the
 original one-minute / count-the-correct-picks format; see
-[§ Scoring and medals](#scoring-and-medals) for what a wrong answer costs.
+[§ Scoring and tiers](#scoring-and-tiers) for what a wrong answer costs.
 
 There are **no difficulty levels**. One mode.
 
@@ -62,7 +62,7 @@ break's card and results card turn sideways with it. See
 - [Card selection: queue + top-up](#card-selection-queue--top-up)
 - [`markType` on the game pool](#marktype-on-the-game-pool)
 - [Marks](#marks)
-- [Scoring and medals](#scoring-and-medals)
+- [Scoring and tiers](#scoring-and-tiers)
 - [Shell and chrome](#shell-and-chrome)
 - [As an flp game break](#as-an-flp-game-break)
 - [Files](#files)
@@ -148,10 +148,10 @@ edge.
 
 ### Leave moves inside the stage
 
-An upright control on a sideways game is unreadable, so the chrome is drawn inside the
-rotated stage: `GameFrame` draws the break's Leave arrow and title
-(`GameFrameExitContext`). The frame is inside the rotated stage, so Leave turns with the
-game and sits at the game's top-left.
+An upright control on a sideways game is unreadable, so the break's header row turns with
+the game: `GameBreakChrome` (the break area's row: Leave, title, audio chip, flame) wraps
+itself in its own `useSidewaysStage` when the adapter is `sideways`, so Leave sits at the
+game's top-left from the first frame of the grow (docs/FLP_GAME_BREAKS.md § 6).
 
 ### Known rough edge
 
@@ -185,8 +185,8 @@ short viewports, which is a shell-wide change.
 **Nothing about the run's progress is drawn** (changed 2026-11-04). There is no clock
 (Match Speed, Word Search and Writing Grid show none either), no `Round n of 20` label and
 no round-tick strip: the board is the prompt and the two halves, nothing else. The run is
-still timed exactly as before (pauses, penalties, `endRun`); the finishing time and the
-accuracy appear only on the break's results card.
+still timed exactly as before (pauses, `endRun`); the finishing time, the accuracy and the
+speed / accuracy tiers appear only on the break's results card.
 
 > **History.** The panel used to open with a `GameHud` COLUMN: `Round n of 20` over
 > `SpeedReadingRoundTicks`, one 8px pip per round (green right, red wrong, wood pending).
@@ -231,7 +231,7 @@ sentence](#the-last-round-is-a-sentence)).
 > one-character-different pair is harder to tell apart at ~165px than at ~350px —
 > i.e. the layout is a **difficulty knob**, not just cosmetics. It was changed by
 > request. If the game turns out to be too easy, this is the first thing to look
-> at, before the medal thresholds.
+> at, before the speed tier cutoffs.
 
 ### Tap your side of the screen
 
@@ -324,7 +324,7 @@ never wraps.
         load ──► ready ──tap──► feedback ──(FEEDBACK_MS)──► ready(next)
 
   20th round answered ──► ended ──► results card (onRunEnded)
-  queue drained       ──► ended (unfinished: no time, no medal)
+  queue drained       ──► ended (unfinished: no time, no tiers)
 ```
 
 | Phase | Input | Notes |
@@ -357,7 +357,9 @@ mounts a fresh Stage.
 | `GAME_KEY` | `"speedReading"` | `wins` table key |
 | `WIN_LEVEL` | 1 | the game has no levels; `wins` is keyed (game, level) |
 | `TARGET_ROUNDS` | 20 | answered rounds per run; the run ends on the 20th |
-| `WRONG_PENALTY_MS` | 3_000 | added to the final time per wrong answer |
+| ~~`WRONG_PENALTY_MS`~~ | — | **Removed** 2026-11-10: a wrong answer costs no time; it lowers the accuracy tier |
+| `SPEED_TIERS` | 35/45/55/65/80/100 s | speed tier cutoffs (raw time for 20 rounds), placeholders |
+| `ACCURACY_TIERS` | 100/95/90/80/70/60 % | accuracy tier cutoffs (correct / 20), placeholders |
 | `FEEDBACK_MS` | 180 | answer reveal before advancing (600 → 280 → 180 as the sound took over the job) |
 | ~~`FLOAT_INDICATOR_MS`~~, ~~`PENALTY_INDICATOR_MS`~~, ~~`indicatorLifetime()`~~ | — | **Removed** with the float indicator |
 | `INITIAL_BATCH` | 20 | cards fetched on load |
@@ -406,8 +408,8 @@ and at 180ms there is no time to learn from it anyway.
 > point (`SpeedReadingFloatIndicator.tsx`, `spawnFloatIndicator`,
 > `FLOAT_INDICATOR_MS`, `PENALTY_INDICATOR_MS`, `indicatorLifetime`), carrying a
 > red **+3s** on a wrong answer. The component and all of that machinery are
-> deleted. **Nothing now shows the penalty at the moment it is charged** — see
-> [§ Scoring and medals](#scoring-and-medals).
+> deleted, and the +3s penalty itself was removed on 2026-11-10 — see
+> [§ Scoring and tiers](#scoring-and-tiers).
 
 ### `FEEDBACK_MS` is not the whole gap the player feels
 
@@ -481,14 +483,10 @@ the only visual answer cue left.
 
 Two consequences worth carrying forward:
 
-- **The `+3s` penalty is now invisible at the moment it is charged.** It shows up
-  only on the results, as the accuracy line's `+Ns penalty` (the clock that used to
-  run ahead of the elapsed time is no longer drawn, and neither is the round-tick strip
-  whose red pip used to mark a miss). During play the tapped half's red flash is the only
-  sign of a miss. A cost the
-  player cannot see is a cost they cannot learn from — if play-testing shows
-  misses going unnoticed, this is the thing to re-add (in some form), not the
-  penalty value to change.
+- **A miss is only visible as the tapped half's red flash during play.** The round-tick
+  strip whose red pip used to mark a miss is no longer drawn; a miss shows up again only
+  on the results, in the accuracy line and the accuracy tier. If play-testing shows misses
+  going unnoticed, a per-miss cue is the thing to re-add.
 - **`stage.toStageCoords` now has no caller.** It was the one consumer of the
   rotated-stage inverse transform; the hook keeps the function (and its warning)
   for the next thing positioned from a tap.
@@ -763,10 +761,10 @@ model) would buy nothing.
 
 Top-ups are **fire-and-forget with a `.catch()`**, triggered on dequeue, never
 awaited in the tap handler. A failed top-up degrades to a shorter run, never a
-stall — if the queue empties, the run ends UNFINISHED: the popup reports how far
-the player got and records no time and no medal (see § Scoring and medals).
+stall — if the queue empties, the run ends UNFINISHED: the results card reports how far
+the player got and records no time and no tiers (see § Scoring and tiers).
 
-**Two cards are reserved out of the opening pool** for the sentence rounds
+**One card is reserved out of the opening pool** for the sentence round (`SENTENCE_ROUNDS = 1`)
 (`reserveFinaleCards`) and never enter the FIFO — see [§ The finale's cards are
 reserved AT LOAD](#the-finales-cards-are-reserved-at-load).
 
@@ -858,44 +856,47 @@ player is shown produces exactly one mark.
 
 ---
 
-## Scoring and medals
+## Scoring and tiers
 
-**Score = the time to answer 20 rounds, plus penalties. Lower is better.**
+**Score = the raw time to answer 20 rounds. Lower is better.** A finished run is graded on
+two axes, a **speed tier** and an **accuracy tier**, 1 (best) to 7 (lowest); the shared
+model is [GAMES_FEATURE.md § Run tiers](./GAMES_FEATURE.md#run-tiers).
 
 ```
-totalMs = (Date.now() − startAt)  +  WRONG_PENALTY_MS × (wrong answers)
+totalMs  = accumulated active time from the first round to the 20th answer
+speed    = speedTierFor(totalMs, SPEED_TIERS)
+accuracy = accuracyTierFor(correct, TARGET_ROUNDS, ACCURACY_TIERS)
 ```
 
-| Event | Counts toward the 20? | Time cost |
+| Event | Counts toward the 20? | Cost |
 |---|---|---|
 | Correct pick | yes | the time it took |
-| Wrong pick | **yes** | the time it took **+ 3s** |
+| Wrong pick | **yes** | the time it took; lowers the accuracy tier |
 
-Those are the only two outcomes — every round must be answered. The penalty
-never pauses the game; `FEEDBACK_MS` is 180ms whether the answer was right or
-wrong.
+Those are the only two outcomes — every round must be answered. `FEEDBACK_MS` is 180ms
+whether the answer was right or wrong.
 
-> ⚠️ **The charge is not announced anywhere.** It used to float up from the tap
-> as a red **+3s**; with the float indicator and the live clock both removed, the only
-> trace during play is the miss's red tick, and the seconds appear only on the results. Treat this as a known gap when tuning
-> `WRONG_PENALTY_MS` — players may not connect a miss to the seconds it cost.
-
-**Why a wrong answer still counts as a round.** Under a count-up clock a blind tap
-is the *fastest possible round* — no reading required — so the format has to price
-accuracy explicitly rather than structurally. Replaying missed words instead was
-the alternative; charging seconds keeps every run exactly 20 rounds long, which is
-what makes two runs comparable. A coin-flip run takes ~10 misses, i.e. **+30s**,
-which lands outside every medal.
+**Why a wrong answer still counts as a round, at no time cost.** Under a count-up clock a
+blind tap is the *fastest possible round*, so accuracy needs its own price. It used to be
+`WRONG_PENALTY_MS` (+3s per miss, added to the final time); that was **removed 2026-11-10**
+when accuracy became its own tier, so speed and accuracy are graded independently and a
+guess-through run shows up as a fast speed tier next to a poor accuracy tier. Replaying
+missed words was the other alternative; counting every answer keeps every run exactly 20
+rounds long, which is what makes two runs comparable.
 
 ### Personal best
 
-The fastest **finished** run (`totalMs` — wall clock plus penalties, lower wins) is kept
+The fastest **finished** run (`totalMs` — raw active time, lower wins) is kept
 under the single mode key `"default"` (the game has one difficulty). An effect in
 `SpeedReadingStage` records it only when `phase === "ended"` **and** `finished`
-(`answered >= TARGET_ROUNDS`) — the same guard `medalFor` relies on, because a run cut
+(`answered >= TARGET_ROUNDS`) — the same guard the tiers rely on, because a run cut
 short by a drained queue has a small time that would otherwise become an unbeatable best.
 The line renders on the break's results card, and only on a finished run (the "Out of
 cards" / "Run ended" branches show no time and no best).
+
+> ⚠️ **Bests stored before 2026-11-10 include penalty seconds.** They were recorded as
+> wall clock + 3s per miss, so each is slower than or equal to the raw-time run it came
+> from; raw-time runs beat them more easily. No reset was done.
 
 The shared plumbing is `src/games/shared/usePersonalBest.ts` → `usePersonalBest` (load, `record` once per run, `reset` on a new run) and `src/games/shared/PersonalBestLine.tsx` → `PersonalBestLine` (the "Personal best m:ss" row + gold "New best!" pill, hidden until a best exists); the direction/unit lives in `server/contracts/personalBests.ts` → `PERSONAL_BEST_GAMES`. Storage and API: [WRITING_PRACTICE_REWORK.md § 2a](./WRITING_PRACTICE_REWORK.md).
 
@@ -905,8 +906,9 @@ The shared plumbing is `src/games/shared/usePersonalBest.ts` → `usePersonalBes
 choice: ducking a word you couldn't read cost you the seconds spent deciding to
 duck it, and bought you a shot at an easier word inside the same minute. In a
 race that logic inverts. Skipping would be the *cheapest* way past a hard word —
-a free reroll — and the obvious fix, pricing it at the same 3s, only makes it a
-**strictly worse version of guessing**: a guess pays the same and might be right.
+a free reroll — and pricing it (as a wrong answer was then priced, at 3s) only makes
+it a **strictly worse version of guessing**: a guess pays the same and might be right.
+That still holds now that a wrong answer costs accuracy instead of time.
 
 A control the player should never rationally use is noise on the screen, so it is
 gone rather than penalized. The knock-on effects are all simplifications: the
@@ -914,27 +916,21 @@ counter advances on every round shown, the float indicator's `kind` lost its
 third case (before the indicator was removed outright), and the Marks table lost
 its one unmarked path.
 
-| Medal | Threshold (total time, ≤) |
-|---|---|
-| 🥇 Gold | 45s |
-| 🥈 Silver | 60s |
-| 🥉 Bronze | 90s |
+### Tiers
 
-Gold at 45s is 2.25s/round, roughly the pace the old format's gold demanded (24
-correct in 60s). Note `medalFor` compares with **`<=`**, inverted from every other
-game's score thresholds — the metric is time.
+`src/games/speed-reading/constants.ts` → `SPEED_TIERS`, `ACCURACY_TIERS`, `runResultTiers`.
+The speed cutoffs (35 / 45 / 55 / 65 / 80 / 100 s; past 100 s is tier 7) spread the old
+medal lines (45 / 60 / 90 s, ~2.25 s/round at the top) over seven tiers. The accuracy
+cutoffs are 100 / 95 / 90 / 80 / 70 / 60 % of the 20 answers. ⚠️ **All are placeholders**
+and want re-tuning from real play.
 
-⚠️ **All three are still placeholders** and want re-tuning from real play at this
-format.
+**Tiers require a FINISHED run.** `runResultTiers` does not know the round count, so
+`SpeedReadingStage` gates it on `finished` (`answered >= TARGET_ROUNDS`). Without that gate
+a run cut short by a drained queue (three rounds in 8 seconds) would take speed tier 1.
+An unfinished run reports `tiers: null` and no time.
 
-**A medal requires a FINISHED run.** `medalFor` is a pure time→medal mapping and
-does not know the round count, so `SpeedReadingStage` gates it on
-`answered >= TARGET_ROUNDS`. Without that gate a run cut short by a drained queue
-(three rounds in 8 seconds) would take gold. The unfinished results card shows no
-time at all.
-
-A medal — any medal — records one win via `useGameWins(GAME_KEY).recordWin(WIN_LEVEL)`,
-guarded by a ref so it fires once per run.
+Every finished run records one win via `useGameWins(GAME_KEY).recordWin(WIN_LEVEL)` (wins
+are not gated on a tier), guarded by a ref so it fires once per run.
 
 ---
 
@@ -965,13 +961,13 @@ is [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md); what is specific to this game:
 
 | Concern | Behaviour |
 |---|---|
-| Run | The full 20 rounds with the sentence finale (round 20); medals and the personal best under the one `"default"` mode key. |
-| Prefetch | The seeded pool **and** the distractor list (`SpeedReadingOpening`), both fetched while card 10 is up. `isPlayable` rejects an empty pool or an empty distractor list, so the flp picks another game instead. |
+| Run | The full 20 rounds with the sentence finale (round 20); tiers and the personal best under the one `"default"` mode key. |
+| Prefetch | The seeded pool **and** the distractor list (`SpeedReadingOpening`), both fetched while card 15 is up. `isPlayable` rejects an empty pool or an empty distractor list, so the flp picks another game instead. |
 | Pool | `speedReadingPoolRequest` (`poolRequest.ts`): `seedIds` on the opening batch only, `flpBreak` on every request. The game's own `GAME_DISTRIBUTION`. |
 | Marks | Reading marks. A correct, recorded mark on an owned card fires `onCardCleared`, skipping lent cards and `outsideFocus` cards. |
 | Chrome | No header and no panel. Leave + the title come from `GameFrame`, inside the rotated stage. No HUD; the board starts below Leave's row (see § Screen layout). |
-| Leave | During a live round: the run ends as **Run ended**, with no time, medal, win or personal best. In the 20th answer's feedback window the run just ends finished. After the run: dismisses the lent-card offer. Before a deal: closes the break. |
-| Results | `onRunEnded` instead of the end popup: the medal / "Finished!" / "Out of cards" / "Run ended" heading, the time (or `n of 20 rounds`), the accuracy line, and the personal best. A lent-card sort offer holds the report until it is answered. |
+| Leave | During a live round: the run ends as **Run ended**, with no time, tiers, win or personal best. In the 20th answer's feedback window the run just ends finished. After the run: dismisses the lent-card offer. Before a deal: closes the break. |
+| Results | `onRunEnded`. A finished run: the "Finished!" heading and the run-tier panels (`FlpBreakResults.tiers`) — time + personal best in the speed panel, `n/20 · %` in the accuracy panel. An unfinished one: "Out of cards" / "Run ended", `n of 20 rounds` and `n/answered correct · no time recorded`. A lent-card sort offer holds the report until it is answered. |
 | Sideways cards | `sideways: true` on the adapter turns the break's card (buttons included) and its results card 90° the game's way (`SidewaysCardFace`, FLP_GAME_BREAKS.md § 5). |
 
 ---
@@ -990,7 +986,7 @@ is [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md); what is specific to this game:
 | `SpeedReadingOptionText.tsx` | one option's text (word or sentence), display-only, as a `ForeignText`/cpcd row at the size the page passes |
 | `buildRound.ts` | the one-character invariant, the fallback ladder, and both round builders (pure) |
 | `useSpeedReadingQueue.ts` | card queue, distractor pool, top-up, finale reservation |
-| `constants.ts` | run constants, medal thresholds |
+| `constants.ts` | run constants, speed / accuracy tier ladders (`SPEED_TIERS`, `ACCURACY_TIERS`, `runResultTiers`) |
 | `types.ts` | `Phase`, `RoundOption`, `WordRound` / `SentenceRound` / `Round` |
 
 **Client, shared**
@@ -1029,9 +1025,9 @@ one-character invariant, the ladder, and the sentence-round builder).
 
 | Constant | Current | How to tune |
 |---|---|---|
-| `MEDAL_THRESHOLDS` | 45s / 60s / 90s | Play a few runs. Derived from ~2.25s/round, carried over from the old format's gold pace rather than measured at this one. |
-| `WRONG_PENALTY_MS` | 3_000 | ~2 rounds of good play. Raise it if guessing through the 20 still medals; lower it if a single slip feels run-ending. |
-| `TARGET_ROUNDS` | 20 | Long enough that one lucky guess doesn't decide the run, short enough to replay. Changing it invalidates the medal thresholds. |
+| `SPEED_TIERS` | 35–100 s | Play a few runs. Spread from the old medal lines (~2.25s/round at the top), not measured at this format. |
+| `ACCURACY_TIERS` | 100–60 % | Check that a guess-through run lands low here while still scoring a fast speed tier. |
+| `TARGET_ROUNDS` | 20 | Long enough that one lucky guess doesn't decide the run, short enough to replay. Changing it invalidates both tier ladders. |
 | `FEEDBACK_MS` | 180 | Long enough to see the answer, short enough not to feel like a tax. Cut from 600 once the sound carried the outcome. ⚠️ With the float indicator gone the tint is the only thing to *see*, and 180ms is short for a colour change — **lengthen** this if the reveal starts reading as nothing happening. |
 | `ZONE_TINT_CORRECT` / `ZONE_TINT_WRONG` | green / red MID tier | The sole visual cue now. If the flash goes unnoticed on a bright screen, the next step is the MARK tier (`grnMk` / `redMk`). |
 | `SENTENCE_ROUNDS` | 1 | How much of the run is the sentence finale (cut from 2 on 2026-11-04). Raising it needs more eligible cards in the opening pool (20 cards, so there is headroom) and makes the run meaningfully harder. |
@@ -1056,7 +1052,7 @@ one-character invariant, the ladder, and the sentence-round builder).
 | `markType` | `server/controllers/OnDeckVocabController.ts`; [MASTERY_REWORK.md](./MASTERY_REWORK.md) |
 | Marks | `src/api/flashcards.ts`, [MASTERY_REWORK.md](./MASTERY_REWORK.md) |
 | As an flp game break | `src/games/flpBreak/speedReadingBreak.ts` (`SPEED_READING_BREAK`), `SpeedReadingBreakStage.tsx`, `SpeedReadingStage.tsx` (`leaveBreak`, `hud`, the `onRunEnded` effect, `mark`), `poolRequest.ts`, `useSpeedReadingQueue.ts` (`SpeedReadingOpening`, `prefetched`), `src/features/flashcards/FlashcardsLearnPage/gameBreak/SidewaysCardFace.tsx` |
-| Scoring and medals | `constants.ts` (`TARGET_ROUNDS`, `WRONG_PENALTY_MS`, `MEDAL_THRESHOLDS`, `medalFor`, `formatClock`), `SpeedReadingStage.tsx` (`totalMs`, `finished`, `endRun`, `addPenalty`), `src/hooks/useGameWins.ts` |
+| Scoring and tiers | `constants.ts` (`TARGET_ROUNDS`, `SPEED_TIERS`, `ACCURACY_TIERS`, `runResultTiers`, `formatClock`), `SpeedReadingStage.tsx` (`totalMs`, `finished`, `endRun`), `src/games/shared/runTiers.ts`, `src/hooks/useGameWins.ts` |
 
 Referenced by: [GAMES_FEATURE.md](./GAMES_FEATURE.md),
 [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md),

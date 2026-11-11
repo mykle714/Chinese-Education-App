@@ -1,24 +1,24 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
-import { Box, Button, Typography, useTheme } from "@mui/material";
+import { Box, Button, Typography } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { useAuth } from "../../AuthContext";
 import { useTTS } from "../../hooks/useTTS";
 import { useGameWins } from "../../hooks/useGameWins";
 import { markFlashcard } from "../../api/flashcards";
 import { fetchWordSearchGrid } from "../../api/wordSearchGrid";
-import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
+import { SIZE, LEADING } from "../../theme/scale";
 import WordSearchWordList from "./WordSearchWordList";
 import WordSearchHintRow from "./WordSearchHintRow";
 import WordSearchGrid, { type WordSearchGridHandle } from "./WordSearchGrid";
 import WordSearchHintBar from "./WordSearchHintBar";
 import { GameCentered, GameFrame } from "../shared/GameFrame";
+import { GameCountdown } from "../shared/GameCountdown";
+import { useGameCountdown } from "../shared/useGameCountdown";
 import { boardNaturalHeight } from "./boardMetrics";
 import { useGridScreenAnchor } from "./useGridScreenAnchor";
 import { GAME_FRAME_EXIT_ARROW_BOTTOM_PX } from "../shared/gameFrameExit";
-import GameEndPopup from "../runtime/GameEndPopup";
 import { usePersonalBest } from "../shared/usePersonalBest";
-import PersonalBestLine from "../shared/PersonalBestLine";
 import { wordSearchGridRequest } from "./gridRequest";
 import type { GameStageFrameProps, GameStageHost } from "../types";
 import type { FlpBreakResults } from "../flpBreak/types";
@@ -28,10 +28,10 @@ import {
     GAME_KEY,
     GRID_EDGE_PX,
     WIN_LEVEL,
-    medalForTime,
     modeMarkTypes,
     personalBestMode,
     runResultScore,
+    runResultTiers,
     runResultTitle,
     type WordSearchModeConfig,
 } from "./constants";
@@ -40,7 +40,6 @@ import type { WordSearchBoardId } from "../../../server/contracts/wire";
 import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
 import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
 import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
-import { formatTimeMs } from "../../utils/timeUtils";
 import { useChallengeRound } from "../runtime/useChallengeRound";
 import { useGameBack } from "../runtime/useGameBack";
 import ChallengeRoundScoreboard from "../runtime/ChallengeRoundScoreboard";
@@ -48,7 +47,7 @@ import { useRunClock } from "./useRunClock";
 import { useWordSearchHints } from "./useWordSearchHints";
 import type { PlacedWord, WordSearchResponse } from "./types";
 
-/** `left`: an flp break's Leave ended the run short; it has no finish time and no medal. */
+/** `left`: an flp break's Leave ended the run short; it has no finish time and no tiers. */
 type Phase = "loading" | "blocked" | "playing" | "won" | "left";
 
 export interface WordSearchStageProps {
@@ -75,7 +74,7 @@ export interface WordSearchStageProps {
     onDone: () => void;
     /** The destination `onDone` names, for "Back to …". */
     doneLabel: string;
-    /** flp break only: FlpBreakStageProps `onRunEnded`. Replaces the win popup. */
+    /** flp break only: FlpBreakStageProps `onRunEnded`. */
     onRunEnded?: (results: FlpBreakResults) => void;
     /** flp break only: FlpBreakStageProps `onCardCleared`. */
     onCardCleared?: (cardId: number) => void;
@@ -91,14 +90,16 @@ export interface WordSearchStageProps {
  *   - the opening board (a break seeds it with the working loop, prefetched);
  *   - the save slot: a break NEVER touches it, because that slot holds the board parked
  *     on the Games hub, and a break's board has no way back (see `persistSnapshot`);
- *   - the results: the page shows its win popup; a break hands them to the flp's card
- *     (`onRunEnded`);
+ *   - the results: a break hands them to the flp's card (`onRunEnded`). The page has no
+ *     end card any more (its win popup and Play Again were deleted 2026-11-10, with the
+ *     medals); the routed page is behind the OFF `standaloneGames` flag
+ *     (docs/DEFERRED_WORK.md);
  *   - the way out: the page's Back is `useGameBack`; a break's Leave ENDS a live run into
  *     its results card and closes the break from any other phase.
  *
  * Flow: loading → (blocked | playing → won). One relaxed mode: a count-up clock runs
  * out of sight from the deal until every word is found, and the finish time earns a
- * medal (see docs/WORD_SEARCH_GAME.md §5).
+ * speed tier (see docs/WORD_SEARCH_GAME.md §5).
  *
  * Pause/resume (§5b): the board + timer + hint state are snapshotted to
  * localStorage (gameStateStorage.ts) whenever the tab is backgrounded or the
@@ -123,8 +124,6 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
     // Read through a ref: `markWordFound` is deliberately stable.
     const onCardClearedRef = useRef(onCardCleared);
     onCardClearedRef.current = onCardCleared;
-    const theme = useTheme();
-    const fc = theme.palette.flashcard;
     const { user } = useAuth();
     const userId = user?.id;
     const tts = useTTS();
@@ -142,7 +141,7 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
     // is the mode's primary track — the one the board itself was pooled on.
     const markTypes = useMemo(() => modeMarkTypes(modeConfig), [modeConfig]);
     // Fastest completion per board mode and size (docs/WORD_SEARCH_GAME.md § Personal best).
-    const { best: personalBestMs, isNewBest, record: recordPersonalBest, reset: resetPersonalBest } = usePersonalBest("word-search", personalBestMode(mode, board));
+    const { best: personalBestMs, record: recordPersonalBest } = usePersonalBest("word-search", personalBestMode(mode, board));
     const showPinyinColor = true;
 
     // `useBlockEdgeSwipe(true)` is the HOST's job (the page, or the flp break area): it
@@ -161,12 +160,17 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
      * must not run while the app is in the background.
      */
     const [backgrounded, setBackgrounded] = useState(false);
+    /**
+     * The pre-run 3·2·1 is up (src/games/shared/GameCountdown.tsx). A flag beside `phase`
+     * rather than a phase of its own: the board is fully drawn and "playing" in every sense
+     * but input and the clock, and a new phase would have to be added to every
+     * `phase === "playing"` read below. The clock holds while it is set (`clockPaused`).
+     */
+    const [counting, setCounting] = useState(false);
     const [data, setData] = useState<WordSearchResponse | null>(null);
     // Pre-round notice for lent cards (docs/PROVISIONAL_CARDS.md).
     const [noticeOpen, setNoticeOpen] = useState(false);
     const [found, setFound] = useState<Set<string>>(new Set());
-    // Whether the end-of-run popup is collapsed into the corner puck.
-    const [popupMinimized, setPopupMinimized] = useState(false);
     const gridRef = useRef<WordSearchGridHandle>(null);
     // Places the board on the screen. `data` is null until the deal lands, and the rows only
     // change with it, so a null board simply measures nothing.
@@ -227,7 +231,7 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
     const challengeRound = useChallengeRound({
         gameId: "word-search",
         mode,
-        paused: noticeOpen || backgrounded,
+        paused: noticeOpen || backgrounded || counting,
         running: phase === "playing",
     });
     // Back: the challenge mid-test, or the Games hub — and, on a claimed challenge
@@ -340,10 +344,13 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
         setFound(new Set());
         resetHints();
         setFinalMs(0);
-        setPopupMinimized(false);
         setPhase("playing");
+        // Started frozen at 0: the countdown runs first, and the pause gate below resumes
+        // the clock when it releases.
         startClock(0);
-    }, [startClock, resetHints]);
+        pauseTimer();
+        setCounting(true);
+    }, [startClock, pauseTimer, resetHints]);
 
     // Restore a previously saved board in place of fetching a new one — same
     // end state as startBoard, but seeded from a SavedWordSearchState instead
@@ -355,14 +362,15 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
         setFound(new Set(saved.found));
         restoreHints(saved);
         setFinalMs(0);
-        setPopupMinimized(false);
         startClock(saved.elapsedMs);
+        pauseTimer();
+        setCounting(true);
         // Re-warm TTS for the restored targets.
         saved.data.words.forEach((w) => tts.prefetchSentence(w.entryKey, w.pinyin));
         setPhase("playing");
         // tts.prefetchSentence is stable; only re-create on auth change.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [startClock, restoreHints]);
+    }, [startClock, pauseTimer, restoreHints]);
 
     // Initial load, once per authenticated session: resume a saved board if one
     // exists, else fetch a new one. Keyed on the STABLE auth identity (`user?.id`),
@@ -429,11 +437,22 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
     // are small anchored tooltips that leave the board playable, so pausing on
     // them would hand out a free stopwatch stop. Shared rule across all four games
     // — see docs/GAMES_FEATURE.md § Popups pause the clock.
-    const clockPaused = noticeOpen;
+    // The countdown is the second source: the run's time starts when it releases.
+    const clockPaused = noticeOpen || counting;
     // Read by the visibility listener below, which fires outside React's render
     // and must not resume a clock a popup is still holding.
     const clockPausedRef = useRef(clockPaused);
     clockPausedRef.current = clockPaused;
+
+    // 3·2·1 over the dealt board, once the lent-cards notice is dismissed (it sits under
+    // the countdown's screen-wide dim, so the two are never up together). Holds while the
+    // app is backgrounded, then releases into the live run. Gated on "playing" too, so a
+    // break's Leave mid-count (→ "left") takes the dim down with the run.
+    const countdownStep = useGameCountdown({
+        active: counting && phase === "playing" && !noticeOpen,
+        paused: backgrounded,
+        onRelease: () => setCounting(false),
+    });
 
     useEffect(() => {
         if (phase !== "playing") return;
@@ -603,7 +622,6 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
             stopTimer();
             const ms = readElapsedMs();
             setFinalMs(ms);
-            setPopupMinimized(false);
             // Every completion logs under level 1 — Word Search's two modes
             // deliberately share one wins bucket (see GAME_KEY in ./constants).
             recordWin(WIN_LEVEL);
@@ -619,19 +637,6 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [found, phase, data, stopTimer, readElapsedMs, recordWin, userId, mode]);
 
-    // Discard the current board and load a fresh one. Only reachable from the
-    // win screen's "Play Again" now — the header restart button was removed, so
-    // a board in progress can no longer be thrown away mid-game.
-    const resetBoard = useCallback(async () => {
-        if (userId) clearGameState(userId, mode);
-        resetPersonalBest();
-        tts.unlockAudio();
-        setPhase("loading");
-        const payload = await fetchGrid();
-        if (!payload) return; // fetchGrid already switched to blocked
-        startBoard(payload);
-    }, [tts, fetchGrid, startBoard, userId, mode, resetPersonalBest]);
-
     // The centred column shown INSTEAD of the board (spinner, or the blocked
     // message). The shape is shared — `GameCentered` also owns the rule that text on
     // the accent ground is white — so this is only the page's class name for it.
@@ -640,7 +645,7 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
     );
 
     const runOver = phase === "won" || phase === "left";
-    // End-of-run offer to keep the lent cards; opens a beat after the win popup. Only the
+    // End-of-run offer to keep the lent cards; opens a beat after the run ends. Only the
     // ones the player found: a run left short has words it never reached.
     const sortOfferWords = useMemo(
         () => (data?.provisionalWords ?? []).filter((word) => found.has(word)),
@@ -651,7 +656,7 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
 
     /**
      * The flp break's Leave (docs/FLP_GAME_BREAKS.md § 2). A LIVE run ends with what it
-     * found, so it has no finish time, and so no medal, win or personal best.
+     * found, so it has no finish time, and so no tiers, win or personal best.
      * From every other phase there is nothing to show, so the break closes.
      */
     const leaveBreak = useCallback(() => {
@@ -672,7 +677,7 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
     }, [phase, runOver, onDone, stopTimer, readElapsedMs]);
     const onExitRequest = isBreak ? leaveBreak : onBack;
 
-    // A break's run reports to the flp instead of showing the win popup, which is what
+    // A break's run reports to the flp, which is what
     // starts the shrink back to the card. A lent-card offer holds it: the offer lives over
     // this board, so it has to be answered before the board goes.
     const sortOfferPending = sortOfferWords.length > 0 && !sortOffer.dismissed;
@@ -681,7 +686,8 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
         const finished = phase === "won";
         const bestBefore = personalBestMs;
         onRunEnded?.({
-            title: runResultTitle(finished, finalMs, data?.words.length),
+            title: runResultTitle(finished),
+            tiers: runResultTiers(finished, finalMs, data?.words.length),
             score: runResultScore(found.size, data?.words.length ?? 0, finalMs),
             details: [],
             personalBest: newBestRef.current.then((isNew) => {
@@ -709,7 +715,6 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
             </>
         );
     } else if ((phase === "playing" || runOver) && data && data.grid) {
-        const medal = medalForTime(Math.floor(finalMs / 1000), data.words.length);
         const glossBandTop = isBreak ? GAME_FRAME_EXIT_ARROW_BOTTOM_PX : 0;
         content = (
             <Box
@@ -727,9 +732,9 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
                 }}
             >
                 {/* `.play` — the inset panel holding the whole board stack
-                    (docs/SHELF_REDESIGN.md § A6). The win popup and the sort offer stay
-                    OUTSIDE it: both cover the full content area and must not be clipped
-                    by the panel's radius. */}
+                    (docs/SHELF_REDESIGN.md § A6). The sort offer stays OUTSIDE it: it
+                    covers the full content area and must not be clipped by the panel's
+                    radius. */}
                 <GameFrame className="word-search__frame">
                 {/* The glosses, centred both ways in the height above the board: between
                     the top of the panel (in a break, the bottom of Leave's arrow) and the
@@ -792,48 +797,18 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
                         />
                     </WordSearchHintBar>
                 </Box>
+
+                <GameCountdown step={countdownStep} classPrefix="word-search" />
                 </GameFrame>
 
                 {/* A challenge round ends on the scoreboard (§ 5.5) — points, not a
-                    time medal, and no Play Again: the round is final (§ 5.1a). */}
+                    time tier, and no Play Again: the round is final (§ 5.1a). */}
                 {phase === "won" && challengeRound.active && (
                     <ChallengeRoundScoreboard round={challengeRound} classPrefix="word-search" />
                 )}
 
-                {/* An flp break has no end popup: its results land on the break's card
-                    (docs/FLP_GAME_BREAKS.md § 5b). */}
-                {phase === "won" && !challengeRound.active && !isBreak && (
-                    <GameEndPopup
-                        classPrefix="word-search"
-                        minimized={popupMinimized}
-                        onMinimize={() => setPopupMinimized(true)}
-                        onRestore={() => setPopupMinimized(false)}
-                    >
-                        <Typography className="word-search__win-title" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: fc.onSurface }}>
-                            {medal.emoji} All {data.words.length} found!
-                        </Typography>
-                        <Typography className="word-search__win-time" sx={{ fontSize: SIZE.bodyLg, color: fc.textSecondary }}>
-                            Time {formatTimeMs(finalMs)} — {medal.medal} medal
-                        </Typography>
-                        <PersonalBestLine
-                            game="word-search"
-                            best={personalBestMs}
-                            isNewBest={isNewBest}
-                            className="word-search__personal-best"
-                        />
-                        <Box className="word-search__win-actions" sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%", maxWidth: 260 }}>
-                            <Button className="word-search__play-again" variant="contained" onClick={resetBoard} sx={{ borderRadius: "12px", textTransform: "none", fontWeight: WEIGHT.bold }}>
-                                Play Again
-                            </Button>
-                            <Button className="word-search__back-to-games" variant="outlined" onClick={onDone} sx={{ borderRadius: "12px", textTransform: "none" }}>
-                                Back to {doneLabel}
-                            </Button>
-                        </Box>
-                    </GameEndPopup>
-                )}
-
-                {/* Opens a beat after the win popup and stacks over it, collapsing to
-                    the opposite corner. Renders nothing unless this grid used lent cards. */}
+                {/* Opens a beat after the run ends. Renders nothing unless this grid used
+                    lent cards. */}
                 <ProvisionalSortOffer
                     open={sortOffer.open}
                     words={sortOfferWords}

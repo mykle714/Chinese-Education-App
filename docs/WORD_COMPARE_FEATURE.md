@@ -21,7 +21,7 @@ feature consumes it):
 | Surface | Hosts | Entry points | Where the state lives | Slot A on open |
 |---|---|---|---|---|
 | **eip Compare tab** | flp, acp and the Dictionary page's eip (`EipSheet` `showWordTools`, 2026-10-10) — the hosts with an entry-tab strip | the `Compare` pill on `WordToolsRail`; the **Compare button in the eip entry header** | the singleton Compare tab object in `useEipTabs` | the rail's pill fills it with the card's word; the header button fills it with the word the **panel** is showing, drilled-into words included |
-| **compare sheet** (`src/components/CompareSheet.tsx`) | both cdps — `VocabCardDetailPage`, `DictionaryCardDetailPage`, neither of which has a strip | the same two: the rail's `Compare` pill, and the eip header button on the fc cdp | `useState` inside `CompareSheet`, **discarded on close** | the calling word |
+| **compare sheet** (`src/components/CompareSheet.tsx`) | the saved-card cdp (`VocabCardDetailPage`) — its eip has a word trail, but its rail sits above the hero card, outside the sheet (the read-only dictionary cdp, the other host, was deleted 2026-11-10) | the rail's `Compare` pill | `useState` inside `CompareSheet`, **discarded on close** | the calling word |
 
 The contract between them is the `CompareState` interface exported by `CompareWorkspace`
 (`{ slotA, slotB, comparison, comparisonParts }`). `CompareEipTab extends CompareState`, so the
@@ -55,9 +55,8 @@ Three consequences worth knowing:
 
 ### Compare earns minute points
 
-Both hosts of the compare sheet — the saved-card cdp and the dictionary cdp (the latter as
-part of the whole `/dictionary` prefix, search page included) — became **study surfaces** on
-2026-09-04 (`MINUTE_POINTS_ELIGIBLE_PAGES`, `src/constants.ts`), and the eip tab's hosts
+The compare sheet's host — the saved-card cdp — became a **study surface** on
+2026-09-04 (as did the whole `/dictionary` prefix, which now matches only the search page) (`MINUTE_POINTS_ELIGIBLE_PAGES`, `src/constants.ts`), and the eip tab's hosts
 (flp, acp) already were. Since the sheet has no route of its own, that
 host eligibility IS how Compare accrues: the learner reading a comparison is on an earning
 page for as long as they keep interacting (the 15-second activity window still applies).
@@ -65,7 +64,7 @@ page for as long as they keep interacting (the 15-second activity window still a
 stop Compare earning there. The sheet itself draws **no** flame (2026-10-06 — pull-up
 dictionary flows never show the counter); earning is unaffected because it rides the host
 page's header, which stays mounted under the sheet. See
-[MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md) § "Both cdps earn, and so does Compare".
+[MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md) § "The cdp, the dictionary, and Compare all earn".
 
 ### The header: permanent, not merge chrome
 
@@ -117,8 +116,8 @@ to any individual card**. It is a tab in the eip's **entry-tab strip** — the s
     and on the question face first flips the card — `WordToolsRail` `onToolPress` →
     `FlashcardsLearnPage` → `revealAnswer`).
     On the Dictionary page the rail lives at the bottom of the eip's definition tab.
-  - **cdp — both of them** (the saved-card `VocabCardDetailPage` and the read-only
-    `DictionaryCardDetailPage`) — neither has a strip, so each raises the compare SHEET
+  - **saved-card cdp** (`VocabCardDetailPage`) — its rail sits above the hero card, outside
+    the eip sheet, so it raises the compare SHEET
     (`useCompareSheet().openCompare(entry)`), seeding slot A as the INITIAL value of the
     sheet's state hook, never in an effect — an effect would re-seed on every identity change
     and silently undo a clear the learner had just made.
@@ -188,7 +187,7 @@ and panel body.
   Slot A auto-fills from the source word (`entryKey` + `pronunciation`). Slot B starts empty
   with a `+` indicator.
   - `CPCDSize` gained an **`"xl"` size** for this feature — entries in `COLUMN_WIDTH`,
-    `CHAR_FONT_SIZE`, `PINYIN_RESERVED_HEIGHT` (CPCDRow) and `PLAIN_CHAR_FONT` /
+    `CHAR_FONT_SIZE`, `PINYIN_RESERVED_HEIGHT` (`cpcdLayout.ts`) and `PLAIN_CHAR_FONT` /
     `PLAIN_COMPACT_CHAR_FONT` (ForeignText). **Shipped**: `"xl"` is in `CPCDSize` today.
 - **Slot B tap → mini search bar**: tapping the empty (or filled) slot B opens a compact search
   input in the below-slots area, with the **special-character keypad above it** (keypad is
@@ -336,10 +335,10 @@ CREATE TABLE word_comparison_cache (
 | Client UI | `src/components/CompareSheet.tsx` (**new** 2026-09-04) | `CompareSheet` (SheetPanel + CompareWorkspace, owns a `CompareState` that resets per open) and `useCompareSheet` (`openCompare` / `compareSheet` wiring for a host page) |
 | Client UI | `src/components/sheet/SheetPanel.tsx`, `src/components/sheet/sheetStyled.ts` (**moved** 2026-09-04 out of `features/flashcards/FlashcardsLearnPage/`) | the maximizable bottom-sheet primitive the compare sheet and the eip share |
 | Route / nav | — | **Nothing.** `/compare`, `ComparePage.tsx`, the `routeMeta`/`registry` rows and the hub's "Compare Words" tile were all deleted 2026-09-04; Compare has no route |
-| Shared util | `src/utils/dictEntryAdapter.ts` (**moved** out of `features/flashcards/FlashcardsLearnPage/`) | `dictionaryEntryToVocabEntry` — now consumed by the shared workspace, the eip, and the dictionary cdp |
+| Shared util | `src/utils/dictEntryAdapter.ts` (**moved** out of `features/flashcards/FlashcardsLearnPage/`) | `dictionaryEntryToVocabEntry` — consumed by the shared workspace (`CompareWorkspace`) and `src/api/dictionary.ts` (the lookup the eip's drill-ins use) |
 | Client UI | `src/components/LongDefinitionDisplay.tsx`, `src/components/SegmentedSentenceDisplay.tsx` | shared renderer; `runTranslation` puts a translated run into whole-run (passive) mode |
-| Client UI | `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`, `InfoCardSection.tsx` | Hosts the Compare TAB body only. The entry-header Compare button and its `onCompare` prop were **removed 2026-09-04**; the header's action grid is Speaker · Add-to-Learn-Now |
-| Client UI | `src/components/WordToolsRail.tsx` | The `Compare` pill above the card on the flp and `VocabCardDetailPage`, and at the **bottom of the eip's definition tab** on `DictionaryCardDetailPage`, which has no card and mounts the eip inline (`definitionFooter`, 2026-10-10) (rail added 2026-08-24; replaced the deleted `InfoCardActionBar`). The pill self-hides on any surface that omits `onCompare`. |
+| Client UI | `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`, `InfoCardSection.tsx` | Hosts the Compare TAB body only. The entry-header Compare button and its `onCompare` prop were **removed 2026-09-04**; `EipEntryHeader` has no action stack at all now (the speaker and the Learning key live in the trail row) |
+| Client UI | `src/components/WordToolsRail.tsx` | The `Compare` pill above the card on the flp and `VocabCardDetailPage`, and at the **bottom of the eip's definition tab** on the Dictionary page's `EipSheet` (`showWordTools`), which has no card (`definitionFooter`, 2026-10-10) (rail added 2026-08-24; replaced the deleted `InfoCardActionBar`). The pill self-hides on any surface that omits `onCompare`. |
 | Client UI | `src/components/PinyinKeypad.tsx` (**new**, extracted) | shared tone-vowel / accent keypad; replaces DictionaryPage's two inline copies |
 | Client UI | `src/components/CPCDRow.tsx`, `src/components/ForeignText.tsx` | new `"xl"` `CPCDSize` |
 | Shared | `src/components/WordSlot.tsx` | the two slots (giant "+" / the word, armed-delete ring). Extracted 2026-10-06 (the Writing Notebook used it briefly; its word selector is now a header button) |
@@ -412,7 +411,7 @@ English-query space. Cache hits are always free and don't consume a slot.
   (`DictionaryService.generateAiEntry`, `ai_dictionary_cache` migrations 97–98, daily-limit
   migrations 99–100, `streakDateOf`).
 - eip entry-tab system this extends: `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts`,
-  `EipTabStrip.tsx`; panel body + header actions: `InfoCardPanelBody.tsx`; definition-tab
+  `EipTabStrip.tsx`; panel body: `InfoCardPanelBody.tsx` (the entry header is `EipEntryHeader.tsx`, mounted by `InfoCardSection`; it has no actions); definition-tab
   word-tools rail (the Compare entry point): `src/components/WordToolsRail.tsx`.
 - Keypad source being extracted: `src/features/dictionary/DictionaryPage.tsx` (`SPECIAL_CHARACTERS`,
   `getVowelColor`, `specialCharButtonSx`).

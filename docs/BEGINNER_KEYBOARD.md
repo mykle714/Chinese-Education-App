@@ -2703,9 +2703,11 @@ drift differed.
   centres; the bubbles cannot live inside the scroller, whose `overflow-x: auto`
   also clips vertically), `beginner-keyboard__hint-layer`
 - `src/features/beginnerKeyboard/HintBubble.tsx` — the bk wrapper: positions the bubble
-  over its chip and commits on tap. The look and the grow / pop / ring keyframes live in
-  the shared `src/components/hintBubble/HintBubbleSurface.tsx`, which the flp hint pawn's
-  speech bubble also uses (`docs/HINT_PAWN.md`)
+  over its chip and commits on tap. The look lives in the shared
+  `src/components/hintBubble/HintBubbleSurface.tsx`, which the flp hint pawn's speech bubble
+  also uses (`docs/HINT_PAWN.md`); the grow / pop / ring keyframes in
+  `src/components/hintBubble/bubbleKeyframes.ts`, also played by `CpcdPopup`
+  (docs/EIP_SHEET_GESTURES.md § "CpcdPopup motion")
 - `src/components/hintBubble/useHintBubblePresence.ts` → `reconcilePresence`
   (pure enter/pop/revive rules), `useHintBubblePresence` (the removal timers)
 - `src/components/hintBubble/hintMotion.ts` → `HINT_MOTION`

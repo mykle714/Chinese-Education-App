@@ -1,6 +1,7 @@
 import {
     FLP_CARD_CORNER_RATIO,
     FLP_CARD_STOCK_INSET_RATIO,
+    FLP_CARD_CONTENT_GUTTER_RATIO,
     FLP_CARD_PANEL_RADIUS_RATIO,
 } from "../constants";
 
@@ -22,6 +23,9 @@ import {
  *   --card-radius        the card's corner (read by CARD_SURFACE, theme/surfaces.ts)
  *   --card-stock-inset   the cream rim's width
  *   --card-panel-radius  the beige panel's corner
+ *   --card-content-gutter-basic  the gap a BASIC face keeps between its content and the
+ *                        rim (CardFaceSide resolves it to `--card-content-gutter`; 0 on an
+ *                        advanced face, where the panel edge is the cutoff)
  *   --card-hint-band     the card's top band (the rim) — the flp's swipe/flip hint labels
  *
  * Layer: feature presentation helper (src/features/flashcards/card).
@@ -33,6 +37,7 @@ export function cardStockVars(widthCss: string) {
         "--card-radius": `calc(${widthCss} * ${FLP_CARD_CORNER_RATIO})`,
         "--card-stock-inset": `calc(${widthCss} * ${FLP_CARD_STOCK_INSET_RATIO})`,
         "--card-panel-radius": `calc(${widthCss} * ${FLP_CARD_PANEL_RADIUS_RATIO})`,
+        "--card-content-gutter-basic": `calc(${widthCss} * ${FLP_CARD_CONTENT_GUTTER_RATIO})`,
         "--card-hint-band": "var(--card-stock-inset)",
     } as const;
 }

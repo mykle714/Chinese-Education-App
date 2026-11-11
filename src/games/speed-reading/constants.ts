@@ -1,6 +1,7 @@
 import type { CPCDSize } from "../../components/ForeignText";
 import type { MarkType } from "../../types";
 import { COLORS, type RampHue } from "../../theme/colors";
+import { gradeAccuracy, gradeSpeed, type AccuracyTierLadder, type RunTiers, type SpeedTierLadder } from "../shared/runTiers";
 
 /** `wins` table key. */
 export const GAME_KEY = "speedReading";
@@ -30,8 +31,9 @@ export const WIN_LEVEL = 1;
  * better.
  *
  * Every ANSWERED round counts, right or wrong — the counter measures how far
- * through the fixed set of 20 you are, and a wrong answer is paid for in seconds
- * (see WRONG_PENALTY_MS) rather than by making the run longer.
+ * through the fixed set of 20 you are. A wrong answer costs no time: it lowers the
+ * run's ACCURACY tier instead (ACCURACY_TIERS). The time penalty that used to price
+ * it (WRONG_PENALTY_MS, +3s) was removed with the medals.
  *
  * There is no Skip: every round must be answered, so every round counts. See the
  * SpeedReadingStage doc-comment for why the button was removed rather than priced.
@@ -54,15 +56,6 @@ export const TARGET_ROUNDS = 20;
  */
 export const SENTENCE_ROUNDS = 1;
 
-/**
- * Seconds added to the final time for each wrong answer, in ms.
- *
- * With a count-up clock, an incorrect tap is otherwise the FASTEST way through a
- * round — no reading required — so accuracy needs an explicit price. 3s is about
- * two rounds of good play, which makes a coin-flip run (~10 misses, +30s) land
- * well outside every medal.
- */
-export const WRONG_PENALTY_MS = 3_000;
 /**
  * Green/red flash before the next round loads.
  *
@@ -89,10 +82,8 @@ export const FEEDBACK_MS = 180;
 // The floating ✓/✗ that used to rise from the tap point — and the red +3s it
 // carried on a wrong answer — was REMOVED, along with FLOAT_INDICATOR_MS,
 // PENALTY_INDICATOR_MS and indicatorLifetime(). The tapped half's green/red tint
-// is now the only visual answer cue. ⚠️ Nothing shows the WRONG_PENALTY_MS
-// charge at the moment it is incurred, and the live clock is no longer drawn
-// (SpeedReadingStage): the seconds appear only on the results' accuracy line.
-// See docs/SPEED_READING_GAME.md.
+// is now the only visual answer cue, and the live clock is no longer drawn
+// (SpeedReadingStage). See docs/SPEED_READING_GAME.md.
 
 /** Cards fetched on game load. */
 export const INITIAL_BATCH = 20;
@@ -167,33 +158,34 @@ export const GAME_DISTRIBUTION: Record<string, number> = {
 };
 
 /**
- * Medal thresholds, in FINAL TIME (ms) for the 20 rounds — penalties included.
- * LOWER IS BETTER, which inverts the comparison in `medalFor` relative to every
- * other game's score-based thresholds.
+ * Speed tiers by the run's time for the 20 rounds, best-first
+ * (src/games/shared/runTiers.ts: tier 1 is the best; past the last cutoff is tier 7).
+ * Raw elapsed time: wrong answers add nothing, they are graded by ACCURACY_TIERS.
  *
- * Gold at 45s is 2.25s/round, which is roughly the pace the old one-minute
- * format's gold demanded (24 correct in 60s).
+ * Only grade a run that completed all TARGET_ROUNDS — a run cut short by a drained queue
+ * has a small elapsed time that would otherwise buy tier 1. The Stage guards that.
  *
- * ⚠️ ALL THREE NUMBERS ARE PLACEHOLDERS until the game has been played at this
- * format, and should be re-tuned from real play data.
+ * ⚠️ PLACEHOLDERS: the old medal lines (gold 45s ≈ 2.25s/round, silver 60s, bronze 90s)
+ * spread over seven tiers, to be tuned from play data.
  */
-export const MEDAL_THRESHOLDS = { gold: 45_000, silver: 60_000, bronze: 90_000 };
-
-export type Medal = "gold" | "silver" | "bronze" | null;
+export const SPEED_TIERS: SpeedTierLadder = {
+    maxMs: [35_000, 45_000, 55_000, 65_000, 80_000, 100_000],
+};
 
 /**
- * Medal earned for a finished run's total time, or null if slower than bronze.
- *
- * Only call this for a run that actually completed all TARGET_ROUNDS — a run cut
- * short by a drained queue has a small elapsed time that would otherwise buy a
- * gold. The Stage guards that; this function deliberately does not take the round
- * count so it stays a pure time→medal mapping.
+ * Accuracy tiers by correct answers / TARGET_ROUNDS, best-first.
+ * ⚠️ PLACEHOLDERS: tune from play data.
  */
-export function medalFor(totalMs: number): Medal {
-    if (totalMs <= MEDAL_THRESHOLDS.gold) return "gold";
-    if (totalMs <= MEDAL_THRESHOLDS.silver) return "silver";
-    if (totalMs <= MEDAL_THRESHOLDS.bronze) return "bronze";
-    return null;
+export const ACCURACY_TIERS: AccuracyTierLadder = {
+    minRatio: [1, 0.95, 0.9, 0.8, 0.7, 0.6],
+};
+
+/** A finished run's tiers: speed from the raw time, accuracy from the 20 answers. */
+export function runResultTiers(elapsedMs: number, correct: number): RunTiers {
+    return {
+        speed: gradeSpeed(elapsedMs, SPEED_TIERS),
+        accuracy: gradeAccuracy(correct, TARGET_ROUNDS, ACCURACY_TIERS),
+    };
 }
 
 /**
@@ -206,12 +198,6 @@ export function formatClock(ms: number): string {
     const seconds = totalSeconds % 60;
     return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
-
-export const MEDAL_LABEL: Record<Exclude<Medal, null>, string> = {
-    gold: "🥇 Gold",
-    silver: "🥈 Silver",
-    bronze: "🥉 Bronze",
-};
 
 /**
  * THE GAME'S HUE — the accent ground its break screen is flooded with

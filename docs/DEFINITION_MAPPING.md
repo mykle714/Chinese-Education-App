@@ -103,10 +103,9 @@ Child docs:
   is det's `definitions[0]` and ignores the learner's sense pick, so a raw call makes
   the same word read differently in two places.
 - **Client call sites:** `FlashCardSection.tsx` (`EnglishBlock`, passes the live index),
-  `InfoCardPanelBody.tsx` (eip header), `VocabCardDetailPage.tsx` + `FlashcardsLearnPage.tsx`
+  `EipEntryHeader.tsx` (eip header, mounted by `InfoCardSection`), `VocabCardDetailPage.tsx` + `FlashcardsLearnPage.tsx`
   (fie movable-text label + icon-search prefill, via `iconSearchTerm`),
   `useCardIconEditor.ts` (icon prefetch warm), `MiniVocabCard.tsx`,
-  `FlashcardsPage.tsx` (`addToHistory` snapshots the resolved dd),
   `games/bubble-match/Bubble.tsx` + `BubbleStage.tsx` (text and its radius measurement).
 - **Server call sites** (payloads that flatten dd to a string and drop the clusters):
   `OnDeckVocabService.getWordSearchGrid` (word list),

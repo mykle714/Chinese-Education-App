@@ -45,13 +45,6 @@ export const USED_IN_LINES: readonly string[] = [
     "Seen this character? It's in:",
 ];
 
-/**
- * Appended to every wrong-streak hint that points INTO the eip: the pawn's bubble covers
- * the More Info pill until it is tapped closed (docs/HINT_PAWN.md § "Layout and hit area"),
- * so the hint has to say how to get at the button it names (owner, 2026-11-08).
- */
-const REVEAL_MORE_INFO = "Dismiss this dialogue box to reveal the {More Info} button.";
-
 /** Which card condition a wrong-streak hint needs (checked in pawnHints.ts → `wrongStreakHint`). */
 export type WrongStreakCondition =
     /** A multi-character card with breakdown items to look at. */
@@ -75,18 +68,20 @@ export interface WrongStreakLine {
  * unconditional line so every card has something to say.
  *
  * Customize and Compare are on the word-tools rail ABOVE the card in both worlds
- * (FlashcardsLearnPage → WordToolsRail), not in the eip, so only the breakdown and example
- * hints carry `REVEAL_MORE_INFO`. Copy is provisional (owner, 2026-11-08: "use this for now").
+ * (FlashcardsLearnPage → WordToolsRail), not in the eip. The breakdown and example hints
+ * point into the eip but no longer tell the learner to dismiss the bubble to uncover the
+ * More Info pill (suffix removed, owner 2026-11-10). Copy is provisional (owner, 2026-11-08:
+ * "use this for now").
  */
 export const WRONG_STREAK_LINES: readonly WrongStreakLine[] = [
     {
         id: "breakdown",
-        line: `Try learning what each character means on its own. Visit the {Breakdown} tab in {More Info}. ${REVEAL_MORE_INFO}`,
+        line: `Try learning what each character means on its own. Visit the {Breakdown} tab in the {More Info} button behind this message.`,
         requires: "breakdown",
     },
     {
         id: "examples",
-        line: `Why don't you check out some example sentences in {More Info}? ${REVEAL_MORE_INFO}`,
+        line: `Why don't you check out some example sentences in the {More Info} button behind this message?`,
         requires: "examples",
     },
     {

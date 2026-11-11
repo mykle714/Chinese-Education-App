@@ -297,7 +297,8 @@ LIMIT 20;
 3. For a sense with two parts of speech, both blocks must show, labeled `adjective:` /
    `verb:` and separated by a blank line.
 4. Embedded Chinese (rare now) must still render as inline cpcd with a tappable popup.
-5. Saved-card cdp and dictionary cdp: same sense-following behavior.
+5. Saved-card cdp and dictionary cdp: same sense-following behavior. (The dictionary cdp was
+   deleted 2026-11-10; check the Dictionary page's eip instead.)
 6. Validator Approve on a regenerated word: 200, and the review document lists **every**
    (sense, POS) pair, not just the displayed one.
 
@@ -385,6 +386,6 @@ Include:
 | Payload build | `server/dal/implementations/DictionaryDAL.ts` (`mapRowToEntity`, `enrichLongDefinitionMetadataBatch`, `segmentLongDefinitionTexts`) |
 | Sense-pick ordering on lookup | `server/controllers/DictionaryController.ts` (`lookupTerm` — `selectedSense` must be attached BEFORE the long-def enrichment) |
 | Validator document | `server/utils/validationBodyFormat.ts`, `server/services/ValidationService.ts` |
-| Client resolution | `src/utils/definitionUtils.ts` (`resolveLongDefinitionForSense`), `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`, `src/features/flashcards/VocabCardDetailBody.tsx` |
+| Client resolution | `src/utils/definitionUtils.ts` (`resolveLongDefinitionForSense`), `src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx`, `src/features/flashcards/VocabCardDetailBody.tsx` (deleted 2026-11-10) |
 | Pipeline order / versions | `server/scripts/backfill/shared/lib/requiredScripts.js`, `.claude/commands/mark-discoverable.md` §A3, `server/scripts/run-discoverable-enrichment.sh` |
 | Migration | `database/migrations/124-longdefinition-per-sense-comment.sql` (and 70, 90, 99, 104 for context) |

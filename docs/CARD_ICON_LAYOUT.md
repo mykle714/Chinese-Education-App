@@ -50,7 +50,7 @@ card surfaces:
 |---|---|---|
 | flp (Deck Tower study session) | `FlashcardsLearnPage` → `handleCustomizeCard` | If the question face is up, the rail's capture-phase `onToolPress` (`revealAnswer`) flips the card first and the editor opens once the flip lands (`TOWER_CARD_FLIP_MS`), because `enterEdit` measures the answer face's text blocks and a mid-flip card measures edge-on. Ignored mid-animation; the delayed open is dropped if the front card changes during the wait. The rail is hidden while the editor is open and on the writing flp. |
 | cdp (`VocabCardDetailPage`) | `handleCustomize` | The hero card IS the answer face — opens immediately. A no-op while the editor is already open. |
-| dictionary cdp | — | No pill (no vet row to save into). |
+| Dictionary page eip | — | No pill (no card to customize; its rail at the bottom of the definition tab omits `onCustomize`). |
 
 It used to sit behind a `•••` on the card's own top edge (`CardOpsRail`), which was deleted
 2026-11-05 together with the card-note feature that shared it.
@@ -89,9 +89,18 @@ and the canvas's `card-icon-canvas__clip` take `clipPath: var(--card-panel-clip,
 card stock: the flp and the cdp hero card), so everything in the inner box (icons, text
 blocks, sense chip, speaker) is cut at the beige printed panel rather than the card edge. The
 rim width comes from the frame's `cardStockVars` (`src/features/flashcards/card/cardStock.ts`). Text also
-**wraps** at the panel: `textBlockMaxWidth` (`src/cardIcons/cardTextLayout.ts`) caps a block at
-`--card-panel-width` ÷ its scale (scale is a transform, so it happens after layout), and the
-front face's horizontal padding is `--card-stock-inset`. The canvas's text layer is **not**
+**wraps** inside the panel: `textBlockMaxWidth` (`src/cardIcons/cardTextLayout.ts`) caps a block at
+`--card-content-width` ÷ its scale (scale is a transform, so it happens after layout), and the
+front face's horizontal padding is `--card-stock-inset` + `--card-content-gutter`.
+**Content gutter (basic layout only).** So the gloss, foreign word and sense chip never touch
+the cream rim, a BASIC-layout face keeps a gutter inside the panel: the frame sets
+`--card-content-gutter-basic` (`cardStockVars`, `FLP_CARD_CONTENT_GUTTER_RATIO` in
+`src/features/flashcards/constants.ts`), and `CardFaceSide` resolves `--card-content-gutter` to it
+— or to 0 when `isUsingAdvancedLayout` is set or the fie is mounted, because free placement
+treats the panel edge itself as the cutoff (the clip). `--card-content-width` (panel minus 2×
+gutter) and `.card-face__content-bounds` (the panel inset by the gutter, read by
+`useSenseChipPlacement`) both carry it. The gutter only narrows layout; the clip stays at the
+panel. The canvas's text layer is **not**
 narrowed, because the selected block's outline and handle sit outside its box; there the
 panel is enforced by the release clamp (`clampTextRelease` measuring
 `card-icon-canvas__text-bounds`). The panel itself (`card-face__stock-panel`) is the outer box's FIRST child, so the
@@ -1155,8 +1164,8 @@ column that changes a box's height. A measured center within `MEASURED_CENTER_EP
   face: the gloss centers and wraps as if the trigger did not exist, so it is not part of the
   block's measured box or the on-card clamp. `useSenseChipPlacement`
   (`src/features/flashcards/card/useSenseChipPlacement.ts`) then places it: **right** of the
-  gloss when it fits before `.card-face__panel-bounds` (the printed panel on Deck Tower stock,
-  the whole face elsewhere; hosts with no card face use the block's own width), otherwise
+  gloss when it fits before `.card-face__content-bounds` (the printed panel minus the basic-layout
+  content gutter; hosts with no card face use the block's own width), otherwise
   centered **below** it. On the right it sits beside the first line, centered on that line's
   lowercase letters (`vertical-align: middle` inside a wrapper with the gloss's font metrics).
   It accounts for the block's center and scale, not its rotation. Only

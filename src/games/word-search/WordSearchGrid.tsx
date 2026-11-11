@@ -20,6 +20,7 @@ import type { BonusWord, Coord, GridCell, PlacedWord } from "./types";
 import { pickDrillRung } from "../../utils/segmentDrill";
 import { wordOutlinePath } from "./wordOutlinePath";
 import { boardCellSide, boardNaturalHeight } from "./boardMetrics";
+import { staggerFadeIn } from "../shared/staggerFadeIn";
 
 /**
  * An open review of a found word, narrowed to the drill rung the player has tapped
@@ -247,6 +248,16 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
      */
     const cellSide = boardCellSide(cellSize, showPinyin);
 
+    // The opening board's letters arrive one by one at random delays (staggerFadeIn), not
+    // as a block — in a flp break the board is what arrives after the circle grow
+    // (docs/WORD_SEARCH_GAME.md). Once per grid mount; a layout effect, so no cell paints
+    // before its fade has hidden it.
+    useLayoutEffect(() => {
+        const inner = innerRef.current;
+        if (!inner) return;
+        return staggerFadeIn(inner.querySelectorAll('[data-cell="1"]'));
+    }, []);
+
     const scale = useFitScale(containerRef, innerRef, [grid, showPinyin, cellSide], GRID_MARGIN);
 
     // Current in-progress selection path. Mirrored to a ref so the pointer
@@ -311,6 +322,14 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
     // Whether the current bonus match is 2+ characters — the only case that
     // SHAKES and the only case that paints blue.
     const isMultiCharBonus = (bonus: BonusWord | null): boolean => !!bonus && [...bonus.entryKey].length > 1;
+
+    // The cell whose single-character popup (a target character's `charPopup`, or a
+    // one-character bonus headword) was open when the current pointer-down landed ON IT.
+    // Set by `onPointerDown`, read by `submit`: a lone tap that releases on this same
+    // cell is a TOGGLE-OFF — it dismisses the popup instead of reopening it. A drag that
+    // starts here grows the path past one cell, so it is unaffected. Cleared on every
+    // pointer-down so it never outlives the tap that set it.
+    const toggleOffCellRef = useRef<Coord | null>(null);
 
     // Let the page clear an in-progress selection on a background tap. Also closes
     // any open found-word popup.
@@ -621,6 +640,14 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
     const submit = useCallback(
         (selection: Coord[]) => {
             if (selection.length === 0) return;
+            // Second lone tap on the cell whose single-character popup was already
+            // open: dismiss it (and its orange highlight) rather than reopen it.
+            const toggleOffCell = toggleOffCellRef.current;
+            toggleOffCellRef.current = null;
+            if (selection.length === 1 && toggleOffCell && eq(selection[0], toggleOffCell)) {
+                clearSelection();
+                return;
+            }
             if (tryFoundTarget(selection)) return;
             draggingRef.current = false;
 
@@ -672,6 +699,16 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
         (e: React.PointerEvent) => {
             const cell = cellFromPoint(e.clientX, e.clientY);
             if (!cell) return;
+            // Is this tap landing on the very cell whose single-character popup is
+            // open? Captured BEFORE the dismissals below wipe that state, so `submit`
+            // can treat a release on the same cell as a toggle-off (see toggleOffCellRef).
+            const singleCellPopupOpenHere =
+                (charPopup !== null && eq(charPopup.cells[0], cell)) ||
+                (!!invalid?.bonus &&
+                    !isMultiCharBonus(invalid.bonus) &&
+                    pathRef.current.length === 1 &&
+                    eq(pathRef.current[0], cell));
+            toggleOffCellRef.current = singleCellPopupOpenHere ? cell : null;
             // Any new interaction dismisses a still-showing miss/bonus flash first
             // — checked before the found-word branch below so tapping a locked
             // word while a bonus popup is open (which has no auto-dismiss timer)
@@ -711,7 +748,7 @@ const WordSearchGrid = forwardRef<WordSearchGridHandle, WordSearchGridProps>(({
             setPathBoth([cell]);
             (e.target as Element).setPointerCapture?.(e.pointerId);
         },
-        [markInteracted, setPathBoth, foundWordByCell, tapFoundWord, invalid, speak, silence]
+        [markInteracted, setPathBoth, foundWordByCell, tapFoundWord, invalid, charPopup, speak, silence]
     );
 
     // Extend the in-progress path to `cell` — shared by `onPointerMove` (each

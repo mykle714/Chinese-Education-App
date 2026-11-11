@@ -1,6 +1,7 @@
 import type { MarkType } from "../../types";
 import { COLORS, type RampHue } from "../../theme/colors";
-import type { WordOutcome } from "./types";
+import type { RunTally, WordOutcome } from "./types";
+import { gradeAccuracy, gradeSpeed, type AccuracyTierLadder, type RunTiers, type SpeedTierLadder } from "../shared/runTiers";
 
 /**
  * Memory Map constants (docs/MEMORY_MAP_GAME.md).
@@ -51,6 +52,34 @@ export const FADE_OUT_MS = 900;
  * break finishes the map and the next break starts it again.
  */
 export const BREAK_PROMPTS = 5;
+
+/**
+ * Speed tiers by the time to find a full quota of BREAK_PROMPTS words, best-first
+ * (src/games/shared/runTiers.ts: tier 1 is the best; past the last cutoff is tier 7).
+ * A break that finishes the map on fewer words is scaled up to the quota's length, so a
+ * tier asks for the same pace per word. The clock is hidden (`useActiveRunClock`).
+ * ⚠️ PLACEHOLDERS: the game never had a clock, so these are first guesses.
+ */
+export const SPEED_TIERS: SpeedTierLadder = {
+    maxMs: [15_000, 25_000, 35_000, 50_000, 70_000, 100_000],
+};
+
+/**
+ * Accuracy tiers by "knew it" (green) words / words found, best-first: a recovered (orange)
+ * or missed (red) word counts against it. ⚠️ PLACEHOLDERS: tune from play data.
+ */
+export const ACCURACY_TIERS: AccuracyTierLadder = {
+    minRatio: [1, 0.95, 0.9, 0.8, 0.7, 0.6],
+};
+
+/** A finished break's tiers (never a left one, which the Stage reports untiered). */
+export function runResultTiers(elapsedMs: number, tally: RunTally): RunTiers {
+    const found = tally.green + tally.orange + tally.red;
+    return {
+        speed: gradeSpeed(elapsedMs, SPEED_TIERS, found > 0 ? elapsedMs * (BREAK_PROMPTS / found) : elapsedMs),
+        accuracy: gradeAccuracy(tally.green, found, ACCURACY_TIERS),
+    };
+}
 
 /**
  * Milliseconds a break holds on the map after its last answer before closing, so the

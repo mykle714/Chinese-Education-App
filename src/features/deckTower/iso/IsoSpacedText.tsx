@@ -1,4 +1,6 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useLayoutEffect, useRef, useState } from "react";
+import { useFontLoadEpoch } from "../../../hooks/useFontLoadEpoch";
+import { INK_CENTRE_DY } from "./IsoText";
 
 /**
  * IsoSpacedText — a centred, letter-spaced SVG `<text>` that sits on the same centre in
@@ -25,11 +27,11 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
  *
  * Vertical centring: `y` is the line's visual centre, and the component sets it itself — callers
  * pass NO `dominantBaseline`. `dominant-baseline="central"` centres the EM box, and WebKit derives
- * that box from the font's ascent/descent, which in Noto Sans SC (a CJK face with a tall em box)
- * lands Latin caps ~0.55 em below where Chrome draws them — on an iPhone the "LEARNING" band text
- * sat visibly toward the band's front edge while Chrome centred it. Instead the text keeps the
- * alphabetic baseline (identical in every engine) and drops by `CAP_CENTRE_DY`, half the cap
- * height, so the capitals' ink centres on `y` everywhere.
+ * that box differently from Chromium for a CJK face — on an iPhone the "LEARNING" band text sat
+ * visibly toward the band's front edge while Chrome centred it. Instead the text keeps the
+ * alphabetic baseline (identical in every engine) and drops by IsoText's `INK_CENTRE_DY`, the
+ * kit-wide measured ink centre, so the capitals' ink centres on `y` everywhere (IsoText.tsx has
+ * the measurements; docs/ISO_ART_FRAMEWORK.md § "Text in the iso kit").
  *
  * Users: IsoFloorLabel (the plate), IsoCard (the head-band label),
  * IsoFloorPrint (the fixture floor prints).
@@ -40,30 +42,6 @@ interface IsoSpacedTextProps extends Omit<React.SVGProps<SVGTextElement>, "child
     letterSpacing: number;
 }
 
-/**
- * How far below `y` the alphabetic baseline sits so the CAPITALS' ink centres on `y`: about half
- * the cap height. Tuned against Noto Sans SC bold in WebKit and Chromium (ink centre within
- * 0.2 px of `y` at the plate's size); the iso labels are all caps, so x-height is not a concern.
- */
-const CAP_CENTRE_DY = "0.38em";
-
-/** Bumps whenever a web font finishes loading, so a measurement taken against a fallback face is retaken. */
-export function useFontLoadEpoch(): number {
-    const [epoch, setEpoch] = useState(0);
-    useEffect(() => {
-        const fonts = typeof document !== "undefined" ? document.fonts : undefined;
-        if (!fonts) return;
-        let cancelled = false;
-        const bump = () => { if (!cancelled) setEpoch((e) => e + 1); };
-        fonts.ready.then(bump).catch(() => { /* a failed load leaves the last measurement in place */ });
-        fonts.addEventListener?.("loadingdone", bump);
-        return () => {
-            cancelled = true;
-            fonts.removeEventListener?.("loadingdone", bump);
-        };
-    }, []);
-    return epoch;
-}
 
 const IsoSpacedText: React.FC<IsoSpacedTextProps> = ({ children: text, letterSpacing, ...textProps }) => {
     const ref = useRef<SVGTextElement>(null);
@@ -92,7 +70,7 @@ const IsoSpacedText: React.FC<IsoSpacedTextProps> = ({ children: text, letterSpa
     else if (current) spacing = { letterSpacing };
 
     return (
-        <text ref={ref} {...textProps} dy={CAP_CENTRE_DY} {...spacing}>
+        <text ref={ref} {...textProps} dy={INK_CENTRE_DY} {...spacing}>
             {text}
         </text>
     );

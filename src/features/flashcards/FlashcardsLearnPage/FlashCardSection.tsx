@@ -251,7 +251,7 @@ const CardFace: React.FC<{
     editCanvas?: React.ReactNode;
     // Persist the learner's sense pick for THIS card (migration 99). Given the chosen
     // cluster's `sense` label (or null for the default/starred sense). Absent when there's no
-    // user context to save into (e.g. the read-only dictionary cdp uses local-only state).
+    // user context to save into (the face then keeps the pick local-only).
     onPersistSense?: (entry: VocabEntry, sense: string | null) => void;
     // Blank this card's content (both faces) while keeping its surface. Set on the peeking
     // BACK card while the front card is mid-flip — see `flipInProgress` in FlashCardSection.

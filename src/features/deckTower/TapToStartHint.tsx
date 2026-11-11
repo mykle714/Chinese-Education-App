@@ -2,6 +2,7 @@ import React from "react";
 import { useIsoPalette } from "./iso";
 import { FONTS } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
+import { HEAD_LENGTH, HEAD_WIDTH, SHAFT_LENGTH, SHAFT_WIDTH, TIP_GAP, tapHintBaselineY } from "./tapToStartGeometry";
 
 /**
  * TapToStartHint — "Tap to Start" painted on the Deck Tower's sky, with a thick arrow
@@ -22,21 +23,14 @@ import { WEIGHT } from "../../theme/scale";
  * ignores pointer events: the tap is the STACK's (DeckTowerPlatform `stack.onTap`),
  * never the hint's.
  *
- * Depends on: iso (`useIsoPalette().white`), theme/fonts + theme/scale.
- * Depended on by: DeckTowerPage.tsx. Docs: docs/DECK_TOWER.md § "Tap to Start".
+ * Depends on: iso (`useIsoPalette().white`), theme/fonts + theme/scale, tapToStartGeometry.ts
+ * (the arrow's and the words' stack).
+ * Depended on by: DeckTowerPage.tsx. Docs: docs/DECK_TOWER.md § "Tap to Start",
+ * docs/HOME_SCREEN.md § "The enter hint".
  */
 
-/** Gap between the arrow's tip and the fit tower's top, in viewBox px. */
-const TIP_GAP = 10;
-/** The arrow, in viewBox px: a thick shaft under a solid, wider head. */
-const SHAFT_LENGTH = 26;
-const SHAFT_WIDTH = 9;
-const HEAD_LENGTH = 22;
-const HEAD_WIDTH = 34;
 /** The words, in viewBox px (≈ screen px on a phone: the viewBox is ~400 wide). */
 const FONT_SIZE = 26;
-/** Between the words' baseline and the shaft's top. */
-const TEXT_GAP = 10;
 
 interface TapToStartHintProps {
     /** viewBox x of the tower's axis (the platform's centre) — the arrow's line. */
@@ -54,7 +48,7 @@ const TapToStartHint: React.FC<TapToStartHintProps> = ({ centreX, tipY, visible 
     const tip = tipY - TIP_GAP;
     const headBase = tip - HEAD_LENGTH;
     const shaftTop = headBase - SHAFT_LENGTH;
-    const baseline = shaftTop - TEXT_GAP;
+    const baseline = tapHintBaselineY(tipY);
     // One closed outline: shaft and head as a single filled shape.
     const arrow = [
         `M ${centreX - SHAFT_WIDTH / 2} ${shaftTop}`,

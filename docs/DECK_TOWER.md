@@ -3,7 +3,7 @@
 The Deck Tower (td) is the app's landing page at `/`. It draws the learner's **Learning**
 deck — every card that is off cooldown right now, in all four utcm bands — as a stack of
 flashcards standing on an isometric platform, in the art style of Nintendo/Paladin's
-*Good Job!*. It is the footer's first tab, **Flashcards** (footer order: Flashcards · Arena · Dictionary ·
+*Good Job!*. It is the footer's first tab, **Flashcards** (footer order: Flashcards · Lessons · Dictionary ·
 Menu). Tapping the floor plate switches the tower to the
 **Mastered** deck and back. The focus lever's shrink and grow come from one library of
 tower shrinks and grows (§ Tower resizes). When the account has the reading or
@@ -120,7 +120,7 @@ The platform geometry lives in `towerPlatforms.ts` and the worlds' colours in
 | `STARTLE_AT_CARDS` (`DeckTowerPlatform.tsx`) | 50. When the build-up puts this many cards on a tower, its pawn is startled: it looks up, leaps away from the tower and a `!` pops over its head, stares up for a few seconds, then goes back to wandering (`IsoPawn` `startled`, `startledBy={layout.card}`). Decks under 50 never trigger it, and neither does a tower that is already at 50+ when the pawn first sees it: arriving in such a world (the remounted pawn was not watching it grow) or loading the page with one (the count reads 0 while it loads, so `DeckTowerPlatform`'s `towerCountKnown` holds `startled` at `null` until it lands, and `usePawnMotion` takes the first known value as a baseline, not a rise). Only a grow past 50 counts: a sky drop landing — a resize's, or a deck swap's new tower (DECK_TOWER_TRANSITIONS.md § "The new tower's sky drop") |
 | `IsoPawn` `tappable` (`DeckTowerPlatform` → `renderPawn`) | Tapping the pawn pops its `!` and makes it jump on the spot; it then stands until the bubble has gone. Taps while it is still in the air chain the jump higher. An outgoing pawn (mid-swap) takes no taps (ISO_ART_FRAMEWORK.md § IsoPawn → "Poke") |
 | `DeckTowerPlatform` → `pawnSteps`, `summitCards`, `summitHeld` | The tower's top is the pawn's **summit**: a tap while its feet are above the top throws it onto the deck, where it wanders (ISO_ART_FRAMEWORK.md § IsoPawn → "Summit"). When the height changes under it: **marks or a focus shrink** — it falls onto the new top, from the shrink's start (`summitCards`); **a sky drop** — it is thrown up as the drop lands; **a deck swap** — it falls with the tower, like any floor drop; **a study** — it stands still (`summitHeld`), stays out of the platform's fade, and rides the count card off and back on (`summitSpot`, `TowerCoverCard` `pawnAt`, § Studying the tower → "The count card"); **no cards left** — the top closes and it flies back to `pawnAt`, after any study. A world swipe remounts the pawn on the floor. Nothing else brings it down |
-| `CLOUD_BAND_CARDS` | Clouds (`IsoCloud`, `useCloudDrifts`) are **weather, not altitude**: they fly only under the `cloudy` weather kind (`towerWeather.ts` → `weatherCloudCount`; § Weather), in every world, whatever the card count. Rain, snow, storm and fog draw no clouds, by design. They drift slowly (about a minute per crossing) past the tower's four sides, their bases at the height of cards 150–200 (card k's underside is (k − 1) · `CARD_THICKNESS` up). `weatherCloudCount` sets how many may be in the sky at once — 2–3 for partly cloudy, 4 for overcast — with 4–14 s gaps between drifts. Every cloud traverses in from off screen; none spawns mid-sky when cloudy weather starts, and the slots' first drifts are staggered by ordinary 4–14 s gaps, so the band fills one cloud at a time (cloudy is the commonest weather, so it stays unobtrusive). A deck that stops inside the band lowers its top to `SKY_CEILING_ABOVE_TOP` (3 units) over its settled top (`skyBand`), so they drift by the tower and not empty sky; a deck under 150 keeps the whole band, above the framed scene and so out of sight. Back-side clouds are drawn first (before the stack, which hides them) and front-side clouds last, after the pawn's depth-sorted layers. They sit inside `IsoPlatform`, so they ride its 0.35-unit bob. Within each side they are sorted with `sortCloudsBackToFront`. Under reduced motion they still show, parked and still. Each cloud casts a glaze shadow on the floor and the ground just off the point below it (`IsoCloudShadow`, drawn by `SkyTraffic.tsx` → `SkyTrafficCloudShadows` through `DeckTowerPlatform`'s `cloudShadows` prop; ISO_ART_FRAMEWORK.md § IsoCloud → Shadow). Clouds and wind are scheduled and drawn by `SkyTraffic.tsx` (`SkyTrafficSource` runs both schedulers and publishes into a small store, `skyTrafficStore.ts`; the memoised `SkyTrafficLayer side="behind"|"front"` subscribes and draws one side), so a crossing starting or ending re-renders only those two layers, never the page |
+| `CLOUD_BAND_CARDS` | Clouds (`IsoCloud`, `useCloudDrifts`) are **weather, not altitude**: they fly only under the `cloudy` weather kind (`towerWeather.ts` → `weatherCloudCount`; § Weather), in every world, whatever the card count. Rain, snow, storm and fog draw no clouds, by design. They drift slowly (about a minute per crossing) past the tower's four sides, their bases at the height of cards 150–200 (card k's underside is (k − 1) · `CARD_THICKNESS` up). `weatherCloudCount` sets how many may be in the sky at once — 2–3 for partly cloudy, 4 for overcast — with 4–14 s gaps between drifts. Every cloud traverses in from off screen; none spawns mid-sky when cloudy weather starts, and the slots' first drifts are staggered by ordinary 4–14 s gaps, so the band fills one cloud at a time (cloudy is the commonest weather, so it stays unobtrusive). A deck that stops inside the band lowers its top to `SKY_CEILING_ABOVE_TOP` (3 units) over its settled top (`skyBand`), so they drift by the tower and not empty sky; a deck under 150 keeps the whole band, above the framed scene and so out of sight. Back-side clouds are drawn first (before the stack, which hides them) and front-side clouds last, after the pawn's depth-sorted layers. They sit inside `IsoPlatform`, so they ride its 0.35-unit bob. Within each side they are sorted with `sortCloudsBackToFront`. Under reduced motion they still show, parked and still. **The red balloon:** each drift has a 1-in-100 chance (`BALLOON_CHANCE`) of being a red balloon instead (`IsoBalloon`; ISO_ART_FRAMEWORK.md § IsoBalloon). It takes the cloud's slot and path but flies lower, its body's bottom at cards 110–140 (`BALLOON_BAND_CARDS`, lowered by `skyBand` like the clouds'). Feature testers can send one across on demand (`BalloonSpawnChip`, § Feature-tester rows). Each cloud casts a glaze shadow on the floor and the ground just off the point below it (`IsoCloudShadow`, drawn by `SkyTraffic.tsx` → `SkyTrafficCloudShadows` through `DeckTowerPlatform`'s `cloudShadows` prop; ISO_ART_FRAMEWORK.md § IsoCloud → Shadow). Clouds and wind are scheduled and drawn by `SkyTraffic.tsx` (`SkyTrafficSource` runs both schedulers and publishes into a small store, `skyTrafficStore.ts`; the memoised `SkyTrafficLayer side="behind"|"front"` subscribes and draws one side), so a crossing starting or ending re-renders only those two layers, never the page |
 | `WIND_BAND_CARDS`, `WIND_GUSTS_MAX` | Wind gusts (`IsoWind`, `useWindGusts`) sweep past the tower's four sides with their baselines at the height of cards 350–400, in the empty sky between the clouds and space. A gust is two or three straight white streaks, the main one ending in a curl. It draws on head-first, then erases tail-first, over about 1.5–2.3 s. Up to 2 play at once, with 1–4 s gaps. Wind starts when the 350th card is on the tower (a sky drop counts from its impact), so a deck under 350 never has wind; a deck short of 400 lowers the band's top the same way as the clouds' (`skyBand`). Back-side gusts are drawn after the back-side clouds, front-side gusts before the front-side clouds. Under reduced motion there is no wind |
 | `SPACE_BAND_CARDS` | 450–650. Over this height band the sky darkens into space and stars fade in (§ Sky → space) |
 | `TowerPlatformLayout.notebook`, `.notebookRoam` | The Writing Notebook's paper stack (writing world only, § The notebook stack): a 1.2 × 1.55 portrait footprint in the floor's RIGHT corner on screen (high x, low y — the lever's corner mirrored), 1.45 units off the tower's right face so the pawn still passes between them. `notebookRoam` is `roam` with the stack appended as obstacle 2; `DeckTowerPlatform` uses it only on a platform that draws the stack |
@@ -238,7 +238,7 @@ far taller than the screen. The page never zooms out to fit it:
 
 The page wears the **slab** footer, the floating nav bar from the Tower Style design
 (`.sx-flp .ft`, frames T1–T4), instead of the app-wide flat bar. Since 2026-10-29 the
-Dictionary tab wears it too (`/dictionary`, `/dictionary/card/:word` — Tier-2 design,
+Dictionary tab wears it too (`/dictionary` — Tier-2 design,
 docs/SHELF_REDESIGN.md § 7b), without a cast shadow or wash, and so do the vet cdp
 (`/flashcards/card/:id`, also on the Tier 2 ground) and acp. Every Menu-reached page
 (`/friends/*`, `/users/:id`, `/reader`, `/community`) and `/arena` keeps
@@ -257,8 +257,8 @@ a Tier 2 page sets them (slate at night).
 - **Shape** (`SlabFooter` in `src/components/MobileFooter.tsx`). A slab 64px tall, 16px in
   from each side and `SLAB_FOOTER_BOTTOM` (`max(26px, safe-area inset)`) off the bottom,
   radius `CARD_SURFACE_RADIUS` (15, the app's card radius — it was 22 until 2026-11-08), one equal column per tab with 6px padding (`SlabFooterFace` →
-  `grid-auto-flow: column` + `grid-auto-columns: 1fr`, so three columns when the `arena`
-  flag hides the Arena tab). It does not bob (the design's `lev`
+  `grid-auto-flow: column` + `grid-auto-columns: 1fr`, so the slab rebalances if a tab is
+  ever flagged off). It does not bob (the design's `lev`
   float was left out on purpose).
 - **Flashcard colours.** It is cut from the same stock as the tower's cards (`ISO.card`):
   `COLORS.cardFace` top, standing on a 6px lip in `COLORS.cardWall` (the card's shaded
@@ -268,13 +268,8 @@ a Tier 2 page sets them (slate at night).
   filter keys and the mini cards' card stock (`sortCardStock.ts` → `panelWall`), and the face's
   perimeter has the same hairline **rounded edge** (`src/theme/roundedEdge.ts`: a 0.5px fillet
   half-way between `footerFace` and `footerWall`, a 1px rim light on the top-left edge — mixed
-  with CSS `color-mix` so the Tier 2 night slate carries through). The active tab is a keycap set into it (`SlabFooterItem`):
-  `COLORS.cardBeige` (the card's face panel, `ISO.cardPanel`), radius 9 (concentric with the slab: 15 − the 6px padding), with a 3px
-  `cardWall` lip drawn inset along its bottom AND right edges — the slab's own (1, 1) diagonal side
-  face, stepped 1px at a time (`MobileFooter.tsx` → `slabKeyShadow`) — plus the same rounded edge: the
-  top-left rim light and the INSET fillet (`roundedEdgeInsetFillet`, one step past the inset
-  wall, so 0.5px of it shows at the wall's inner edge). Tabs, left to right, are a filled Material Symbol (`stacks` Deck,
-  `emoji_events` Arena, `translate` Dictionary, `apps` Menu; 22px, weight 500) over an 11px/600 label, `textSecondary` idle and
+  with CSS `color-mix` so the Tier 2 night slate carries through). The active tab is marked by ONE sliding selector (`SlabFooterSelector`) rather than a per-tab background: a FLAT rounded rectangle in `COLORS.cardBeige` (the card's face panel, `ISO.cardPanel`) with a 1px outline in `tier2Var("outline", COLORS.border)`, radius 11 (`SLAB_KEY_RADIUS`: the concentric 15 − 6px padding = 9, plus 2). It sits absolutely in the face's padding box, one `1fr` column wide, and moves by `translateX(index × 100%)` with a 280ms transform transition (`SLAB_SELECTOR_SLIDE`; none under `prefers-reduced-motion`), so switching between two slab routes slides it from the old cell to the new one — the footer is mounted once by `FooterPresenter`, so it survives the navigation. A bar↔slab style swap remounts it and does not slide. The slide starts **on the tap, not when the page arrives**: React Router v7 runs navigations as React transitions, so while a lazy route chunk loads or the page mounts, the location (and `activePage`) still reads the old tab. A tap therefore records the tab it is heading to (`pendingTab`, an urgent state update tagged with the current `location.key`), and the selector and tab ink follow `displayedTab` = that record while the location is unchanged, else `activePage`. Menu records nothing (it opens the popover). It has no side face or rounded edge: until 2026-11-10 it was a keycap with a 3px inset diagonal `cardWall` lip, which was dropped for the app's plain selected-rectangle look. Tabs, left to right, are a filled Material Symbol (`stacks` Deck,
+  `school` Lessons, `translate` Dictionary, `apps` Menu; 22px, weight 500) over an 11px/600 label, `textSecondary` idle and
   `onSurface` active. The bar stays text-only.
 - **Not lit by the wash** (since 2026-10-30). From 2026-10-25 the slab's face was drawn
   through the study layer's SVG `feColorMatrix` wash filter (`--footer-slab-filter`); that
@@ -296,7 +291,7 @@ a Tier 2 page sets them (slate at night).
   is excluded and may fall over the scene) is the scroller's bottom spacer and the `WorldIndicator`s' floor. The backdrop and `SpeedLines` run
   to the screen's bottom. A study still hides the footer with `useHideFooter`.
 
-Code: `src/components/MobileFooter.tsx` → `SlabFooter`, `SlabFooterFace`, `SlabFooterItem`,
+Code: `src/components/MobileFooter.tsx` → `SlabFooter`, `SlabFooterFace`, `SlabFooterSelector`, `SlabFooterItem`,
 `SLAB_FOOTER_*`; `src/components/footerCastShadow.ts`; `src/components/FooterPresenter.tsx`
 → `HIDDEN_OFFSET`, `lastStyle`; `src/routes/routeMeta.ts` → `footerStyle`,
 `routeFooterStyle`; `src/features/deckTower/SpaceBackdrop.tsx` → `apply`;
@@ -367,7 +362,7 @@ A world whose goal is off is skipped, and if it goes off while it is on screen t
      A swipe carries straight into this (`PanCarry`): the release hands over the scene's
      dragged offset and the finger's release speed (`useSwipeCommit`'s `SwipeRelease`, both
      × `DRAG_FOLLOW`), and the scene leaves from there at that speed, still accelerating
-     (`outPlan`: the phase is shortened to the distance left, and never decelerates; a drag
+     (`outPlan` → `carriedOutPlan`, shared with the pull home — HOME_SCREEN.md: the phase is shortened to the distance left, and never decelerates; a drag
      that took the scene fully off screen skips it). The
      drag's `translate` is dropped the same frame the pan's `transform` takes the offset
      over; only a release that does not move to a world springs back. A finger that stopped
@@ -845,7 +840,7 @@ from:
 | Kind | Particles (`weatherEffect` → `WeatherLayer`) |
 |---|---|
 | `clear` | none |
-| `cloudy` | no particles; drifting clouds (`IsoCloud`) at cards 150–200 — 2–3 for partly cloudy, 4 for overcast (`weatherCloudCount`; the `CLOUD_BAND_CARDS` row). The only kind with clouds: the others are cloudy in life, but the tower draws none for them |
+| `cloudy` | no particles; drifting clouds (`IsoCloud`) at cards 150–200 — 2–3 for partly cloudy, 4 for overcast (`weatherCloudCount`; the `CLOUD_BAND_CARDS` row) — and, 1 drift in 100, a red balloon at cards 110–140 instead. The only kind with clouds: the others are cloudy in life, but the tower draws none for them |
 | `fog` | flat translucent white fog clouds — 2–4 skinny staggered pills each, bridged where they overlap by gaps with filleted (rounded, concave) ends — at three heights, rolling across the whole screen width (over the platform and the sky either side) in iso space (`iso/IsoFog.tsx`, field from `iso/fogClouds.ts` → `planFogClouds`; drawn by `DeckTowerPlatform` via its `fog` prop — not `WeatherLayer`) |
 | `drizzle` | very sparse short rain streaks (2–5 per 100k px² by intensity), plus small splashes on the platform (`iso/IsoRain.tsx`) |
 | `rain` | longer, faster rain streaks just denser than drizzle (5–8 per 100k px²), plus drops in front of the tower splashing on the platform and the tower's top (`iso/IsoRain.tsx`) |
@@ -989,6 +984,7 @@ honoured only for feature testers.
 
 `DeckTowerPage.tsx` (inside `wrapHeader`); `TesterSharedRow.tsx` → `TesterSharedRow`,
 `TesterInlineContext`, `useTesterInline`; `TesterChipRow.tsx`; `LightningStrikeChips.tsx`;
+`SnowResetChip.tsx`; `BalloonSpawnChip.tsx` ("🎈 Balloon": sends one red balloon across now, whatever the weather — ISO_ART_FRAMEWORK.md § IsoBalloon → "Tester spawn");
 `testerChipStyle.ts` → `testerChipSx`, `TESTER_ROW_SX`, `TESTER_GROUP_SX`.
 
 Feature testers (`users.isFeatureTester` + the Settings testing switch) see the tester
@@ -999,7 +995,7 @@ each:
 |---|---|
 | `TesterSharedRow name="sky"` | `TimeOfDayToggle` │ `AuroraToggle` |
 | own row | `WeatherToggle` |
-| `TesterSharedRow name="actions"` | `LightningStrikeChips` │ `BankingAlwaysPlayToggle` |
+| `TesterSharedRow name="actions"` | `LightningStrikeChips` │ `SnowResetChip` │ `BalloonSpawnChip` │ `BankingAlwaysPlayToggle` |
 | own row | `ForcedBreakPicker` (one chip per break game, so its length varies) |
 
 - **Group vs row.** A chip group renders as a full row (`TESTER_ROW_SX`: page gutter +
@@ -1088,7 +1084,9 @@ Tapping the **Learning** tower studies that world's Learning deck in Mix, in pla
 (§ Studying the tower). A white
 "Tap to Start" with a thick, filled arrow is painted on the sky, pointing down at the tower.
 
-Code: `src/features/deckTower/TapToStartHint.tsx` → `TapToStartHint`;
+Code: `src/features/deckTower/TapToStartHint.tsx` → `TapToStartHint`; `tapToStartGeometry.ts` →
+`tapHintBaselineY` (the words' line, which the home screen's "Swipe down to enter" also stands on —
+[HOME_SCREEN.md](./HOME_SCREEN.md) § The enter hint);
 `DeckTowerPage.tsx` → `startable`, `onStackTap`, `hintFit`, `TAP_HINT_FIT_CARDS`, `fitScene`
 (`minX`, `width`, `towerTopY`); `DeckTowerPlatform.tsx` → `stack.onTap`.
 
@@ -1470,7 +1468,10 @@ are in [CARD_LIBRARY.md](./CARD_LIBRARY.md); this section is the page.
   the scroll's **last direction of movement** (`towerScroll.ts` → `snapTargetOf`):
   heading down, it goes on to the cards once a quarter of the zone past the platform line;
   heading up, it goes on to the platform once a quarter above the cards line
-  (`SNAP_COMMIT_SHARE`); short of that it springs back to the line it left. Finger drags
+  (`SNAP_COMMIT_SHARE`); short of that it springs back to the line it left. The rule and
+  the direction tracking live in `src/utils/directionalSnap.ts` (`directionalSnapTarget`,
+  `nextSnapDirection`), shared with the eip's maximize / shrink
+  (docs/EIP_SHEET_GESTURES.md § "Height model"). Finger drags
   count, so a drag down that turns back up is heading up; steps under
   `DIRECTION_MIN_STEP_PX` are ignored so a lifting finger's jitter cannot flip it. With
   no direction known it falls back to the halfway point. Above the platform (the tower)

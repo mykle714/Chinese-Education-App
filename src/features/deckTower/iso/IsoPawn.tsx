@@ -6,6 +6,7 @@ import { useIsoPalette, useIsoProjector } from "./sceneContext";
 import { EMOTE_GAP, HEAD_RADIUS } from "./pawnFigure";
 import { prefersReducedMotion } from "./skyTraffic";
 import PawnIdleProps from "./PawnIdleProps";
+import IsoText from "./IsoText";
 import type { PawnIdleCue } from "./pawnIdles";
 import {
     EMOTE_DRAW_SCALE,
@@ -508,7 +509,7 @@ const IsoPawn: React.FC<IsoPawnProps> = ({
                                 ].join(" ")}
                                 fill={palette.white}
                             />
-                            <text
+                            <IsoText
                                 className="iso-pawn__emote-mark"
                                 x={emoteCx}
                                 y={emoteCy}
@@ -516,11 +517,10 @@ const IsoPawn: React.FC<IsoPawnProps> = ({
                                 fontFamily={FONTS.cjk}
                                 fontWeight={WEIGHT.bold}
                                 textAnchor="middle"
-                                dominantBaseline="central"
                                 fill={palette.ink}
                             >
                                 !
-                            </text>
+                            </IsoText>
                         </g>
                     )}
                 </g>

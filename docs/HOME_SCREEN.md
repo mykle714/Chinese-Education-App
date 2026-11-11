@@ -6,8 +6,9 @@
 The screen the app opens on. It stands on td's own sky (time of day, weather, stars, aurora)
 and shows the **home platform**: its own floating platform with the learner's pawn on it, and
 the unlocks that will spawn there as they progress. Over it, the app's title (a placeholder
-wordmark for now — § The title). Under the platform: the **Dictionary** key (left) and the
-words **"Swipe down to enter"** painted on the sky (right).
+wordmark for now — § The title). Mid-screen, on the line where td paints "Tap to Start", the
+words **"Swipe down to enter"** painted on the sky (§ The enter hint). Under the platform, bottom left:
+the **Dictionary** key.
 
 - **Dictionary** opens `/dictionary` with the circle transition. Its back arrow returns to
   td, not to the home screen.
@@ -29,17 +30,20 @@ unlock arrives — § The platform).
 | Layer | File | Role |
 |---|---|---|
 | Page logic | `src/features/deckTower/home/homeLaunch.ts` → `homeDueOnLaunch`, `markHomeTaken` | Whether this td mount opens on the home stage (§ When it shows) |
-| Page logic | `src/features/deckTower/home/useHomeEntrance.ts` → `useHomeEntrance`, `HomePhase`, `HomeShiftDirection`, `shiftFrameAt`, `descentTimeline` | The phases, both shifts' frames and the descent's speed profile (§ Enter, § Back to home) |
+| Page logic | `src/features/deckTower/home/useHomeEntrance.ts` → `useHomeEntrance`, `HomePhase`, `HomeShiftDirection`, `ShiftCarry`, `shiftFrameAt`, `descentTimeline` | The phases, both shifts' frames and the descent's speed profile (§ Enter, § Back to home) |
+| Shared logic | `src/features/deckTower/useWorldPan.ts` → `carriedOutPlan`, `outDistanceAt`, `OutPlan` | A dash's out phase continuing a gesture: the world swipe's `PanCarry` and the pull home's rubber band (§ Back to home → "The release carries on") |
 | Page logic | `src/features/deckTower/home/useHomePull.ts` → `useHomePull` | The pull past the deck's top that goes back home: touch and wheel, armed only by a gesture that starts at the top (§ Back to home) |
 | Page view | `src/features/deckTower/home/HomeStage.tsx` → `HomeStage` | The layer over td: the title, the scene, the footer row, the enter swipe (`useEnterSwipe`) and its own shift offset |
 | Page view | `src/features/deckTower/home/HomeScene.tsx` → `HomeScene` | The iso scene: td's own `DeckTowerPlatform` in td's frame, with the pawn alone (§ The platform) |
 | Shared view | `src/features/deckTower/DeckTowerPlatform.tsx` → `DeckTowerPlatform` (`plate`, `lever` optional) | The platform itself, shared with td |
-| Page logic | `src/features/deckTower/home/useHomePull.ts` → `usePullGesture`, `useHomePull`, `useEnterSwipe` | The one release-committed vertical gesture, read both ways: td → home and home → td (§ Back to home, § Enter) |
-| Page view | `src/features/deckTower/home/HomeButtons.tsx` → `HomeButtons` | The Dictionary keycap and the "Swipe down to enter" words (§ The buttons) |
+| Page logic | `src/features/deckTower/home/useHomePull.ts` → `usePullGesture`, `PullRelease`, `useHomePull`, `useEnterSwipe` | The one release-committed vertical gesture, read both ways: td → home and home → td (§ Back to home, § Enter) |
+| Page view | `src/features/deckTower/home/HomeButtons.tsx` → `HomeButtons` | The Dictionary keycap, at the footer row's left end (§ The buttons) |
+| Page view | `src/features/deckTower/home/HomeEnterHint.tsx` → `HomeEnterHint`; `HomeStage` → `hintTipY`, `hintLiftPct` | The "Swipe down to enter" words, on Tap to Start's line (§ The enter hint) |
+| Shared logic | `src/features/deckTower/tapToStartGeometry.ts` → `tapHintBaselineY`; `DeckTowerPage` → `hintFit` | The Tap to Start words' line, shared by td's hint and the home's |
 | Page view | `src/features/deckTower/home/HomeTitle.tsx` → `HomeTitle` | The placeholder title wordmark (§ The title) |
 | Shared style | `src/features/deckTower/towerKeycap.ts` → `towerKeyShadow` | The diagonal-wall keycap shadow, shared with td's filter keys (`TowerFilterKeys`) |
 | Shared view | `src/features/deckTower/SpeedLines.tsx` → `SpeedLines` `axis="y"` | The world pan's streaks turned vertical, for the shift |
-| Host | `src/features/deckTower/DeckTowerPage.tsx` → `home`, `homeUp`, `homeShifting`, `homeStageShown`, `altitudeAt`, `homeAltitudeY`, `bankingHeld`, `openDictionaryFromHome`, `homeWorld` | Mounts the stage, hides the chrome, holds td's events, owns the scroller |
+| Host | `src/features/deckTower/DeckTowerPage.tsx` → `home`, `homeUp`, `pullHome`, `pinnedPull`, `homeShifting`, `homeStageShown`, `altitudeAt`, `homeAltitudeY`, `bankingHeld`, `openDictionaryFromHome`, `homeWorld` | Mounts the stage, hides the chrome, holds td's events, owns the scroller |
 | Destination | `src/features/dictionary/DictionaryPage.tsx` → `readHomeBack`, `backToTower` | The back arrow shown only when the page was opened from home (§ Dictionary) |
 | Hold | `src/minutePoints/dailyBanking/DailyBankingContext.tsx` → `DailyBankingProvider` `held` | The banking run waits for the home screen to go (§ What waits) |
 
@@ -119,16 +123,32 @@ sky (`FONTS.cjk`, bold, 64 px — "Tap to Start"'s), `COLORS.white` under the ho
 shadow in `--home-ground-shadow` (the keys' shadow). The asset replaces the component's body;
 `HomeStage` places the box.
 
+## The enter hint
+
+**"Swipe down to enter"** over one down chevron centred under the words (`HomeEnterHint`),
+in the middle of the screen: its words stand on **the same line td's "Tap to Start" words do**,
+so the call to action reads at the same height on the home and on the tower.
+
+- **Where.** `HomeStage` anchors the words' baseline at `tapHintBaselineY(hintTipY)`
+  (`tapToStartGeometry.ts`), where `hintTipY` is `DeckTowerPage` → `hintFit.towerTopY` (the
+  top of a `TAP_HINT_FIT_CARDS` tower, which Tap to Start's arrow aims at). The scene frame
+  is td's (§ The platform), so the y converts to screen px against the scene box's width; the
+  anchor is a zero-height box lifted off the scene box's bottom by a `padding-bottom` in %
+  (`hintLiftPct`), which CSS resolves against the box's **width**, so it scales with the svg
+  without measuring. The chevron hangs under the line, where Tap to Start's arrow shaft is.
+- **Look.** A white sky cue in td's world-label family (`WorldIndicator`): `FONTS.cjk` bold,
+  washed `COLORS.white`, the MUI chevron turned down (`ExpandMore`) and the shared sky-cue
+  float (`skyCueFloat` → `FLOAT_MS`, `floatPhaseDelay`), drifting down 4 px (the way the swipe
+  goes). One step up from the world labels: **`SIZE.title` (22 px)**, chevron 44 px (32 px
+  scaled with the words). Tap to Start itself is 26 px.
+- It is a `<button>`, so a tap or the keyboard also enters, but the swipe is the way in it
+  advertises (§ Enter).
+
 ## The buttons
 
-One row (`HomeButtons`) in the hidden footer slab's footprint: the Dictionary keycap in the left
-third (glyph over label, like the footer's tabs) and, in the right two thirds, **"Swipe down to
-enter"** over one down chevron centred under the words — a white sky cue cut exactly like td's world labels
-("‹ Reading", "Writing ›", `WorldIndicator`): the same 32 px MUI chevron turned down
-(`ExpandMore`), the same `FONTS.cjk` / `SIZE.bodyLg` / bold label, washed `COLORS.white`, and
-the same float on the shared sky-cue clock (`skyCueFloat` → `FLOAT_MS`, `floatPhaseDelay`),
-drifting down 4 px (the way the swipe goes) where the world labels drift outward. The words are a `<button>`, so a
-tap or the keyboard also enters, but the swipe is the way in they advertise (§ Enter).
+One row (`HomeButtons`) in the hidden footer slab's footprint: the Dictionary keycap alone,
+at the row's **left end** (bottom-left corner), a third of the row wide (`KEY_WIDTH` — the width it had when "Swipe down to enter"
+shared the row; glyph over label, like the footer's tabs).
 
 The keycap is 60 px tall, 15 px radius, in the hidden footer
 slab's footprint (`HomeStage`: its 16 px side insets, standing on `SLAB_FOOTER_BOTTOM`, its
@@ -225,6 +245,23 @@ goes UP:
   line, the home phase's own state (the tower hidden there, `visibility: hidden`). The sky
   blends from the tower top's altitude down to the home's.
 - `in`: the home stage comes down in from above.
+
+**The release carries on** (`DeckTowerPage` → `pullHome`; the world swipe's `PanCarry` idea).
+On iOS the pull is the scroller's native rubber band: at release the tower stands stretched
+down by it (a negative `scrollTop`) and WebKit is about to spring it back. In the release's own
+`touchend`, `pullHome` locks the scroll at 0 (which ends the bounce) and holds the content
+down by the stretch with an inline `translateY` (`pinnedPull`). It then hands the stretch and
+its speed to the shift as a `ShiftCarry`, both in stage heights. The speed is the finger's
+release speed (`PullRelease`) scaled by the band's give (stretch ÷ finger travel). The out
+phase starts from there (`carriedOutPlan`: shortened to the distance left, never slowing), and
+a layout effect drops the inline styles once the shift's first frame has committed at the same
+offset, so the band flows into the slide. No stretch (Android, desktop, wheel) carries
+nothing: the slide starts from rest.
+
+**First frame.** Both shifts commit their first frame together with their phase
+(`playShift`), and their clock starts on the first animation frame after that commit, so a
+heavy commit (the home stage mounting, the tower revealed) pauses the slide rather than
+skipping it ahead.
 
 Then the phase is `home` again, exactly as at launch. Enter works the same way the second
 time. Under reduced motion the return cuts straight to the home.

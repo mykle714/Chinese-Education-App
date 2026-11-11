@@ -82,8 +82,9 @@ Refused: a character shared between words or repeated in one (two identical stac
   centred, 1/5 up from the bottom edge (`constants.ts` → `DRAG_GRIP_X_FRACTION`,
   `DRAG_GRIP_Y_FRACTION`; `SuperpositionBoard.tsx` → `handlePointerMove`) — keeping the stroke
   visible above the finger. A drop clears the selection.
-- **Hint button:** `SuperpositionHintButton`, top-right on the grid, on the Leave arrow's row in
-  a break. A press outlines two tiles and inks their strokes in `RAMP.org.mark` (`board.ts` → `pickHintPair`, held by the
+- **Hint button:** `SuperpositionHintButton`, on the Leave arrow's row, just left of the
+  break's audio chip (`GameFrame` → `exitRowTrailing`), and in the chip's outlined pill at the
+  chip's height (`outlinedChipSx`, `OUTLINED_CHIP_HEIGHT_PX`) so the two read as a pair. A press outlines two tiles and inks their strokes in `RAMP.org.mark` (`board.ts` → `pickHintPair`, held by the
   Stage as `hintedTileIds`). The pair belongs in one stack and is not in one yet; it reads `accepts`,
   so a lookalike swap counts. Locked tiles never qualify, and two lone loose tiles are
   preferred (a locked stack on the same cell does not count against "alone"); failing that, a tile in an unfinished pile can be picked, so a last tile can be
@@ -93,8 +94,8 @@ Refused: a character shared between words or repeated in one (two identical stac
   backgrounded. A hint has no effect on marks or the personal best. The button's armed state
   reads the board at rest: while a tile is lifted the Stage keeps the pair it had before the
   lift (`restingHintPair`), so hovering a tile over a stack doesn't change the button.
-- **Word info:** `SuperpositionHints`, drawn on the grid under the tiles and below the hint
-  button: the words side by side across the top, each a column of toned pinyin (`TonedPronunciation`), dd (up to three lines)
+- **Word info:** `SuperpositionHints`, drawn on the grid under the tiles, starting just below
+  Leave's row (`GAME_FRAME_EXIT_CLEARANCE_PX` + `INFO_GAP_PX`): the words side by side across the top, each a column of toned pinyin (`TonedPronunciation`), dd (up to three lines)
   and an audio button. Each finished character gets a small filled green `check_circle`
   (`CHAR_CHECK_PX`, 14) under its own syllable, through `TonedPronunciation`'s
   `renderBelowSyllable` slot; the slot is always reserved (hidden until finished) so the pinyin
@@ -259,6 +260,12 @@ prevents dead ends.
 
 No clock is drawn and a run cannot be lost. `superposition` keeps a lower-is-better personal
 best of active time (`server/contracts/personalBests.ts`).
+
+A finished run earns a **speed tier** (1 = best … 7) on the results card:
+`src/games/superposition/constants.ts` → `SPEED_TIERS` (⚠️ first-guess placeholders for the
+4-character board: 20 s · 30 s · 45 s · 60 s · 90 s · 120 s), read by `SuperpositionStage`
+through `speedTierFor`. No accuracy tier. A left run is "Run ended", untiered. The game logs
+no wins. Shared model: [GAMES_FEATURE.md § Run tiers](./GAMES_FEATURE.md).
 
 Each character's first finish in a run sends a full writing mark to its single-character card
 (`type: "writing"`, `surface: "superposition"`, top level so `writingMarkCounts` passes). The

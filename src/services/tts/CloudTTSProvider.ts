@@ -78,6 +78,47 @@ function isContextRunning(ctx: AudioContext): boolean {
     return (ctx.state as string) === 'running';
 }
 
+/**
+ * A short synthesized cue (docs/AUDIO_PLAYBACK.md § "Sound effects"). `render` returns
+ * mono PCM in [-1, 1] at `sampleRate`; it runs once per key per session, lazily.
+ */
+export interface SoundEffect {
+    key: string;
+    sampleRate: number;
+    render: () => Float32Array;
+}
+
+/**
+ * Encode mono float PCM as a 16-bit WAV Blob — the one format every media element
+ * plays, so the passthrough sink needs no audio asset and no decoder.
+ */
+function encodeWav(samples: Float32Array, sampleRate: number): Blob {
+    const bytesPerSample = 2;
+    const dataBytes = samples.length * bytesPerSample;
+    const view = new DataView(new ArrayBuffer(44 + dataBytes));
+    const writeAscii = (offset: number, text: string) => {
+        for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
+    };
+    writeAscii(0, 'RIFF');
+    view.setUint32(4, 36 + dataBytes, true);
+    writeAscii(8, 'WAVE');
+    writeAscii(12, 'fmt ');
+    view.setUint32(16, 16, true); // fmt chunk size
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 1, true); // mono
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * bytesPerSample, true); // byte rate
+    view.setUint16(32, bytesPerSample, true); // block align
+    view.setUint16(34, 16, true); // bits per sample
+    writeAscii(36, 'data');
+    view.setUint32(40, dataBytes, true);
+    for (let i = 0; i < samples.length; i++) {
+        const clamped = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(44 + i * bytesPerSample, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
+    }
+    return new Blob([view], { type: 'audio/wav' });
+}
+
 export class CloudTTSProvider implements TTSProvider {
     readonly name = 'cloud' as const;
 
@@ -109,6 +150,21 @@ export class CloudTTSProvider implements TTSProvider {
     // 'ended', so without this a cancelled utterance would hang until its
     // watchdog fired — seconds, on a long sentence.
     private elementCleanup: (() => void) | null = null;
+
+    // --- Sound effects (short synthesized cues — the game countdown's beeps) ---
+    // Effects never touch the narration state above: they have their OWN media
+    // element, so a beep can never cancel, pause or strip the src of a word being
+    // spoken, and they skip `generation` entirely (an effect is fire-and-forget).
+    // The 'media' route plays them on the shared AudioContext like narration.
+    // See docs/AUDIO_PLAYBACK.md § "Sound effects".
+    private effectEl: HTMLAudioElement | null = null;
+    // Same one-way latch as `elementActivated`, for the effect element: it must be
+    // primed inside a gesture on its own, because activation lives on each element.
+    private effectElActivated = false;
+    // Rendered once per effect key, then reused: a decoded buffer for 'media',
+    // a WAV object URL for 'passthrough'. A handful of keys, so never evicted.
+    private effectBuffers = new Map<string, AudioBuffer>();
+    private effectUrls = new Map<string, string>();
 
     // Monotonic counter incremented on every speak()/cancel(). A speak() in
     // flight captures its generation before awaiting the network fetch; when
@@ -299,6 +355,7 @@ export class CloudTTSProvider implements TTSProvider {
         // A real utterance is mid-flight; the silent clip's cleanup would pause
         // it and strip its src. The active play already proves activation.
         if (!this.elementPlaying && !this.elementActivated) this.unlockElement();
+        if (!this.effectElActivated) this.unlockEffectElement();
     }
 
     /**
@@ -372,6 +429,89 @@ export class CloudTTSProvider implements TTSProvider {
             }
         } catch {
             // ignore — gesture activation is best-effort
+        }
+    }
+
+    /**
+     * Prime the sound-effect element the same way `unlockElement` primes the narration
+     * one: a muted silent clip played inside the gesture marks it user-activated for the
+     * rest of the session. Kept apart from `unlockElement` on purpose — that one has to
+     * dodge a live utterance on its shared element; this element only ever holds beeps.
+     */
+    private unlockEffectElement(): void {
+        if (typeof window === 'undefined') return;
+        if (!this.effectEl) this.effectEl = new Audio();
+        const el = this.effectEl;
+        try {
+            el.muted = true;
+            el.src = CloudTTSProvider.SILENT_MP3;
+            const p = el.play();
+            if (p && typeof p.then === 'function') {
+                p.then(() => { this.effectElActivated = true; })
+                    .catch(() => { /* refused — the next gesture retries */ })
+                    .finally(() => {
+                        try { el.pause(); } catch { /* ignore */ }
+                        el.muted = false;
+                    });
+            } else {
+                this.effectElActivated = true;
+                el.muted = false;
+            }
+        } catch {
+            // ignore — gesture activation is best-effort
+        }
+    }
+
+    /**
+     * Play a short synthesized sound effect on the given route. Fire-and-forget: never
+     * throws, never awaits, and drops the cue silently if the sink is not allowed to
+     * sound yet (a suspended context, an unprimed element) — a missed beep must never
+     * break the game that asked for it.
+     *
+     * The CALLER decides whether to play at all (the mute check) and passes the route,
+     * read from the settings store at call time (`src/services/sfx/countdownSounds.ts`).
+     * The route is not taken from `this.route` because that mirror is only pushed by a
+     * mounted `useTTS`, and a game that never narrates (Writing Grid) mounts none.
+     *
+     * 'media' → a fresh AudioBufferSourceNode on the shared context, so it mixes with
+     * narration rather than cutting it. 'passthrough' → the dedicated effect element,
+     * rewound and replayed.
+     */
+    playEffect(effect: SoundEffect, route: AudioRoute): void {
+        if (typeof window === 'undefined') return;
+        // So the next tap primes the effect sinks, if nothing has armed the listener yet.
+        this.ensureUnlockListener();
+        try {
+            if (route === 'media') {
+                const ctx = this.ensureContext();
+                if (!ctx || !isContextRunning(ctx)) return;
+                let buffer = this.effectBuffers.get(effect.key);
+                if (!buffer) {
+                    const samples = effect.render();
+                    buffer = ctx.createBuffer(1, samples.length, effect.sampleRate);
+                    buffer.getChannelData(0).set(samples);
+                    this.effectBuffers.set(effect.key, buffer);
+                }
+                const src = ctx.createBufferSource();
+                src.buffer = buffer;
+                src.connect(ctx.destination);
+                src.start(0);
+                return;
+            }
+            if (!this.effectEl) this.effectEl = new Audio();
+            const el = this.effectEl;
+            let url = this.effectUrls.get(effect.key);
+            if (!url) {
+                url = URL.createObjectURL(encodeWav(effect.render(), effect.sampleRate));
+                this.effectUrls.set(effect.key, url);
+            }
+            if (el.src !== url) el.src = url;
+            el.muted = false;
+            el.currentTime = 0;
+            const p = el.play();
+            if (p && typeof p.catch === 'function') p.catch(() => { /* not primed yet — dropped */ });
+        } catch {
+            // ignore — an effect is decoration
         }
     }
 

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
-import { Box, Button, Typography, useTheme } from "@mui/material";
+import { Box, Button, Typography } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { useAuth } from "../../AuthContext";
 import { useTTS } from "../../hooks/useTTS";
@@ -11,14 +11,13 @@ import { fetchGamePool, type GamePoolDistribution, type GamePoolResponse } from 
 import type { GameStageFrameProps, GameStageHost } from "../types";
 import type { FlpBreakResults } from "../flpBreak/types";
 import { matchSpeedPoolRequest } from "./poolRequest";
-import { COLORS } from "../../theme/colors";
 import type { Language, MarkType, VocabEntry } from "../../types";
 import MatchSpeedBoard from "./MatchSpeedBoard";
-import MatchSpeedEndPopup from "./MatchSpeedEndPopup";
 import { usePersonalBest } from "../shared/usePersonalBest";
-import PersonalBestLine from "../shared/PersonalBestLine";
 import { GameCentered, GameFrame, GameHint, GameHud, GameHudLabel } from "../shared/GameFrame";
 import { GAME_FRAME_EXIT_CLEARANCE_PX } from "../shared/gameFrameExit";
+import { GameCountdown } from "../shared/GameCountdown";
+import { useGameCountdown } from "../shared/useGameCountdown";
 import {
     bufferSize,
     bufferedEntryIds,
@@ -32,24 +31,22 @@ import {
 import type { CardPair, GameCategory, Phase } from "./types";
 import { dealChallengePairs, emptyDealState, type ChallengeDealState } from "./challengeDeal";
 import {
-    COUNTDOWN_STEPS,
-    COUNTDOWN_STEP_MS,
     GAME_KEY,
     MARK_TYPE,
     PERSONAL_BEST_MODE,
     POOL_DISTRIBUTION,
     TARGET_PAIRS,
     WIN_LEVEL,
-    medalForTime,
     runResultAccuracy,
     runResultScore,
+    runResultTiers,
     runResultTitle,
     BREAK_CARD_ASPECT,
     CATEGORY_FALLBACK_ORDER,
     BREAK_CARD_SCALE,
     CARD_ASPECT,
 } from "./constants";
-import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
+import { SIZE, LEADING } from "../../theme/scale";
 import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
 import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
 import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
@@ -78,12 +75,11 @@ export interface MatchSpeedStageProps {
     /** flp break only: the working loop to seed the OPENING board with (§ 4). */
     seedIds?: number[];
     /** flp break only: the opening pool, already fetched while card 10 was on screen,
-        so Play has no spinner. Consumed by the first run only; Play Again (page host)
-        always fetches fresh. */
+        so Play has no spinner. Consumed by the first run only. */
     prefetchedPool?: GamePoolResponse | null;
     /** Close with no results to show: "Back to <GAMES_HUB_EXIT.label>" (page), or a break that never dealt. */
     onDone: () => void;
-    /** flp break only: FlpBreakStageProps `onRunEnded`. Replaces the end popup. */
+    /** flp break only: FlpBreakStageProps `onRunEnded`. */
     onRunEnded?: (results: FlpBreakResults) => void;
     /** flp break only: FlpBreakStageProps `onCardCleared`. */
     onCardCleared?: (cardId: number) => void;
@@ -97,20 +93,20 @@ export interface MatchSpeedStageProps {
  * What differs by host is deliberately small:
  *   - the chrome (`Frame`);
  *   - the opening board (an flp break seeds it with the working loop, prefetched);
- *   - the results: the page shows its end popup (Play Again, cleanup); a break has none,
- *     and hands them to the flp's card instead (`onRunEnded`);
+ *   - the results: a break hands them to the flp's card (`onRunEnded`). The page has NO
+ *     end card any more (its end popup, Play Again and cleanup mode were deleted
+ *     2026-11-10, with the medals); the routed page is behind the OFF `standaloneGames`
+ *     flag and ends on a frozen board (docs/DEFERRED_WORK.md);
  *   - the way out: the page's Back is `useGameBack` (with the challenge confirm), while
  *     a break's Leave ENDS a live run into its results card — "leaving early" still
- *     shows what the player did — and closes the break from any other phase;
- *   - the results card offers Play Again only on the page.
+ *     shows what the player did — and closes the break from any other phase.
  *
  * A recognition speed drill: how fast can you match TARGET_PAIRS pairs? 5 foreign words
  * on the left, their 5 English glosses (shuffled independently) on the right. Tap one
  * from each column to attempt a match; every 3 seconds the board refills the holes,
  * until all the run's pairs have been dealt and it just drains.
  *
- * Flow: loading → (blocked) → countdown → playing → ended → (popup minimized =
- * cleanup) → Play Again → countdown …
+ * Flow: loading → (blocked) → countdown → playing → ended.
  *
  * One difficulty (the Study Mix weight table, constants.ts → CATEGORY_WEIGHTS): the
  * Review/Challenge modes were removed (docs/DEFERRED_WORK.md § 31), so every host deals
@@ -143,8 +139,6 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
     // Read through a ref: `markCard` is deliberately stable.
     const onCardClearedRef = useRef(onCardCleared);
     onCardClearedRef.current = onCardCleared;
-    const theme = useTheme();
-    const fc = theme.palette.flashcard;
     const { user } = useAuth();
     const tts = useTTS();
     // Only the colour setting is read here; `showPinyin` is the host's call (prop).
@@ -156,9 +150,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
     // under (docs/MATCH_SPEED_GAME.md § Personal best).
     const {
         best: personalBestPairs,
-        isNewBest,
         record: recordPersonalBest,
-        reset: resetPersonalBest,
     } = usePersonalBest("match-speed-30", PERSONAL_BEST_MODE);
 
     // Temporary cards are in play this run. Match Speed deals from a rolling buffer, so
@@ -184,8 +176,6 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
 
     const [phase, setPhase] = useState<Phase>("loading");
     const [blockMessage, setBlockMessage] = useState("");
-    /** Index into COUNTDOWN_STEPS while phase === "countdown". */
-    const [countdownStep, setCountdownStep] = useState(0);
     // The finish time, stamped once by the final match. Nothing shows a live clock, so
     // this is the only clock state that renders.
     const [finishMs, setFinishMs] = useState(0);
@@ -203,10 +193,9 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
     const dealtPairsRef = useRef(0);
     /** Attempts (correct + wrong) — the denominator of the end card's accuracy. */
     const [attempts, setAttempts] = useState(0);
-    const [popupMinimized, setPopupMinimized] = useState(false);
     /** This run's `recordPersonalBest`: whether it set a best. Read by the break's results. */
     const newBestRef = useRef<Promise<boolean>>(Promise.resolve(false));
-    /** Bumped per run so the board remounts with a clean slate on Play Again. */
+    /** Bumped per run so the board remounts with a clean slate on a re-deal. */
     const [runId, setRunId] = useState(0);
 
     // The per-category pair buffer. A ref, not state: it is read and mutated from
@@ -376,11 +365,10 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
     }, [challengeRound.active]);
 
     // The flp break's prefetched opening pool, handed over ONCE: the first run adopts
-    // it, and anything after (there is no Play Again on that host, but a remount-less
-    // re-deal must still be fresh) fetches normally.
+    // it, and anything after (a remount-less re-deal must still be fresh) fetches normally.
     const prefetchedRef = useRef<GamePoolResponse | null>(prefetchedPool ?? null);
 
-    /** Prime the buffer and start a run (shared by first load and Play Again). */
+    /** Prime the buffer and start a run. */
     const beginRun = useCallback(async (): Promise<void> => {
         setPhase("loading");
         bufferRef.current = emptyBuffer();
@@ -430,8 +418,6 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
             setAttempts(0);
             setFinishMs(0);
             bankedMsRef.current = 0;
-            setPopupMinimized(false);
-            setCountdownStep(0);
             setRunId((n) => n + 1);
             setPhase("countdown");
         } catch {
@@ -477,7 +463,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
     // sheet can be opened mid-run, and both take the whole screen — reading them
     // would otherwise be billed to the player's time. Both are input-blocking
     // overlays, so freezing the clock can't be used to study the live board for
-    // free. The end popup is deliberately absent: by then the clock has stopped.
+    // free. Nothing after the run counts: by then the clock has stopped.
     // Shared rule across all four games — see docs/GAMES_FEATURE.md § Popups pause
     // the clock.
     // BACKGROUNDING IS THE SECOND SOURCE for this same boolean — the app-wide rule
@@ -486,24 +472,17 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
     // against the player's finish.
     const clockPaused = noticeOpen || backgroundPaused;
 
-    // The 3·2·1·Go countdown. The board is already primed and readable behind it,
-    // so the opening board gets a beat to be read and the run clock starts from an
-    // identical state every time — nobody is billed for reading time.
-    //
-    // Driven by one timeout per step, re-armed by `countdownStep` changing, rather
-    // than an interval whose callback inspects the step inside a state updater —
-    // an updater must stay a pure function of previous state (StrictMode runs it
-    // twice), and advancing the phase from inside one is exactly the side effect
-    // that rule exists to prevent.
-    useEffect(() => {
-        if (phase !== "countdown" || clockPaused) return;
-        const isLastStep = countdownStep >= COUNTDOWN_STEPS.length - 1;
-        const id = setTimeout(
-            () => (isLastStep ? setPhase("playing") : setCountdownStep((step) => step + 1)),
-            COUNTDOWN_STEP_MS
-        );
-        return () => clearTimeout(id);
-    }, [phase, countdownStep, clockPaused]);
+    // The 3·2·1 countdown (src/games/shared/GameCountdown.tsx). The board is already
+    // primed and readable behind it, so the opening board gets a beat to be read and the
+    // run clock starts from an identical state every time — nobody is billed for reading
+    // time. It starts once the lent-cards notice is dismissed (the notice sits under the
+    // countdown's screen-wide dim, so the two must never be up together) and holds while
+    // the app is backgrounded.
+    const countdownStep = useGameCountdown({
+        active: phase === "countdown" && !noticeOpen,
+        paused: backgroundPaused,
+        onRelease: () => setPhase("playing"),
+    });
 
     // The run's hidden stopwatch. No timer is shown; it only produces the finish time.
     //
@@ -518,9 +497,9 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
         };
     }, [phase, clockPaused]);
 
-    // Bank the win badge on a gold run only, once the run has ended. Gold-only
-    // keeps the hub badge an achievement rather than a play counter. Logged under
-    // WIN_LEVEL (1), the key the game's win history has always used.
+    // Bank a win for every FINISHED run, once it has ended (wins are no longer gated on
+    // a grade; docs/GAMES_FEATURE.md § Run tiers). Logged under WIN_LEVEL (1), the key
+    // the game's win history has always used.
     useEffect(() => {
         if (phase !== "ended") return;
         // `won: true` unconditionally: Match Speed has no win/loss and no survival
@@ -529,7 +508,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
         challengeRound.finish(true);
         // An unfinished run (left early, or out of cards) has no finish time to judge.
         const finished = score >= TARGET_PAIRS;
-        if (finished && medalForTime(finishMs)?.medal === "gold") recordWin(WIN_LEVEL);
+        if (finished) recordWin(WIN_LEVEL);
         // A challenge round's deal is the round's shared word set, not the player's
         // own pool, so it does not compete with their personal best.
         newBestRef.current = finished && !challengeRound.active
@@ -542,8 +521,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
     /**
      * Record a recognition mark for a matched/mismatched card. Fire-and-forget
      * with a .catch(): the game never blocks or fails on a mark request.
-     * Suppressed entirely during cleanup — the board itself never calls onMatch /
-     * onMiss in that mode, so this is only ever reached from live play.
+     * Only reached from live play: the board ignores taps once frozen.
      */
     const markCard = useCallback(
         (entry: VocabEntry, isCorrect: boolean) => {
@@ -586,7 +564,6 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
             // The last pair stops the clock on the tap itself, not on the next tick.
             if (matchedRef.current >= TARGET_PAIRS) {
                 setFinishMs(bankedMsRef.current + Date.now() - clockStartRef.current);
-                setPopupMinimized(false);
                 setPhase("ended");
             }
             // The pair is leaving the board, so it stops excluding itself from
@@ -608,17 +585,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
         [markCard]
     );
 
-    /** Play Again: Match Speed's board is fully transient, so a replay just
-     *  re-primes the buffer and starts a fresh run. Primes the audio element
-     *  inside this real click gesture, before the awaited fetch, or mobile autoplay
-     *  policy would drop the first spoken word. */
-    const playAgain = useCallback(() => {
-        tts.unlockAudio();
-        resetPersonalBest();
-        void beginRun();
-    }, [tts.unlockAudio, beginRun, resetPersonalBest]);
-
-    // End-of-run offer to keep the lent cards; opens a beat after the end popup. Named
+    // End-of-run offer to keep the lent cards; opens a beat after the run ends. Named
     // from what the player REVIEWED — the pre-round notice could not name anything, and
     // the served set would include cards that sat in the buffer untouched.
     const sortOffer = useProvisionalSortOffer(phase === "ended", markedLentWords);
@@ -626,13 +593,12 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
 
     /**
      * The flp break's Leave (docs/FLP_GAME_BREAKS.md § 2). A LIVE run ends with what it
-     * managed. It has no finish time, so it earns no medal,
+     * managed. It has no finish time, so it earns no tiers,
      * win or personal best unless all the pairs were already matched.
      * From every other phase there is nothing to show, so the break closes.
      */
     const leaveBreak = useCallback(() => {
         if (phase === "countdown" || phase === "playing") {
-            setPopupMinimized(false);
             setPhase("ended");
             return;
         }
@@ -647,15 +613,7 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
     }, [phase, onDone]);
     const onExitRequest = isBreak ? leaveBreak : onBack;
 
-    // Cleanup: the run is scored and the popup has been tucked into its corner
-    // puck, so the leftover board becomes a no-stakes study surface — no clock, no
-    // refills, no marks, and tapping a card reveals its partner. Derived rather
-    // than a separate phase value so the two can never disagree.
-    const cleanupMode = phase === "ended" && popupMinimized;
-    // False for a run left early, or one that ran out of cards.
-    const runFinished = score >= TARGET_PAIRS;
-
-    // A break's run reports to the flp instead of showing an end popup, which is what
+    // A break's run reports to the flp, which is what
     // starts the shrink back to the card. A lent-card offer holds it: the offer lives
     // over this board, so it has to be answered before the board goes.
     const sortOfferPending = markedLentWords.length > 0 && !sortOffer.dismissed;
@@ -663,7 +621,8 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
         if (!isBreak || phase !== "ended" || sortOfferPending) return;
         const bestBefore = personalBestPairs;
         onRunEnded?.({
-            title: runResultTitle(score, finishMs),
+            title: runResultTitle(score),
+            tiers: runResultTiers(score, attempts, finishMs),
             score: runResultScore(score, finishMs),
             details: [runResultAccuracy(score, attempts)],
             personalBest: newBestRef.current.then((isNewBest) => {
@@ -763,140 +722,32 @@ const MatchSpeedStage: React.FC<MatchSpeedStageProps> = ({
                             onRefilled={topUpBuffer}
                             onMatch={handleMatch}
                             onMiss={handleMiss}
-                            cleanupMode={cleanupMode}
                             // Readable but not yet live during the countdown, and
-                            // frozen once the run ends until the popup is minimized
-                            // into cleanup mode.
-                            frozen={phase === "countdown" || (phase === "ended" && !cleanupMode)}
+                            // frozen once the run ends.
+                            frozen={phase === "countdown" || phase === "ended"}
                             onSpeak={tts.autoplay ? tts.autoSpeak : undefined}
                             cardAspect={isBreak ? BREAK_CARD_ASPECT : CARD_ASPECT}
                             cardScale={isBreak ? BREAK_CARD_SCALE : 1}
                         />
 
-                        {/* 3·2·1·Go, over a readable board. */}
-                        {phase === "countdown" && (
-                            <Box
-                                className="match-speed__countdown"
-                                sx={{
-                                    position: "absolute",
-                                    inset: 0,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    backgroundColor: COLORS.scrim,
-                                    pointerEvents: "none",
-                                    zIndex: 5,
-                                }}
-                            >
-                                <Typography
-                                    className="match-speed__countdown-step"
-                                    // Keyed by step so the zoom animation replays on
-                                    // each tick rather than only on mount.
-                                    key={countdownStep}
-                                    sx={{
-                                        fontSize: "72px",
-                                        fontWeight: WEIGHT.bold,
-                                        color: COLORS.white,
-                                        textShadow: "0 2px 12px rgba(0,0,0,0.4)",
-                                        animation: "match-speed-countdown-pop 400ms ease-out",
-                                        "@keyframes match-speed-countdown-pop": {
-                                            from: { opacity: 0, transform: "scale(0.5)" },
-                                            to: { opacity: 1, transform: "scale(1)" },
-                                        },
-                                    }}
-                                >
-                                    {COUNTDOWN_STEPS[countdownStep]}
-                                </Typography>
-                            </Box>
-                        )}
+                        {/* 3·2·1, over a readable board; the dim covers the whole screen. */}
+                        <GameCountdown step={countdownStep} classPrefix="match-speed" />
 
                         {!isBreak && <GameHint className="match-speed__hint">tap a word, then its meaning</GameHint>}
                     </GameFrame>
                 )}
 
                 {/* A CHALLENGE ROUND ENDS ON THE SCOREBOARD (§ 5.5), which replaces
-                    the medal card entirely: the round is scored on contested/filler
+                    any end card: the round is scored on contested/filler
                     points rather than on finish time alone, and there is no Play Again to
                     offer because a submitted round is final (§ 5.1a). */}
                 {showBoard && phase === "ended" && challengeRound.active && (
                     <ChallengeRoundScoreboard round={challengeRound} classPrefix="match-speed" />
                 )}
 
-                {/* An flp break has no end popup: its results land on the break's card
-                    (docs/FLP_GAME_BREAKS.md § 5b). */}
-                {showBoard && phase === "ended" && !challengeRound.active && !isBreak && (
-                    <MatchSpeedEndPopup
-                        minimized={popupMinimized}
-                        // A finished run leaves an empty board, so there is nothing to
-                        // uncover. Only a run cut short has a leftover board to study.
-                        onMinimize={runFinished ? undefined : () => setPopupMinimized(true)}
-                        onRestore={() => setPopupMinimized(false)}
-                    >
-                        <Typography
-                            className="match-speed__popup-title"
-                            sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, color: fc.onSurface }}
-                        >
-                            {runResultTitle(score, finishMs)}
-                        </Typography>
-                        <Typography
-                            className="match-speed__popup-score"
-                            sx={{ fontSize: SIZE.bodyLg, color: fc.onSurface, fontWeight: WEIGHT.bold }}
-                        >
-                            {runResultScore(score, finishMs)}
-                        </Typography>
-                        {/* Information only — accuracy never gates a medal. */}
-                        <Typography
-                            className="match-speed__popup-accuracy"
-                            sx={{ fontSize: SIZE.body, color: fc.textSecondary }}
-                        >
-                            {runResultAccuracy(score, attempts)}
-                        </Typography>
-                        <PersonalBestLine
-                            game="match-speed-30"
-                            best={personalBestPairs}
-                            isNewBest={isNewBest}
-                            className="match-speed__personal-best"
-                        />
-                        <Box
-                            className="match-speed__replay-actions"
-                            sx={{ display: "flex", flexDirection: "column", gap: 1.25, width: "100%" }}
-                        >
-                            <Button
-                                className="match-speed__replay-btn match-speed__replay-btn--play-again"
-                                variant="contained"
-                                onClick={playAgain}
-                                sx={{
-                                    py: 1.25,
-                                    borderRadius: "14px",
-                                    textTransform: "none",
-                                    fontSize: SIZE.bodyLg,
-                                    fontWeight: WEIGHT.bold,
-                                    lineHeight: LEADING.tight,
-                                }}
-                            >
-                                Play Again
-                            </Button>
-                            <Button
-                                className="match-speed__replay-btn match-speed__replay-btn--back"
-                                variant="outlined"
-                                onClick={onDone}
-                                sx={{
-                                    py: 1,
-                                    borderRadius: "14px",
-                                    textTransform: "none",
-                                    fontWeight: WEIGHT.medium,
-                                }}
-                            >
-                                Back to {GAMES_HUB_EXIT.label}
-                            </Button>
-                        </Box>
-                    </MatchSpeedEndPopup>
-                )}
-
-                {/* Stacks over the end popup, collapsing to the opposite corner.
-                    Renders nothing unless this run used lent cards. A sibling of the
-                    frame, not a child of it: both this and the end popup cover the whole
-                    content area, so they must not be clipped by the panel's radius. */}
+                {/* Renders nothing unless this run used lent cards. A sibling of the
+                    frame, not a child of it: it covers the whole content area, so it
+                    must not be clipped by the panel's radius. */}
                 {showBoard && (
                     <ProvisionalSortOffer
                         open={sortOffer.open}

@@ -174,8 +174,7 @@ a **different** sense, the search response names it, and the row shows that sens
   sheet with `selectedSense` overridden to the hit's `matchedSense`, so `useEipTabs.openForRoot`
   seeds the root tab's sense from it (outranking the requester's saved pick) through
   `resolveSelectedSenseIndex`. A gloss-less (particle) sense is absent from the sense list, so
-  the panel falls back to its default sense there. (`DictionaryCardDetailPage` still honours a
-  `?sense=<label>` query the same way, but nothing links to it with one any more.)
+  the panel falls back to its default sense there.
 
 Examples on dev: "row" → 行 shows háng with "row / line" first; "liao3" → 了 shows liǎo
 "to understand"; "zhang3" → 长 shows zhǎng "to grow".

@@ -192,7 +192,7 @@ Constraints:
 
 - Flame and embers: `COLORS.fireActive` (`#E65100`) — already the sole flame color.
 - Avatar glow: a `COLORS.fireActive` halo (box-shadow at reduced alpha), decided Q8. It is
-  deliberately NOT the `src/theme/lowSupplyGlow.ts` recipe — the glow must read as the
+  deliberately NOT the `src/theme/lowSupplyGlow.ts` recipe (deleted 2026-11-10) — the glow must read as the
   flame's orange arriving in the avatar.
 - The app has no shared motion/easing token module; keyframes are declared inline per
   component (`minutePointsFirePulse` in `MinutePointsFireBadge`). The banking keyframes

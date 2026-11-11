@@ -9,8 +9,9 @@ specific doc.
 
 | Concept | Doc | One-liner |
 |---|---|---|
-| **App navigation structure** | [NAVIGATION.md](./NAVIGATION.md) | No hamburger/sidebar; nav is the footer tabs, left to right — **Deck** (`/`, the Deck Tower), **Arena** (`/arena`, only while the `arena` flag is on), **Dictionary**, **Menu** (no route: raises the Menu popover, a list of rows to Games, Reader, Friends, …) — + back-arrow drill-ins (each lights its parent tab via `routeMeta.footerTab`; Menu's drill-ins go back in history). Add Cards and the saved-card cdp are Deck drill-ins. Account is a sheet raised from td's header avatar (Logout and Settings live in it). |
-| **Scrollable footer-tab layout** | [MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md) | Every footer-tab page uses `MobileTabScreen` (header scrolls away inside the scroll area). Arena and Dictionary use it scrolling; td (`/`) mounts it with `scrollable={false}`. |
+| **App navigation structure** | [NAVIGATION.md](./NAVIGATION.md) | No hamburger/sidebar; nav is the footer tabs, left to right — **Flashcards** (`/`, the Deck Tower), **Lessons** (`/lessons`, a "coming soon" placeholder), **Dictionary**, **Menu** (no route: raises the Menu popover, a list of rows to Reader, Arena, Community, …) — + back-arrow drill-ins (each lights its parent tab via `routeMeta.footerTab`; Menu's drill-ins go back in history). Add Cards and the saved-card cdp are Deck drill-ins. Account is a sheet raised from td's header avatar (Logout and Settings live in it). |
+| **Active-duty pages** | [ACTIVE_DUTY_PAGES.md](./ACTIVE_DUTY_PAGES.md) | Registry of every page/surface reachable from td (`/`) with its entry chain, plus flagged-off pages and orphans awaiting a deprecation decision. The lookup cache for CLAUDE.md's "Unreachable components" check. |
+| **Scrollable footer-tab layout** | [MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md) | Every footer-tab page uses `MobileTabScreen` (header scrolls away inside the scroll area). Dictionary uses it scrolling, Lessons (a td Tier-2 placeholder) with `scrollable={false}`; td (`/`) mounts it with `scrollable={false}`. |
 | **Drill-in page archetypes** | [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) | Two back-arrow archetypes. **Leaf** (`LeafPage`): down arrow, no footer, back-arrow-only exit, slides up/down. **Node** (`NodePage`): left arrow, keeps footer, slides in/out to the right. Rule of thumb: no footer ⇒ leaf, has footer ⇒ node. |
 | **eip bottom-sheet gestures** | [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) | `SheetPanel`'s height model: three stops (0 / default / max) with the default height as the floor, one snap rule, the resize-vs-scroll mode lock, and release momentum that stops at the default height instead of dismissing. |
 | **Add Cards (Discover flow)** | [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) | `/discover/sort/:language` drag-to-sort page (acp), a Deck drill-in reached from td's sort platform: node page (back arrow → `/`, keeps the footer with Deck lit), hosting the Quick Mark panel and skipped-cards sheet. |
@@ -558,19 +559,23 @@ hold.
 | Dim | Host / z-index | Where |
 |---|---|---|
 | Every MUI `Dialog` | mounted in the frame by `MuiDialog.defaultProps.container` (`dialogContainer`); root re-pinned `absolute` inside the frame; backdrop `absolute`, `COLORS.modalScrim`; z 1300 | `src/contexts/ThemeContext.tsx` → `MuiDialog` |
-| `SheetPanel` (modal: eip, acp, both cdps, compare) | frame; scrim 1200 / sheet 1201 (+2 per stack depth) | `src/components/sheet/SheetPanel.tsx` |
+| `SheetPanel` (modal: eip, acp, the cdp, compare) | frame; scrim 1200 / sheet 1201 (+2 per stack depth) | `src/components/sheet/SheetPanel.tsx` |
 | `MinimizablePopup` → `GameEndPopup`, `ProvisionalSortOffer`, `ProvisionalSortDonePopup`, Memory Map's inspect popup | frame; 200 / 210 (flp's exit offer 1400) | `src/components/MinimizablePopup.tsx` |
 | `ChallengeSheet`, `SteppedHelpPopup` | frame; 1200 / 1300 | `src/features/studyChallenge/ChallengeSheet.tsx`, `src/components/SteppedHelpPopup.tsx` |
 | `ChallengeRoundScoreboard` | `nearestOverlayHost` — the leaf Surface, which already fills the screen on a footerless game page; 1200 | `src/games/runtime/ChallengeRoundScoreboard.tsx` |
 | `ProvisionalCardsNotice` | `position: fixed` inside a transformed leaf Surface (flp, games), which makes the Surface its containing block — the whole screen; 1400 | `src/components/ProvisionalCardsNotice.tsx` |
 
 **Deliberate exceptions:**
-- **Speed Reading** passes `inPlace` to its end popup and sort offer: its sideways stage
+- **Speed Reading** passes `inPlace` to its sort offer (it has no end popup; results go to
+  the flp break's card): its sideways stage
   rotates its whole contents, header included, and already covers the screen — a
   frame-hosted popup would draw upright over a sideways game.
-- **Countdown veils** (Match Speed, Writing Grid — the 3·2·1 over the board) dim only the
-  game panel (`GameFrame`, `position: relative`). They are pointer-transparent and the
-  header's back arrow stays usable during the count (decided 2026-10-06).
+- **The game countdown** (every flp break game's 3·2·1) dims the whole screen like any
+  other dim, Leave's row included, since 2026-11-10. Unlike the others it is
+  **pointer-transparent**, so the dimmed Leave arrow and audio chip stay usable during the
+  count (decided 2026-10-06, re-confirmed 2026-11-10). An in-place input shield inside the
+  `GameFrame` blocks the board instead. See [GAMES_FEATURE.md](./GAMES_FEATURE.md)
+  § "The countdown". Until 2026-11-10 it dimmed only the game panel.
 - Tile-level washes (a drop bucket's hover, a bubble's dim, acp's held-card-over-target
   cue) are not background dims.
 

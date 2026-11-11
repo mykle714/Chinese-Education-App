@@ -9,11 +9,11 @@
 > Bucket Drop's adapter is built but switched off (§ 6). The other two games join as their
 > Stages are extracted.
 
-Every 10 cards in an flp session (core, reading and writing alike), the learner is
+Every 15 cards in an flp session (core, reading and writing alike), the learner is
 offered a **game break**: one randomly chosen game whose mark type matches the flp's
 bar, played on the cards just studied (topped up from the server to the game's
-baseline). The break takes a position in the card sequence: the card behind card 10 is the
-**break's card** (§ 5), a normal flashcard offering the game. Swiping card 10 away reveals
+baseline). The break takes a position in the card sequence: the card behind card 15 is the
+**break's card** (§ 5), a normal flashcard offering the game. Swiping card 15 away reveals
 it. Only Play opens the game, which takes over the whole screen; Skip sends the card off
 like any other.
 
@@ -34,7 +34,7 @@ deck or collection session and no routed flp.
 ## 1. Session sequence
 
 ```
-card 1 … card 9 │ card 10 │ BREAK CARD │ (game) │ card 11 … card 20 │ BREAK CARD │ (game) │ …
+card 1 … card 14 │ card 15 │ BREAK CARD │ (game) │ card 16 … card 30 │ BREAK CARD │ (game) │ …
 ```
 
 - **Counter.** `cardsSinceBreak` counts every dismiss: left, right, the wflp tap, and
@@ -43,19 +43,19 @@ card 1 … card 9 │ card 10 │ BREAK CARD │ (game) │ card 11 … card 20 
   from `useWorkingLoop`'s `onDismissed` / `onUndone` callbacks, which fire only for a
   dismiss that actually advanced the stack and an undo that actually restored a card.
 - **Break due** when `cardsSinceBreak % BREAK_INTERVAL === BREAK_INTERVAL − 1`
-  (`BREAK_INTERVAL = 10`), **and** there is a candidate game (§ 3), **and** the loop
+  (`BREAK_INTERVAL = 15`), **and** there is a candidate game (§ 3), **and** the loop
   holds ≥ 2 cards (a 1-card loop is about to run dry), **and** the card editor is
   closed. The modulo means a break missed for one of those reasons comes round a full
   interval later rather than never. While due:
   - the page passes `nextEntry: null`, `gameBreak="due"` and `breakCard` to
-    `FlashCardSection`, so the break's card sits behind card 10, and the card that flies
+    `FlashCardSection`, so the break's card sits behind card 15, and the card that flies
     out keeps its own content (`holdOutgoing` — its back slot is empty, so it would
     otherwise vanish on release);
   - the game is **picked**, and its opening board **prefetched** with the loop as the
     seed (§ 4), so Play has no spinner.
 - **The break is virtual** — a position in the sequence, never an element of
   `workingLoop`. The loop stays `VocabEntry[]`, and its refill, `excludeIds`, dedupe
-  guard and `removeCardAndReanchor` never see it. `currentIndex` advances past card 10
+  guard and `removeCardAndReanchor` never see it. `currentIndex` advances past card 15
   as usual, so when the break ends the front card is simply `workingLoop[currentIndex]`.
 
 Code: `src/features/flashcards/FlashcardsLearnPage/gameBreak/useGameBreak.ts` →
@@ -71,19 +71,19 @@ Leave before a deal) goes `playing → leaving → cards`.
 
 | Moment | What moves |
 |---|---|
-| **card 10 dismissed** | Card 10 flies out as usual (`CARD_FLY_OUT_MS`), revealing the break's card under it. In parallel the **More Info pill fades out** (and disables) and the **word tools (`WordToolsRail`: Write it / Compare) slide up off screen** (`playBreakAway`): the break's card has no word for them. The flp header (back / undo) stays. |
-| **title** | The break's card is on top (§ 5). The next word card is already the front slot under it, unseen and not narrated. Play waits for the prefetch to settle (spinner on the button if it hasn't). |
+| **card 15 dismissed** | Card 15 flies out as usual (`CARD_FLY_OUT_MS`), revealing the break's card under it. In parallel the **More Info pill fades out** (and disables) and the **word tools (`WordToolsRail`: Write it / Compare) slide up off screen** (`playBreakAway`): the break's card has no word for them. The flp header (back / undo) stays. |
+| **title** | The break's card is on top (§ 5). The next word card is already the front slot under it, unseen and not narrated. The board and the game's code chunk have been loading since the break fell due (`useGameBreak` → `startPlan`: `adapter.prefetch` + `adapter.Stage.preload()`, `src/games/runtime/lazyWithPreload.ts`). Play waits for the prefetch to settle (spinner on the button if it hasn't). |
 | **skipping** | Skip: the break's card flies off to the right, uncovering the next word card, while the word tools and More Info come back (`playBreakToolsReturn`). No swap, no rise, no mark. |
-| **growing** | Play: `GameBreakArea` portals to the phone frame (`useScreenOverlayHost`), above the flp header and the footer, below a game's own popups. A white circle grows out of the screen's middle (`BREAK_AREA_MOTION.growMs`, a `transform` so the compositor runs it) until it passes the corners. The break's card holds still under it (`stackHold: "growing"`), so it goes when it is covered, not at the tap. |
-| **playing** | The Stage mounts on the finished circle: the area is white from here on, and the game IS the screen (`GameBreakFrame`). There is no header bar: the game sits straight on the white ground, with **Leave** a back arrow top-left, at the exact spot and size of the study header's (`GameFrameExitContext` → `GameFrame`'s exit button), and the game's name beside it. Leave on a live run ENDS it (the run reports what it managed, as a natural end does; Writing Grid left during Phase 1 keeps showing Phase 1 on the way out — `WritingGridStage` → `leftDuringArrange`); with the lent-card offer up, Leave answers "not now"; from any other phase it closes the break. The word cards behind are hidden by opacity (`FlashCardSection` → `hiddenForBreak`). |
+| **growing** | Play: `GameBreakArea` portals to the phone frame (`useScreenOverlayHost`), above the flp header and the footer, below a game's own popups. A white circle grows out of the screen's middle (`BREAK_AREA_MOTION.growMs`, a `transform` so the compositor runs it) until it passes the corners. The break's card holds still under it (`stackHold: "growing"`), so it goes when it is covered, not at the tap. The break's **header row** (`GameBreakChrome`: Leave, the game's name, the audio chip, the flame) is up from the first frame, at the study header's spots, and the study header steps aside (`TowerStudyHeader` `hidden={gameBreak.areaMounted}`). Its ink turns from the sky's white to the ground's dark exactly where the circle passes under each control (§ 6 "the header row"). Leave here cancels the break: the circle freezes part-way and falls away with the area (`leaving`). |
+| **playing** | The Stage mounts on the finished circle: the area is white from here on, and the game IS the screen (`GameBreakFrame`). The header row is already there; only the game's content arrives, fading in (`GameFrame` / `GameCentered` under a host, `GAME_FRAME_HOST_FADE_IN_MS`; Word Search's letters at random delays, `staggerFadeIn`; Match Speed's cards at their own random delays). There is no header bar: the game sits straight on the white ground under the row. Leave on a live run ENDS it (the run reports what it managed, as a natural end does; Writing Grid left during Phase 1 keeps showing Phase 1 on the way out — `WritingGridStage` → `leftDuringArrange`); with the lent-card offer up, Leave answers "not now"; from any other phase it closes the break. The word cards behind are hidden by opacity (`FlashCardSection` → `hiddenForBreak`). |
 | **shrinking** | The run ended (`FlpBreakStageProps.onRunEnded` → `finishRun`). The grow in reverse: the board holds `shrinkHoldMs`, fades to the white circle at full size (`shrinkFadeMs`), and the circle closes to the screen's middle over `growMs`. The break's card is back under it, now showing the results (§ 5b), over the next word card. Input is dead throughout: the area stops taking touches as the shrink starts, and the break's card swallows them until **results**, so a tap or swipe aimed at the card as it appears can't reach the word card under it (`BreakCardLayer.tsx` → `pointerEvents`). A lent-card offer holds this until it is answered, because the offer lives over the board. |
 | **results** | The results card is on top, where the learner left off; the word tools stay away. A tap or a swipe either way moves on (undo is locked; a tap off the card is still Back). No mark. |
 | **skipping** (after results) | A swiped card flies on from where the finger let go, a tapped one plays the writing flp's throw, and the word tools and More Info come back. Same phase as Skip, so nothing rises. |
 | **leaving** | No run to report. The whole game falls away through the bottom; then the stack comes back and the page plays `playBreakReturn`: the next card rises, the word tools drop back in, More Info fades up. |
 
-- **Back** (flp header) leaves the whole session, up to Play. The game covers the header (it draws the game's name beside Leave instead), so from there Leave is the only way out, and the audio chip is out of reach until the game ends.
-- **Undo:** live on the break's card — it cancels the break (card 10 returns on Side 2,
-  the counter goes back to 9, the plan is kept since card 10 is due again, and the tools
+- **Back** (flp header) leaves the whole session, up to Play. From the grow on, the break's own header row replaces the study header (Leave instead of Back, the game's name, its own audio chip and flame — § 6), so Leave is the only way out, and the narration can be changed and the minutes watched mid-game.
+- **Undo:** live on the break's card — it cancels the break (card 15 returns on Side 2,
+  the counter goes back to 14, the plan is kept since card 15 is due again, and the tools
   return). Locked in every later phase. The wflp has no undo.
 - **Mechanism:** the flp's Web Animations API choreography in
   `src/features/flashcards/FlashcardsLearnPage/gameBreak/breakMotion.ts` — selector tables animating the CSS
@@ -305,9 +305,11 @@ raised objects, so the card still reads as one of the deck's:
 - **Skip** (a cream plate) and **Play** (a plate in the game's hue): `towerPlateSx`, so
   their edge is their wall, with no `COLORS.border` outline (TOWER_STYLE_SHIFT.md).
 
-The hint pawn speaks for the front word card, which is the card under the break's, so it
-is hidden until that word is uncovered (`HintPawn` → `unseen`, released on `skipping`;
-HINT_PAWN.md § Arrival).
+The hint pawn speaks for the front word card, which is the card under the break's, so
+over the break's card it stays in its corner with no bubble. **Play** throws it off the
+left edge (`HintPawn` → `away`, `FlashcardsLearnPage.tsx` → `PAWN_AWAY_PHASES`), and it
+slides back in once the cards return. Skip leaves it where it is (HINT_PAWN.md § Game
+breaks).
 
 It behaves as a card in the session too: undo works on it, and a tap off
 it is Back through the same `handleTowerOffCardTap` as any card (`stackIsCards`). Leaving
@@ -331,11 +333,21 @@ Code: `gameBreak/BreakCardLayer.tsx`, `gameBreak/GameBreakCard.tsx`,
 
 ### 5b. The results card
 
-After a run the same layer returns as `GameBreakResultCard`: the medal or "Finished!" / "Run
-ended" heading, the score, the accuracy, the personal best, and "Tap or swipe to continue". There is
-no game end popup in a break, so no Play Again and no cleanup board.
+After a run the same layer returns as `GameBreakResultCard`, with "Tap or swipe to continue"
+at its foot. What sits under the heading depends on whether the run finished:
 
-`FlpBreakResults` is display strings, so the card needs no change per game. A sideways
+- **Finished** (`tiers` set): the "Finished!" heading and the two **run-tier panels**, speed
+  stacked above accuracy, and nothing else. The speed panel holds the tier, the time and the
+  personal best; the accuracy panel holds the tier and "correct/attempts · percent"
+  ([GAMES_FEATURE.md](./GAMES_FEATURE.md) § Run tiers). The game's `score` and `details`
+  strings are not shown.
+- **Unfinished** (`tiers` null — left early, out of cards): the "Run ended" / "Out of cards"
+  heading, then `score`, `details` and the personal best line.
+
+There is no game end popup in a break, so no Play Again and no cleanup board.
+
+`FlpBreakResults` is display strings plus the `tiers` value (`RunTiers | null`), so the card
+needs no change per game. A sideways
 game's results card turns as its title card did (`sideways`, read off the plan's adapter in
 `FlashcardsLearnPage` → `breakCard`): the learner is still holding the phone sideways when
 the game closes onto it. Its
@@ -350,7 +362,7 @@ writing flp's "grab and throw" to the right, the same motion through the Web Ani
 A Stage reports from its run-ended path, not from each way a run can end, so a natural end,
 Leave and running out of cards all land here.
 
-Code: `gameBreak/GameBreakResultCard.tsx`, `BreakCardLayer.tsx`, `GameBreakArea.tsx` (the shrink);
+Code: `gameBreak/GameBreakResultCard.tsx`, `src/games/shared/RunTierPanels.tsx`, `BreakCardLayer.tsx`, `GameBreakArea.tsx` (the shrink);
 `cardThrow.ts` → `cardThrowSteps`;
 `useGameBreak.ts` → `finishRun`, `finishShrink`, `results`; `src/games/flpBreak/types.ts` →
 `FlpBreakResults`; `MatchSpeedStage.tsx` → `onRunEnded`, `sortOfferPending`;
@@ -399,30 +411,66 @@ marks land on character rows, so only a cell whose row is the learner's own card
 (`WritingGridCharacter.ownCard`) calls it: a word stays on the tower until its own card is
 studied. A game joins the rotation by getting an entry in `FLP_BREAK_GAMES`.
 
-The break's `Frame` is `GameBreakFrame` (`gameBreakFrameFor(hue)`, memoized per hue so a
-re-render never remounts the Stage), and it is deliberately almost nothing — in a break
-the game IS the screen:
-- **no panel** — a `GameFrame` under a Leave provider drops its inset, corner and line, and
-  the area's white is the ground; a new game's Stage needs no change for this;
-- **no header bar** — the flp header is covered, and a `GameTimer` / `GameHud` under a Leave
-  provider drops its tint and hairline, so the clock sits straight on the ground. A spacer
-  clears the status bar (`.game-break-frame__status-spacer`), rather than padding, so Leave
-  and the end popup's puck, both pinned to the frame's corner, clear it too. `headerRight`
-  is ignored;
-- **Leave** reaches the frame through `GameFrameExitContext`
-  (`src/games/shared/gameFrameExit.ts`): any `GameFrame` under a provider draws the tower study header's back
-  arrow: same glyph, size and screen position (`src/components/pageHeaderSizing.ts`, which
-  `PageHeader` reads too), in the default header ink because the ground here is white, not
-  the sky. An invisible 8px margin widens its tap target. The game's name (`title`) sits beside the arrow in the `dense` header's type (`GameFrame` → `GameFrameExitTitle`), so the break reads like a page with a header. It is not part of the button, so a mis-tap on it cannot end a run. A routed game's own page
-  provides none. Match Speed and Word Search have no top strip:
-  each keeps `GAME_FRAME_EXIT_CLEARANCE_PX` (the header row's bottom edge) clear above its
-  content. Writing Grid keeps its phase label, in a `GameHud` strip sized to that same row
-  and pinned right, level with the arrow.
-  ⚠️ A strip with its own content at the left edge (a HUD's first label, `GameTimer`'s eye)
-  collides with it; such a game must make room before it gets an adapter;
-- the game's **hue** reaches the game's own parts through
-  `GameSurfaceContext` provided directly — never `GameSurfaceProvider`, whose
-  `useThemeColor` would repaint the browser chrome.
+The break's screen is split between the AREA and the game:
+
+- **the header row belongs to the area** (`GameBreakChrome`, rendered by `GameBreakArea`
+  over the body, z 6). It is the study header's row redrawn at the same spots
+  (`src/components/pageHeaderSizing.ts`: `TOWER_STUDY_BACK_ARROW_TOP_PX`,
+  `DENSE_HEADER_PAD_TOP_PX` + `TOWER_STUDY_ROW_PX`, `DENSE_HEADER_PAD_X_PX`,
+  `DENSE_HEADER_RIGHT_GAP_PX`): **Leave** (the back arrow, an invisible 8px tap margin), the
+  game's name beside it in the `dense` header's type (`candidate.game.title`; not part of the
+  button, so a mis-tap cannot end a run), then on the right the game's own controls (a slot),
+  the **audio chip** and the **flame** in the corner. It mounts with the area, so it is on
+  screen from the grow's first frame, before any Stage exists; the study header is hidden
+  meanwhile (`TowerStudyHeader` `hidden={gameBreak.areaMounted}` — `visibility`, so nothing
+  under it moves). For a sideways game the row turns with it (`useSidewaysStage`).
+  - **The ink swap.** Through the grow the row sits on the sky and the circle reaches the top
+    corners last, so the arrow, the title and the chip are drawn twice in one grid cell: a
+    white copy, and a dark copy clipped to the circle (`clip-path: circle()` centred on the
+    area's centre, converted into each copy's own box, animated with the circle's duration and
+    easing — `circleCoverDiameter`, `BREAK_AREA_MOTION`). Each control turns dark where the
+    white arrives under it; the shrink plays it backwards; a Leave mid-grow freezes it with the
+    circle. Clip-path clips hit-testing too, so a tap lands on whichever copy is showing.
+  - ⚠️ **The flame is drawn once.** Every `MinutePointsFireBadge` runs its own accrual tick
+    and sends its own `incrementMinutePoint`, so a second copy would count every second twice.
+    It reads the same on sky and on white, so it needs no swap; and the study header (with its
+    flame) is hidden for exactly the phases the row is mounted, switched in one render.
+  - **What Leave does** (`gameBreakHost.ts`): while a Stage is mounted, the Stage's own
+    `onExitRequest`, handed up by `GameBreakFrame` (`registerExit`); with none mounted (the
+    grow, the Stage's lazy load) it ends the break (`beginLeave`, which takes `growing` to
+    `leaving`).
+  - **The audio chip** shows unless the adapter hides it (`FlpBreakGame.hidesAudioChip`): an
+    adapter call, because the row exists before the Stage does. Every break game's countdown
+    beeps, so Writing Grid shows it too (2026-11-10). Bucket Drop hides it on a reading run, its
+    header chip's rule.
+  - **A game control that belongs in the row** goes in `GameFrame`'s `exitRowTrailing`, which
+    portals into the row's slot just left of the chip (`GameFrameHost.trailingSlot`) and fades in
+    with the game, at the chip's height (`OUTLINED_CHIP_HEIGHT_PX`): Superposition's hint
+    button, Writing Grid's phase label.
+  - The row passes presses through; only its controls take them. It paints above the game, so
+    the countdown's z 5 input shield (`GameCountdown`) stays under Leave and the chip, while the
+    count's dim (portaled above the area) covers the row too.
+- **the game is almost nothing else.** Its `Frame` is `GameBreakFrame` (`gameBreakFrameFor(hue)`,
+  memoized per hue so a re-render never remounts the Stage), which provides
+  `GameFrameHostContext` (`src/games/shared/gameFrameExit.ts`) to every `GameFrame` inside:
+  - **no panel** — a hosted `GameFrame` drops its inset, corner and line, and the area's white
+    is the ground; a new game's Stage needs no change for this;
+  - **no header bar** — a hosted `GameTimer` / `GameHud` drops its tint and hairline, so the
+    clock sits straight on the ground. The area's own spacer clears the status bar
+    (`.flp-game-break__status-spacer`), so the row and everything pinned to the body's corners
+    (the end popup's puck) clear it. `title` and `headerRight` are ignored (the row is the area's);
+  - **the content fades in** — a hosted `GameFrame`, its row controls and `GameCentered` arrive
+    over `GAME_FRAME_HOST_FADE_IN_MS` (250ms), since the row was already up. Word Search's letters
+    each arrive at a random delay (`src/games/shared/staggerFadeIn.ts`, within 400ms, 200ms each);
+    Match Speed's cards already did (`MatchSpeedCard` → `match-speed-fade-in`, within
+    `FADE_IN_MAX_DELAY_MS`);
+  - **clearance** — Match Speed, Word Search and Writing Grid have no top strip: each keeps
+    `GAME_FRAME_EXIT_CLEARANCE_PX` (the row's bottom edge) clear above its content.
+    ⚠️ A strip with its own content at the left edge (a HUD's first label, `GameTimer`'s eye)
+    collides with Leave; such a game must make room before it gets an adapter;
+  - the game's **hue** reaches the game's own parts through `GameSurfaceContext` provided
+    directly — never `GameSurfaceProvider`, whose `useThemeColor` would repaint the browser
+    chrome.
 
 The area holds `useBlockEdgeSwipe(true)` from the grow on.
 
@@ -457,9 +505,11 @@ Code: `src/games/types.ts` → `GameStageHost`, `GameStageFrameProps`;
 `src/games/flpBreak/memoryMapBreak.ts`, `MemoryMapBreakStage.tsx`;
 `src/games/memory-map/MemoryMapStage.tsx`;
 `src/games/writing-grid/WritingGridStage.tsx`;
-`src/features/flashcards/FlashcardsLearnPage/gameBreak/GameBreakFrame.tsx`;
-`src/games/shared/gameFrameExit.ts` → `GameFrameExitContext`; `GameFrame.tsx` →
-`GameFrame`, `GameFrameExitButton`.
+`src/features/flashcards/FlashcardsLearnPage/gameBreak/GameBreakFrame.tsx`, `GameBreakChrome.tsx`,
+`gameBreakHost.ts`, `GameBreakArea.tsx`;
+`src/games/shared/gameFrameExit.ts` → `GameFrameHostContext`; `GameFrame.tsx` →
+`GameFrame` (`exitRowTrailing`, the host fade); `src/games/shared/staggerFadeIn.ts`;
+`src/games/runtime/lazyWithPreload.ts`.
 
 ## 7. Timer eye on the left (all games)
 
@@ -480,10 +530,12 @@ Code: `src/games/shared/TimerEyeToggle.tsx`, `GameFrame.tsx` → `GameTimer`
 |---|---|---|
 | Client feature (flp) | `useGameBreak` — counter, due flag, pick, prefetch, phases | `src/features/flashcards/FlashcardsLearnPage/gameBreak/useGameBreak.ts` |
 | Client feature (flp) | `BreakCardLayer` + `GameBreakCard` — the break's card in the stack | `…/gameBreak/BreakCardLayer.tsx`, `GameBreakCard.tsx` |
-| Client feature (flp) | `GameBreakArea` — the full-screen layer; grow and shrink circle, Stage host | `…/gameBreak/GameBreakArea.tsx` |
+| Client feature (flp) | `GameBreakArea` — the full-screen layer; grow and shrink circle, status-bar spacer, Stage host, Leave's handler (`GameBreakHostContext`) | `…/gameBreak/GameBreakArea.tsx`, `gameBreakHost.ts` |
+| Client feature (flp) | `GameBreakChrome` — the header row (Leave, title, audio chip, flame, game-control slot) and its ink swap | `…/gameBreak/GameBreakChrome.tsx` |
 | Client feature (flp) | `GameBreakResultCard` — the results face of the break's card | `…/gameBreak/GameBreakResultCard.tsx` |
-| Client feature (flp) | `GameBreakFrame` — status-bar spacer, hue + Leave contexts for the Stage | `…/gameBreak/GameBreakFrame.tsx` |
-| Games engine | `GameFrame`'s host exit arrow + `GameFrameExitContext` | `src/games/shared/GameFrame.tsx`, `gameFrameExit.ts`, `src/components/pageHeaderSizing.ts` |
+| Client feature (flp) | `GameBreakFrame` — hue + host contexts for the Stage; hands the Stage's `onExitRequest` up to the row | `…/gameBreak/GameBreakFrame.tsx` |
+| Games engine | `GameFrame` under a host: no panel, content fade-in, `exitRowTrailing` portal; `GameFrameHostContext` | `src/games/shared/GameFrame.tsx`, `gameFrameExit.ts` |
+| Games engine | `lazyWithPreload` (Stage chunk preload), `staggerFadeIn` (cell arrival) | `src/games/runtime/lazyWithPreload.ts`, `src/games/shared/staggerFadeIn.ts` |
 | Client feature (flp) | Break choreography tables | `src/features/flashcards/FlashcardsLearnPage/gameBreak/breakMotion.ts` |
 | Games engine | Stage host contract, `noPinyinMarkType` | `src/games/types.ts`, `src/games/registry.ts` |
 | Games engine | Adapters, candidate derivation, pick | `src/games/flpBreak/` |
@@ -503,7 +555,7 @@ Direction: `features/flashcards` imports `src/games` (engine), never the reverse
   a fallback (§ 4).
 - The top-up honoured the flp study mode (§ 4) — moot since the study modes were removed
   (2026-11-04); every break deals the game's own Mix distribution.
-- Play waits for the board prefetched while card 10 was up. That prefetch belongs to its
+- Play waits for the board prefetched while card 15 was up. That prefetch belongs to its
   plan (`PlannedBreak.id`), not to the `due` effect's lifetime — the swipe that opens the
   break is what ends `due`.
 - Pinyin follows the bar; Bubble Match is level 2, level 1 when ≥ 50% Unfamiliar (§ 5a).
@@ -541,6 +593,8 @@ Direction: `features/flashcards` imports `src/games` (engine), never the reverse
 - **2026-11-01:** Writing Grid joined the rotation as the writing flp's game, on its full
   8-cell board. A break's Leave ends the run with no confirm, as in every other game, and
   only a learner's own single-character card comes off the tower (§ 4, § 6).
+
+- **2026-11-10:** `BREAK_INTERVAL` went from 10 to 15: breaks came round too often (§ 1).
 
 - **2026-10-31:** a run's end card became the reverse of the grow: the game closes back onto
   the break's card, which shows the results and is swiped away (§ 2, § 5b). The fall remains

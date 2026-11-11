@@ -828,6 +828,8 @@ const SegmentedSentenceDisplay: React.FC<SegmentedSentenceDisplayProps> = ({
         anchorEl={popperAnchorEl}
         popperRef={popperInstanceRef}
         cardRef={popupRef}
+        // Another segment's tap replays the grow-in there, rather than sliding over.
+        contentKey={selectedRange ? `${selectedRange.start}-${selectedRange.end}` : undefined}
         className="segment-definition-popup"
         interactive={isPopupInteractive}
         pressed={popupPressed}

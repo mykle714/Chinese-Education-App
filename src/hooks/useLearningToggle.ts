@@ -5,8 +5,8 @@ import { addToLibrary, getLibraryStatus, removeFromLibrary } from "../utils/voca
 import type { Language, VocabEntry } from "../types";
 
 /**
- * Learning membership of ONE word, as a toggle — the state behind `LearningToggle`
- * (src/components/LearningToggle.tsx). ("Learning" is the UI name of the internal
+ * Learning membership of ONE word, as a toggle — the state behind the eip's Add key
+ * (`EipAddKey`). ("Learning" is the UI name of the internal
  * `'library'` bucket — CLAUDE.md § Terminology; the API helpers keep `library`.)
  *
  * A TOGGLE, not an add-only button: removal is never a delete — the server demotes the
@@ -27,9 +27,9 @@ import type { Language, VocabEntry } from "../types";
  * Only discoverable entries can join Learning, and only for a signed-in user; for any
  * other entry (or `null`) the hook stays inert and `available` is false.
  *
- * Hosts: EipSheet (the Dictionary page's eip — drawn as EipAddKey) and
- * DictionaryCardDetailPage (drawn as LearningToggle).
- * Docs: docs/LEAF_NODE_PAGES.md § "Read-only dictionary cdp".
+ * Host: EipSheet (the Dictionary page's and the saved-card cdp's eip), drawn as EipAddKey.
+ * (The read-only dictionary cdp drew it as a glowing `LearningToggle` until both were
+ * deleted 2026-11-10.) Docs: docs/EIP_SHEET_GESTURES.md § Add key.
  */
 export function useLearningToggle(entry: VocabEntry | null | undefined, language: Language) {
     const { user } = useAuth();

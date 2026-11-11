@@ -9,13 +9,13 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    the order below. Two footer looks: the flat full-width **bar** (text-only tabs — the
    shelf redesign's A2a/D5, [SHELF_REDESIGN.md](./SHELF_REDESIGN.md)) and the floating
    **slab** (with Material Symbols icons), chosen per route by `routeMeta`'s
-   `footerStyle` (`routeFooterStyle`). The slab is worn by `/`, `/dictionary`, both cdps
-   and acp; every Menu-reached page keeps the bar.
+   `footerStyle` (`routeFooterStyle`). The slab is worn by `/`, `/lessons`, `/dictionary`,
+   the cdp and acp; every Menu-reached page keeps the bar.
 
    | Tab        | `FooterTab`   | Route         | Page                                                         |
    | ---------- | ------------- | ------------- | ------------------------------------------------------------ |
-   | Deck       | `deck`        | `/`           | the Deck Tower (`DeckTowerPage` — [DECK_TOWER.md](./DECK_TOWER.md)), the app's landing page |
-   | Arena      | `arena`       | `/arena`      | the weekly arena (`ArenaPage` — [ARENA_FEATURE.md](./ARENA_FEATURE.md)); drawn only while the `arena` flag is on (`MobileFooter.tsx` → `ARENA_TAB_ON`) |
+   | Flashcards | `deck`        | `/`           | the Deck Tower (`DeckTowerPage` — [DECK_TOWER.md](./DECK_TOWER.md)), the app's landing page |
+   | Lessons    | `lessons`     | `/lessons`    | a "Coming soon" placeholder (`src/features/lessons/LessonsPage.tsx` → `LessonsPage`) on a td Tier-2 ground (`useTier2Look`) with the slab footer; took Arena's slot 2026-11-10. Not flagged |
    | Dictionary | `dictionary`  | `/dictionary` | the dictionary search                                        |
    | Menu       | `menu`        | *(none)*      | **not a page**: raises the Menu popover (`MenuPopover`, see 3 below) |
 
@@ -52,7 +52,7 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    | `deck` | `/`, `/flashcards/card/:id`, `/discover/sort/:language` |
    | `menu` | `/community`, `/friends/requests`, `/friends/sent`, `/friends/remove`, `/friends/challenges*`, `/users/:userId`, `/reader` |
    | `arena` | `/arena` |
-   | `dictionary` | `/dictionary`, `/dictionary/card/:word` |
+   | `dictionary` | `/dictionary` |
 
    The union type is `FooterTab` (exported from `MobileFooter.tsx`). The tab list
    itself is the `TABS` array in that file.
@@ -77,8 +77,10 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    a list of rows, one per secondary destination; tapping a row goes to that page.
 
    - **Rows** (`src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations`,
-     returning `{ main, gated }`): **Reader** and **Community** (the latter only while its
-     flag is on). Every row navigates to
+     returning `{ main, gated }`): **Reader**, **Arena** and **Community** (Arena and Community
+     only while their flags are on). Arena (`/arena`, `ArenaPage` —
+     [ARENA_FEATURE.md](./ARENA_FEATURE.md)) was a footer tab 2026-11-04 → 2026-11-10 and is a
+     Node drill-in again (`chrome: "node"`, `footerTab: "menu"`, back → history else `/`). Every row navigates to
      its `route`. There is **no Friends row**: the `/friends` page was deleted 2026-11-06,
      and Friends lives only in the AccountSheet's Friends tab (td's header avatar). There is
      **no Games row**: the Games hub (`/games`) was deleted 2026-11-06 and the routed games'
@@ -86,7 +88,7 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
      inside the Deck Tower ([GAMES_FEATURE.md](./GAMES_FEATURE.md)).
      Below a hairline, only for accounts holding the grant: **Tester Dashboard** (feature
      tester with testing features on, or admin) — the only gated row. The hairline and the gated group appear together or not at all.
-     There is **no Dictionary or Arena row**: both are footer tabs, and a row would be a
+     There is **no Dictionary or Lessons row**: both are footer tabs, and a row would be a
      second door to the same room. There is deliberately **no Compare Words row**: Compare
      is a sheet raised over the word you are already looking at
      ([WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md)).
@@ -131,14 +133,14 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
      (`/discover/sort/:language`, node; set mode exits to its origin instead —
      [DISCOVER_FLOW.md](./DISCOVER_FLOW.md)) and the Writing Notebook (leaf, back to the
      writing world). The flp has no route: it runs inside td. The cdp's
-     breakdown/used-in/example drill-ins open the tapped word's saved card when the
-     learner has one, else the read-only dictionary cdp (`src/hooks/useOpenWordCard.ts`).
+     breakdown/used-in/example drill-ins do not navigate: they push the tapped word as a
+     crumb on the eip's word trail in the cdp's own sheet (`EipSheet`).
    - Dictionary result tap → **no navigation**: the eip rises as a bottom sheet over the
      results (`EipSheet`, 2026-10-10); its drill-ins (breakdown/used-in rows, example and
      long-definition segments, Compare) open as eip TABS, not pages. Closing the sheet
-     leaves the reader on their results. The read-only dictionary cdp
-     (`/dictionary/card/:word`) is now reached only from the saved-card cdp's drill-in
-     fallback above. See [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) "Card detail (cdp)".
+     leaves the reader on their results. There is no dictionary card page: a word that is
+     not a saved card is shown only in the eip sheet. See
+     [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) "Card detail (cdp)".
    - Settings (`/settings`, leaf) → back to `/` (`SettingsPage`). Normally read as
      AccountSheet's Settings tab; the route is where `/settings/account`'s Back lands.
 

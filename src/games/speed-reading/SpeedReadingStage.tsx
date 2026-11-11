@@ -7,6 +7,8 @@ import ProvisionalCardsNotice from "../../components/ProvisionalCardsNotice";
 import ProvisionalSortOffer from "../../components/ProvisionalSortOffer";
 import { useProvisionalSortOffer } from "../../hooks/useProvisionalSortOffer";
 import { GameCentered, GameFrame } from "../shared/GameFrame";
+import { GameCountdown } from "../shared/GameCountdown";
+import { useGameCountdown } from "../shared/useGameCountdown";
 import { GAME_FRAME_EXIT_CLEARANCE_PX } from "../shared/gameFrameExit";
 import { usePersonalBest } from "../shared/usePersonalBest";
 import { useAuth } from "../../AuthContext";
@@ -18,7 +20,7 @@ import { SIZE, LEADING } from "../../theme/scale";
 import SpeedReadingOptionText from "./SpeedReadingOptionText";
 import SpeedReadingTapZone from "./SpeedReadingTapZone";
 import SpeedReadingPrompt from "./SpeedReadingPrompt";
-import { useSidewaysStage } from "../runtime/useSidewaysStage";
+import { ROTATION_DEG, useSidewaysStage } from "../runtime/useSidewaysStage";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
 import { buildRound, buildSentenceRound } from "./buildRound";
 import { roundPrompt } from "./roundPrompt";
@@ -27,15 +29,13 @@ import {
     FEEDBACK_MS,
     GAME_KEY,
     MARK_TYPE,
-    MEDAL_LABEL,
     OPTION_GLYPH_SIZE,
     OPTION_SENTENCE_GLYPH_SIZE,
     SENTENCE_ROUNDS,
     TARGET_ROUNDS,
     WIN_LEVEL,
-    WRONG_PENALTY_MS,
     formatClock,
-    medalFor,
+    runResultTiers,
 } from "./constants";
 import type { GameStageFrameProps } from "../types";
 import type { FlpBreakResults } from "../flpBreak/types";
@@ -87,17 +87,17 @@ export interface SpeedReadingStageProps {
  * The player answers a FIXED TARGET_ROUNDS (20) rounds and the clock counts UP;
  * the score is the finishing time and LOWER IS BETTER. There is no time cap — a
  * run ends when the 20th round is answered (or, degenerately, when the card
- * queue drains, which ends it with no medal).
+ * queue drains, which ends it with no tiers).
  *
  * NOTHING about the run's progress is drawn during play (changed 2026-11-04): no clock
  * (Match Speed, Word Search and Writing Grid show none either), no round counter and no
- * tick strip. The clock still runs, pauses and bills penalties exactly as before; the
- * finishing time and the accuracy appear on the break's results card. The
+ * tick strip. The clock still runs and pauses exactly as before; the finishing time,
+ * the accuracy and the speed / accuracy tiers appear on the break's results card. The
  * board is the prompt and the two halves, nothing else.
  *
- * Every round counts toward the 20, right or wrong. A wrong answer is charged
- * WRONG_PENALTY_MS instead of being replayed, because with a count-up clock a
- * blind tap is otherwise the fastest possible round.
+ * Every round counts toward the 20, right or wrong, and a wrong answer is not replayed.
+ * It costs no time (the +3s WRONG_PENALTY_MS was removed with the medals): a blind tap
+ * is the fastest possible round, so it is priced by the run's ACCURACY tier instead.
  *
  * ── The last round is a SENTENCE ────────────────────────────────────────────
  * The final SENTENCE_ROUNDS (1) round escalates from "read this word" to "read
@@ -158,6 +158,12 @@ const SpeedReadingStage: React.FC<SpeedReadingStageProps> = ({
     // the whole time the game is on screen.
 
     const [phase, setPhase] = useState<Phase>("loading");
+    /**
+     * The pre-run 3·2·1 is up over the first round (src/games/shared/GameCountdown.tsx).
+     * A flag beside `phase` rather than a phase: the round is drawn and "ready" in every
+     * sense but input, narration and the clock, which all wait for the release.
+     */
+    const [counting, setCounting] = useState(false);
     const [round, setRound] = useState<Round | null>(null);
     const [picked, setPicked] = useState<number | null>(null);
     /** Correct picks so far — reported at the end, but NOT the score. */
@@ -170,9 +176,7 @@ const SpeedReadingStage: React.FC<SpeedReadingStageProps> = ({
      * when the results read it.
      */
     const [elapsedMs, setElapsedMs] = useState(0);
-    /** Accumulated WRONG_PENALTY_MS, one charge per wrong answer. */
-    const [penaltyMs, setPenaltyMs] = useState(0);
-    /** The break's Leave ended the run short: no time, no medal, no personal best. */
+    /** The break's Leave ended the run short: no time, no tiers, no personal best. */
     const [leftEarly, setLeftEarly] = useState(false);
 
     // One run per mount: a break plays once and hands its results to the flp's card.
@@ -190,15 +194,13 @@ const SpeedReadingStage: React.FC<SpeedReadingStageProps> = ({
     /** `Date.now()` at the first round of the run — the clock's origin. */
     const startAtRef = useRef<number>(0);
     /**
-     * Answered-round count and penalty total as REFS.
+     * Answered-round count as a REF.
      *
-     * Both are read inside the pick handler to decide, in the same tick, whether
-     * the run is over and what the final time is; the matching state exists only
-     * for rendering. Reading them out of state there would see the previous
-     * render's values and let a 21st round start.
+     * Read inside the pick handler to decide, in the same tick, whether the run is
+     * over; the matching state exists only for rendering. Reading it out of state
+     * there would see the previous render's value and let a 21st round start.
      */
     const answeredRef = useRef(0);
-    const penaltyRef = useRef(0);
     /**
      * Sideways rendering. Rotates the whole game 90° whenever its container is
      * taller than wide, which is what makes device rotation a non-event — see
@@ -342,6 +344,7 @@ const SpeedReadingStage: React.FC<SpeedReadingStageProps> = ({
             setNoticeOpen(queue.provisional.length > 0);
             startAtRef.current = Date.now();
             setElapsedMs(0);
+            setCounting(true);
             setPhase("ready");
         } else {
             setPhase("blocked");
@@ -360,7 +363,17 @@ const SpeedReadingStage: React.FC<SpeedReadingStageProps> = ({
     // "ready" and "feedback" (feedback time is part of the clock, see ./types.ts).
     const { paused: backgroundPaused } =
         useBackgroundPause(phase === "ready" || phase === "feedback");
-    const clockPaused = noticeOpen || backgroundPaused;
+    // The countdown is the third source: its span is un-billed exactly like a pause.
+    const clockPaused = noticeOpen || backgroundPaused || counting;
+
+    // 3·2·1 over the first round, once the lent-cards notice is dismissed (it sits under
+    // the countdown's screen-wide dim, so the two are never up together). Holds while the
+    // app is backgrounded. Gated on "ready", so a Leave mid-count takes the dim down.
+    const countdownStep = useGameCountdown({
+        active: counting && phase === "ready" && !noticeOpen,
+        paused: backgroundPaused,
+        onRelease: () => setCounting(false),
+    });
     /** `Date.now()` when the current pause began, or null while running. */
     const pausedAtRef = useRef<number | null>(null);
     useEffect(() => {
@@ -428,32 +441,25 @@ const SpeedReadingStage: React.FC<SpeedReadingStageProps> = ({
         } else {
             // Queue drained (a failed top-up, or a run of unplayable cards). End the
             // run rather than stalling on an empty screen — an unfinished run earns no
-            // medal however fast it was, see `medal` below.
+            // tiers however fast it was, see `finished` below.
             endRun();
         }
     }, [nextRound, endRun]);
 
-    /** Charge a wrong answer. Ref first: `advance` reads it. */
-    const addPenalty = useCallback(() => {
-        penaltyRef.current += WRONG_PENALTY_MS;
-        setPenaltyMs(penaltyRef.current);
-    }, []);
-
     const onPick = useCallback((index: number) => {
-        if (phase !== "ready" || !round) return;
+        if (phase !== "ready" || !round || counting) return;
         const option = round.options[index];
         setPicked(index);
         setPhase("feedback");
-        // Every round counts toward the target, right or wrong; a wrong one is paid
-        // for in seconds instead of in an extra round. There is no Skip, so this is
+        // Every round counts toward the target, right or wrong; a wrong one lowers the
+        // accuracy tier instead of costing an extra round. There is no Skip, so this is
         // the only path that advances the counter.
         answeredRef.current += 1;
         setAnswered(answeredRef.current);
         if (option.isCorrect) setScore((s) => s + 1);
-        else addPenalty();
         mark(round.entry, option.isCorrect);
         advanceTimerRef.current = setTimeout(advance, FEEDBACK_MS);
-    }, [phase, round, mark, advance, addPenalty]);
+    }, [phase, round, counting, mark, advance]);
 
     /**
      * Narrate the round's clue: the headword on a word round, the whole example
@@ -484,32 +490,33 @@ const SpeedReadingStage: React.FC<SpeedReadingStageProps> = ({
      */
     const spokenRoundRef = useRef<Round | null>(null);
     useEffect(() => {
-        // "ready" only: no narration during feedback, and none once the run ends.
-        if (phase !== "ready" || !round) return;
+        // "ready" only: no narration during feedback, and none once the run ends. The first
+        // round waits for the countdown, so its word lands with the release beep, not under the count.
+        if (phase !== "ready" || !round || counting) return;
         if (spokenRoundRef.current === round) return;
         spokenRoundRef.current = round;
         autoSpeak();
-    }, [phase, round, autoSpeak]);
+    }, [phase, round, counting, autoSpeak]);
 
     // ── Score ────────────────────────────────────────────────────────────────
-    /** The score: wall-clock time plus penalties, LOWER IS BETTER. Read at the end. */
-    const totalMs = elapsedMs + penaltyMs;
+    /** The score: wall-clock time, LOWER IS BETTER. Read at the end. */
+    const totalMs = elapsedMs;
     /**
-     * A medal requires a FINISHED run. A run cut short by a drained queue (or by a
-     * break's Leave) has a small time that would otherwise buy a gold.
+     * Tiers, a win and a personal best all require a FINISHED run. A run cut short by a
+     * drained queue (or by a break's Leave) has a small time that would otherwise buy
+     * speed tier 1.
      */
     const finished = answered >= TARGET_ROUNDS;
-    const medal = finished ? medalFor(totalMs) : null;
 
-    // Record the win once, when the run ends with a medal.
+    // Record the win once, when the run ends finished (wins are not gated on a tier).
     const winRecordedRef = useRef(false);
     useEffect(() => {
         if (phase !== "ended" || winRecordedRef.current) return;
-        if (medal) {
+        if (finished) {
             winRecordedRef.current = true;
             recordWin(WIN_LEVEL);
         }
-    }, [phase, medal, recordWin]);
+    }, [phase, finished, recordWin]);
 
     // Fastest finished run (docs/SPEED_READING_GAME.md § Personal best). The game has a
     // single difficulty, so every run competes under one "default" mode key. Only a run that completed all TARGET_ROUNDS is recorded.
@@ -531,7 +538,7 @@ const SpeedReadingStage: React.FC<SpeedReadingStageProps> = ({
 
     /**
      * The break's Leave (docs/FLP_GAME_BREAKS.md § 2). A LIVE run ends where it is,
-     * so it has no finishing time, and so no medal, win or personal best. A run whose
+     * so it has no finishing time, and so no tiers, win or personal best. A run whose
      * 20th answer is already in (its feedback window) simply ends finished. A finished
      * run is only still here for the sort offer: Leave is its "not now". From every
      * other phase there is nothing to show, so the break closes.
@@ -553,12 +560,10 @@ const SpeedReadingStage: React.FC<SpeedReadingStageProps> = ({
 
     /** The run's heading on the break's results card. */
     const resultTitle = leftEarly ? "Run ended"
-        : medal ? `${MEDAL_LABEL[medal]}!`
         : finished ? "Finished!"
         : "Out of cards";
     /** The breakdown line under a finished run's time. */
-    const accuracyLine = `${score}/${TARGET_ROUNDS} correct`
-        + (penaltyMs > 0 ? ` · +${Math.round(penaltyMs / 1000)}s penalty` : "");
+    const accuracyLine = `${score}/${TARGET_ROUNDS} correct`;
 
     // The run reports to the flp (there is no end popup), which is what starts the
     // shrink back to the card. A lent-card offer holds it: the offer lives over
@@ -570,6 +575,7 @@ const SpeedReadingStage: React.FC<SpeedReadingStageProps> = ({
         const finalMs = totalMs;
         onRunEnded?.({
             title: resultTitle,
+            tiers: finished ? runResultTiers(finalMs, score) : null,
             score: finished ? formatClock(finalMs) : `${answered} of ${TARGET_ROUNDS} rounds`,
             details: finished ? [accuracyLine] : [`${score}/${answered} correct · no time recorded`],
             personalBest: finished
@@ -759,6 +765,13 @@ const SpeedReadingStage: React.FC<SpeedReadingStageProps> = ({
                         </Box>
                     </Box>
                     </Box>
+
+                    {/* The digit turns with the stage; the dim itself is portaled out of it. */}
+                    <GameCountdown
+                        step={countdownStep}
+                        rotateDeg={stage.rotated ? ROTATION_DEG : 0}
+                        classPrefix="speed-reading"
+                    />
                 </GameFrame>
             )}
 

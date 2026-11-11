@@ -93,7 +93,7 @@ Gates **sharing**, not **authoring**.
 |---|---|
 | Server mount | `server/server.ts` → `app.use(arenaRoutes)`. **Arena has no leaked endpoint** — all six `/api/arena*` paths live in `arenaRoutes.ts`, so this single mount is the whole server gate |
 | Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes `/arena` |
-| Entry point | `src/components/MobileFooter.tsx` → `ARENA_TAB_ON` — the footer's Arena tab, the only navigational entry (no Menu popover row, no row on `/friends`) |
+| Entry point | `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` — the Menu popover's Arena row, the only navigational entry (no footer tab since 2026-11-10, no row on `/friends`) |
 
 **NOT gated, and worth knowing:**
 

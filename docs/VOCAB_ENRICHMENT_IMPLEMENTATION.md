@@ -205,9 +205,9 @@ one renderer, shared by all surfaces:
 
 | Field | Component | Hosts |
 |---|---|---|
-| **Synonyms** (+ `synonymsMetadata` pronunciation/gloss) and **Related Words** | `src/features/flashcards/SynonymsRelatedSection.tsx` | the eip's **definition tab** when the host passes `showSynonymsRelated` (`InfoCardTabContent`) — both cdps do: the saved-card cdp's sheet and the dictionary cdp's inline panel. Gated with `hasSynonymsOrRelated` (`src/utils/definitionUtils.ts`) so the tab draws no empty section. Synonyms are AI-enriched with no validation field, so the whole list always carries the AI treatment. |
-| **Example Sentences** | `src/features/flashcards/ExampleSentenceList.tsx` — per-token `ForeignText`/cpcd from `sentence.segmentMetadata` | eip examples tab + both cdps (docs/EXAMPLE_SENTENCES.md) |
-| **Breakdown** | `src/features/flashcards/BreakdownRow.tsx` | eip breakdown tab + both cdps (docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md) |
+| **Synonyms** (+ `synonymsMetadata` pronunciation/gloss) and **Related Words** | `src/features/flashcards/SynonymsRelatedSection.tsx` | the eip's **definition tab** when the host passes `showSynonymsRelated` (`InfoCardTabContent`) — the saved-card cdp and the Dictionary page do (both through `EipSheet`). Gated with `hasSynonymsOrRelated` (`src/utils/definitionUtils.ts`) so the tab draws no empty section. Synonyms are AI-enriched with no validation field, so the whole list always carries the AI treatment. |
+| **Example Sentences** | `src/features/flashcards/ExampleSentenceList.tsx` — per-token `ForeignText`/cpcd from `sentence.segmentMetadata` | eip examples tab, on every eip host incl. the saved-card cdp (docs/EXAMPLE_SENTENCES.md) |
+| **Breakdown** | `src/features/flashcards/BreakdownRow.tsx` | eip breakdown tab, on every eip host incl. the saved-card cdp (docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md) |
 
 The flp and acp deliberately do **not** pass `showSynonymsRelated`: on those surfaces the
 panel is the reading view for a word mid-drill, while the cdp is the reference page those

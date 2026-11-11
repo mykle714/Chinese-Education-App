@@ -1,7 +1,8 @@
 import { COLORS, type RampHue } from "../../theme/colors";
 import type { MarkType } from "../../types";
-import type { GameCategory, Medal } from "./types";
+import type { GameCategory } from "./types";
 import { formatTimeMs } from "../../utils/timeUtils";
+import { gradeAccuracy, gradeSpeed, type AccuracyTierLadder, type RunTiers, type SpeedTierLadder } from "../shared/runTiers";
 
 /**
  * Match Speed — tunable constants.
@@ -112,12 +113,8 @@ export const WRONG_FEEDBACK_MS = 400;
  *  under REFILL_TICK_MS so it is gone — or nearly — by the time the replacement
  *  cards fade in underneath it. Scores nothing; see MatchSpeedClearBanner.tsx. */
 export const CLEAR_BANNER_MS = 1_400;
-/** Per-step duration of the pre-run 3·2·1·Go countdown. */
-export const COUNTDOWN_STEP_MS = 700;
-/** The countdown steps, in order. The board renders (readable) behind them and the
- *  run clock starts only when the last one clears, so every run begins from the
- *  same state and no time is billed to reading the opening board. */
-export const COUNTDOWN_STEPS = ["3", "2", "1", "Go!"];
+// The pre-run countdown's steps and timing are shared by every game:
+// src/games/shared/GameCountdown.tsx → COUNTDOWN_STEPS, COUNTDOWN_STEP_MS.
 
 // ---- Card selection -------------------------------------------------------
 /**
@@ -181,34 +178,38 @@ export const POOL_DISTRIBUTION: Readonly<Record<GameCategory, number>> = {
 
 // ---- Scoring --------------------------------------------------------------
 /**
- * Medal thresholds by time to finish all TARGET_PAIRS, best-first. These keep the pace
- * of the old 30-second table (gold 9 pairs, silver 6, bronze 3), scaled up to 30 pairs.
- *
- * Unlike Word Search's table — whose bronze row is `maxSeconds: Infinity` and is
- * therefore ALWAYS awarded — this one has a genuine no-medal tier, so `medalForTime`
- * returns null past the bronze line. Same ordered-table shape, different floor.
+ * Speed tiers by time to finish all TARGET_PAIRS, best-first (src/games/shared/runTiers.ts:
+ * tier 1 is the best, and every finished run lands on one of the seven).
+ * ⚠️ PLACEHOLDERS: the old medal lines (gold 100s ≈ 3.3s/pair, silver 150s, bronze 300s)
+ * spread over seven tiers, to be tuned from play data.
  */
-export const MEDAL_THRESHOLDS: { medal: Medal; maxMs: number; emoji: string }[] = [
-    { medal: "gold", maxMs: 100_000, emoji: "🥇" }, // ~3.3s/pair
-    { medal: "silver", maxMs: 150_000, emoji: "🥈" }, // 5s/pair
-    { medal: "bronze", maxMs: 300_000, emoji: "🥉" }, // 10s/pair
-];
-
-/** Resolve a finished run's time to its medal tier, or null past the bronze line.
- *  Only a run that reached TARGET_PAIRS has a time to judge; see MatchSpeedStage. */
-export function medalForTime(elapsedMs: number): { medal: Medal; emoji: string } | null {
-    const tier = MEDAL_THRESHOLDS.find((t) => elapsedMs <= t.maxMs);
-    return tier ? { medal: tier.medal, emoji: tier.emoji } : null;
-}
+export const SPEED_TIERS: SpeedTierLadder = {
+    maxMs: [75_000, 100_000, 125_000, 150_000, 200_000, 300_000],
+};
 
 /**
- * The end-of-run copy, shared by the page's end popup and an flp break's results card
- * (docs/FLP_GAME_BREAKS.md § 5b), so the two can't drift.
+ * Accuracy tiers by pairs matched / match attempts, best-first.
+ * ⚠️ PLACEHOLDERS: tune from play data.
  */
-export function runResultTitle(score: number, finishMs: number): string {
-    if (score < TARGET_PAIRS) return "Run ended";
-    const tier = medalForTime(finishMs);
-    return tier ? `${tier.emoji} ${tier.medal[0].toUpperCase()}${tier.medal.slice(1)}!` : "Finished!";
+export const ACCURACY_TIERS: AccuracyTierLadder = {
+    minRatio: [1, 0.95, 0.9, 0.8, 0.7, 0.6],
+};
+
+/**
+ * A run's tiers, or null for a run that did not reach TARGET_PAIRS (left early, out of
+ * cards): it has no finish time to grade.
+ */
+export function runResultTiers(score: number, attempts: number, finishMs: number): RunTiers | null {
+    if (score < TARGET_PAIRS) return null;
+    return {
+        speed: gradeSpeed(finishMs, SPEED_TIERS),
+        accuracy: gradeAccuracy(score, attempts, ACCURACY_TIERS),
+    };
+}
+
+/** The flp break results card's heading (docs/FLP_GAME_BREAKS.md § 5b). */
+export function runResultTitle(score: number): string {
+    return score >= TARGET_PAIRS ? "Finished!" : "Run ended";
 }
 
 export function runResultScore(score: number, finishMs: number): string {
@@ -217,7 +218,7 @@ export function runResultScore(score: number, finishMs: number): string {
         : `${score} of ${TARGET_PAIRS} pairs matched`;
 }
 
-/** Information only: accuracy never gates a medal. */
+/** The accuracy line under the score; ACCURACY_TIERS grades the same ratio. */
 export function runResultAccuracy(score: number, attempts: number): string {
     const percent = attempts > 0 ? Math.round((score / attempts) * 100) : 0;
     return `Accuracy ${score}/${attempts} (${percent}%)`;
@@ -245,7 +246,7 @@ export const DEF_MAX_LINES = 3;
 // 13/500 on white), which frees the fills to mean state and only state:
 //
 //   blu  = the card you have selected      (`.msc.pick`)
-//   grn  = matched, or the cleanup partner hint
+//   grn  = matched
 //   red  = a wrong attempt
 //
 // Every fill below is a PASTEL carrying ink text, per the redesign's fill rule
@@ -266,7 +267,7 @@ export const CARD_OUTLINE = COLORS.border;
  *  blue SURFACE fill, with the outline swapped for a 2px INK ring. */
 export const SELECTED_CARD_BG = COLORS.blu;
 export const SELECTED_CARD_RING = COLORS.onSurface;
-/** Correct-match pop AND the cleanup-mode partner hint. */
+/** Correct-match pop. */
 export const CORRECT_CARD_BG = COLORS.grn;
 /** Wrong-attempt flash. Ink-on-pastel like the rest, so the flash reads as the same
  *  system as the other two rather than as an error dialog dropped onto the board. */

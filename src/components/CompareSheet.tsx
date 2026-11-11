@@ -16,10 +16,11 @@ import type { LongDefinitionPart, VocabEntry } from "../types";
  * full height (SheetPanel's merge chrome turns it into a page-with-a-header at the top
  * of its travel — the "maximize"), and drags away leaving the page beneath untouched.
  *
- * ── The two hosts and the one exception ───────────────────────────────────────
- * Both cdps mount this (`VocabCardDetailPage`, `DictionaryCardDetailPage`) from the
- * `Compare` pill on `WordToolsRail`. The **flp does not**: it already has an eip entry-tab
- * strip, and Compare is a singleton TAB there (`CompareEipTab`, useEipTabs), which keeps
+ * ── The host and the exceptions ───────────────────────────────────────────────
+ * The saved-card cdp (`VocabCardDetailPage`) mounts this from the `Compare` pill on the
+ * `WordToolsRail` above its hero card. (The read-only dictionary cdp did too until it was
+ * deleted 2026-11-10.) The **flp and the Dictionary page's eip do not**: they have the
+ * eip word trail, and Compare is a singleton TAB there (`CompareEipTab`, useEipTabs), which keeps
  * the comparison beside the word trail it came from instead of on top of it. So there are
  * two Compare hosts by design — but only one Compare *body*: both render the shared
  * `CompareWorkspace`, which owns no slot state.

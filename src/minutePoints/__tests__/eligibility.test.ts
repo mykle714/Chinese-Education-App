@@ -28,9 +28,9 @@ describe('isMinutePointsEligiblePath', () => {
     expect(isMinutePointsEligiblePath('/reader-settings')).toBe(false);
   });
 
-  it('keeps the exact-match page from leaking to its children', () => {
-    // The legacy desktop flashcards page is a study surface; everything under it browses.
-    expect(isMinutePointsEligiblePath('/flashcards')).toBe(true);
+  it('does not earn on the bare /flashcards parent or its browse screens', () => {
+    // Only named children (`/flashcards/card`, `/flashcards/writing/notebook`) are listed.
+    expect(isMinutePointsEligiblePath('/flashcards')).toBe(false);
     expect(isMinutePointsEligiblePath('/flashcards/collection/3')).toBe(false);
   });
 

@@ -64,6 +64,18 @@ export const FLP_CARD_CORNER_RATIO = 0.09375;
 export const FLP_CARD_STOCK_INSET_RATIO = 0.34 / 4.8;
 
 /**
+ * The CONTENT GUTTER inside the printed panel, as a fraction of the card's WIDTH: the
+ * breathing room a BASIC-layout face keeps between its content (the gloss, the foreign
+ * word, the sense chip) and the cream rim, so nothing ever touches the outer band. Set on
+ * the frame as `--card-content-gutter-basic` (cardStockVars); `CardFaceSide` applies it as
+ * `--card-content-gutter` only on a basic face. An ADVANCED-layout face (saved icon / text
+ * arrangement, or the fie mounted) gets 0: there the learner places content freely and
+ * the panel edge itself is the cutoff. Roughly 60% of the rim's width.
+ * Docs: docs/CARD_ICON_LAYOUT.md ("Narrower clip on the Deck Tower's card stock").
+ */
+export const FLP_CARD_CONTENT_GUTTER_RATIO = 0.2 / 4.8;
+
+/**
  * The Deck Tower card's beige PANEL corner radius (the cream rim's inner radius) as a
  * fraction of the card's WIDTH. IsoCard's `PANEL_RADIUS` (0.24 world units on a 4.8-wide
  * card — keep the two in step). Rounder than concentric with the card's corner

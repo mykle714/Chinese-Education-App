@@ -1,4 +1,4 @@
-import { lazy } from "react";
+import { lazyWithPreload } from "../runtime/lazyWithPreload";
 import { fetchMemoryMap, type MemoryMapResponse } from "../../api/memoryMap";
 import { BREAK_PROMPTS } from "../memory-map/constants";
 import { estimateBreakViewportAspect } from "../memory-map/frameCheck";
@@ -33,5 +33,5 @@ export const MEMORY_MAP_BREAK: FlpBreakGame<MemoryMapResponse> = {
     // learner's own map, today's set included. An unreachable minimum drops it from the
     // focused candidate pool (`useGameBreak`); unfocused sessions never read this.
     focusMinimum: () => Number.POSITIVE_INFINITY,
-    Stage: lazy(() => import("./MemoryMapBreakStage")),
+    Stage: lazyWithPreload(() => import("./MemoryMapBreakStage")),
 };

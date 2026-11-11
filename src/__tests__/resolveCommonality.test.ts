@@ -3,8 +3,7 @@ import { resolveCommonality, resolveDisplayDefinition, sortedSenseClusters } fro
 import type { DefinitionCluster, VocabEntry } from "../types";
 
 /**
- * Guards the Commonality chip's sense-awareness (eip InfoCardTabContent, cdp
- * VocabCardDetailBody).
+ * Guards the Commonality chip's sense-awareness (eip InfoCardTabContent → DefinitionFacts).
  *
  * The invariant that matters: `resolveCommonality` and `resolveDisplayDefinition` must
  * pick the SAME cluster. If they diverge, the chip prints a score for one meaning

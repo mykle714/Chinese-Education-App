@@ -110,7 +110,16 @@ export const BREAK_AREA_MOTION = {
     exitEasing: "cubic-bezier(0.4, 0, 1, 1)",
 } as const;
 
-function prefersReducedMotion(): boolean {
+/**
+ * The break circle's diameter for `area`: enough to pass its corners from its centre, plus
+ * a pixel so no antialiased corner survives. Shared by the circle (GameBreakArea) and the
+ * header row's ink swap (GameBreakChrome), whose clip must be the same circle.
+ */
+export function circleCoverDiameter(area: HTMLElement): number {
+    return Math.ceil(Math.hypot(area.clientWidth, area.clientHeight)) + 2;
+}
+
+export function prefersReducedMotion(): boolean {
     return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 }
 

@@ -1,8 +1,10 @@
-import type { ComponentType, LazyExoticComponent } from "react";
+import type { ComponentType } from "react";
+import type { PreloadableComponent } from "../runtime/lazyWithPreload";
 import type { Language, MarkType } from "../../types";
 import type { GameDef, GameStageFrameProps } from "../types";
 import type { FlpWorld } from "../../../server/contracts/studyMode";
 import type { PersonalBestGame } from "../../../server/contracts/personalBests";
+import type { RunTiers } from "../shared/runTiers";
 
 /**
  * flp game breaks — the engine-side contract (docs/FLP_GAME_BREAKS.md).
@@ -54,11 +56,18 @@ export interface FlpBreakPersonalBest {
  * however a game scores.
  */
 export interface FlpBreakResults {
-    /** The card's heading: "🥇 Gold!", "Time!". */
+    /** The card's heading: "Finished!", "Run ended". */
     title: string;
-    /** The run's headline figure: "7 pairs matched". */
+    /**
+     * The run's speed and accuracy grades with their figures, shown as two large panels
+     * under the heading, speed on top (src/games/shared/RunTierPanels.tsx). When set, the
+     * panels are ALL the card shows: `score` and `details` are not rendered, and the
+     * personal best moves into the speed panel. Null when the run did not finish.
+     */
+    tiers: RunTiers | null;
+    /** An UNFINISHED run's headline figure: "7 of 30 pairs matched". Hidden when `tiers` is set. */
     score: string;
-    /** Secondary figures, one line each: "Accuracy 7/8 (88%)". */
+    /** An UNFINISHED run's secondary lines. Hidden when `tiers` is set. */
     details: string[];
     /**
      * Settles once the server has judged the run. A promise because that answer can land
@@ -125,6 +134,15 @@ export interface FlpBreakGame<P = unknown> {
      * own (FOCUS_MODE.md § 5). Omit to use `focusGameMinimum(gameId)`.
      */
     focusMinimum?: (context: FlpBreakContext) => number;
-    /** Lazy, so the flp bundle does not carry every game. */
-    Stage: LazyExoticComponent<ComponentType<FlpBreakStageProps<P>>>;
+    /**
+     * The break hides the narration audio chip in its header row (GameBreakChrome). The row
+     * is drawn from the first frame of the grow, before the Stage mounts, so this is the
+     * adapter's call rather than the Stage's. Omit for a game that narrates.
+     */
+    hidesAudioChip?: (candidate: FlpBreakCandidate) => boolean;
+    /**
+     * Lazy, so the flp bundle does not carry every game; preloadable, so the host fetches
+     * the chunk when the break falls due rather than on the frame the game mounts (§ 1).
+     */
+    Stage: PreloadableComponent<ComponentType<FlpBreakStageProps<P>>>;
 }

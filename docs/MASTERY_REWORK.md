@@ -564,13 +564,13 @@ used to lead into it was dropped 2026-09-28 (the Know / Read / Write labels name
 section on their own). There is no `SectionCard` wrapper any more, and
 what used to be the Definition / Breakdown / Examples boxes beside it have moved into the
 page's pull-up sheet (entry 18). The component lives in `src/components/mastery/` rather
-than in `VocabCardDetailBody` because the read-only **dictionary** cdp has no marks to
-draw and must not import it.
+than in the deleted `VocabCardDetailBody` because the read-only **dictionary** cdp (also
+deleted 2026-11-10) had no marks to draw and must not import it.
 
 ### Mini cards — the eight-mark window, at hairline scale
 
 `src/components/MiniCard.tsx` (`MasteryStrip`, fed the lens bar by `MiniVocabCard`) draws
-the **cdp's eight-mark window** along the bottom of the 92×132 thumbnail (`BAR_STRIP`: 3px tall, inset 8px each side, 1.5px cell gap) for
+the **cdp's eight-mark window** along the bottom of the 92×132 thumbnail (`MINI_CARD_BAR_STRIP` in `src/components/miniCardFace.ts`: 3px tall, inset 8px each side, 1.5px cell gap) for
 the surface's lens bar, from the `lens` prop (default `core`, forwarded by
 `MiniVocabCardGrid`).
 

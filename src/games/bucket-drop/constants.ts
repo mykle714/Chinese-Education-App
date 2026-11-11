@@ -1,6 +1,7 @@
 import { COLORS, type RampHue } from "../../theme/colors";
 import { WRONG_BUBBLE_BG, WRONG_FEEDBACK_MS } from "../bubbles/constants";
 import type { MarkType } from "../../types";
+import { gradeAccuracy, gradeSpeed, type AccuracyTierLadder, type RunTiers, type SpeedTierLadder } from "../shared/runTiers";
 
 /**
  * Bucket Drop — the tunable constants (docs/BUCKET_DROP_GAME.md).
@@ -26,10 +27,10 @@ export const GAME_ID = "bucket-drop";
  */
 export const GAME_HUE: RampHue = "red";
 
-/** Key under which medalled runs are logged in the shared `wins` table (useGameWins). */
+/** Key under which finished runs are logged in the shared `wins` table (useGameWins). */
 export const GAME_KEY = "bucketDrop";
 
-/** Every medalled run logs under level 1 — the game has no levels, only modes. */
+/** Every finished run logs under level 1 — the game has no levels, only modes. */
 export const WIN_LEVEL = 1;
 
 // ── Modes ─────────────────────────────────────────────────────────────────────
@@ -98,44 +99,51 @@ export const GAME_DISTRIBUTION: Record<string, number> = {
 export const TOTAL_WORDS = Object.values(GAME_DISTRIBUTION).reduce((a, b) => a + b, 0);
 
 /**
- * Medal thresholds by FINISHING TIME (ms), lower is better — Speed Reading's shape.
- * Gold is 2.25 s a word. ⚠️ First guesses; re-tune once real runs exist.
- * The challenge spec's time-penalty grace (CHALLENGE_GAMES → 'bucket-drop') is set to
- * the gold line, so keep the two together.
+ * Speed tiers by FINISHING TIME (ms), best-first (src/games/shared/runTiers.ts: tier 1 is
+ * the best; past the last cutoff is tier 7).
+ * ⚠️ PLACEHOLDERS: the old medal lines (gold 45s = 2.25 s a word, silver 70s, bronze
+ * 100s) spread over seven tiers; re-tune once real runs exist.
+ * The challenge spec's time-penalty grace (CHALLENGE_GAMES → 'bucket-drop') was set to the
+ * old gold line (45s), which is tier 2 here, so keep the two together.
  */
-export const MEDAL_THRESHOLDS = { gold: 45_000, silver: 70_000, bronze: 100_000 };
-
-export type Medal = "gold" | "silver" | "bronze";
-
-/** Medal for a FINISHED run's time, or null when slower than bronze. */
-export function medalFor(totalMs: number): Medal | null {
-    if (totalMs <= MEDAL_THRESHOLDS.gold) return "gold";
-    if (totalMs <= MEDAL_THRESHOLDS.silver) return "silver";
-    if (totalMs <= MEDAL_THRESHOLDS.bronze) return "bronze";
-    return null;
-}
-
-export const MEDAL_LABEL: Record<Medal, string> = {
-    gold: "🥇 Gold",
-    silver: "🥈 Silver",
-    bronze: "🥉 Bronze",
+export const SPEED_TIERS: SpeedTierLadder = {
+    maxMs: [35_000, 45_000, 55_000, 70_000, 85_000, 100_000],
 };
 
 /**
- * The run's result lines, shared by the end popup (route) and the break's results card, so
- * the two hosts cannot word a run differently. `finished` = every word was placed; only an
- * flp break's Leave can end a run without it.
- *
- * Referenced by: BucketDropEndPopup, BucketDropStage. Doc: docs/FLP_GAME_BREAKS.md § 5b.
+ * Accuracy tiers by clean drops / all drops (a miss is a drop into the wrong bucket),
+ * best-first. ⚠️ PLACEHOLDERS: tune from play data.
  */
-export function runResultTitle(finished: boolean, medal: Medal | null): string {
-    if (!finished) return "Run ended";
-    return medal ? `${MEDAL_LABEL[medal]}!` : "Finished!";
+export const ACCURACY_TIERS: AccuracyTierLadder = {
+    minRatio: [1, 0.95, 0.9, 0.8, 0.7, 0.6],
+};
+
+/**
+ * A run's tiers. Only a FULL, FINISHED run is graded: a short pool's time is not
+ * comparable and a run left early has none. Every word ends up placed, so the correct
+ * drops are `placed` and the attempts are those plus the misses.
+ */
+export function runResultTiers(gradable: boolean, finalMs: number, placed: number, misses: number): RunTiers | null {
+    if (!gradable) return null;
+    return {
+        speed: gradeSpeed(finalMs, SPEED_TIERS),
+        accuracy: gradeAccuracy(placed, placed + misses, ACCURACY_TIERS),
+    };
 }
 
-/** "20 words · 2 misses", with the reason a full-length-only medal was not on offer. */
+/**
+ * The break results card's heading. `finished` = every word was placed; only an flp
+ * break's Leave can end a run without it.
+ *
+ * Referenced by: BucketDropStage. Doc: docs/FLP_GAME_BREAKS.md § 5b.
+ */
+export function runResultTitle(finished: boolean): string {
+    return finished ? "Finished!" : "Run ended";
+}
+
+/** "20 words · 2 misses", with the reason a full-length-only tier was not on offer. */
 export function runResultDetail(total: number, misses: number, fullRun: boolean): string {
-    return `${total} words · ${misses} ${misses === 1 ? "miss" : "misses"}${fullRun ? "" : " · short run, no medal"}`;
+    return `${total} words · ${misses} ${misses === 1 ? "miss" : "misses"}${fullRun ? "" : " · short run, no tiers"}`;
 }
 
 // ── Perimeter geometry (perimeterLayout.ts) ───────────────────────────────────

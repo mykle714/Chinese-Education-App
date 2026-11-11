@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { wordSearchGridParams } from "../wordSearchGrid";
 import { wordSearchGridRequest } from "../../games/word-search/gridRequest";
-import { medalForTime, personalBestMode, runResultScore, runResultTitle } from "../../games/word-search/constants";
+import { personalBestMode, runResultScore, runResultTiers, runResultTitle } from "../../games/word-search/constants";
 import { WORD_SEARCH_BREAK, WORD_SEARCH_BREAK_BOARD } from "../../games/flpBreak/wordSearchBreak";
 import type { FlpBreakContext } from "../../games/flpBreak/types";
 import type { WordSearchResponse } from "../../games/word-search/types";
-import { cpcdNaturalSize } from "../../components/CPCDRow";
+import { cpcdNaturalSize } from "../../components/cpcdLayout";
 
 describe("wordSearchGridParams", () => {
     it("sends the mode and the board's band mix", () => {
@@ -74,9 +74,11 @@ describe("Word Search compact tiles", () => {
 
 describe("Word Search board scoring", () => {
     it("asks for the same pace on a smaller board", () => {
-        expect(medalForTime(46, 7).medal).toBe("gold");
-        expect(medalForTime(47, 7).medal).toBe("silver");
-        expect(medalForTime(60).medal).toBe("gold");
+        // Tier 2's 60s line on 9 words is ~46.7s on the 7-word compact board.
+        // The panel shows the real time; only the grade uses the scaled one.
+        expect(runResultTiers(true, 46_000, 7)?.speed).toEqual({ tier: 2, elapsedMs: 46_000 });
+        expect(runResultTiers(true, 47_000, 7)?.speed.tier).toBe(3);
+        expect(runResultTiers(true, 60_000)?.speed.tier).toBe(2);
     });
 
     it("keeps a compact board's personal best apart from the mode's", () => {
@@ -86,13 +88,15 @@ describe("Word Search board scoring", () => {
 });
 
 describe("Word Search break results", () => {
-    it("names the medal and the finish time of a finished run", () => {
-        expect(runResultTitle(true, 45_000)).toBe("🥇 Gold!");
+    it("names a finished run and its finish time", () => {
+        expect(runResultTitle(true)).toBe("Finished!");
+        expect(runResultTiers(true, 45_000)).toEqual({ speed: { tier: 1, elapsedMs: 45_000 } });
         expect(runResultScore(9, 9, 45_000)).toBe("All 9 found in 0:45");
     });
 
-    it("gives a run left early no medal and no time", () => {
-        expect(runResultTitle(false, 45_000)).toBe("Run ended");
+    it("gives a run left early no tiers and no time", () => {
+        expect(runResultTitle(false)).toBe("Run ended");
+        expect(runResultTiers(false, 45_000)).toBeNull();
         expect(runResultScore(4, 9, 45_000)).toBe("4 of 9 words found");
     });
 });

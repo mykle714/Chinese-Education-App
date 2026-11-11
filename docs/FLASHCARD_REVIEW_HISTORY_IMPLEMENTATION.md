@@ -4,7 +4,7 @@
 Per-card tracking of recent flashcard review marks, the input to the whole utcm mastery
 computation.
 
-> flp game breaks (a game offered every 10 cards, occupying a virtual slot in the
+> flp game breaks (a game offered every 15 cards, occupying a virtual slot in the
 > working-loop sequence; counted off `useWorkingLoop`'s `onDismissed` / `onUndone`) —
 > **phase 1 built**: [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md).
 

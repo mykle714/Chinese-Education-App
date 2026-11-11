@@ -13,8 +13,8 @@ import {
     type FlpBreakResults,
 } from "../../../../games/flpBreak";
 
-/** Cards per break: the 10th card is the last before a game (docs/FLP_GAME_BREAKS.md § 1). */
-export const BREAK_INTERVAL = 10;
+/** Cards per break: the 15th card is the last before a game (docs/FLP_GAME_BREAKS.md § 1). */
+export const BREAK_INTERVAL = 15;
 
 /**
  * Where the session is relative to a break.
@@ -214,6 +214,10 @@ export function useGameBreak(args: {
         if (!candidate || !adapter) return false;
         const id = ++planIdRef.current;
         setPlanned({ id, candidate, context, prefetched: null, prefetchSettled: false });
+        // The game's code too, not just its board: without this the first break of each
+        // game waited on its lazy chunk behind a spinner after the grow. Fire-and-forget —
+        // a failed preload just leaves the Stage's own Suspense load to retry.
+        adapter.Stage.preload().catch(() => undefined);
         // NOT cancelled by this effect's cleanup. The cleanup runs the moment `due` flips
         // false — which is exactly what dismissing the due card does (phase → title) —
         // so tying the result to it dropped every prefetch still in flight at the swipe,
@@ -262,7 +266,7 @@ export function useGameBreak(args: {
         setPhase("title");
     }, [due, planned, forced, cardsSinceBreak]);
 
-    // Undo can take the session back off the "due" card (counter 9 → 8): drop the plan,
+    // Undo can take the session back off the "due" card (counter 14 → 13): drop the plan,
     // so the break is re-decided — with a fresh seed — when it falls due again.
     useEffect(() => {
         if (phase === "cards" && !due && planned) setPlanned(null);
@@ -280,7 +284,7 @@ export function useGameBreak(args: {
     const noteUndone = useCallback(() => {
         setCardsSinceBreak((n) => Math.max(0, n - 1));
         setAbandoned(false);
-        // Undo on the title card brings card 10 back and cancels the break (§ 2) — the
+        // Undo on the title card brings card 15 back and cancels the break (§ 2) — the
         // plan is kept (the card is due again), and the page plays the return so the
         // word tools and More Info come back with it. Undo is locked once the game is
         // playing, so only the title phase lands here.
@@ -321,7 +325,10 @@ export function useGameBreak(args: {
             setPhase("skipping");
             setReturnMotion("tools");
             setReturnNonce((n) => n + 1);
-        } else if (phase === "playing") {
+        } else if (phase === "playing" || phase === "growing") {
+            // `growing`: Leave is on screen from the grow's first frame (GameBreakChrome),
+            // before any Stage exists. It cancels the break as a no-run exit does: the
+            // area falls away, the half-grown circle with it (GameBreakArea).
             setPhase("leaving");
         }
     }, [phase]);

@@ -1,12 +1,14 @@
 /**
  * Writing Grid — client constants (docs/WRITING_PRACTICE_REWORK.md § 2).
- * Board size, level-per-position and medals are the shared contract
- * (server/contracts/writingGrid.ts); this file holds only what the page draws.
+ * Board size and level-per-position are the shared contract
+ * (server/contracts/writingGrid.ts); this file holds what the page draws and the run's
+ * speed tiers.
  */
 import type { RampHue } from "../../theme/colors";
 import { WRITING_FOCUS_SIZE } from "../../components/handwriting/levelBehavior";
+import type { SpeedTierLadder } from "../shared/runTiers";
 
-/** `wins` table key (a win is logged per medalled board, like Speed Reading). */
+/** `wins` table key (a win is logged per finished board, like Speed Reading). */
 export const GAME_KEY = "writingGrid";
 /** Registry id (also the personal-best game id). */
 export const GAME_ID = "writing-grid";
@@ -15,9 +17,7 @@ export const GAME_ID = "writing-grid";
  *  Reading wears its own `yel` rather than reading's green. */
 export const GAME_HUE: RampHue = "org";
 
-/** 3·2·1·Go, as in Match Speed (src/games/match-speed/constants.ts → COUNTDOWN_STEPS). */
-export const COUNTDOWN_STEPS = ["3", "2", "1", "Go!"];
-export const COUNTDOWN_STEP_MS = 700;
+// The pre-run countdown is shared: src/games/shared/GameCountdown.tsx.
 
 /** Pointer travel (px) before a press on a Phase 1 cell becomes a drag. */
 export const DRAG_SLOP_PX = 6;
@@ -37,4 +37,14 @@ export const SHADOW_PREVIEW_MAX_LEVEL = 3;
 /** The writing canvas's coordinate space — shared with the editor so recognition matches. */
 export const CANVAS_SIZE = WRITING_FOCUS_SIZE;
 
-export const MEDAL_LABEL = { gold: "🥇 Gold", silver: "🥈 Silver", bronze: "🥉 Bronze" } as const;
+/**
+ * Speed tiers by a finished board's total active time, best-first
+ * (src/games/shared/runTiers.ts: tier 1 is the best; past the last cutoff is tier 7).
+ * Writing Grid keeps no accuracy tier. ~15s to arrange + 8 characters at ~6–10 strokes:
+ * levels 1–4 ~8s each, 5–8 ~12s each, plus a retry or two.
+ * ⚠️ PLACEHOLDERS: the old medal lines (gold 120s, silver 210s, bronze 360s) spread over
+ * seven tiers, to be tuned from play data.
+ */
+export const SPEED_TIERS: SpeedTierLadder = {
+    maxMs: [90_000, 120_000, 165_000, 210_000, 285_000, 360_000],
+};

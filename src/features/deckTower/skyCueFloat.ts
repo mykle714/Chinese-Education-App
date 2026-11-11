@@ -6,9 +6,9 @@
  * Lives in its own module so WorldIndicator.tsx and CardsCue.tsx export only components
  * (react-refresh/only-export-components).
  *
- * Depended on by: WorldIndicator.tsx, CardsCue.tsx, home/HomeButtons.tsx (the "Swipe down to
+ * Depended on by: WorldIndicator.tsx, CardsCue.tsx, home/HomeEnterHint.tsx (the "Swipe down to
  * enter" cue). Docs: docs/DECK_TOWER.md § "Worlds", § "The cards page" → "The cards cue";
- * docs/HOME_SCREEN.md § "The buttons".
+ * docs/HOME_SCREEN.md § "The enter hint".
  */
 
 /** One full drift out (or down) and back, ms. */

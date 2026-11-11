@@ -15,7 +15,7 @@ import { EIP_LIGHT_PALETTE, eipPaletteFor, type EipPalette } from "./eipPalette"
  *     palette outside one.
  *
  * Depends on: eipPalette.ts, contexts/ThemeContext.tsx. Depended on by:
- * EipPaletteContext.tsx, InfoCardSection, DictionaryCardDetailPage, and every eip piece
+ * EipPaletteContext.tsx, InfoCardSection, and every eip piece
  * that paints with the palette.
  * Docs: docs/EIP_SHEET_GESTURES.md § "Light / dark theme".
  */

@@ -31,8 +31,6 @@ interface MatchSpeedBoardProps {
     onMatch: (entry: VocabEntry) => void;
     /** A wrong attempt, always reported with the FOREIGN card's entry. */
     onMiss: (entry: VocabEntry) => void;
-    /** Freezes the refill tick and switches taps to no-stakes cleanup behavior. */
-    cleanupMode: boolean;
     /** While true the board renders but ignores taps and never refills (the 3·2·1
      *  countdown, so the opening board is readable but not yet playable). */
     frozen: boolean;
@@ -93,7 +91,6 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
     onRefilled,
     onMatch,
     onMiss,
-    cleanupMode,
     frozen,
     onSpeak,
     cardAspect = CARD_ASPECT,
@@ -174,9 +171,7 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
     }, []);
     /** Card ids flashing red from a wrong attempt. */
     const [wrongIds, setWrongIds] = useState<string[]>([]);
-    /** Cleanup mode only: the partner card being highlighted light green. */
-    const [hintedId, setHintedId] = useState<string | null>(null);
-    /** Bumped every time the last pair leaves the board, so the "Board Cleared!"
+    /** Bumped every time a match leaves no live card on the board, so the "Board Cleared!"
      *  banner re-mounts (and therefore re-animates) on each clear. 0 = never
      *  cleared this run, which is why the banner is not rendered at all yet.
      *  Purely cosmetic — nothing about scoring or the refill reads this. */
@@ -215,7 +210,6 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
     // volatile props in refs is what lets the dependency array below be empty-ish
     // and the memo do its job. See MatchSpeedCard's memo comment.
     const frozenRef = useRef(frozen);
-    const cleanupModeRef = useRef(cleanupMode);
     // `timeStamp` of the last pointerdown a CARD claimed, so the board-level
     // fallback can tell "this tap hit a card" from "this tap hit nothing".
     // Not state: it is written and read within a single event dispatch and must
@@ -228,7 +222,6 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
         drawPairsRef.current = drawPairs;
         onRefilledRef.current = onRefilled;
         frozenRef.current = frozen;
-        cleanupModeRef.current = cleanupMode;
         onMatchRef.current = onMatch;
         onMissRef.current = onMiss;
         onSpeakRef.current = onSpeak;
@@ -310,41 +303,57 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
     // THE global refill interval — one timer for the whole board, started once.
     // Deliberately NOT per-hole: a pair matched right after a tick leaves a hole
     // for nearly 2s, which is the game's pacing pressure. Stopped while frozen
-    // (countdown) or in cleanup (the run is over; the board only drains).
+    // (the countdown, and once the run is over).
     useEffect(() => {
-        if (frozen || cleanupMode) return;
+        if (frozen) return;
         const id = setInterval(refill, REFILL_TICK_MS);
         return () => clearInterval(id);
-    }, [frozen, cleanupMode, refill]);
+    }, [frozen, refill]);
 
     /** Remove a matched pair from both columns once its pop animation finishes,
-     *  leaving two holes for the next refill tick. */
+     *  leaving two holes for the next refill tick.
+     *
+     *  `clearedBoard` is the verdict `markPairExiting` reached at MATCH time: that
+     *  match left no live (non-exiting) card on the board. It is decided then, not
+     *  here, so a refill tick landing during the 280ms pop (which fills the OTHER
+     *  holes) cannot cancel a clear the player already earned. */
     const removePair = useCallback(
-        (pairId: string) => {
+        (pairId: string, clearedBoard: boolean) => {
             const clear = (slots: Slot[]) => slots.map((s) => (s?.pairId === pairId ? null : s));
-            const next = updateBoard((prev) => ({
+            updateBoard((prev) => ({
                 foreign: clear(prev.foreign),
                 english: clear(prev.english),
             }));
-            // Did that empty the whole board? Checked HERE rather than in a
-            // `useEffect` on the board, because the board is also legitimately
-            // empty before the very first refill lands — an effect would fire the
-            // banner on mount. A removal is the only way a board becomes empty, so
-            // this is the one place the transition is unambiguous.
-            const isEmpty = [...next.foreign, ...next.english].every((s) => s === null);
-            // Not when the run itself just ended: the last pair of a finished run is
-            // still popping behind the end popup, and that card is the celebration.
-            if (isEmpty && !frozenRef.current) setClearId((n) => n + 1);
+            // The banner itself fires HERE, after the pop, rather than at match time,
+            // because only now is `frozenRef` reliable: the match that ends the run
+            // freezes the board via a parent re-render, which has not happened yet
+            // inside the tap handler. Not when the run itself just ended: the last
+            // pair of a finished run is still popping behind the end popup, and that
+            // card is the celebration.
+            if (clearedBoard && !frozenRef.current) setClearId((n) => n + 1);
         },
         [updateBoard]
     );
 
-    /** Flag both members of a pair as exiting so they play the pop together. */
+    /** Flag both members of a pair as exiting so they play the pop together.
+     *
+     *  Returns whether that match CLEARED THE BOARD: every slot is now empty or
+     *  popping out. Popping pairs count as gone (lenient by design, 2026-11-10) —
+     *  the old "all ten slots null after the pop" rule also lost every clear whose
+     *  last pop overlapped a refill tick. Checked on a match rather than in a
+     *  `useEffect` on the board, because the board is also legitimately empty
+     *  before the very first refill lands — an effect would fire the banner on
+     *  mount. A match is the only way a populated board becomes clear, so this is
+     *  the one place the transition is unambiguous. */
     const markPairExiting = useCallback(
-        (pairId: string) => {
+        (pairId: string): boolean => {
             const flag = (slots: Slot[]) =>
                 slots.map((s) => (s?.pairId === pairId ? { ...s, exiting: true } : s));
-            updateBoard((prev) => ({ foreign: flag(prev.foreign), english: flag(prev.english) }));
+            const next = updateBoard((prev) => ({
+                foreign: flag(prev.foreign),
+                english: flag(prev.english),
+            }));
+            return [...next.foreign, ...next.english].every((s) => s === null || s.exiting);
         },
         [updateBoard]
     );
@@ -376,7 +385,6 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
             // Captured FIRST: everything below is measured against it, including
             // how long this tap waited for the main thread before we got here.
             const handlerStart = performance.now();
-            const cleanupMode = cleanupModeRef.current;
 
             // Claim this event for the card layer, so the board-level fallback
             // below knows a card handled it and does not also log it as a miss.
@@ -411,33 +419,6 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
             // Speak the word on any foreign-card tap (autoplay only).
             if (card.side === "foreign") onSpeakRef.current?.(card.entry);
 
-            // ---- Cleanup mode: a no-stakes study surface -----------------------
-            // Tapping a card highlights its partner light green; tapping the
-            // partner clears the pair. No marks, no score, no refill.
-            if (cleanupMode) {
-                if (selectedId === card.id) {
-                    setSelected(null);
-                    setHintedId(null);
-                    return done("cleanup-deselect");
-                }
-                const selected = selectedId ? findCard(selectedId) : null;
-                if (selected && selected.side !== card.side && selected.pairId === card.pairId) {
-                    markPairExiting(card.pairId);
-                    later(() => removePair(card.pairId), POP_DURATION_MS);
-                    setSelected(null);
-                    setHintedId(null);
-                    return done("cleanup-clear");
-                }
-                setSelected(card.id);
-                // Reveal the partner rather than punishing the miss — cleanup is
-                // for studying the words the run left behind.
-                const partner = [...boardRef.current.foreign, ...boardRef.current.english].find(
-                    (s) => s?.pairId === card.pairId && s.id !== card.id
-                );
-                setHintedId(partner?.id ?? null);
-                return done("cleanup-select");
-            }
-
             // ---- Live play -----------------------------------------------------
             // Tapping the selected card deselects it.
             if (selectedId === card.id) {
@@ -459,8 +440,8 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
             const foreignEntry = (selected.side === "foreign" ? selected : card).entry;
             if (selected.pairId === card.pairId) {
                 onMatchRef.current(foreignEntry);
-                markPairExiting(card.pairId);
-                later(() => removePair(card.pairId), POP_DURATION_MS);
+                const clearedBoard = markPairExiting(card.pairId);
+                later(() => removePair(card.pairId, clearedBoard), POP_DURATION_MS);
                 setSelected(null);
                 return done("match");
             }
@@ -492,7 +473,7 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
             //
             // Deliberately absent: `selectedId` and the slot arrays (read via refs,
             // which is what makes multi-touch correct), and `frozen` /
-            // `cleanupMode` / `onMatch` / `onMiss` / `onSpeak` (read via the prop
+            // `onMatch` / `onMiss` / `onSpeak` (read via the prop
             // refs above, which is what keeps this stable).
             findCard,
             setSelected,
@@ -557,7 +538,6 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
         // replay of the mistake they already know about.
         if (card.id === selectedId) return "selected";
         if (wrongIds.includes(card.id)) return "wrong";
-        if (cleanupMode && card.id === hintedId) return "partner-hint";
         return "idle";
     };
 

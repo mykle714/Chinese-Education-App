@@ -5,9 +5,20 @@
  * tune: everything on the board derives from them.
  */
 import type { RampHue } from "../../theme/colors";
+import type { SpeedTierLadder } from "../shared/runTiers";
 
 /** Registry id (also the personal-best game id and the mark's `surface`). */
 export const GAME_ID = "superposition";
+
+/**
+ * Speed tiers by the time to build all SUPERPOSITION_CHAR_COUNT (4) characters, best-first
+ * (src/games/shared/runTiers.ts: tier 1 is the best; past the last cutoff is tier 7).
+ * Superposition keeps no accuracy tier.
+ * ⚠️ PLACEHOLDERS: the game never had medals, so these are first guesses; tune from play data.
+ */
+export const SPEED_TIERS: SpeedTierLadder = {
+    maxMs: [20_000, 30_000, 45_000, 60_000, 90_000, 120_000],
+};
 /** Game surface hue: teal, the one game hue no other game wears. */
 export const GAME_HUE: RampHue = "tea";
 
@@ -35,8 +46,6 @@ export const DRAG_GRIP_X_FRACTION = 0.5;
 export const DRAG_GRIP_Y_FRACTION = 0.8;
 /** Seconds between hints. */
 export const HINT_COOLDOWN_SECONDS = 15;
-/** The hint button's height (px). The word info starts below it. */
-export const HINT_BUTTON_PX = 32;
 
 /** The hanzi-writer glyph box's side, in glyph units. */
 const GLYPH_UNITS = 1024;

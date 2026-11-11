@@ -1,4 +1,4 @@
-import { lazy } from "react";
+import { lazyWithPreload } from "../runtime/lazyWithPreload";
 import { dealWritingGrid, type WritingGridCharacter, type WritingGridDealRequest } from "../../api/writingGrid";
 import type { FlpBreakContext, FlpBreakGame } from "./types";
 
@@ -19,5 +19,5 @@ export const WRITING_GRID_BREAK: FlpBreakGame<WritingGridCharacter[]> = {
     rulesLine: "Sort eight characters by difficulty, then write them all.",
     prefetch: (_candidate, context) => dealWritingGrid(writingGridBreakRequest(context)),
     isPlayable: (cells) => cells.length > 0,
-    Stage: lazy(() => import("./WritingGridBreakStage")),
+    Stage: lazyWithPreload(() => import("./WritingGridBreakStage")),
 };

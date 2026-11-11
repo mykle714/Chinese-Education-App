@@ -5,7 +5,7 @@ import CPCDBlock, { type CPCDBlockItem } from "./CPCDBlock";
 import CPCDInline, { type CPCDInlineItem } from "./CPCDInline";
 import { useAuth } from "../AuthContext";
 import { useFirstTwoAreSegment } from "../hooks/useFirstTwoAreSegment";
-import { applyYiBuSandhi } from "../utils/toneSandhi";
+import { buildCharItems } from "./cpcdLayout";
 import type { Language } from "../types";
 import { FONTS } from "../theme/fonts";
 import { WEIGHT } from "../theme/scale";
@@ -132,34 +132,6 @@ export function isLatinScriptLang(language?: string | null): boolean {
 const PLAIN_CHAR_FONT: Record<CPCDSize, string> = { xs: "18px", sm: "26px", smd: "32px", md: "2.25rem", lg: "2.4rem", xl: "3.2rem" };
 const PLAIN_COMPACT_CHAR_FONT: Record<CPCDSize, string> = { xs: "16px", sm: "22px", smd: "28px", md: "1.875rem", lg: "2.25rem", xl: "2.8rem" };
 
-/**
- * Build one CPCDRow item per character, zipping each character with its
- * pronunciation syllable. `showPinyin`/`useToneColor` apply uniformly; CPCDRow
- * still hides the pinyin for any character whose syllable is empty.
- */
-function buildCharItems(
-    text: string,
-    pronunciation: string | null | undefined,
-    showPinyin: boolean,
-    useToneColor: boolean,
-    sandhi: boolean,
-    maskChar?: string,
-): CPCDRowItem[] {
-    const raw = pronunciation ? pronunciation.trim().split(/\s+/) : [];
-    // Correct the stored CITATION reading to the spoken one before it reaches CPCDRow.
-    // This has to happen here rather than in the data layer: the det tables are a
-    // dictionary and should keep the citation form, and CPCDRow derives each syllable's
-    // tone COLOR from the pinyin string it is handed — so rewriting the string is what
-    // makes the diacritic and the hue agree. See src/utils/toneSandhi.ts.
-    const syllables = sandhi ? applyYiBuSandhi(text, raw) : raw;
-    return [...text].map((character, i) => ({
-        character,
-        pinyin: syllables[i] ?? "",
-        showPinyin,
-        useToneColor,
-        ...(maskChar && character === maskChar ? { masked: true } : {}),
-    }));
-}
 
 /**
  * Language-aware container for displaying a foreign-language word or phrase.

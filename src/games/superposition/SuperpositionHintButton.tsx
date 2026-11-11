@@ -1,29 +1,36 @@
 import { ButtonBase } from "@mui/material";
 import Icon from "../../components/Icon";
 import { COLORS } from "../../theme/colors";
-import { SIZE, WEIGHT } from "../../theme/scale";
-import { HINT_BUTTON_PX } from "./constants";
+import { LEADING } from "../../theme/scale";
+import { OUTLINED_CHIP_HEIGHT_PX, OUTLINED_CHIP_ICON_PX, outlinedChipSx } from "../../components/pageHeaderSizing";
 
 interface SuperpositionHintButtonProps {
     /** Whole seconds until the next hint; 0 = no cooldown running. */
     secondsLeft: number;
     /** False while a hint cannot be spent, for any reason. */
     ready: boolean;
-    /** The button's top edge inside the board (px). */
-    topPx: number;
     onHint: () => void;
 }
 
 /**
- * The top-right hint control, styled after Word Search's hint button: the glyph's fill and
- * the button's opacity carry the armed state. The width is fixed so the countdown does not
- * resize it. It stops its own press from reaching the board, which would start a drag, but
- * while unarmed it lets a press through to any tile lying here.
+ * The button's floor width, px: wide enough for "Hint", so the countdown ("15s") never
+ * shrinks it and the row does not shift as the cooldown runs out. A floor rather than a
+ * fixed width, so a wider-than-expected face grows it instead of clipping the label.
+ */
+const HINT_BUTTON_MIN_WIDTH_PX = 68;
+
+/**
+ * The hint control in Leave's row, just left of the audio chip (GameFrame `exitRowTrailing`,
+ * docs/FLP_GAME_BREAKS.md § 6). It wears the audio chip's outlined pill (`outlinedChipSx`:
+ * height, glyph size, type, ink) so the two read as one pair of header controls. The
+ * glyph's fill and the button's opacity carry the armed state, as Word Search's hint button
+ * does. It stops its own press from reaching the board (which would start a drag); while
+ * unarmed it lets a press through to any tile dragged up under it.
  *
  * Layer: game component, presentational. The Stage owns the cooldown and the hinted pair.
  * Referenced by: docs/SUPERPOSITION_GAME.md § Play.
  */
-const SuperpositionHintButton: React.FC<SuperpositionHintButtonProps> = ({ secondsLeft, ready, topPx, onHint }) => (
+const SuperpositionHintButton: React.FC<SuperpositionHintButtonProps> = ({ secondsLeft, ready, onHint }) => (
     <ButtonBase
         className={`superposition-hint-button${ready ? " superposition-hint-button--ready" : ""}`}
         aria-label={secondsLeft > 0 ? `Hint available in ${secondsLeft} seconds` : "Show two tiles to stack"}
@@ -31,25 +38,27 @@ const SuperpositionHintButton: React.FC<SuperpositionHintButtonProps> = ({ secon
         onClick={onHint}
         onPointerDown={(event) => event.stopPropagation()}
         sx={{
-            position: "absolute",
-            top: topPx,
-            right: 12,
-            width: 72,
-            height: HINT_BUTTON_PX,
-            gap: 0.5,
-            borderRadius: "10px",
-            border: `1px solid ${COLORS.border}`,
-            backgroundColor: COLORS.white,
-            color: COLORS.onSurface,
-            fontSize: SIZE.subtitle,
-            fontWeight: WEIGHT.medium,
+            ...outlinedChipSx(COLORS.iconColor),
+            boxSizing: "border-box",
+            height: OUTLINED_CHIP_HEIGHT_PX,
+            minWidth: HINT_BUTTON_MIN_WIDTH_PX,
+            gap: "5px",
+            lineHeight: LEADING.none,
+            color: COLORS.iconColor,
             fontVariantNumeric: "tabular-nums",
+            whiteSpace: "nowrap",
             opacity: ready ? 1 : 0.4,
             pointerEvents: ready ? "auto" : "none",
             transition: "opacity 150ms linear",
         }}
     >
-        <Icon className="superposition-hint-button__icon" name="lightbulb" size={16} color={COLORS.onSurface} fill={ready ? 1 : 0} />
+        <Icon
+            className="superposition-hint-button__icon"
+            name="lightbulb"
+            size={OUTLINED_CHIP_ICON_PX}
+            color={COLORS.iconColor}
+            fill={ready ? 1 : 0}
+        />
         {secondsLeft > 0 ? `${secondsLeft}s` : "Hint"}
     </ButtonBase>
 );

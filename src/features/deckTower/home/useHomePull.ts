@@ -47,6 +47,17 @@ const WHEEL_PULL_PX = 120;
 /** px per wheel line, for `deltaMode` 1 (Firefox's line-mode wheels). */
 const WHEEL_LINE_PX = 16;
 
+/**
+ * A committed pull's motion at release, along the counting way (both ≥ 0). A wheel stream has
+ * no release: it reports its travel and no speed.
+ */
+export interface PullRelease {
+    /** How far the finger (or wheel) travelled, px. */
+    travel: number;
+    /** The finger's speed over the last `FLICK_WINDOW_MS`, px/ms. */
+    speed: number;
+}
+
 interface UsePullGestureArgs {
     /** The element the gesture is read on. */
     targetRef: React.RefObject<HTMLElement | null>;
@@ -59,7 +70,7 @@ interface UsePullGestureArgs {
     enabled: boolean;
     /** An extra arming condition read at the start and at release (the pull home: scroller at its top). */
     canArm?: () => boolean;
-    onPull: () => void;
+    onPull: (release: PullRelease) => void;
 }
 
 /**
@@ -115,7 +126,7 @@ export function usePullGesture({ targetRef, finger, enabled, canArm, onPull }: U
             // A drag that went the other way first and came back is not a pull.
             if (pulled <= 0) return;
             const speed = last.t > first.t ? (sign * (last.y - first.y)) / (last.t - first.t) : 0;
-            if (pulled >= PULL_PX || (pulled >= FLICK_MIN_PX && speed >= FLICK_SPEED)) onPullRef.current();
+            if (pulled >= PULL_PX || (pulled >= FLICK_MIN_PX && speed >= FLICK_SPEED)) onPullRef.current({ travel: pulled, speed: Math.max(0, speed) });
         };
         const onTouchCancel = () => {
             armed = false;
@@ -144,7 +155,7 @@ export function usePullGesture({ targetRef, finger, enabled, canArm, onPull }: U
             streamTravel += travel;
             if (streamTravel >= WHEEL_PULL_PX && enabledRef.current) {
                 streamArmed = false;
-                onPullRef.current();
+                onPullRef.current({ travel: streamTravel, speed: 0 });
             }
         };
 
@@ -168,7 +179,8 @@ interface UseHomePullArgs {
     scrollerRef: React.RefObject<HTMLDivElement | null>;
     /** Whether a pull may count right now (td fully in charge, nothing else moving the camera). */
     enabled: boolean;
-    onPull: () => void;
+    /** Called on the commit, from the release's own event (before the rubber band springs back). */
+    onPull: (release: PullRelease) => void;
 }
 
 /** td → home: a finger-down pull that STARTED with td's scroller at its top (see the rule above). */
@@ -200,5 +212,5 @@ interface UseEnterSwipeArgs {
  * tower, so the two gestures are one scroll axis read both ways.
  */
 export function useEnterSwipe({ stageRef, enabled, onEnter }: UseEnterSwipeArgs): void {
-    usePullGesture({ targetRef: stageRef, finger: "up", enabled, onPull: onEnter });
+    usePullGesture({ targetRef: stageRef, finger: "up", enabled, onPull: () => onEnter() });
 }

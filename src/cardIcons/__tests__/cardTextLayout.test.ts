@@ -19,8 +19,8 @@ describe("clampTextCenterFully", () => {
 });
 
 describe("textBlockMaxWidth", () => {
-    it("divides the panel width by the block's scale", () => {
-        expect(textBlockMaxWidth(2)).toBe("min(92%, calc(var(--card-panel-width, 10000%) / 2))");
+    it("divides the content width by the block's scale", () => {
+        expect(textBlockMaxWidth(2)).toBe("min(92%, calc(var(--card-content-width, 10000%) / 2))");
     });
 
     it("falls back to scale 1 for an invalid saved scale", () => {

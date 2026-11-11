@@ -1,4 +1,4 @@
-import { lazy } from "react";
+import { lazyWithPreload } from "../runtime/lazyWithPreload";
 import { fetchGamePool, type GamePoolResponse } from "../../api/gamePool";
 import { bucketDropPoolRequest } from "../bucket-drop/poolRequest";
 import type { FlpBreakGame } from "./types";
@@ -20,5 +20,8 @@ export const BUCKET_DROP_BREAK: FlpBreakGame<GamePoolResponse> = {
         })),
     // Defensive: a pool with no cards would open onto a dead board; pick another game.
     isPlayable: (pool) => pool.cards.length > 0,
-    Stage: lazy(() => import("./BucketDropBreakStage")),
+    // A reading run tests the pronunciation, which narration would hand over — the rule
+    // Bubble Match's and Bucket Drop's own header chips follow (docs/AUDIO_PLAYBACK.md).
+    hidesAudioChip: (candidate) => candidate.markType === "reading",
+    Stage: lazyWithPreload(() => import("./BucketDropBreakStage")),
 };

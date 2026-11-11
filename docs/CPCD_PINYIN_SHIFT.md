@@ -2,7 +2,17 @@
 
 How `CPCDRow` (cpcd) spaces out long pinyin so a row of character + pinyin
 columns stays readable. Layer: **front-end / presentation** — pure layout math
-inside `src/components/CPCDRow.tsx`; no data or API involvement.
+in `src/components/cpcdLayout.ts` (`solvePinyinShift`, `pinyinSeparators`, the size
+tables), driven by `src/components/CPCDRow.tsx`; no data or API involvement.
+
+> **Two renderers, one solver.** `CPCDRow` (HTML) measures each pinyin with a DOM
+> `Range` and hands the widths to `solvePinyinShift`. `MiniCardSvg`
+> (`src/components/MiniCardSvg.tsx`, via `miniCardSvgLayout.ts` → `layoutCpcdWord`) —
+> the mini card drawn as native SVG for the acp's iso deck faces — places the cells
+> itself from the same tables, measures with canvas (`src/utils/canvasText.ts`) and
+> runs the SAME solver, then draws an overflowing syllable `start`-anchored to mimic
+> the HTML's left-anchored spill. Change the model here, in `cpcdLayout.ts`, and both
+> follow.
 
 > **Scope: the `row` layout only.** The shift exists because each syllable must sit
 > *over its own character*, which is what creates the collision. `CPCDBlock`
@@ -145,7 +155,7 @@ the solver left alone (any comfortable natural gap) get **no apostrophe**.
 
 Everything above is layout math over whatever pinyin string the row is handed. That string
 is **not** the dictionary's citation reading: `ForeignText` applies 一/不 tone sandhi in
-`buildCharItems` before building `CPCDRowItem`s, so 一流 arrives as `yì liú` rather than
+`buildCharItems` (`src/components/cpcdLayout.ts`, shared with `MiniCardSvg`) before building `CPCDRowItem`s, so 一流 arrives as `yì liú` rather than
 `yī liú` (`src/utils/toneSandhi.ts`; full rationale in
 [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) § "The last step: 一/不 tone sandhi").
 
@@ -167,15 +177,16 @@ use the low-level `items` API, which `ForeignText` passes through untouched.
 
 ## Where it runs
 
-- `positionPinyins()` in `src/components/CPCDRow.tsx` runs in a
-  `useLayoutEffect` on every render and via a `ResizeObserver` on the chars
+- `positionPinyins()` in `src/components/CPCDRow.tsx` groups the cells into visual rows,
+  measures, and calls `solvePinyinShift` / `pinyinSeparators` (`cpcdLayout.ts`) per row. It
+  runs in a `useLayoutEffect` on every render and via a `ResizeObserver` on the chars
   block (so pinyin reflows when the row wraps or the container resizes).
 - Text widths are measured with a `Range` over the live text node and divided by
   the ancestor scale factor (`safeScale`) so the math stays in unscaled px even
   when an ancestor applies a CSS `transform: scale()` (e.g. bubble-match shrinks
   long word bubbles).
 
-## Tunables (`src/components/CPCDRow.tsx`)
+## Tunables (`src/components/cpcdLayout.ts`)
 
 | Constant | Meaning |
 |---|---|
@@ -210,7 +221,7 @@ Used by: `src/games/word-search/WordSearchGrid.tsx` (board tiles),
 
 ### `cpcdNaturalSize(size, opts)` — the cell's box, without measuring the DOM
 
-Exported from `CPCDRow.tsx`. Returns the natural (untransformed) `{width, height}`
+Exported from `cpcdLayout.ts` (it lived in `CPCDRow.tsx` until 2026-11-10). Returns the natural (untransformed) `{width, height}`
 of ONE character cell, derived from the same per-size tables the component renders
 with: `width = charCount × COLUMN_WIDTH`, `height = VERTICAL_PADDING + round(charFont
 × CHAR_LINE_HEIGHT) + the reserved pinyin band`. `opts` mirrors the props that move

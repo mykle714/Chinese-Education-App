@@ -741,8 +741,8 @@ earned in a game. It now branches, atomically, in one CTE:
 
 ### Removing from Learning demotes (dictionary eip toggle + vet cdp delete)
 
-Both the dictionary "Added!" toggle (`useLearningToggle` — drawn as `EipAddKey` on the
-Dictionary page's eip and as `LearningToggle` on the dictionary cdp — LEAF_NODE_PAGES.md § "Read-only dictionary cdp")
+Both the eip's "Added!" key (`useLearningToggle`, drawn as `EipAddKey` in the eip trail on the
+Dictionary page and on words drilled into from the saved-card cdp — LEAF_NODE_PAGES.md § "The Learning control")
 and the vet cdp's delete button (`VocabCardDetailPage` → `handleDelete`, one tap, no
 confirmation) remove a word from Learning by setting a `'library'` row's bucket to `'provisional'` —
 **always** a demotion, marks or not (unlike undo above, it never deletes). The row keeps

@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { Box, Button, Typography } from "@mui/material";
-import MobileTabScreen from "../../components/MobileTabScreen";
+import NodePage from "../../components/NodePage";
 import ArenaCountdown from "./ArenaCountdown";
 import ArenaEntryRow from "./ArenaEntryRow";
 import ArenaJoinButton from "./ArenaJoinButton";
@@ -24,6 +24,8 @@ import {
 import type { ArenaBoardResponse, ArenaEntry } from "../../api/arena";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { useNavigate } from "react-router-dom";
+import { navigateBackOr } from "../../utils/navigateBack";
 import { FooterSpacer } from "../../components/MobileFooter";
 import { FONTS } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
@@ -121,6 +123,7 @@ function renderZoneDivider(prev: ArenaEntry, cur: ArenaEntry) {
  */
 function ArenaPage() {
     usePageTitle("Arena");
+    const navigate = useNavigate();
     const { user, isAuthenticated } = useAuth();
     // The app has no LanguageContext; the selected language lives on the user.
     // /arena follows it rather than offering a combined view (settled as Q17),
@@ -351,9 +354,12 @@ function ArenaPage() {
     };
 
     return (
-        // A FOOTER TAB since 2026-11-04 (it was a Menu drill-in): no back arrow, no slide.
-        <MobileTabScreen
+        // A Menu drill-in (NodePage) again since 2026-11-10 — it was a footer tab from
+        // 2026-11-04 until Lessons took the slot. Back goes to the previous page (else `/`),
+        // like the other Menu rows (Reader, Community).
+        <NodePage
             title="Arena"
+            onBack={() => navigateBackOr(navigate, "/")}
             contentClassName="arena-page"
             // MobileTabScreen's content column defaults to `flex: 1; minHeight: 0`, which
             // pins it to the viewport height and lets content overflow it. Arena's column
@@ -431,7 +437,7 @@ function ArenaPage() {
                 resolveShot={resolveArenaShot}
                 onClose={closeHelp}
             />
-        </MobileTabScreen>
+        </NodePage>
     );
 }
 

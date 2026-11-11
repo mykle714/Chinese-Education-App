@@ -1,9 +1,10 @@
-import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
     IsoPlatform,
     IsoScene,
     IsoSolid,
+    IsoText,
     ISO,
     faceTransform,
     insetRect,
@@ -17,8 +18,10 @@ import { FONTS } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
 import type { SortLook } from "./sortTimeOfDay";
 import { KEYCAP_POP_TRANSITION } from "../../theme/keycapPress";
-import MiniCard from "../../components/MiniCard";
-import { MINI_CARD_HEIGHT, MINI_CARD_RING, MINI_CARD_WIDTH } from "../../components/miniCardFace";
+import MiniCardSvg from "../../components/MiniCardSvg";
+import { MINI_CARD_HEIGHT, MINI_CARD_WIDTH } from "../../components/miniCardFace";
+import { useFontLoadEpoch } from "../../hooks/useFontLoadEpoch";
+import { measureAdvance } from "../../utils/canvasText";
 import type { DiscoverCard } from "../../types";
 import { stripParentheses } from "../../utils/definitionUtils";
 
@@ -39,7 +42,7 @@ import { stripParentheses } from "../../utils/definitionUtils";
  *   - a deck of cream card stock, one layer per card sorted into it THIS SESSION — the
  *     first sort covers the number, and the deck grows as the learner sorts (Undo takes
  *     a layer back off, uncovering the number again at zero);
- *   - the top card's FACE: the real mini preview card (MiniCard, the dock's own card)
+ *   - the top card's FACE: the mini preview card (MiniCardSvg — MiniCard drawn as native SVG)
  *     of the last word sorted there, mapped flat onto the top layer (DeckFace). No count
  *     (user request 2026-11-09: "get rid of the count").
  *
@@ -113,7 +116,7 @@ const BIN_SCALE = 0.7;
 const UNIT = 13 * BIN_SCALE;
 /**
  * The deck's footprint — a card lying on the platform, in the mini card's own 92 × 132
- * proportions (its face is the real MiniCard, DeckFace) and centred on the platform (y
+ * proportions (its face is the mini card, MiniCardSvg in DeckFace) and centred on the platform (y
  * spans 3 ± d/2). The corner is the mini card's 8px radius at this width (8 × 4.4 / 92).
  */
 const DECK_W = 4.4;
@@ -424,21 +427,13 @@ const BIN_CSS = `
 `;
 
 /**
- * Text measurement for the speech bubble (SpeechBubble), in px at type size 1. One shared canvas
- * context; falls back to an average-glyph estimate where canvas is unavailable (tests).
+ * Text measurement for the speech bubble (SpeechBubble), in px at type size 1: measured at
+ * 100px through the shared canvas measurer (src/utils/canvasText.ts) and scaled back, for
+ * sub-pixel precision in the bubble's tiny viewBox units.
  */
-let measureCtx: CanvasRenderingContext2D | null | undefined;
-function measureCtxFor(): CanvasRenderingContext2D | null {
-    if (measureCtx === undefined) {
-        measureCtx = typeof document !== "undefined" ? document.createElement("canvas").getContext("2d") : null;
-    }
-    // Measured at 100px and scaled back to a 1-unit size, for sub-pixel precision.
-    if (measureCtx) measureCtx.font = `${WEIGHT.semibold} 100px ${FONTS.sans}`;
-    return measureCtx;
-}
+const BUBBLE_MEASURE_FONT = { family: FONTS.sans, sizePx: 100, weight: WEIGHT.semibold };
 function measureWidth(text: string): number {
-    const ctx = measureCtxFor();
-    return ctx ? ctx.measureText(text).width / 100 : text.length * 0.62;
+    return measureAdvance(text, BUBBLE_MEASURE_FONT) / 100;
 }
 /** Greedy word wrap of `words` at type size `size` into lines no wider than `maxWidth`. */
 function wrapWords(words: string[], size: number, maxWidth: number): string[] | null {
@@ -516,9 +511,14 @@ const SpeechBubble: React.FC<{ layout: BubbleLayout }> = ({ layout }) => (
     >
         <rect className="sort-bins__bubble-body" x={layout.x} y={layout.y} width={layout.w} height={layout.h} rx={BUBBLE_RADIUS} fill={BUBBLE_FILL} />
         <path className="sort-bins__bubble-tail" d={layout.tail} fill={BUBBLE_FILL} />
+        {/* The one iso-scene text still on `central`, on purpose: it is set in FONTS.sans
+            (Instrument Sans, a Latin face), not the CJK face whose em box WebKit misplaces,
+            and it is multi-line mixed-case prose with no single ink centre to measure.
+            docs/ISO_ART_FRAMEWORK.md § "Text in the iso kit". */}
         <text
             className="sort-bins__bubble-text"
             textAnchor="middle"
+            // eslint-disable-next-line no-restricted-syntax -- Latin face; see the comment above
             dominantBaseline="central"
             fontFamily={FONTS.sans}
             fontSize={BUBBLE_TEXT_PX}
@@ -534,19 +534,6 @@ const SpeechBubble: React.FC<{ layout: BubbleLayout }> = ({ layout }) => (
     </g>
 );
 
-/**
- * A counter that ticks once the page's web fonts have loaded, so a bubble measured
- * against a fallback font on first paint is re-laid with the real one.
- */
-function useFontsLoadedEpoch(): number {
-    const [epoch, setEpoch] = useState(0);
-    useEffect(() => {
-        let alive = true;
-        document.fonts?.ready.then(() => { if (alive) setEpoch((e) => e + 1); }).catch(() => {});
-        return () => { alive = false; };
-    }, []);
-    return epoch;
-}
 /**
  * The rim light's white for the deck's TOP layer (IsoSolid → `roundedEdge`,
  * docs/ISO_ART_FRAMEWORK.md § "The rounded edge"). The acp's scene is lit by its `SortLook`,
@@ -573,30 +560,28 @@ function prefersReducedMotion(): boolean {
 }
 
 /**
- * The deck's top FACE: the real mini preview card (MiniCard — the dock's own card, the
- * same word, pinyin, icon and gloss the learner just dragged) lying flat on the top layer
- * at height `z`. An HTML card in a <foreignObject>, mapped onto the face by
- * `faceTransform` composed with the card px → world scale, so it lies on the deck like a
- * print (user request 2026-11-09: "fully render the minipreview card in iso").
- * The tile's own elevation and pop-in are dropped — the iso layer under it is its
- * thickness — and only its hairline ring is kept.
- * ⚠️ WebKit has known bugs painting positioned HTML inside a transformed foreignObject;
- * check it on iOS.
+ * The deck's top FACE: the mini preview card (the dock's own card — the same word,
+ * pinyin, icon and gloss the learner just dragged) lying flat on the top layer at height
+ * `z`, mapped onto the face by `faceTransform` composed with the card px → world scale
+ * (user request 2026-11-09: "fully render the minipreview card in iso").
+ *
+ * Drawn as NATIVE SVG (MiniCardSvg, MiniCard's SVG twin laid out on MiniCard's own
+ * numbers), not the HTML MiniCard in a <foreignObject>: WebKit painted that HTML without
+ * the SVG transforms, so on iOS the face sat flat and unrotated at the scene's corner
+ * (fixed 2026-11-10). Like the old foreignObject face, it has no raised shadow — the iso
+ * layer under it is its thickness — and keeps its hairline ring.
  */
 const DeckFace: React.FC<{ card: DiscoverCard; z: number }> = ({ card, z }) => (
     <g className="sort-bins__face" transform={`${faceTransform(proj, z)} translate(${DECK.x} ${DECK.y}) scale(${FACE_UNITS_PER_PX})`}>
-        <foreignObject className="sort-bins__face-object" x={0} y={0} width={MINI_CARD_WIDTH} height={MINI_CARD_HEIGHT}>
-            <MiniCard
-                className="sort-bins__face-card"
-                language={card.language}
-                entryKey={card.entryKey}
-                pronunciation={card.pronunciation}
-                definition={stripParentheses(card.definition ?? "")}
-                iconId={card.iconId}
-                background={COLORS.cardFace}
-                sx={{ boxShadow: MINI_CARD_RING, animation: "none", pointerEvents: "none" }}
-            />
-        </foreignObject>
+        <MiniCardSvg
+            className="sort-bins__face-card"
+            language={card.language}
+            entryKey={card.entryKey}
+            pronunciation={card.pronunciation}
+            definition={stripParentheses(card.definition ?? "")}
+            iconId={card.iconId}
+            background={COLORS.cardFace}
+        />
     </g>
 );
 
@@ -623,12 +608,13 @@ const NumberPrint: React.FC<{ number: number; ink: string }> = ({ number, ink })
             strokeDasharray={NUMBER_BOX_DASHES}
             strokeLinecap="round"
         />
-        <text
+        {/* IsoText, not dominantBaseline="central": centres the digit's INK on NUMBER_AT in
+            WebKit too (the numbers sat off the dotted box's centre on iPhone, 2026-11-10). */}
+        <IsoText
             className="sort-bins__number-text"
             x={NUMBER_AT.x}
             y={NUMBER_AT.y}
             textAnchor="middle"
-            dominantBaseline="central"
             fontFamily={FONTS.cjk}
             fontSize={BIN_NUMBER_SIZE}
             fontWeight={WEIGHT.bold}
@@ -640,7 +626,7 @@ const NumberPrint: React.FC<{ number: number; ink: string }> = ({ number, ink })
             strokeLinejoin="round"
         >
             {number}
-        </text>
+        </IsoText>
     </g>
 );
 
@@ -808,7 +794,7 @@ const SortBins: React.FC<SortBinsProps> = ({ bins, decks, look, hitTesterRef, cl
     // prop, so a crossing re-renders this scene only.
     const [activeBinId, setActiveBinId] = useState<string | null>(null);
     useUnitsPerScreenPx(sceneRef);
-    const fontEpoch = useFontsLoadedEpoch();
+    const fontEpoch = useFontLoadEpoch();
     // The active bin's speech bubble: its sentence, its tail on the bin's top (which rises
     // with its deck). Re-laid once web fonts load (fontEpoch).
     const activeIndex = bins.findIndex((b) => b.id === activeBinId);

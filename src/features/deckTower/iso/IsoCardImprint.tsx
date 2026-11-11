@@ -2,6 +2,7 @@ import React from "react";
 import { faceTransform, flatPath, type WorldRect } from "./geometry";
 import { shadowTone, type IsoSurface } from "./light";
 import { useIsoProjector } from "./sceneContext";
+import IsoText from "./IsoText";
 import { FONTS } from "../../../theme/fonts";
 import { WEIGHT } from "../../../theme/scale";
 
@@ -39,28 +40,26 @@ const IsoCardImprint: React.FC<IsoCardImprintProps> = ({ rect, surface }) => {
             {/* Same figure-over-caption layout as a card face (IsoCard), but the caption is
                 far larger: here it is the whole message, not a footnote under the figure. */}
             <g className="iso-card-imprint__print" transform={faceTransform(proj, surface.z, { x: cx, y: cy })} fill={printTone} fontFamily={FONTS.cjk}>
-                <text
+                <IsoText
                     className="iso-card-imprint__figure"
                     x={cx}
                     y={cy - 0.85}
                     fontSize={2.1}
                     fontWeight={WEIGHT.bold}
                     textAnchor="middle"
-                    dominantBaseline="central"
                 >
                     0
-                </text>
-                <text
+                </IsoText>
+                <IsoText
                     className="iso-card-imprint__caption"
                     x={cx}
                     y={cy + 1.25}
                     fontSize={1.3}
                     fontWeight={WEIGHT.bold}
                     textAnchor="middle"
-                    dominantBaseline="central"
                 >
                     cards
-                </text>
+                </IsoText>
             </g>
         </g>
     );

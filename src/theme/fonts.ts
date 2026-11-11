@@ -32,9 +32,10 @@ export const FONTS = {
     // The override is INHERITED, so setting `--cjk-font` on a container re-faces every
     // descendant, and CPCDRow's pinyin-shift measurement (a Range over its own in-DOM
     // nodes) measures the candidate face correctly. The one path it would NOT reach is
-    // off-DOM measurement appended to document.body, which sees only a `:root`-level
-    // override; the app has no such measurement left (the eip trail's `measureTabWidth`
-    // was the last one, deleted 2026-09-06 when the trail stopped being width-gated).
+    // off-DOM measurement, which sees only a `:root`-level override: canvas measurers
+    // resolve the var() against `:root` (src/utils/canvasText.ts → resolveFontFamily, used
+    // by MiniCardSvg's layout and memory-map glyphShapes), so a container-level override
+    // (the font lab's specimen columns) does not reach them.
     // src/pages/FontLabPage.tsx is the consumer of all this.
     cjk: 'var(--cjk-font, "Noto Sans SC", "Noto Sans JP", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif)',
 

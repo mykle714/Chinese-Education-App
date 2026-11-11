@@ -322,7 +322,7 @@ A **sort pack** is a small group of vocabulary cards shown together:
       ~370px), `CardsRow` is `nowrap` + `overflow-x: clip`: the outer slots are cut off at
       the screen edges. `clip`, not `hidden`, so the y axis stays visible for dragging.
   *Code:* `src/components/miniCardFace.ts` → `MINI_CARD_DIMENSIONS`, `MiniCardSize`;
-  `src/components/MiniCard.tsx` → `CONTENT_LAYOUT`; `src/features/discover/AddCardsPage.tsx`
+  `src/components/miniCardFace.ts` → `MINI_CARD_CONTENT_LAYOUT` (read by `MiniCard` and its SVG twin `MiniCardSvg`); `src/features/discover/AddCardsPage.tsx`
   → `dockCardSize`, `CARDS_ROW_GAP`, `CARD_ACTIONS_GAP`, `CardsRow`, `CardWell`, `onDeckSectionRef`.
 - **A pack is shown at most once.** Once the user has **finished** a pack (every card
   sorted) **or skipped** it, that pack never appears again — regardless of whether its
@@ -423,7 +423,7 @@ Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET
   [LEAF_NODE_PAGES.md § Transient suppression](./LEAF_NODE_PAGES.md).
 - **Pinyin display follows the flp's saved preference** (`useFlashcardLearnSettings`'s
   `showPinyin` / `showPinyinColor`) — and that stays true: this key is the **flp's**,
-  read by the reference surfaces (acp, cdp, dictionary cdp). Games are moving OFF it
+  read by the reference surfaces (acp, cdp, the Dictionary page's eip). Games are moving OFF it
   onto their own per-game settings, which is what stops a game from editing this panel
   ([GAMES_FEATURE.md § "Pinyin is a per-game setting"](./GAMES_FEATURE.md)).
   acp exposes no toggle of its own — the panel is a
@@ -730,25 +730,32 @@ shadow of the one behind it. The toolbar stays top-right, above the Mastered bin
   once web fonts load. Touch has no hover, so the bubble only shows **during a drag**.
   There is **no "0"** on an empty bin (user request 2026-11-09); its footprint is drawn
   **dotted** round the number (below). *Code:* `SortBins.tsx` → `SpeechBubble`, `layoutBubble`, `bubbleTipFor`,
-  `BUBBLE_*`, `useFontsLoadedEpoch`.
+  `BUBBLE_*`; `src/hooks/useFontLoadEpoch.ts` → `useFontLoadEpoch`.
 - **The deck is the cards themselves; no count (2026-11-09).** Each bin gains one card
   layer per card sorted into it this visit, in **cream card stock** (`ISO.card`; the
   layers under the top take `ISO.cardSeam` on their tops so the seams read as lines).
   The deck's footprint is the mini card's own 92 × 132 proportion and 8px corner
   (`DECK`), and each card is thick — `LAYER_PITCH` 0.42 / `LAYER_SOLID` 0.34 (was 0.2 /
-  0.15, user request "increase the thickness"). The **top card's face is the real mini
-  preview card** of the last word sorted there — `MiniCard`, the dock's own card, in a
-  `<foreignObject>` mapped flat onto the top layer (`DeckFace`: `faceTransform` composed
-  with the px → world scale `FACE_UNITS_PER_PX`), its tile shadow and pop-in dropped,
-  its hairline ring kept. ⚠️ WebKit has known bugs painting positioned HTML inside a
-  transformed `foreignObject`; verify on iOS. **No count is printed** (user request
+  0.15, user request "increase the thickness"). The **top card's face is the mini
+  preview card** of the last word sorted there — the dock's own card (same word, pinyin,
+  icon, gloss), drawn as **native SVG** by `MiniCardSvg` and mapped flat onto the top
+  layer (`DeckFace`: `faceTransform` composed with the px → world scale
+  `FACE_UNITS_PER_PX`); no tile shadow, hairline ring kept. `MiniCardSvg` lays the card
+  out by hand (`miniCardSvgLayout.ts`) from the numbers `MiniCard` renders with
+  (`miniCardFace.ts` → `MINI_CARD_CONTENT_LAYOUT`, `DEFINITION_*`; `cpcdLayout.ts` → the
+  cpcd tables and the pinyin solver), measuring text with canvas — so it matches the
+  dock card for ordinary words; a rare gloss may break one word differently (it breaks
+  only after spaces/hyphens). **Why not the HTML card:** it was the real `MiniCard` in a
+  `<foreignObject>` until 2026-11-10, and WebKit painted that positioned HTML without the
+  SVG transforms — on iPhone the face sat flat and unrotated at the scene's top-left
+  corner over bin 1 while the deck tops showed blank. **No count is printed** (user request
   2026-11-09; it used to sit on a band-coloured top card). The deck stops growing at
   `MAX_LAYERS` (10, halved with the thicker cards, so a full deck is about as tall as
   before) — on the iso grid a full deck stays clear of the platform behind it, and the
   viewBox (`LAYOUT`) makes room for it. The page keeps each bin's **cards** (not a
   number), oldest first, so Undo can show the face of the card underneath; at zero the
   number shows again. A skip touches neither bin. *Code:* `AddCardsPage.tsx` →
-  `sessionDecks`, `adjustTally`; `SortBins.tsx` → `SortBin`, `TopCard`, `DeckFace`,
+  `sessionDecks`, `adjustTally`; `SortBins.tsx` → `SortBin`, `TopCard`, `DeckFace`; `src/components/MiniCardSvg.tsx`, `miniCardSvgLayout.ts` → `layoutMiniCardSvg`;
   `DECK`, `LAYER_PITCH`, `MAX_LAYERS`.
 - **Each platform carries its rating number.** 1 Unfamiliar, 2 Target, 3 Comfortable,
   4 Mastered (`bins` order + 1) — the numbers the page's rating prompt names (§4.9). The
@@ -764,7 +771,10 @@ shadow of the one behind it. The toolbar stays top-right, above the Mastered bin
   (`NUMBER_BOX_DASHES` — otherwise the last dash ran into the first at the top-left, where
   the rect's stroke starts) (were
   round dots; "longer dots") — user request 2026-11-09). The first sort covers
-  both completely. The group's `aria-label` reads "1. <sentence>: 3".
+  both completely. The group's `aria-label` reads "1. <sentence>: 3". The digit is centred
+  on its **ink**, not its em box, by drawing it with the iso kit's `IsoText`
+  (`dominant-baseline="central"` put it off-centre on iPhone, the same WebKit CJK em-box issue
+  as the Learning plate; docs/ISO_ART_FRAMEWORK.md § "Text in the iso kit").
   *Code:* `SortBins.tsx` → `NumberPrint`, `BIN_NUMBER_SIZE`, `NUMBER_BOX`, `NUMBER_BOX_DASH`, `NUMBER_BOX_DASHES`, `NUMBER_BOX_RADIUS`.
 - **All bin text is grey.** The number and the bubble's sentence share
   one ink, the framework's secondary-text grey `COLORS.textSecondary` (--muted) — user
@@ -828,7 +838,8 @@ The Learning tally pill's yellow "you arrived short of cards" halo went with the
 (§5.3). The "short of cards" signal now lives on acp's entry point instead: td's sort bin hops
 while core Learning is under `LEARN_NOW_LOW_THRESHOLD` (`DeckTowerPage` → `learningLow`;
 [DECK_TOWER.md](./DECK_TOWER.md) § The sort platform). The glow recipe
-(`src/theme/lowSupplyGlow.ts`) survives as `LearningToggle`'s add nudge. acp no longer
+(`src/theme/lowSupplyGlow.ts`) outlived it as the dictionary cdp's `LearningToggle` add nudge
+until both were deleted 2026-11-10. acp no longer
 signals when a short learner has sorted enough.
 
 ### 5.1 Skip is a de-emphasized action, not a drag target

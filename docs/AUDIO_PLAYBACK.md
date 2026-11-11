@@ -57,6 +57,16 @@ cycle order, and adding it to a new header is one tag. A surface that must hide 
 (Bubble Match and Bucket Drop on a reading run, where hearing the word hands over the pronunciation
 being tested) simply does not render it.
 
+**In an flp game break** the break's header row replaces the study header from the circle
+grow's first frame, and draws its own chip at the row's right end, level with the arrow. It is
+drawn twice — `ink` white for the sky and the default `COLORS.iconColor` for the white ground —
+the dark copy clipped to the growing circle, so the chip turns dark as the white arrives under
+it. An adapter hides it with `FlpBreakGame.hidesAudioChip` (the row exists before the Stage
+does): only Bucket Drop on a reading run does today.
+Writing Grid narrates nothing but **shows** the chip since 2026-11-10, because its countdown
+beeps (§ 7a) and the chip is how they are muted. See docs/FLP_GAME_BREAKS.md § 6.
+*Code:* `src/features/flashcards/FlashcardsLearnPage/gameBreak/GameBreakChrome.tsx`.
+
 It reads **`useTTSSettings`, not `useTTS`**. The chip never plays anything, and a
 `useTTS` instance is a *playback* instance — mounting one in a header once let the
 chip's own lifecycle cancel another surface's narration (§ 4, "Only the speaker stops
@@ -674,11 +684,11 @@ not be.
 
 ## 7. What this setting does NOT cover
 
-**There is no answer-feedback sound.** Narration is the app's only audio: every
-mark surface (the flp, all games, Practice Writing) marks silently, and
-`markFlashcard` (`src/api/flashcards.ts`) makes no sound call. So the setting
-covers all app audio, and there is one `AudioContext` (CloudTTSProvider's) with
-one unlock listener.
+**There is no answer-feedback sound.** Every mark surface (the flp, all games, Practice
+Writing) marks silently, and `markFlashcard` (`src/api/flashcards.ts`) makes no sound call.
+Apart from narration, the app's only sound is the game countdown's beeps (§ 7a), which
+follow this setting too. So the setting covers all app audio, and there is one
+`AudioContext` (CloudTTSProvider's) with one unlock listener.
 
 Two earlier sound layers are gone, both deleted with their assets: the
 synthesized WebAudio blips in `src/games/runtime/gameSounds.ts` (2026-09-05) and
@@ -687,6 +697,38 @@ the sampled marimba arpeggio that replaced them (`src/services/audio/markArpeggi
 effects layer is an open backlog item ([BACKLOG.md](./BACKLOG.md) § 8); it would
 need its own persistent, repeatable gesture unlock (§ 5) and a decision on
 whether it follows this setting.
+
+### 7a. Sound effects — the game countdown's beeps (2026-11-10)
+
+The one effects layer: a **tick** on each of 3 · 2 · 1 and a different, brighter
+**release** beep when the board goes live, in every flp break game's pre-run countdown
+([GAMES_FEATURE.md](./GAMES_FEATURE.md) § "The countdown").
+
+- **Synthesized, no asset.** Each beep is an enveloped sine (A5 tick, 120 ms; E6 release,
+  380 ms), rendered once per session into mono PCM (`renderBlip`).
+- **It follows this setting like autoplay narration does.** A beep is automatic sound, so
+  **mute → silent**. `default` plays it through a media element (it sounds through the iOS
+  silent switch), and `media` plays it through Web Audio (it obeys the switch and mixes with
+  music). The setting is read at each beep (`readTTSSettings`, outside React), so flipping
+  the chip mid-count changes the next beep.
+- **It never touches narration.** `CloudTTSProvider.playEffect` has its own media element
+  (`effectEl`), primed by the same gesture listener as the narration element
+  (`unlockEffectElement`, a one-way latch like `elementActivated`). It ignores
+  `generation`, so a beep can never cancel or strip the src of a word being spoken. On
+  `media` it is a fresh source node on the shared context, so it mixes with narration.
+- **The route is passed in, not read from `this.route`.** That mirror is pushed only by a
+  mounted `useTTS`, and Writing Grid never mounts one.
+- **A dropped beep is fine.** With a suspended context or an unprimed element the cue is
+  skipped silently. It never throws into the game.
+- ⚠️ **Not verified on a physical iPhone** (§ 8). The known risk: some iOS versions let only
+  one media element play at a time, so on `default` a beep could pause a word playing on the
+  narration element. The countdown runs before any narration, and Speed Reading and Memory
+  Map hold their first word until the release, so the two do not overlap by design.
+
+*Code:* `src/services/sfx/countdownSounds.ts` → `playCountdownSound`, `TICK`, `RELEASE`;
+`src/services/tts/CloudTTSProvider.ts` → `SoundEffect`, `playEffect`, `unlockEffectElement`,
+`encodeWav`; `src/hooks/useTTSSettings.ts` → `readTTSSettings`;
+`src/games/shared/useGameCountdown.ts` (the caller).
 
 There is also **no full-mute state** any more. The old master switch
 ("Speak Chinese words aloud", `TTSSettings.enabled`) silenced everything
@@ -792,6 +834,7 @@ rule covers input-blocking overlays, and a header chip leaves the board playable
 - `src/features/discover/AddCardsPage.tsx` — `unlockAudio` (no local latch, § 5);
   `stopPackAutoplay`, the queue prefetch effect (§ 4)
 - `src/components/AudioModeChip.tsx` — reads `useTTSSettings`, never `useTTS` (§ 1, § 4)
+- `src/services/sfx/countdownSounds.ts`, `src/games/shared/useGameCountdown.ts` — the countdown beeps (§ 7a)
 - [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) — est narration call sites
 - [REACT_NATIVE_MIGRATION.md](./REACT_NATIVE_MIGRATION.md) — `expo-audio`'s
   `playsInSilentMode` is this setting, natively, if the app ever ports

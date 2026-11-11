@@ -68,12 +68,11 @@ describe("route registry integrity", () => {
 describe("findRoute", () => {
   it("matches parameterized patterns the way the router does", () => {
     expect(findRoute("/discover/sort/zh")?.path).toBe("/discover/sort/:language");
-    expect(findRoute("/dictionary/card/中国")?.path).toBe("/dictionary/card/:word");
     expect(findRoute("/flashcards/card/42")?.path).toBe("/flashcards/card/:id");
   });
 
   it("does not let a parent path swallow its children", () => {
-    expect(findRoute("/flashcards")?.path).toBe("/flashcards");
+    expect(findRoute("/flashcards/writing/notebook")?.path).toBe("/flashcards/writing/notebook");
     expect(findRoute("/dictionary")?.path).toBe("/dictionary");
   });
 
@@ -108,18 +107,17 @@ describe("findRoute", () => {
 describe("shell classification matches the old MOBILE_DEMO_PATHS behaviour", () => {
   const FRAME = [
     "/",
-    "/reader", "/dictionary",
+    "/lessons", "/reader", "/dictionary",
     // Flag-gated (server/contracts/featureFlags.ts): with the feature off the path is
     // not a route at all, so it has no shell to assert.
     ...(isFeatureEnabled("community") ? ["/community"] : []),
     "/tester-dashboard", "/settings",
     "/discover/sort/zh", "/discover/sort/es",
-    "/flashcards/card/7", "/dictionary/card/好", "/reader/abc-123",
+    "/flashcards/card/7", "/reader/abc-123",
     ...ROUTED_GAMES.map((g) => g.route),
   ];
   const PLAIN = [
-    "/login", "/register", "/flashcards",
-    "/profile",
+    "/login", "/register",
   ];
 
   it.each(FRAME)("%s renders in the phone frame", (path) => {
@@ -140,8 +138,10 @@ describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
     // "/" is the Deck Tower (2026-11-04), the first tab. There is no "/menu" route: the
     // Menu tab raises a popover (2026-11-06), and only its destinations light "menu".
     ["/", "deck"],
+    // Lessons took Arena's footer slot (2026-11-10); Arena is a Menu drill-in again.
+    ["/lessons", "lessons"],
     ...(isFeatureEnabled("arena")
-      ? ([["/arena", "arena"]] as Array<[string, string | undefined]>)
+      ? ([["/arena", "menu"]] as Array<[string, string | undefined]>)
       : []),
     // Dictionary took Account's footer slot (2026-10-09); /account is no longer a route.
     ["/dictionary", "dictionary"],
@@ -153,7 +153,6 @@ describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
     // from the Deck Tower, so they light the Flashcards tab.
     ["/discover/sort/zh", "deck"],
     ["/flashcards/card/7", "deck"],
-    ["/dictionary/card/好", "dictionary"],
     // Footerless.
     ["/reader/abc", undefined],
     ["/tester-dashboard", undefined],
@@ -169,14 +168,15 @@ describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
 describe("page transitions match the old NODE/LEAF tables", () => {
   const NODE = [
     "/reader",
+    ...(isFeatureEnabled("arena") ? ["/arena"] : []),
     "/discover/sort/zh",
-    "/flashcards/card/7", "/dictionary/card/好", "/reader/abc",
+    "/flashcards/card/7", "/reader/abc",
   ];
   const LEAF = [
     "/tester-dashboard",
     "/settings",
   ];
-  const NO_SLIDE = ["/", "/dictionary", "/login", ...(isFeatureEnabled("arena") ? ["/arena"] : [])];
+  const NO_SLIDE = ["/", "/lessons", "/dictionary", "/login"];
 
   it.each(NODE)("%s slides in from the right", (path) => {
     expect(routeSlideDir(path)).toBe("right");
@@ -217,10 +217,12 @@ describe("FIXED: every game page slides up", () => {
 });
 
 describe("access classification", () => {
-  it("requires a full account only for the legacy flashcards and profile pages", () => {
+  // Only routed games with `requiresAuth` need a full account; no page route does since
+  // the legacy `/flashcards` and `/profile` pages were deleted (2026-11-10).
+  it("requires a full account only for auth-gated routed games", () => {
     const accountOnly = ROUTE_META.filter((r) => r.access === "account").map((r) => r.path).sort();
     expect(accountOnly).toEqual(
-      ["/flashcards", "/profile"].sort()
+      ROUTED_GAMES.filter((g) => g.requiresAuth).map((g) => g.route).sort()
     );
   });
 

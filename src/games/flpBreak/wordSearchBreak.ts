@@ -1,4 +1,4 @@
-import { lazy } from "react";
+import { lazyWithPreload } from "../runtime/lazyWithPreload";
 import { fetchWordSearchGrid } from "../../api/wordSearchGrid";
 import { wordSearchGridRequest } from "../word-search/gridRequest";
 import type { WordSearchResponse } from "../word-search/types";
@@ -31,5 +31,5 @@ export const WORD_SEARCH_BREAK: FlpBreakGame<WordSearchResponse> = {
     // A grid can fail where a card count passes: it needs short words, none inside another.
     isPlayable: (board) => board.sufficient && board.grid !== null,
     focusMinimum: () => WORD_SEARCH_BOARDS[WORD_SEARCH_BREAK_BOARD].words,
-    Stage: lazy(() => import("./WordSearchBreakStage")),
+    Stage: lazyWithPreload(() => import("./WordSearchBreakStage")),
 };

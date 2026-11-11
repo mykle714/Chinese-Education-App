@@ -21,10 +21,12 @@ import type { Language, VocabEntry } from "../../../types";
  * Closing keeps the tab trail (the acp rule): reopening on the same root word resumes the
  * drill-in chain; `openForRoot` reseeds when the root word changes.
  *
- * Hosts: acp (`AddCardsPage`) and the Dictionary page
- * (`features/dictionary/DictionaryPage`, the only host that turns on
- * `showSynonymsRelated` + `showWordTools`). The flp and cdp mount
- * `InfoCardSection` themselves: both mirror a card face (`isFlipped`) and wire extras.
+ * Hosts: acp (`AddCardsPage`), the Dictionary page (`features/dictionary/DictionaryPage`,
+ * the only host that turns on `showWordTools`) and the saved-card cdp
+ * (`features/flashcards/VocabCardDetailPage`, which since 2026-11-10 drills in through
+ * this trail instead of navigating; with the Dictionary page it turns on
+ * `showSynonymsRelated` + `showLearning`). The flp mounts `InfoCardSection` itself: it
+ * mirrors a flipping card face (`isFlipped`) and wires extras.
  *
  * Layer: feature component (src/features/flashcards). Docs: docs/EIP_SHEET_GESTURES.md (mount
  * sites), docs/SORT_CARDS_REQUIREMENTS.md,
@@ -38,7 +40,7 @@ interface EipSheetProps {
     onSpeakSentence?: (text: string, pronunciation?: string) => void;
     speakingKey?: string | null;
     // Append Synonyms + Related Words to the bottom of the definition tab (the cdp's
-    // treatment — InfoCardTabContent `showSynonymsRelated`). Dictionary page only.
+    // treatment — InfoCardTabContent `showSynonymsRelated`). Dictionary page + saved-card cdp.
     showSynonymsRelated?: boolean;
     // Put the word-tools rail (`Write it` · `Compare`, WordToolsRail) at the very bottom
     // of the definition tab, under the synonyms. Compare opens the eip's OWN Compare tab
@@ -47,9 +49,13 @@ interface EipSheetProps {
     // card to hang the rail above.
     showWordTools?: boolean;
     // Put the Learning key (raised "Add" ⇄ "Added!", EipAddKey) in the sheet's trail row
-    // at the right end of the trail row, tracking whichever entry tab is showing. Dictionary page only. A
+    // at the right end of the trail row, tracking whichever entry tab is showing. Dictionary page + saved-card cdp. A
     // failed add/remove raises this sheet's own error snackbar.
     showLearning?: boolean;
+    // With `showLearning`: hide the Learning key while the trail's ROOT is showing (it
+    // appears on every word drilled into from it). The saved-card cdp: its root is the
+    // saved card the page is about, so the key there would only offer to un-save it.
+    learningSkipsRoot?: boolean;
     // Stack depth handed to SheetPanel (0 = root). acp passes 1 while its hidden
     // skipped-cards sheet is open, so an eip opened from that sheet stacks above it.
     depth?: number;
@@ -59,7 +65,7 @@ interface EipSheetProps {
 }
 
 const EipSheet: React.FC<EipSheetProps> = ({
-    eip, open, onClose, onSpeak, onSpeakSentence, speakingKey, showSynonymsRelated, showWordTools, showLearning, depth = 0, defaultHeightRatio,
+    eip, open, onClose, onSpeak, onSpeakSentence, speakingKey, showSynonymsRelated, showWordTools, showLearning, learningSkipsRoot, depth = 0, defaultHeightRatio,
 }) => {
     const { settings: learnSettings } = useFlashcardLearnSettings();
     const active = eip.activeTab;
@@ -67,8 +73,9 @@ const EipSheet: React.FC<EipSheetProps> = ({
     const compareTab = active?.kind === "compare" ? active : null;
     // Membership of the SHOWING word — re-fetched as the trail moves between words.
     // Fed `null` unless the host asked for it, which leaves the hook inert (no fetch).
+    const learningShown = !!showLearning && !(learningSkipsRoot && eip.activeIndex === 0);
     const learning = useLearningToggle(
-        showLearning ? entryTab?.entry ?? null : null,
+        learningShown ? entryTab?.entry ?? null : null,
         (entryTab?.entry.language ?? "zh") as Language,
     );
 
@@ -91,7 +98,7 @@ const EipSheet: React.FC<EipSheetProps> = ({
                     onSpeak={onSpeak}
                     onSpeakSentence={onSpeakSentence}
                     speakingKey={speakingKey}
-                    learning={showLearning ? learning : undefined}
+                    learning={learningShown ? learning : undefined}
                     // Only a PERSISTED pick is passed. A word with none (every det entry on the
                     // Dictionary page) passes undefined, so the sense list underlines nothing and
                     // the dd/reading resolvers fall back to the default — the same sense 0
@@ -118,6 +125,10 @@ const EipSheet: React.FC<EipSheetProps> = ({
                         eip.pop();
                         return true;
                     }}
+                    // Swiping right past Definitions = back one crumb (the same pop as a tap on the
+                    // previous crumb, so that word reopens on its remembered sub-tab). Off at the
+                    // root: nothing sits below it, so that edge keeps its rubber-band.
+                    onSwipeBack={eip.activeIndex > 0 ? () => eip.popTo(eip.activeIndex - 1) : undefined}
                     showMinutePoints
                     showSynonymsRelated={showSynonymsRelated}
                     definitionFooter={showWordTools && entryTab ? (

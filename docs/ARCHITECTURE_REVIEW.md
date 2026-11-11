@@ -6,6 +6,7 @@ The measurement commands are kept so a future reader can re-check whether a find
 regressed — that is the point of this document, not the history of the fix.
 **Date of survey:** 2026-07-28 (branch `main`, at commit `429894b`)
 **Night Market / Immersive World** paths cited below (`src/engine/market`, `features/nightmarket`, the `NightMarket*` services, `/api/nightMarket*`) were deleted on 2026-11-09 — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md); those findings are history only.
+**The read-only dictionary cdp** (`src/features/dictionary/DictionaryCardDetailPage.tsx`) and `src/features/flashcards/VocabCardDetailBody.tsx`, cited in the encapsulation finding, were deleted on 2026-11-10 (a dictionary word is shown only in the eip sheet); those citations are history only.
 **Note on citations:** this document (like the rest of `docs/`) cites files by **path and
 symbol name only**. The `file.ts:NNN` line numbers it used to carry had drifted — several
 pointed past the end of the file — so they were removed rather than re-pinned; line numbers

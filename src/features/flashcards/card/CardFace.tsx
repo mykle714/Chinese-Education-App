@@ -29,9 +29,9 @@ import { resolveCardColor } from "../../../utils/cardColor";
  * ── Why this is its own module ────────────────────────────────────────────────
  * `ChineseBlock`, `EnglishBlock` and `CardFaceSide` render a card face and nothing
  * else; the swipe/flip/fly-out DRILL that consumes them lives in
- * `features/flashcards/FlashcardsLearnPage/FlashCardSection.tsx`. Five surfaces
+ * `features/flashcards/FlashcardsLearnPage/FlashCardSection.tsx`. Several surfaces
  * outside the flp render a card face without the drill — VocabCardDetailPage (cdp),
- * DictionaryCardDetailPage, CommunityCardView, ExampleSentenceList and
+ * CommunityCardView, ExampleSentenceList and
  * InfoCardPanelBody — and each of them used to reach INTO the flp page folder to get
  * these, which made a page-specific folder a de-facto shared module.
  * See docs/ARCHITECTURE_REVIEW.md finding 9.
@@ -315,7 +315,9 @@ export const CardFaceSide: React.FC<{
     // face passes the entry-level verdict directly, while the flp's Chinese front deliberately
     // passes false so the question side stays a plain basic card (see the call sites). Kept
     // independent of `rotated` (the 180° flip transform) on purpose: the card-detail hero is an
-    // un-rotated back face and still needs the fill.
+    // un-rotated back face and still needs the fill. It also gates the CONTENT GUTTER: a basic
+    // face pads its content in from the cream rim (`--card-content-gutter`), an advanced one
+    // lets the panel edge be the cutoff.
     isUsingAdvancedLayout?: boolean;
     contentGap: number;
     contentClassName?: string;
@@ -384,7 +386,8 @@ export const CardFaceSide: React.FC<{
     // (`COLORS.cardBeige`), no hairline. A custom `cardColor` fills the PANEL (the rim
     // stays cream), and everything printed on the face is clipped to the panel
     // (`--card-panel-clip`, read by the inner clip box and the fie canvas's icon layer) and
-    // wraps at its width (`--card-panel-width`, read by `textBlockMaxWidth`). The rim's
+    // wraps a content gutter inside it (`--card-content-width`, read by `textBlockMaxWidth`;
+    // the gutter is 0 on an advanced face — see `contentGutter`). The rim's
     // width and the panel's corner come from the card frame's `--card-stock-inset` /
     // `--card-panel-radius` (card/cardStock.ts → `cardStockVars`, set by FlashCardSection
     // and the cdp's hero card). Fixed tokens, not the theme's `flashCard`: the tower is
@@ -400,6 +403,12 @@ export const CardFaceSide: React.FC<{
     //    the grid-aligned DEFAULT_TEXT_CENTER), so the default display sits exactly on the
     //    snap grid and matches the fie 1:1. See docs/CARD_ICON_LAYOUT.md "Movable text".
     const resolvedText = resolveTextLayout(textLayout);
+    // The gap between the face's content and the cream rim. A BASIC face keeps
+    // `--card-content-gutter-basic` (cardStockVars) so the gloss, foreign word and sense chip
+    // never touch the outer band. An ADVANCED face — or any face while the fie is mounted,
+    // which edits free placement — gets 0: the learner positions content freely and the
+    // panel edge (`--card-panel-clip`) is simply where it is cut off.
+    const contentGutter = isUsingAdvancedLayout || editing ? "0px" : "var(--card-content-gutter-basic, 0px)";
     return (
         // OUTER face box — carries the 3D flip transform, backface culling, and the
         // away-face visibility/inert logic, but is OVERFLOW:VISIBLE. This lets the edit
@@ -421,9 +430,12 @@ export const CardFaceSide: React.FC<{
             border: "none",
             borderRadius: CARD_SURFACE.borderRadius,
             boxSizing: "border-box",
-            // The card's content stops at the panel's edge, not the card's.
+            // The card's content stops at the panel's edge, not the card's (the hard clip)…
             "--card-panel-clip": "inset(var(--card-stock-inset) round var(--card-panel-radius))",
-            "--card-panel-width": "calc(100% - 2 * var(--card-stock-inset))",
+            // …and, on a basic face, lays out a gutter further in (see `contentGutter`).
+            // `--card-content-width` is what text wraps at (textBlockMaxWidth).
+            "--card-content-gutter": contentGutter,
+            "--card-content-width": "calc(100% - 2 * (var(--card-stock-inset) + var(--card-content-gutter)))",
             // NOT clipped here — see the inner clip box. The edit canvas (a child of this
             // outer box) needs overflow:visible so its selection indicators can poke past
             // the card edge into the surrounding padding.
@@ -456,13 +468,18 @@ export const CardFaceSide: React.FC<{
                     pointerEvents: "none",
                 }}
             />
-            {/* The area content may occupy, as a measurable box: the printed panel. Read by
-                useSenseChipPlacement, because
-                `--card-stock-inset` is a container-unit calc() script can't read as a number. */}
+            {/* The area content may occupy, as a measurable box: the printed panel minus the
+                content gutter. Read by useSenseChipPlacement, because `--card-stock-inset` is a
+                container-unit calc() script can't read as a number. */}
             <Box
                 aria-hidden
-                className="card-face__panel-bounds"
-                sx={{ position: "absolute", inset: "var(--card-stock-inset, 0px)", visibility: "hidden", pointerEvents: "none" }}
+                className="card-face__content-bounds"
+                sx={{
+                    position: "absolute",
+                    inset: "calc(var(--card-stock-inset, 0px) + var(--card-content-gutter, 0px))",
+                    visibility: "hidden",
+                    pointerEvents: "none",
+                }}
             />
             {/* Edit canvas lives in the OUTER (overflow:visible) box so its selection
                 overlay can escape the card boundary. The canvas clips its OWN icons to the
@@ -570,9 +587,10 @@ export const CardFaceSide: React.FC<{
                         sx={{
                             width: "100%",
                             height: "100%",
-                            // Sideways the content reaches the tower stock's panel edge, so
-                            // the front wraps where the back does; the plain card keeps 30px.
-                            padding: "clamp(16px, 7%, 72px) var(--card-stock-inset, 30px)",
+                            // Sideways the content stops a gutter inside the tower stock's
+                            // panel (none on an advanced face), so the front wraps where the
+                            // back does; the plain card keeps 30px.
+                            padding: "clamp(16px, 7%, 72px) calc(var(--card-stock-inset, 30px) + var(--card-content-gutter, 0px))",
                             boxSizing: "border-box",
                             // Content sits above the icon layer.
                             position: "relative",

@@ -193,8 +193,12 @@ is global except the two rollups listed above.
     `.hd .fire` decisions. `liveSeconds` is
   still consumed, but only for the badge's `title` text. Because it calls `useMinutePoints` internally, a page must never mount two
   `PageHeader`s on an earning route — each hook instance runs its own 1-second accrual tick.
-- `MinutePointsBadge` — the legacy circular badge, still only on the old desktop
-  `/flashcards` page (`FlashcardsPage.tsx`); superseded everywhere else by the fire badge.
+  The rule is really one mounted **badge** at a time: an flp game break draws a badge outside
+  any `PageHeader` (`src/features/flashcards/FlashcardsLearnPage/gameBreak/GameBreakChrome.tsx`,
+  the break's header row, drawn ONCE even though its other controls are doubled for the ink
+  swap), and the flp hands it off by hiding the study header, badge included, for exactly the
+  phases the break's area is up (`TowerStudyHeader` `hidden={gameBreak.areaMounted}`). See
+  [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 6.
 
 ### Which pages accrue (`src/constants.ts`)
 
@@ -202,8 +206,7 @@ Accrual is decided by path, not by what a page does:
 
 | List | Match | Members |
 | --- | --- | --- |
-| `MINUTE_POINTS_ELIGIBLE_PAGES` | prefix (page + descendants) | **`/flashcards/card`**, **`/dictionary`** (search page + the cdp under it), `/reader`, `/discover/sort`, `/games/{bubble-match,word-search,match-speed,hydra-bubbles,bucket-drop}`, `/flashcards/writing/notebook` ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)) |
-| `MINUTE_POINTS_ELIGIBLE_EXACT_PAGES` | exact path only | `/flashcards` (the legacy desktop page) |
+| `MINUTE_POINTS_ELIGIBLE_PAGES` | prefix (page + descendants) | **`/flashcards/card`**, **`/dictionary`** (prefix; matches only the search page), `/reader`, `/discover/sort`, `/games/{bubble-match,word-search,match-speed,hydra-bubbles,bucket-drop}`, `/flashcards/writing/notebook` ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)) |
 | `MINUTE_POINTS_AUTO_ACTIVE_PAGES` | prefix; subset that starts accruing on mount | `/games` |
 
 The `/games/*` entries (and the `/games` auto-active prefix) currently match nothing: the
@@ -240,23 +243,23 @@ Only **study** surfaces earn. Menus and browse screens deliberately do not: the 
 cards page. They still show the flame — solid orange with the count, in the badge's
 off-study mode (it was grey with a frozen fill level until 2026-08-28).
 
-### The cdps, the dictionary, and Compare all earn (2026-09-04)
+### The cdp, the dictionary, and Compare all earn (2026-09-04)
 
-`/flashcards/card` (saved-card cdp) and the whole of `/dictionary` — the search page **and**
-the read-only dictionary cdp beneath it — are **study surfaces**. A cdp is where a learner
+`/flashcards/card` (saved-card cdp) and `/dictionary` (the search page, whose results open in
+the eip sheet) are **study surfaces**. A cdp is where a learner
 reads the definition, the breakdown, the example sentences and a word comparison: the same
 reading the eip does on the flp, which has always earned. Looking a word up and reading what
 comes back is the same activity, so the dictionary earns as a whole. The line this list
 draws is study vs. **navigation**, and none of these is a place you merely pick from a list.
 
-`/dictionary` is a **prefix** covering both its routes, unlike `/flashcards`, whose
-descendants are browse screens — which is why that one lives in the EXACT list. Adding a
-browse-shaped route under `/dictionary` would silently make it earn.
+`/dictionary` is a **prefix**. It now matches only the search page (the
+read-only `/dictionary/card/:word` under it was deleted 2026-11-10). Adding a browse-shaped
+route under `/dictionary` would silently make it earn.
 
 This is also how the **compare sheet** earns. Compare has no route since 2026-09-04
 ([WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md)) — it is a panel raised over the page
 you are already on — so it cannot appear in any of these lists. It accrues because every
-surface that can open it does: the flp, the acp and both cdps. **Keep the two in step:** a
+surface that can open it does: the flp, the acp, the Dictionary page and the saved-card cdp. **Keep the two in step:** a
 future host that raises the compare sheet from a non-earning page would silently make
 Compare stop earning there, and nothing would report it.
 
@@ -265,9 +268,11 @@ None of them is in `MINUTE_POINTS_AUTO_ACTIVE_PAGES`: a detail or search page is
 leave open, and auto-active exists for game boards that are read for a few seconds before
 the first tap, not for pages a learner might walk away from.
 
-⚠️ `/flashcards` is in the EXACT list for a reason — as a prefix it would admit every
-route under it, including any future browse screen there (today: the cdp and the notebook,
-both listed explicitly). It was a prefix until
+⚠️ `/flashcards` is deliberately **not** listed — as a prefix it would admit every
+route under it, including any future browse screen there, so its earning children (the cdp
+and the notebook) are named one at a time. (The bare `/flashcards` path used to earn through
+a separate exact-match list, `MINUTE_POINTS_ELIGIBLE_EXACT_PAGES`, for the legacy desktop
+flashcards page; both were deleted 2026-11-10.) It was a prefix until
 2026-08-24, which is why the cdp and the Decks & Cards tab used to accrue minutes; the cdp
 is now back, but named explicitly (`/flashcards/card`), which is the difference that
 matters — the Decks & Cards tab did not come back with it.

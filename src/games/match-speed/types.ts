@@ -53,27 +53,20 @@ export interface CardPair {
 }
 
 /**
- * Run phase. `cleanup` is deliberately NOT a value here — it is derived as
- * `phase === "ended" && popupMinimized`, mirroring how Bubble Match derives
- * `cleanupMode`, so the two can never disagree.
+ * Run phase. The board freezes at `ended`; there is no cleanup mode or Play Again
+ * (removed with the end popup, 2026-11-10).
  *
  *   loading ─► blocked        (signed out / fetch failed — NEVER on card count,
  *                              see docs/PROVISIONAL_CARDS.md)
  *      │
- *      └─────► countdown ─(3·2·1)─► playing ─(30s)─► ended
- *                  ▲                                   │
- *                  └────────── Play Again ─────────────┘
+ *      └─────► countdown ─(3·2·1)─► playing ─► ended
  */
 export type Phase = "loading" | "blocked" | "countdown" | "playing" | "ended";
 
-/** Medal tier for a finished run. `null` is a real outcome — see MEDAL_THRESHOLDS. */
-export type Medal = "gold" | "silver" | "bronze";
 
 /** Per-card visual state, resolved by the board and rendered by MatchSpeedCard. */
 export type CardVisualState =
     | "idle"
     | "selected"
     /** Red flash on a wrong attempt; the board stays live throughout. */
-    | "wrong"
-    /** Cleanup-mode only: "this is the partner of the card you tapped". */
-    | "partner-hint";
+    | "wrong";

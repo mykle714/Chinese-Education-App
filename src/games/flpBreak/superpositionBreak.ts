@@ -1,4 +1,4 @@
-import { lazy } from "react";
+import { lazyWithPreload } from "../runtime/lazyWithPreload";
 import { dealSuperposition, type SuperpositionWord } from "../../api/superposition";
 import type { WritingGridDealRequest } from "../../api/writingGrid";
 import { loadGlyph } from "../../components/handwriting/GlyphSvg";
@@ -23,5 +23,5 @@ export const SUPERPOSITION_BREAK: FlpBreakGame<SuperpositionWord[]> = {
         return words;
     },
     isPlayable: (words) => words.length > 0,
-    Stage: lazy(() => import("./SuperpositionBreakStage")),
+    Stage: lazyWithPreload(() => import("./SuperpositionBreakStage")),
 };

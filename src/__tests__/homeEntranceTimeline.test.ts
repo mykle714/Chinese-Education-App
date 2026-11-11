@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { descentTimeline, shiftFrameAt } from '../features/deckTower/home/useHomeEntrance';
 import { DASH_MOTION } from '../utils/pageTransition';
+import { carriedOutPlan } from '../features/deckTower/useWorldPan';
 
 describe('descentTimeline', () => {
     it('starts at 0 and ends exactly on the distance', () => {
@@ -71,5 +72,26 @@ describe('shiftFrameAt', () => {
             expect(f.towerY).toBe(1);
             expect(f.speed).toBe(1);
         }
+    });
+
+    // The pull home carries its rubber band on (docs/HOME_SCREEN.md § "Back to home").
+    it('return with a carry: starts where the band left the tower, never moves back, lands the same', () => {
+        const out = carriedOutPlan(0.08, 0.0006);
+        expect(out.ms).toBeLessThan(outMs);
+        expect(shiftFrameAt(0, 'return', out).towerY).toBeCloseTo(0.08, 9);
+        let prev = 0.08;
+        for (let t = 1; t <= out.ms; t += 1) {
+            const y = shiftFrameAt(t, 'return', out).towerY;
+            expect(y).toBeGreaterThanOrEqual(prev - 1e-9);
+            prev = y;
+        }
+        expect(shiftFrameAt(out.ms + cruiseMs / 2, 'return', out).towerY).toBe(1);
+        expect(shiftFrameAt(out.ms + cruiseMs + inMs, 'return', out)).toEqual({ homeY: -0, towerY: 1, speed: 0, altitudeT: 1 });
+    });
+
+    it('an uncarried plan is the plain ease-in (Enter unchanged)', () => {
+        expect(carriedOutPlan(0, 0).ms).toBe(outMs);
+        expect(shiftFrameAt(outMs / 2, 'enter').homeY).toBeCloseTo(-0.25, 9);
+        expect(shiftFrameAt(outMs / 2, 'enter').speed).toBeCloseTo(0.5, 9);
     });
 });

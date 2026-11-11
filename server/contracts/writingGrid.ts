@@ -8,7 +8,8 @@
  * eligible characters is lent cards.
  *
  * Pure — sibling contract imports only — so the server (WritingGridService) and the
- * client (the game page, medals) load one definition.
+ * client (the game's Stage) load one definition. The run's speed tiers are client-only
+ * (src/games/writing-grid/constants.ts → SPEED_TIERS).
  */
 import { STUDY_MIX_QUOTAS } from './studyMix.js';
 import { categoryForPbh } from './mastery.js';
@@ -93,20 +94,4 @@ export function sampleWritingGridCharacters(
   drawFrom(candidates.filter((c) => c.cooled && c.preferred));
   drawFrom(candidates.filter((c) => c.cooled && !c.preferred));
   return picked;
-}
-
-// ── Medals (estimated 2026-10-04 — tune from play data) ────────────────────────
-// ~15s to arrange + 8 characters at ~6–10 strokes: levels 1–4 ~8s each, 5–8 ~12s
-// each, plus a retry or two. Time-based like Word Search, with a no-medal tier like
-// Speed Reading.
-export const WRITING_GRID_MEDAL_THRESHOLDS_MS = { gold: 120_000, silver: 210_000, bronze: 360_000 } as const;
-
-export type WritingGridMedal = 'gold' | 'silver' | 'bronze' | null;
-
-/** Medal for a finished board's total time (ms), or null when slower than bronze. */
-export function medalForWritingGrid(totalMs: number): WritingGridMedal {
-  if (totalMs <= WRITING_GRID_MEDAL_THRESHOLDS_MS.gold) return 'gold';
-  if (totalMs <= WRITING_GRID_MEDAL_THRESHOLDS_MS.silver) return 'silver';
-  if (totalMs <= WRITING_GRID_MEDAL_THRESHOLDS_MS.bronze) return 'bronze';
-  return null;
 }

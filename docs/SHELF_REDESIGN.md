@@ -265,7 +265,7 @@ real ramp entry to build from.
   **gone**: CardFace's `CategoryChip` was deleted on 2026-08-28 with the card-back
   category, and MiniVocabCard's corner badge was replaced by the eight-mark mastery
   window (see [MASTERY_REWORK.md](./MASTERY_REWORK.md) § "Mini cards — the eight-mark window").
-  Only VocabCardDetailBody's chip remains to verify.
+  Only VocabCardDetailBody's chip remained, and that file was deleted 2026-11-10.
 
 <details><summary>oklch → sRGB hex, for re-deriving a value</summary>
 
@@ -726,12 +726,14 @@ Hydra want for their in-header toggles (see entries 13 and 16).
   `MINUTE_POINTS_ELIGIBLE_PAGES`; the flp itself earns through td's study-surface claim,
   not a route), with the legacy desktop `/flashcards` page moved to a new
   exact-match list, `MINUTE_POINTS_ELIGIBLE_EXACT_PAGES`, so its browse-screen descendants
-  do not inherit eligibility. See docs/MINUTE_POINTS_SYSTEM.md.
+  do not inherit eligibility. See docs/MINUTE_POINTS_SYSTEM.md. *(2026-11-10: the legacy
+  page and the exact-match list were both deleted.)*
 - **The same glyph now appears wherever a flame does.** `MinutePointsBadge` — the legacy
   circular badge on the old desktop flashcards page — swapped its `@mui/icons-material`
   flame for the `Icon` primitive, so the two never disagree about what a flame looks like;
   its pre-redesign chrome (gradient ground, glow, progress ring) is untouched and belongs
   to whenever that page is redone. Arena's score column draws it at 13px (§ A7).
+  *(2026-11-10: `MinutePointsBadge` and the desktop flashcards page were deleted.)*
 - **The hub header's left tab badge was removed.** Hub headers drew the active footer
   tab's icon left of the title; no artboard has one. It was doubly redundant — the
   footer already marks the active tab and the title already names the page — and it
@@ -755,7 +757,7 @@ Hydra want for their in-header toggles (see entries 13 and 16).
   keep falling out of `showBack` / `arrowDirection`.
   Reached via `size` (`PageHeader`, `MobileDemoHeader`) or `headerSize`
   (`MobileTabScreen`, `NodePage`). Applied to `VocabCardDetailPage` and
-  `DictionaryCardDetailPage` (and to the flp's `FlashcardsLearnHeader` until it was
+  `DictionaryCardDetailPage` (deleted 2026-11-10; and to the flp's `FlashcardsLearnHeader` until it was
   deleted 2026-11-04 — the flp now uses `TowerStudyHeader`).
   Deriving it by counting `rightContent`'s children was the obvious alternative and is
   a trap — most callers pass a single wrapping `Box` or fragment, so the count is 1
@@ -765,7 +767,7 @@ Hydra want for their in-header toggles (see entries 13 and 16).
   question, not a skin question, so it stays as-is for entry 12.
 
 **Not yet converted** (their own entries own them): the hand-rolled `IconButton`s in
-`VocabCardDetailPage`, `DictionaryCardDetailPage`,
+`VocabCardDetailPage`,
 `UserProfilePage` and `AddCardsPage` header slots. They should
 become `HeaderIconButton`s when entries 2 / 18 convert those pages.
 
@@ -2033,14 +2035,37 @@ come from `getToneColor` inside cpcd, never the artboard's inlined hexes.
   secondary ink — only when the host passes a pick (`EipSheet` passes one only for a
   persisted `selectedSense`, so a det entry shows no underline). The picker's **star** (13px,
   in the gloss's own colour) marks the default (index 0) and every
-  commonality-4–5 sense (`isStarredSense`); in this list it trails the gloss (2026-11-07), where the card face and Memory Map lead with it. The list is **display-only**: a pick is made on
+  commonality-4–5 sense (`isStarredSense`); in this list it trails the gloss (2026-11-07), where the card face and Memory Map lead with it. The star never wraps onto a line of its own: the gloss's last word and the star share one no-wrap span (`.eip-sense-list__last-word-with-star`, `glossHeadAndLastWord`), so the star stays at the line end when it fits and otherwise takes that word down with it (owner's call 2026-11-10). The list never makes a pick: that is
   the card face's `SensePicker`, which the open eip follows via `useEipTabs.syncEntry`. A
   single-sense word shows no grid.
+  **Alternate pinyin, inline** (owner's call 2026-11-10). A sense whose reading differs from
+  the headword's prints it at the END of its entry, after the star (`SIZE.body`, no-wrap):
+  tone-coloured per syllable (`getToneColor`) when the learner's `showPinyinColor` setting is
+  on — threaded `InfoCardPanelBody` → `InfoCardTabContent` → `EipSenseList`, the same flag the
+  header's cpcd honours — otherwise muted ink (`textSecondary`). Tone colours survive the
+  open-popup Red Salmon. "Differs" compares
+  `resolveDisplayPronunciation(entry, rowIndex)` with `resolveDisplayPronunciation(entry,
+  selectedSenseIndex)` (what `EipEntryHeader` prints), so both sides share the syllable-count
+  guard.
+  **Tap a sense's text → its commonality** (owner's call 2026-11-10). The tap target is the
+  entry's TEXT only — gloss, star and inline pinyin in one inline span (`.eip-sense-list__tap`),
+  so the number and the row's white space are not hit. A tap opens the eip's popup box
+  (`CpcdPopup`, the est's tapped-segment box, given a `children` slot for this) over that text,
+  showing the sense's `CommonalityMeter` (icons only, `currentColor` so it follows the popup's
+  dark-eip tones). The tapped text turns Red Salmon (`COLORS.keywordInk`). It closes on a tap
+  anywhere but a sense's text or the popup (row white space included), a second tap on the same
+  text, any scroll, or a new entry; a tap on another sense's text moves it. A tap ON the popup
+  is forwarded to the sense text beneath that point (`elementsFromPoint` hit-test, so a popup
+  covering the row above never blocks it); over anything else it only closes the popup — the
+  popup is not made pointer-transparent, so a tap never leaks to a control behind it. A null score gets an
+  empty box (a guard — 0 discoverable zh senses had a null score on dev, 2026-11-10).
   History: 2026-10-29 → 2026-11-05 the header itself carried the list, dot-separated, through
   `SwipeableTwoLineText` (now used only by Memory Map's prompt).
   **Code:** `src/features/flashcards/FlashcardsLearnPage/EipSenseList.tsx`,
   `InfoCardTabContent.tsx` (tab 0 → `senseList`), `EipEntryHeader.tsx` (the one dd),
-  `src/components/senseListSegments.tsx` → `buildSenseSegments`, `senseSelectedUnderlineSx`.
+  `src/components/senseListSegments.tsx` → `buildSenseSegments`, `senseSelectedUnderlineSx`;
+  `src/components/CpcdPopup.tsx` (the facts popup), `src/utils/definitionUtils.ts` →
+  `resolveDisplayPronunciation`, `src/components/ScoreMeters.tsx` → `CommonalityMeter`.
 - **One section-title style in the word panels** (owner's call 2026-11-07). Every title in
   the eip Definition tab and the cdp body — "Other Translations", the facts strip's "Parts of
   Speech" / "Commonality" / "Difficulty", and "Synonyms" / "Related Words" — is drawn by
@@ -2120,8 +2145,9 @@ results*. It **supersedes several decisions above** — the full-bleed rows, the
   § "The shared bucket ladder"). Segment mode (CJK input) keeps its own exact / "Starts with" groups.
 - **Infinite scroll replaced the pager** — `useDictionarySearch` appends pages
   (`hasMore` / `loadingMore` / `loadMore`); an IntersectionObserver sentinel at the tail
-  (`DictionaryLoadMore`, 300px look-ahead) fetches the next one. `dictionaryBrowseState`
-  no longer persists a page: only the first page is restored after a drill-in.
+  (`DictionaryLoadMore`, 300px look-ahead) fetches the next one. Nothing is restored: results
+  open in the eip sheet over the list, so the page is never left (the `dictionaryBrowseState`
+  singleton that restored the first page after a card-page drill-in was deleted 2026-11-10).
 - **No results** is a recessed well ("Nothing for “…”") plus a full-width "Ask AI about
   “…”" keycap when `canAskAi` (`DictionaryNoResults`); the meta row's AI keycap hides
   while the wide one shows. The artboard's **"Closest matches"** list is not built — no
@@ -2131,7 +2157,7 @@ results*. It **supersedes several decisions above** — the full-bleed rows, the
   renders above the field for **es** (accents, ñ, ¿ ¡ — es has no beginner keyboard) and
   in the Compare tab.
 - **Slab footer** — the artboard draws the Deck Tower's floating slab (`.ft`), not the
-  flat bar, so `/dictionary` and `/dictionary/card/:word` carry `footerStyle: "slab"` in
+  flat bar, so `/dictionary` carries `footerStyle: "slab"` in
   `routeMeta`. No cast shadow and no wash: the page sets neither footer channel, so the
   slab shows only its own lip, as in the artboard. Its colours follow the time of day
   (below) — cream by day, slate at night. The bottom clearance and
@@ -2157,11 +2183,11 @@ results*. It **supersedes several decisions above** — the full-bleed rows, the
     every night value are the design's hexes (`tier2Look.ts` header).
   - **Chrome outside the page** (the slab footer, the beginner keyboard) reads the look
     through root CSS variables (`tier2Chrome.ts` → `tier2Var`), so it is themed only while
-    a Tier 2 page is up; claims are counted so a Dictionary → card-page slide never clears
+    a Tier 2 page is up; claims are counted so a slide between two Tier 2 pages never clears
     the newcomer's look. `useTier2Look` also claims the browser-chrome strip (`useThemeColor`).
-  - The **card page** (`/dictionary/card/:word`) takes the ground and header ink too; its
-    inline eip panel keeps its own palette. **Not themed:** the es `PinyinKeypad`, the AI
-    suggestion card (its own AI surface) and the `DelayedCircularProgress` spinner.
+  - **Not themed:** the es `PinyinKeypad`, the AI suggestion card (its own AI surface) and
+    the `DelayedCircularProgress` spinner. (The read-only card page `/dictionary/card/:word`
+    that also wore the ground was deleted 2026-11-10.)
 
 **Code:** `src/features/dictionary/DictionaryPage.tsx` → `searchFieldSx`, `useTier2Look`;
 `src/features/dictionary/dictionaryMatchSections.ts` → `groupByMatchSection`, `matchSectionLabel`;
@@ -2179,7 +2205,6 @@ results*. It **supersedes several decisions above** — the full-bleed rows, the
 Time of day: `src/timeOfDay/tier2Look.ts` → `tier2LookAt`, `Tier2Look`;
 `src/timeOfDay/tier2Chrome.ts` → `tier2Var`, `claimTier2Chrome`, `writeTier2Chrome`;
 `src/timeOfDay/useTier2Look.ts`; `src/components/DictionaryEntryRow.tsx` → `tones`;
-`src/features/dictionary/DictionaryCardDetailPage.tsx`;
 `src/features/beginnerKeyboard/keyboardColors.ts` → `KEYBOARD_COLORS`.
 **Docs:** `docs/DICTIONARY_NUMBERED_PINYIN_SEARCH.md`,
 `docs/DICTIONARY_AI_FALLBACK_SEARCH.md`, `docs/WORD_COMPARE_FEATURE.md`.
@@ -2600,7 +2625,9 @@ there is no in-game picker to fall back to.
 
 **What landed.**
 - **The hint mechanic is one row.** `.hintbar` at the top of the panel: the button, its
-  charges, and the current reveal, left to right. Those three used to live in three
+  charges, and the current reveal, left to right (since moved to the BOTTOM of the panel,
+  2026-09-25, and reordered reveal-left / button-right, 2026-11-10 — see
+  [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md) §5a). Those three used to live in three
   places — the button in the page header, the meter absolutely centred in the HUD, the
   reveal on a line of its own under the gloss list — so the player had to assemble one
   mechanic out of three unrelated-looking widgets. `WordSearchHintBar` is now the whole
@@ -2902,7 +2929,9 @@ Hydra's pinyin display genuinely is a live toggle.
   the legend was dropped and the countdown moved inline beside the band pill.
 - **A `Know / Read / Write` switcher.** See the **D6 amendment** below.
 - **`WordToolsRail` (`.wtl.top`)** above the card — Write it / Compare. Compare raises the
-  compare SHEET over the page (the cdp has no tab strip to host a Compare tab in).
+  compare SHEET over the page (the cdp had no tab strip to host a Compare tab in; since
+  2026-11-10 its eip has a word trail, but the rail sits outside the sheet, so Compare still
+  raises the compare sheet).
   **Amended 2026-09-04:** it used to navigate to a standalone `/compare` page through route
   state; that page is deleted — see WORD_COMPARE_FEATURE.md.
 - **A "More Info" pill + a pull-up sheet.** The definition / breakdown / examples boxes
@@ -2926,7 +2955,7 @@ Hydra's pinyin display genuinely is a live toggle.
 
 **Tower look (2026-11-04).** The vet cdp wears td's chrome: the **slab** footer
 (`footerStyle: "slab"` on `/flashcards/card/:id` in `src/routes/routeMeta.ts`, lighting the
-Flashcards tab), the **Tier 2** time-of-day ground (`useTier2Look`, as on the dictionary cdp),
+Flashcards tab), the **Tier 2** time-of-day ground (`useTier2Look`, as on the Dictionary page),
 and a hero card printed on the tower's **card stock** (`card/cardStock.ts` →
 `cardStockVars`, `VocabCardDetailPage` → `HERO_CARD_STOCK_VARS`) —
 [TOWER_STYLE_SHIFT.md](./TOWER_STYLE_SHIFT.md) § "Card stock". (The hero card's `•••`
@@ -2943,7 +2972,7 @@ greys out while it is open, because the sheet would cover the canvas being edite
 2026-08-24);
 `src/features/flashcards/FlashcardsLearnPage/SheetBody.tsx` (new);
 `src/features/flashcards/VocabCardDetailPage.tsx`;
-`src/features/flashcards/VocabCardDetailBody.tsx`;
+`src/features/flashcards/VocabCardDetailBody.tsx` (deleted 2026-11-10);
 `src/features/flashcards/card/cardStock.ts` → `cardStockVars`;
 `src/timeOfDay/useTier2Look.ts` → `useTier2Look`;
 `src/components/NodePage.tsx` (the `overlay` slot);
@@ -3081,7 +3110,7 @@ that card's rail).
 **Code (changed):** `FlashcardsLearnPage.tsx`, `FlashCardSection.tsx`, `card/CardFace.tsx`, `card/SensePicker.tsx`,
 `InfoCardPanelBody.tsx`, `InfoCardTabContent.tsx`, `InfoCardSection.tsx`,
 `EipTabStrip.tsx`, `styled.ts`, `useWorkingLoop.ts`, `ExampleSentenceList.tsx`,
-`VocabCardDetailBody.tsx`,
+`VocabCardDetailBody.tsx` (deleted 2026-11-10),
 `src/components/handwriting/PracticeWritingButton.tsx`,
 `src/features/discover/AddCardsPage.tsx` (drops the removed `onOpenCompare`).
 **Deleted:** `FlashcardsLearnPage/InfoCardActionBar.tsx`,
@@ -3463,10 +3492,8 @@ re-derived (D4).
 - **Game internals** (`BubbleStage`, `Bubble`, `WordSearchGrid`) and the icon editor's
   canvas handles (`CardIconCanvas`) — these are rendering surfaces with their own physical
   look, not app chrome.
-- **`MinutePointsBadge`** — its active state is a coloured GLOW, not a shadow, and the whole
-  component is still on pre-redesign MUI palette colours. It wants its own pass.
-- **MUI numeric elevations** (`boxShadow: 2 | 3 | 4 | 6`, ~10 sites: `FlashCard`,
-  `VocabDisplayCard`, `FlashcardsPage`, `SegmentedSentenceDisplay`, `VocabEntryCards`,
+- **MUI numeric elevations** (`boxShadow: 2 | 3 | 4 | 6`, ~10 sites at the time:
+  `VocabDisplayCard`, `SegmentedSentenceDisplay`, `VocabEntryCards`,
   `WordSearchGrid`) — these resolve to MUI's own black ladder and are invisible to a grep
   for `rgba`. Converting them is a separate sweep; **tracked in DEFERRED_WORK.md.**
 

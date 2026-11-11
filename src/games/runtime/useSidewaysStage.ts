@@ -48,7 +48,7 @@ import type { CSSProperties } from "react";
  * it. Flip to -90 here (and only here — the inverse mapping below reads it) to
  * send them the other way.
  */
-const ROTATION_DEG: 90 | -90 = 90;
+export const ROTATION_DEG: 90 | -90 = 90;
 
 export interface SidewaysStage {
     /** Attach to the NON-rotated container. Its shape decides the rotation. */

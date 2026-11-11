@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import IsoSolid from "./IsoSolid";
 import IsoSpacedText from "./IsoSpacedText";
+import IsoText from "./IsoText";
 import { faceTransform, flatPath, insetRect, prism, type WorldRect } from "./geometry";
 import { useIsoPalette, useIsoProjector } from "./sceneContext";
 import { FONTS } from "../../../theme/fonts";
@@ -106,31 +107,29 @@ const IsoCard: React.FC<IsoCardProps> = ({ rect, z, thickness, figure, label, ca
                         </IsoSpacedText>
                     )}
                     {figure && (
-                        <text
+                        <IsoText
                             className="iso-card__figure"
                             x={cx}
                             y={bodyMidY - (caption ? 0.45 : 0)}
                             fontSize={2.1}
                             fontWeight={WEIGHT.bold}
                             textAnchor="middle"
-                            dominantBaseline="central"
                         >
                             {figure}
-                        </text>
+                        </IsoText>
                     )}
                     {caption && (
-                        <text
+                        <IsoText
                             className="iso-card__caption"
                             x={cx}
                             y={bodyMidY + 1.4}
                             fontSize={0.8}
                             fontWeight={WEIGHT.bold}
                             textAnchor="middle"
-                            dominantBaseline="central"
                             opacity={0.6}
                         >
                             {caption}
-                        </text>
+                        </IsoText>
                     )}
                 </g>
             </g>

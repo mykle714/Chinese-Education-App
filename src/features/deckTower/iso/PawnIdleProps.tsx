@@ -2,6 +2,7 @@ import React, { useId } from "react";
 import { EMOTE_GAP, HEAD_CENTRE, HEAD_RADIUS } from "./pawnFigure";
 import { shadeHex } from "./palette";
 import { useIsoPalette, useIsoProjector } from "./sceneContext";
+import IsoText from "./IsoText";
 import { IDLE_EXIT_MS, KNIT_CLICK_MS, SING_MS, SNEEZE_SNAP_MS, type PawnIdleKind } from "./pawnIdles";
 import { EMOTE_DRAW_SCALE } from "./usePawnMotion";
 import { FONTS } from "../../../theme/fonts";
@@ -96,16 +97,15 @@ const IDLE_PROPS_CSS = `
 const MarkDisc: React.FC<{ glyph: string; r?: number; white: string; ink: string }> = ({ glyph, r = MARK_DISC_R, white, ink }) => (
     <>
         <circle r={r} fill={white} />
-        <text
+        <IsoText
             fontSize={r * 1.25}
             fontFamily={FONTS.cjk}
             fontWeight={WEIGHT.bold}
             textAnchor="middle"
-            dominantBaseline="central"
             fill={ink}
         >
             {glyph}
-        </text>
+        </IsoText>
     </>
 );
 
@@ -126,16 +126,15 @@ const PawnDozeZs: React.FC<{ ink: string }> = ({ ink }) => (
     <g className="iso-pawn__doze-zs" transform={`translate(${HEAD_R * 0.7} ${HEAD_TOP - 8})`}>
         {DOZE_ZS.map((z, i) => (
             <g key={i} className="iso-pawn__idle-mark iso-pawn__idle-mark--z" style={{ animationDelay: `${z.delay}ms` }}>
-                <text
+                <IsoText
                     fontSize={z.size}
                     fontFamily={FONTS.cjk}
                     fontWeight={WEIGHT.bold}
                     textAnchor="middle"
-                    dominantBaseline="central"
                     fill={ink}
                 >
                     Z
-                </text>
+                </IsoText>
             </g>
         ))}
     </g>

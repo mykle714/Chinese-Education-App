@@ -10,10 +10,12 @@ import React from "react";
  *   "right" — beside the gloss, when the chip fits before the card's content boundary.
  *   "below" — centered under the gloss otherwise.
  *
- * The boundary is `.card-face__panel-bounds` (CardFaceSide): the printed panel on Deck Tower
- * stock, the whole face elsewhere. Hosts with no card face use the block's own width.
+ * The boundary is `.card-face__content-bounds` (CardFaceSide): the printed panel minus the
+ * basic-layout content gutter (so the chip never touches the cream rim; on an advanced face
+ * the gutter is 0 and the panel edge is the boundary). Hosts with no card face use the
+ * block's own width.
  *
- * "below" can run past the panel's bottom, because the default back-face gloss sits low on
+ * "below" can run past the content area's bottom, because the default back-face gloss sits low on
  * the card and grows downward. Only then is the text row lifted by the overrun: the chip has
  * to stay tappable, and the gap under the foreign word has room for it.
  *
@@ -69,7 +71,7 @@ export function useSenseChipPlacement(
         if (textWidth === 0 || chipWidth === 0) return;
 
         const face = containerEl.closest<HTMLElement>(".card-face");
-        const panel = face?.querySelector<HTMLElement>(":scope > .card-face__panel-bounds") ?? null;
+        const panel = face?.querySelector<HTMLElement>(":scope > .card-face__content-bounds") ?? null;
         // The two surfaces that position a movable block at its center; both set `left`.
         const block = containerEl.closest<HTMLElement>(".mobile-demo-flashcard-text-block, .card-icon-canvas__text");
         const blockLeft = block ? parseFloat(getComputedStyle(block).left) : NaN;

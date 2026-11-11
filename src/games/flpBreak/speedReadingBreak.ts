@@ -1,4 +1,4 @@
-import { lazy } from "react";
+import { lazyWithPreload } from "../runtime/lazyWithPreload";
 import { fetchGamePool } from "../../api/gamePool";
 import { fetchSpeedReadingDistractors } from "../../api/speedReading";
 import { speedReadingPoolRequest } from "../speed-reading/poolRequest";
@@ -12,8 +12,8 @@ import type { FlpBreakGame } from "./types";
  * The prefetch is the run's whole opening supply: the seeded pool AND the distractor
  * characters, so Play has no spinner. The game deals its own distribution (§ 4).
  *
- * The break plays the game's full 20 rounds (the last one a sentence), so medals and the
- * personal best stay comparable with runs from before the game became break-only.
+ * The break plays the game's full 20 rounds (the last one a sentence), so the speed tier
+ * and the personal best grade the same course on every run.
  *
  * `sideways`: the game is played landscape, so the break's card and its results card
  * turn with it (§ 5, § 5b).
@@ -34,5 +34,5 @@ export const SPEED_READING_BREAK: FlpBreakGame<SpeedReadingOpening> = {
     },
     // An empty pool would open straight onto the blocked screen; pick another game instead.
     isPlayable: (opening) => opening.pool.cards.length > 0 && opening.distractors.length > 0,
-    Stage: lazy(() => import("./SpeedReadingBreakStage")),
+    Stage: lazyWithPreload(() => import("./SpeedReadingBreakStage")),
 };

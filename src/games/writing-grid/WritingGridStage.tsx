@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 import { Box, Button, Typography } from "@mui/material";
-import { GameCentered, GameFrame, GameHud, GameHudLabel } from "../shared/GameFrame";
+import { GameCentered, GameFrame, GameHudLabel } from "../shared/GameFrame";
 import { GAME_FRAME_EXIT_CLEARANCE_PX } from "../shared/gameFrameExit";
 import { useBackgroundPause } from "../runtime/useBackgroundPause";
 import { usePersonalBest } from "../shared/usePersonalBest";
@@ -11,15 +11,16 @@ import { useAuth } from "../../AuthContext";
 import { markFlashcard } from "../../api/flashcards";
 import { dealWritingGrid, type WritingGridCharacter, type WritingGridDealRequest } from "../../api/writingGrid";
 import { useGameWins } from "../../hooks/useGameWins";
-import { DENSE_HEADER_PAD_TOP_PX, DENSE_HEADER_PAD_X_PX } from "../../components/pageHeaderSizing";
 import { formatTimeMs } from "../../utils/timeUtils";
 import { COLORS } from "../../theme/colors";
 import { WEIGHT } from "../../theme/scale";
-import { medalForWritingGrid } from "../../../server/contracts/writingGrid";
 import WritingGridBoard, { type BoardPhase, type CellResult } from "./WritingGridBoard";
 import WritingFocusEditor from "../../components/handwriting/WritingFocusEditor";
 import { moveItem } from "./gridOrder";
-import { CANVAS_SIZE, COUNTDOWN_STEPS, COUNTDOWN_STEP_MS, GAME_ID, GAME_KEY, MEDAL_LABEL } from "./constants";
+import { CANVAS_SIZE, GAME_ID, GAME_KEY, SPEED_TIERS } from "./constants";
+import { GameCountdown } from "../shared/GameCountdown";
+import { useGameCountdown } from "../shared/useGameCountdown";
+import { gradeSpeed } from "../shared/runTiers";
 import type { GameStageFrameProps } from "../types";
 import type { FlpBreakResults } from "../flpBreak/types";
 
@@ -56,13 +57,13 @@ export interface WritingGridStageProps {
  *               out → top-1 Verify → ✓ / ✗ and a writing mark on the character's own
  *               card (the server applies the anti-farming gate). A ✗ cell can be
  *               reopened and rewritten (a fresh attempt: new ink, new Level 8 clock).
- *   ended     — every cell ✓ (or the learner left); the stopwatch stops. Time, medal and
- *               personal best go to the flp's results card (`onRunEnded`) — there is
+ *   ended     — every cell ✓ (or the learner left); the stopwatch stops. Time, speed tier
+ *               and personal best go to the flp's results card (`onRunEnded`) — there is
  *               no end popup. A cell tapped while the break shrinks away is verified
  *               (✓ / ✗) but never marked.
  *
  * Leave — the break's Leave ENDS a live run early (no confirm, as Leave does in every
- * game). No medal, no personal best, no win, and no marks beyond the cells already
+ * game). No tiers, no personal best, no win, and no marks beyond the cells already
  * checked. Before the run has started it simply closes the break.
  *
  * The stopwatch is ACCUMULATED active time, so a backgrounded app (useBackgroundPause)
@@ -92,10 +93,9 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
     const [openIndex, setOpenIndex] = useState<number | null>(null);
     // The open cell's element — the editor grows out of it and shrinks back into it.
     const [openOrigin, setOpenOrigin] = useState<HTMLElement | null>(null);
-    const [countdownStep, setCountdownStep] = useState(0);
     // Set when the run ended through Leave rather than an all-✓ board: the number of
     // cells that were ✓ at that moment (frozen, so a late redraw cannot change it).
-    // null = the run finished. Only the results (no time / medal / best) differ.
+    // null = the run finished. Only the results (no time / tier / best) differ.
     const [gaveUpCorrect, setGaveUpCorrect] = useState<number | null>(null);
     const gaveUp = gaveUpCorrect !== null;
     // A break's Leave during Phase 1. The run still ends and reports, but the screen stays
@@ -118,7 +118,6 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
                 setResults({});
                 setInks({});
                 setOpenIndex(null);
-                setCountdownStep(0);
                 setGaveUpCorrect(null);
                 setPhase(dealt.length > 0 ? "countdown" : "empty");
             })
@@ -134,18 +133,15 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
     }, [isAuthenticated]);
 
     // ── Countdown ────────────────────────────────────────────────────────────────
-    useEffect(() => {
-        if (phase !== "countdown") return;
-        const id = window.setTimeout(() => {
-            if (countdownStep >= COUNTDOWN_STEPS.length - 1) {
-                startStopwatch();
-                setPhase("arrange");
-            } else {
-                setCountdownStep((s) => s + 1);
-            }
-        }, COUNTDOWN_STEP_MS);
-        return () => window.clearTimeout(id);
-    }, [phase, countdownStep]);
+    // 3·2·1 over the readable Phase 1 board (src/games/shared/GameCountdown.tsx); the
+    // stopwatch starts on release.
+    const countdownStep = useGameCountdown({
+        active: phase === "countdown",
+        onRelease: () => {
+            startStopwatch();
+            setPhase("arrange");
+        },
+    });
 
     // ── Stopwatch: accumulated ACTIVE time ───────────────────────────────────────
     const running = phase === "arrange" || phase === "write";
@@ -246,11 +242,10 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
         setFinalMs(total);
         setPhase("ended");
         newBestRef.current = personalBest.record(total);
-        if (medalForWritingGrid(total)) recordWin(1);
+        // Every finished board is a win (wins are not gated on a tier).
+        recordWin(1);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [allCorrect, phase]);
-
-    const medal = phase === "ended" && !gaveUp ? medalForWritingGrid(finalMs) : null;
 
     // ── Leave: end the run early ────────────────────────────────────────────────
     const correctCountRef = useRef(0);
@@ -280,9 +275,9 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
     useEffect(() => {
         if (phase !== "ended") return;
         const bestBefore = personalBest.best;
-        const heading = medal ? `${MEDAL_LABEL[medal]}!` : "Finished!";
         onRunEnded?.({
-            title: gaveUp ? "Run ended" : heading,
+            title: gaveUp ? "Run ended" : "Finished!",
+            tiers: gaveUp ? null : { speed: gradeSpeed(finalMs, SPEED_TIERS) },
             score: gaveUp
                 ? `${gaveUpCorrect} of ${cells.length} written`
                 : `All ${cells.length} written in ${formatTimeMs(finalMs)}`,
@@ -326,22 +321,21 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
             )}
 
             {phase !== "loading" && phase !== "empty" && (
-                <GameFrame className="writing-grid__frame" sx={{ touchAction: "none" }}>
-                    {/* The strip IS the study header's row, so the phase shares a line with
-                        Leave's arrow and the board starts below both. */}
-                    <GameHud
-                        className="writing-grid__phase-strip"
-                        sx={{
-                            justifyContent: "flex-end",
-                            boxSizing: "border-box",
-                            height: GAME_FRAME_EXIT_CLEARANCE_PX,
-                            padding: `${DENSE_HEADER_PAD_TOP_PX}px ${DENSE_HEADER_PAD_X_PX}px 0`,
-                        }}
-                    >
+                // Writing Grid runs only as an flp break, so its phase rides Leave's row, just
+                // left of the audio chip and the minute-points flame (GameFrame
+                // `exitRowTrailing`). The game narrates nothing, but its countdown beeps, and the
+                // chip is how those are muted — so the row shows it (2026-11-10).
+                <GameFrame
+                    className="writing-grid__frame"
+                    sx={{ touchAction: "none" }}
+                    exitRowTrailing={
                         <GameHudLabel className="writing-grid__phase">
                             {showsPhase1 ? "Phase 1" : "Phase 2"}
                         </GameHudLabel>
-                    </GameHud>
+                    }
+                >
+                    {/* Keeps the board below Leave's row (arrow, phase, flame). */}
+                    <Box className="writing-grid__exit-clearance" sx={{ flexShrink: 0, height: GAME_FRAME_EXIT_CLEARANCE_PX }} />
 
                     {/* No side padding here: the board's frame runs edge to edge so the Easiest /
                         Hardest labels can centre between the screen edge and the grid. The
@@ -380,39 +374,7 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
                         </Button>
                     </Box>
 
-                    {phase === "countdown" && (
-                        <Box
-                            className="writing-grid__countdown"
-                            sx={{
-                                position: "absolute",
-                                inset: 0,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                backgroundColor: COLORS.scrim,
-                                pointerEvents: "none",
-                                zIndex: 5,
-                            }}
-                        >
-                            <Typography
-                                className="writing-grid__countdown-step"
-                                key={countdownStep}
-                                sx={{
-                                    fontSize: "72px",
-                                    fontWeight: WEIGHT.bold,
-                                    color: COLORS.white,
-                                    textShadow: "0 2px 12px rgba(0,0,0,0.4)",
-                                    animation: "writing-grid-countdown-pop 400ms ease-out",
-                                    "@keyframes writing-grid-countdown-pop": {
-                                        from: { opacity: 0, transform: "scale(0.5)" },
-                                        to: { opacity: 1, transform: "scale(1)" },
-                                    },
-                                }}
-                            >
-                                {COUNTDOWN_STEPS[countdownStep]}
-                            </Typography>
-                        </Box>
-                    )}
+                    <GameCountdown step={countdownStep} classPrefix="writing-grid" />
 
                     {openCell && openIndex !== null && (
                         <WritingFocusEditor

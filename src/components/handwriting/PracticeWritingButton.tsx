@@ -32,7 +32,7 @@ interface PracticeWritingButtonProps {
   /**
    * The learner's vet card id for this word, when opened from a flashcard/eip.
    * When set, a Verify attempt records a Writing mastery mark (docs/MASTERY_REWORK.md);
-   * omit on the read-only dictionary cdp (no card to mark).
+   * omit in the Dictionary eip (no card to mark).
    */
   vocabEntryId?: number;
   /** Override the default outlined look. Ignored by the `rail` appearance. */

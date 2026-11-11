@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sampleWritingGridCharacters, medalForWritingGrid } from '../contracts/writingGrid.js';
+import { sampleWritingGridCharacters } from '../contracts/writingGrid.js';
 import { writingLevelForMastery, writingMarkCounts } from '../contracts/writingLevels.js';
 import { writingMasteryFromChars } from '../contracts/mastery.js';
 import { WritingGridService } from '../services/WritingGridService.js';
@@ -111,14 +111,5 @@ describe('writing level rules', () => {
     const correct = { timestamp: 't', isCorrect: true };
     expect(writingMasteryFromChars([{ writing: [correct, correct] }, { writing: [] }, undefined])).toBeCloseTo(2 / 3);
     expect(writingMasteryFromChars([{ writing: [{ ...correct, clockOnly: true }] }])).toBe(0);
-  });
-});
-
-describe('medalForWritingGrid', () => {
-  it('bands by total time', () => {
-    expect(medalForWritingGrid(100_000)).toBe('gold');
-    expect(medalForWritingGrid(200_000)).toBe('silver');
-    expect(medalForWritingGrid(300_000)).toBe('bronze');
-    expect(medalForWritingGrid(400_000)).toBeNull();
   });
 });

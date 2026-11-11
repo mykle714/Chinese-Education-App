@@ -14,7 +14,7 @@ import { useEipColors } from "./FlashcardsLearnPage/useEipPalette";
  *
  * ── One component, because there were two identical copies ────────────────────
  * This block existed VERBATIM in two places — the eip's definition tab
- * (`InfoCardTabContent`) and the cdp's Definition box (`VocabCardDetailBody`) — at
+ * (`InfoCardTabContent`) and the cdp's Definition box (`VocabCardDetailBody`, since deleted) — at
  * ~90 lines each, down to the same comments. They had to agree, because the eip and
  * the cdp show the same word and a learner moves between them in one breath, and
  * "they happen to be the same" is not agreement. Both now render this.

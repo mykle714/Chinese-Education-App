@@ -62,6 +62,7 @@ import { useTowerWeather } from "./useTowerWeather";
 import { RAIN_ALPHA, RAIN_LEAN, RAIN_STROKE_PX, SNOW_ALPHA, SNOW_R, SNOW_SPEED, SNOW_SWAY, SNOW_SWAY_RATE, isEffectless, weatherCloudCount, weatherEffect } from "./towerWeather";
 import { useTowerSnow } from "./useTowerSnow";
 import { SNOW_COMPONENTS, type SnowComponent } from "./towerSnow";
+import BalloonSpawnChip from "./BalloonSpawnChip";
 import SnowResetChip from "./SnowResetChip";
 import { useSoftIntro } from "../../softIntro/useSoftIntro";
 import { useWeatherEffectsEnabled } from "../../hooks/useWeatherEffectsSetting";
@@ -102,7 +103,7 @@ import { useClaimStudySurface } from "../../minutePoints/studySurface";
 import TowerCardsPage from "./TowerCardsPage";
 import HomeStage from "./home/HomeStage";
 import { useHomeEntrance } from "./home/useHomeEntrance";
-import { useHomePull } from "./home/useHomePull";
+import { useHomePull, type PullRelease } from "./home/useHomePull";
 import { homeDueOnLaunch, markHomeTaken } from "./home/homeLaunch";
 import type { ScreenPoint } from "../../utils/pageTransition";
 import { TOWER_SCENE_CLASS, TOWER_SECTION_CLASS, heightAbovePlatform, platformScrollTop, towerSceneOf, useTowerCardsScroll } from "./towerScroll";
@@ -275,6 +276,32 @@ const DRAG_SNAP_BACK = "translate 220ms ease-out";
 const CLOUD_BAND_CARDS = { from: 150, to: 200 };
 
 /**
+ * The red balloon's band: the rare drift that is a balloon instead of a cloud
+ * (useCloudDrifts → `BALLOON_CHANCE`, drawn by IsoBalloon) flies just UNDER the clouds,
+ * its body's bottom at the height of these cards. Lowered on a short deck the same way
+ * as the clouds' (`skyBand`).
+ */
+const BALLOON_BAND_CARDS = { from: 110, to: 140 };
+
+/**
+ * The tester-spawned balloon's band (BalloonSpawnChip → useCloudDrifts `balloonRequest`):
+ * BALLOON_BAND_CARDS when the tower on screen reaches it; on a shorter tower (or a skill
+ * world, whose sky is measured taller than its tower) it is brought down beside the tower
+ * — from half its height (never under `TEST_BALLOON_MIN_Z`, clear of the pawn) to a little
+ * over its top, inside the framed scene's headroom — so a tap always shows a balloon.
+ */
+const TEST_BALLOON_MIN_Z = 2;
+const TEST_BALLOON_ABOVE_TOP = 2;
+function visibleBalloonBand(towerHeightZ: number): { zMin: number; zMax: number } {
+    const band = skyBand(BALLOON_BAND_CARDS, towerHeightZ);
+    if (band.zMin <= towerHeightZ) return band;
+    return {
+        zMin: FLOOR_Z + Math.max(TEST_BALLOON_MIN_Z, towerHeightZ * 0.5),
+        zMax: FLOOR_Z + Math.max(TEST_BALLOON_MIN_Z, towerHeightZ) + TEST_BALLOON_ABOVE_TOP,
+    };
+}
+
+/**
  * The tower's wind band: gusts (streaks ending in a curl, IsoWind) sweep past the tower's
  * four sides with their baselines at the height of these cards (useWindGusts). They start
  * blowing when the build-up puts the `from`-th card on the tower, so a deck under 350
@@ -373,7 +400,14 @@ function fitScene(proj: Projector, towerCount: number, skyCards: number) {
     // the screen width every crossing must run across.
     const towerTopZ = skyTop - BOB_HEIGHT;
     const screenSpan = { minX: centreX - halfWidth, maxX: centreX + halfWidth };
-    const cloudSky: CloudSky = { band: skyBand(CLOUD_BAND_CARDS, towerTopZ), around: LAYOUT.card, screenSpan };
+    const cloudSky: CloudSky = {
+        band: skyBand(CLOUD_BAND_CARDS, towerTopZ),
+        balloonBand: skyBand(BALLOON_BAND_CARDS, towerTopZ),
+        // The TOWER's own top, not the (possibly taller) sky's: this band must be on screen.
+        visibleBalloonBand: visibleBalloonBand(towerTop - BOB_HEIGHT),
+        around: LAYOUT.card,
+        screenSpan,
+    };
     const windSky: WindSky = { band: skyBand(WIND_BAND_CARDS, towerTopZ), around: LAYOUT.card, screenSpan };
     // The sky → space band, as viewBox y's on the tower's axis (card k's underside is
     // (k − 1) · CARD_THICKNESS up). The platform's bob is ignored — 0.35 units over a
@@ -888,6 +922,10 @@ const DeckTowerPage: React.FC = () => {
     // Clouds follow the weather, not the tower (CLOUD_BAND_CARDS): 0 = none in the sky.
     const cloudsInSky = auroraUp ? 0 : weatherCloudCount(weather);
     const cloudsActive = skyLive && cloudsInSky > 0;
+    // Feature testing (BalloonSpawnChip): each bump spawns one red balloon now, whatever the
+    // weather (useCloudDrifts → `balloonRequest`).
+    const [balloonRequest, setBalloonRequest] = useState(0);
+    const spawnBalloon = useCallback(() => setBalloonRequest((n) => n + 1), []);
     // Wind blows only once the tower reaches the wind band, in EVERY world (2026-11-08: the
     // skill worlds' always-on wind was dropped). Clouds still keep the skill worlds' sky.
     const windActive = skyLive && cardsOnTower >= WIND_BAND_CARDS.from;
@@ -1409,7 +1447,44 @@ const DeckTowerPage: React.FC = () => {
     const panBlocked = pan.busy || swap.busy || resize.busy || study.active || homeUp;
     // Back up to the home: a FRESH pull past the deck's top (momentum stops there — useHomePull).
     // Not while anything else is moving the camera (`panBlocked` covers the home move itself).
-    useHomePull({ scrollerRef, enabled: !panBlocked, onPull: home.returnHome });
+    //
+    // THE RELEASE CARRIES ON (docs/HOME_SCREEN.md § "Back to home"). On iOS the pull is the
+    // native rubber band: at release the tower stands stretched down by it (a negative
+    // scrollTop) and WebKit is about to spring it back. Left alone, the shift's commit locks
+    // the scroller mid-bounce, the tower snaps back up, and only then slides down from rest —
+    // the "jumps, then transitions" the world swipe had before `PanCarry`. So, in the release's
+    // own event: lock the scroll at 0 (ending the bounce) and hold the content down by the
+    // stretch with a transform, then hand the stretch and its speed to the shift, whose out
+    // phase starts from there. React's own overflow/transform take over on the shift's first
+    // commit (`pinnedPull` below). No stretch (Android, desktop) carries nothing.
+    const pinnedPull = useRef(false);
+    const pullHome = (release: PullRelease) => {
+        const el = scrollerRef.current;
+        if (!el || homePhaseRef.current !== "done") return;
+        const stretch = Math.max(0, -el.scrollTop);
+        const stageH = el.offsetHeight || 1;
+        if (stretch > 0) {
+            el.style.overflowY = "hidden";
+            el.scrollTop = 0;
+            placedScrollTop.current = 0;
+            el.style.transform = `translateY(${stretch.toFixed(2)}px)`;
+            pinnedPull.current = true;
+        }
+        // The band gives less than the finger travels (its resistance), so the content moved
+        // at the finger's speed scaled by the share of the travel it shows.
+        const give = release.travel > 0 ? Math.min(1, stretch / release.travel) : 0;
+        home.returnHome({ shift: stretch / stageH, velocity: (release.speed * give) / stageH });
+    };
+    useHomePull({ scrollerRef, enabled: !panBlocked, onPull: pullHome });
+    // Hand the pinned band back to React once the shift's first frame has committed (its
+    // transform starts at the same offset), before that frame paints.
+    useLayoutEffect(() => {
+        const el = scrollerRef.current;
+        if (!pinnedPull.current || !el || home.phase === "done") return;
+        pinnedPull.current = false;
+        el.style.overflowY = "";
+        el.style.transform = "";
+    }, [home.phase]);
     const goTo = (to: TowerWorldId | undefined, carry?: PanCarry) => {
         if (to && !panBlocked) pan.go(to, carry);
     };
@@ -1619,6 +1694,7 @@ const DeckTowerPage: React.FC = () => {
                                     <TesterSharedRow name="actions">
                                         <LightningStrikeChips onStrike={() => forceStrike(false)} onStrikePawn={() => forceStrike(true)} />
                                         <SnowResetChip onReset={towerSnow.reset} />
+                                        <BalloonSpawnChip onSpawn={spawnBalloon} />
                                         <BankingAlwaysPlayToggle />
                                     </TesterSharedRow>
                                     <ForcedBreakPicker world={worldId} language={language as Language} />
@@ -1738,6 +1814,7 @@ const DeckTowerPage: React.FC = () => {
                             windActive={windActive}
                             maxClouds={Math.max(1, cloudsInSky)}
                             maxGusts={WIND_GUSTS_MAX}
+                            balloonRequest={balloonRequest}
                         />
                         {/* The TOWER SECTION: the scene and the band under the footer slab. At least
                             a screen tall, the scene pinned to its bottom (`marginTop: auto`), so a
@@ -2014,6 +2091,8 @@ const DeckTowerPage: React.FC = () => {
                             proj={proj}
                             // td's frame: its width and bottom edge are the same for every tower.
                             frame={scene}
+                            // The enter hint stands on Tap to Start's line (HomeEnterHint).
+                            hintTipY={hintFit.towerTopY}
                             world={homeWorld}
                             wash={light.wash}
                             rain={auroraUp ? undefined : rainFall}

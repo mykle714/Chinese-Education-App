@@ -19,15 +19,16 @@ import type { RampHue } from "../../theme/colors";
  *     for every account.
  *
  * Every flag-gated row needs its flag (server/contracts/featureFlags.ts); for Community
- * this list is the ONLY navigational entry, so dropping the row is the whole client-side
+ * and Arena this list is the ONLY navigational entry, so dropping the row is the whole client-side
  * entry gate (docs/FEATURE_FLAGS.md). A gated tool needs its grant (and its feature's flag,
  * if it has one). The grant says the account may use it; the flag says the feature exists.
  *
  * Hues are the destinations' existing identities (the ramp hue each wore as a bento
  * tile): one feature, one hue.
  *
- * There is no Dictionary or Arena row: both are footer tabs, so a row would be a second
- * door to the same room. There is no Compare row either: Compare is a sheet over a word
+ * There is no Dictionary or Lessons row: both are footer tabs, so a row would be a second
+ * door to the same room. (Arena was a footer tab 2026-11-04 → 11-10; Lessons took its slot
+ * and Arena came back here as a row.) There is no Compare row either: Compare is a sheet over a word
  * (docs/WORD_COMPARE_FEATURE.md).
  *
  * Docs: docs/NAVIGATION.md § Menu, docs/FEATURE_FLAGS.md, docs/FEATURE_TESTING.md.
@@ -57,6 +58,11 @@ export function useMenuDestinations(): MenuDestinations {
         // No Games row: the Games hub was deleted 2026-11-06 and the routed games' pages
         // are off (`standaloneGames` flag). Games are played as flp breaks in the Deck Tower.
         routeDest("reader", "/reader", "Reader", "article", "pur"),
+        // `yel` is the hue Arena wore as a bento tile before it became a footer tab
+        // (2026-11-04) — one feature, one hue. `emoji_events` is the icon it wore as a tab.
+        ...(isFeatureEnabled("arena")
+            ? [routeDest("arena", "/arena", "Arena", "emoji_events", "yel")]
+            : []),
         // No Friends row: the `/friends` page was deleted 2026-11-06, and Friends lives only
         // in the AccountSheet's Friends tab (raised from the Deck Tower avatar).
         ...(isFeatureEnabled("community")

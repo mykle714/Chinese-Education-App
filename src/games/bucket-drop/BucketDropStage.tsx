@@ -25,7 +25,6 @@ import { useChallengeRound } from "../runtime/useChallengeRound";
 import { useGameBack } from "../runtime/useGameBack";
 import type { GameStageFrameProps, GameStageHost } from "../types";
 import BucketDropBoard from "./BucketDropBoard";
-import BucketDropEndPopup from "./BucketDropEndPopup";
 import { bucketDropPoolRequest } from "./poolRequest";
 import {
     DROP_FALL_MS,
@@ -33,8 +32,8 @@ import {
     GAME_KEY,
     TOTAL_WORDS,
     WIN_LEVEL,
-    medalFor,
     runResultDetail,
+    runResultTiers,
     runResultTitle,
     runTrackFor,
     type BucketDropModeConfig,
@@ -61,7 +60,7 @@ interface BucketDropStageProps {
     onDone: () => void;
     /** Names `onDone`'s destination: "Back to {doneLabel}". */
     doneLabel: string;
-    /** flp break only: FlpBreakStageProps `onRunEnded`. Replaces the end popup. */
+    /** flp break only: FlpBreakStageProps `onRunEnded`. */
     onRunEnded?: (results: FlpBreakResults) => void;
     /** flp break only: FlpBreakStageProps `onCardCleared`. */
     onCardCleared?: (cardId: number) => void;
@@ -73,7 +72,7 @@ interface BucketDropStageProps {
  * (docs/BUCKET_DROP_GAME.md). Hosted by BucketDropPage on the route and by the flp's game
  * break (src/games/flpBreak/bucketDropBreak.ts, docs/FLP_GAME_BREAKS.md § 6).
  *
- * Flow: loading → (blocked) → playing → ended → (Play Again, page only) loading …
+ * Flow: loading → (blocked) → playing → ended.
  *
  * ── Layers ───────────────────────────────────────────────────────────────────
  *   page   BucketDropPage    the route's title, launch state and exit.
@@ -88,10 +87,12 @@ interface BucketDropStageProps {
  *   - the chrome (`Frame`);
  *   - the opening board (a break seeds it with the working loop, prefetched);
  *   - the track (a break's comes off its candidate, § "The run's track" below);
- *   - the results: the page shows its end popup, a break hands them to the flp's card
- *     (`onRunEnded`);
+ *   - the results: a break hands them to the flp's card (`onRunEnded`). The page has no
+ *     end card any more (BucketDropEndPopup and Play Again were deleted 2026-11-10, with
+ *     the medals); the routed page is behind the OFF `standaloneGames` flag
+ *     (docs/DEFERRED_WORK.md);
  *   - the way out: the page's Back is `useGameBack` (with the challenge confirm); a
- *     break's Leave ENDS a live run into its results card, unmedalled.
+ *     break's Leave ENDS a live run into its results card, untiered.
  *
  * ── The run's track ──────────────────────────────────────────────────────────
  * Latched at the first pool fetch, because the pool is bucketed and cooled on that track,
@@ -99,7 +100,7 @@ interface BucketDropStageProps {
  * production, No Pinyin ⇒ reading). Break: `track`.
  *
  * ── The clock is ACCUMULATED ACTIVE TIME, and never on screen during play ─────
- * Nothing ticks on the board; the time is only read at the end, for the medal, the personal
+ * Nothing ticks on the board; the time is only read at the end, for the speed tier, the personal
  * best and the challenge score. It starts when the board is dealt and the provisional notice (if any) is closed, and
  * freezes for the notice and for backgrounding (docs/GAMES_FEATURE.md § Popups pause
  * the clock / § Backgrounding pauses the clock). It is banked into `activeMsRef` at each
@@ -142,7 +143,7 @@ const BucketDropStage: React.FC<BucketDropStageProps> = ({
     /** Every word was placed. False on a run a break's Leave cut short. */
     const [finished, setFinished] = useState(false);
     /**
-     * The run's result is final: the end popup opens, or a break reports. A beat after the
+     * The run's result is final: a break reports, or a challenge shows its scoreboard. A beat after the
      * last drop, so its fall is seen.
      */
     const [resultsReady, setResultsReady] = useState(false);
@@ -263,8 +264,7 @@ const BucketDropStage: React.FC<BucketDropStageProps> = ({
         if (challengeRound.active && !challengeRound.ready) return;
         let cancelled = false;
         void (async () => {
-            // A break's prefetched board, when it landed with cards; Play Again never
-            // comes through here, so it is only ever the opening deal.
+            // A break's prefetched board, when it landed with cards: only ever the opening deal.
             const handedOver = prefetchedPool?.cards.length ? prefetchedPool.cards : null;
             if (handedOver) {
                 if (lockRunTrack() !== "reading") handedOver.forEach((c) => tts.prefetch(c));
@@ -278,19 +278,10 @@ const BucketDropStage: React.FC<BucketDropStageProps> = ({
     }, [user?.id, challengeRound.active, challengeRound.ready]);
 
     // Fastest FULL run per mode (docs/BUCKET_DROP_GAME.md § 6); recorded below.
-    const { best: personalBestMs, isNewBest, record: recordPersonalBest, reset: resetPersonalBest } =
+    const { best: personalBestMs, record: recordPersonalBest } =
         usePersonalBest(GAME_ID, modeConfig.mode);
     /** This run's `recordPersonalBest`: whether it set a best. Read by the break's results. */
     const newBestRef = useRef<Promise<boolean>>(Promise.resolve(false));
-
-    const playAgain = useCallback(async () => {
-        tts.unlockAudio();
-        setPhase("loading");
-        resetPersonalBest();
-        newBestRef.current = Promise.resolve(false);
-        const cards = await fetchPool();
-        if (cards) beginRun(cards);
-    }, [tts, fetchPool, beginRun, resetPersonalBest]);
 
     // ── Board callbacks ─────────────────────────────────────────────────────────
     const onPickUp = useCallback((entry: VocabEntry) => {
@@ -337,13 +328,12 @@ const BucketDropStage: React.FC<BucketDropStageProps> = ({
     // ── Result ──────────────────────────────────────────────────────────────────
     const finalMs = elapsedMs;
     /**
-     * A medal and a personal best need a FULL, FINISHED run. A pool the dictionary could
+     * Tiers and a personal best need a FULL, FINISHED run. A pool the dictionary could
      * not fill to TOTAL_WORDS is still playable, but its short time is not comparable, and
-     * a run left early has no finish time.
+     * a run left early has no finish time. A win needs only a finished run.
      */
     const fullRun = pool.length >= TOTAL_WORDS;
     const earnsResult = finished && fullRun;
-    const medal = phase === "ended" && earnsResult ? medalFor(finalMs) : null;
 
     // Once per run, when the result is final (`resultsReady` means the clock has been
     // banked). A challenge round is not a free-play best, like Word Search.
@@ -351,9 +341,9 @@ const BucketDropStage: React.FC<BucketDropStageProps> = ({
     useEffect(() => {
         if (!resultsReady || resultRecordedRef.current === runId) return;
         resultRecordedRef.current = runId;
-        if (medal) recordWin(WIN_LEVEL);
+        if (finished) recordWin(WIN_LEVEL);
         if (earnsResult && !challengeRound.active) newBestRef.current = recordPersonalBest(finalMs);
-    }, [resultsReady, runId, medal, earnsResult, finalMs, recordWin, recordPersonalBest, challengeRound.active]);
+    }, [resultsReady, runId, finished, earnsResult, finalMs, recordWin, recordPersonalBest, challengeRound.active]);
 
     const lentWords = provisionalWords(pool);
     const sortOffer = useProvisionalSortOffer(resultsReady, lentWords);
@@ -361,7 +351,7 @@ const BucketDropStage: React.FC<BucketDropStageProps> = ({
 
     /**
      * The flp break's Leave (docs/FLP_GAME_BREAKS.md § 2). A LIVE run ends with what it
-     * managed: no finish time, so no medal, win or personal best. From every other phase
+     * managed: no finish time, so no tiers, win or personal best. From every other phase
      * there is nothing to show, so the break closes.
      */
     const leaveBreak = useCallback(() => {
@@ -381,7 +371,7 @@ const BucketDropStage: React.FC<BucketDropStageProps> = ({
     }, [phase, onDone]);
     const onExitRequest = isBreak ? leaveBreak : onBack;
 
-    // A break's run reports to the flp instead of showing the end popup, which is what
+    // A break's run reports to the flp, which is what
     // starts the shrink back to the card. A lent-card offer holds it: the offer lives over
     // this board, so it has to be answered before the board goes.
     const sortOfferPending = lentWords.length > 0 && !sortOffer.dismissed;
@@ -389,7 +379,8 @@ const BucketDropStage: React.FC<BucketDropStageProps> = ({
         if (!isBreak || !resultsReady || sortOfferPending) return;
         const bestBefore = personalBestMs;
         onRunEnded?.({
-            title: runResultTitle(finished, medal),
+            title: runResultTitle(finished),
+            tiers: runResultTiers(earnsResult, finalMs, placedRef.current, misses),
             score: finished ? formatTimeMs(finalMs) : `${placedRef.current} of ${pool.length} words`,
             details: [runResultDetail(pool.length, misses, fullRun)],
             personalBest: newBestRef.current.then((isNew) => {
@@ -476,23 +467,6 @@ const BucketDropStage: React.FC<BucketDropStageProps> = ({
                 {/* A challenge round ends on the scoreboard, never on the game's own card. */}
                 {resultsReady && challengeRound.active && (
                     <ChallengeRoundScoreboard round={challengeRound} classPrefix="bucket-drop" />
-                )}
-
-                {/* An flp break has no end popup: its results land on the break's card
-                    (docs/FLP_GAME_BREAKS.md § 5b). */}
-                {resultsReady && !challengeRound.active && !isBreak && (
-                    <BucketDropEndPopup
-                        medal={medal}
-                        finalMs={finalMs}
-                        total={pool.length}
-                        misses={misses}
-                        fullRun={fullRun}
-                        personalBestMs={personalBestMs}
-                        isNewBest={isNewBest}
-                        exitLabel={doneLabel}
-                        onPlayAgain={() => void playAgain()}
-                        onLeave={onDone}
-                    />
                 )}
 
                 <ProvisionalSortOffer

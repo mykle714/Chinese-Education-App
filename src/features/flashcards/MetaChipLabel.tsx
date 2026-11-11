@@ -42,9 +42,10 @@ interface MetaChipLabelProps {
  * the fragment (no wrapper box to grow) and the `position: relative` each parent chip
  * carries.
  *
- * Shared by the two meta strips — the cdp's (VocabCardDetailBody) and the eip's
- * (InfoCardPanelBody) — which render the same three chips (Difficulty / Parts of
- * Speech / Commonality) and must not drift apart. It is deliberately a MODULE-level
+ * Used by the eip's meta strip (DefinitionFacts, in InfoCardTabContent), which renders
+ * three chips (Difficulty / Parts of Speech / Commonality). There used to be a second,
+ * identical strip on the cdp (`VocabCardDetailBody`, deleted), which is why this is
+ * shared. It is deliberately a MODULE-level
  * component: declaring it inside either parent's render body would make it a new
  * component type on every render, remounting ValidateFlagButtons and re-firing its
  * status fetch each time.

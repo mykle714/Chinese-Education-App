@@ -59,6 +59,13 @@ import { useSoftIntro } from "../../../../softIntro/useSoftIntro";
  * only that hint's bubble (`closedKey`), uncovering the More Info pill; the pawn stays and
  * the next card's hint grows a new one.
  *
+ * ── Game breaks ──────────────────────────────────────────────────────────────
+ * The break's title card does not hide the pawn: it stays in its corner with no bubble (the
+ * page passes a null hint — the card it described is covered). Play on that card (the one you tap to start the game) sends it
+ * `away`: the same throw off the left edge as a dismissing swipe, but NOT a dismissal. Once
+ * the cards return (Skip on the results card, or leaving the game) it slides back in from the
+ * left (RETURN_MS) and its hint bubble regrows. Skip on the title card never sends it away.
+ *
  * ── Hit area + the bubble ────────────────────────────────────────────────────
  * The stage overlaps the card's bottom-left corner (the pawn's head), so it is
  * `pointer-events: none` except for the platform's own hit box and the pawn's tap target —
@@ -95,10 +102,16 @@ interface HintPawnProps {
     /** What the pawn has to say about the front card, or null (pawnHints.ts → `pawnHintFor`). */
     hint: PawnHint | null;
     /**
-     * The card is not on screen (count card over it, a game break, the icon editor):
+     * The card is not on screen (count card over it, the icon editor — a game break is `away`):
      * everything is hidden at once, without leaving, and no arrival starts.
      */
     unseen: boolean;
+    /**
+     * A game break has the screen (Play was tapped on the break's card, until the cards
+     * return): the stage is thrown off the left edge like a dismiss, without dismissing, and
+     * slides back in from the left when this clears (§ "Game breaks" in the header).
+     */
+    away: boolean;
     /** The session is parked under the tower: the pawn goes home and arrives fresh next dive. */
     parked: boolean;
     /** ContentArea — the box the stage and bubble are positioned in. */
@@ -207,6 +220,8 @@ const RISE_MS = 520;
 const RISE_FROM_PX = SCENE_BOX.height + 60;
 /** The throw off the left edge on a dismissing swipe. */
 const LEAVE_MS = 280;
+/** The slide back in from the left edge once a game break hands the screen back. */
+const RETURN_MS = 420;
 /** A left drag past this many px dismisses; a shorter one springs back. */
 const DISMISS_DRAG_PX = 44;
 /** Movement before a press counts as a drag (below it, a press is still a tap / poke). */
@@ -261,16 +276,18 @@ function DismissCueSoftIntro({ children }: { children: (showDismissCue: boolean)
     return <>{children(useSoftIntro("pawnDismissCue") === "intro")}</>;
 }
 
-export default function HintPawn({ world, hint, unseen, parked, contentRef, cardFrameRef }: HintPawnProps) {
-    const spaceBelowCard = useSpaceBelowCard(contentRef, cardFrameRef, unseen);
+export default function HintPawn({ world, hint, unseen, away, parked, contentRef, cardFrameRef }: HintPawnProps) {
+    // Re-measured when the card is uncovered — by the count card / icon editor, or the break.
+    const spaceBelowCard = useSpaceBelowCard(contentRef, cardFrameRef, unseen || away);
     const dismissed = useHintPawnDismissed();
     const reduceMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
     const [arrival, setArrival] = useState<Arrival | null>(null);
     const [leaving, setLeaving] = useState(false);
     const arrivalIds = useRef(0);
 
-    // Start the arrival on the first hint the learner can see. Never while dismissed.
-    const hintDue = !!hint && !unseen && !parked && !dismissed;
+    // Start the arrival on the first hint the learner can see. Never while dismissed, or
+    // while a game break has the screen.
+    const hintDue = !!hint && !unseen && !away && !parked && !dismissed;
     useEffect(() => {
         if (!hintDue || arrival) return;
         const now = performance.now();
@@ -305,7 +322,7 @@ export default function HintPawn({ world, hint, unseen, parked, contentRef, card
     // Tap to dismiss closes THIS hint's bubble only (owner, 2026-11-08); the pawn stays and
     // the next card's hint grows a new one. Only a swipe sends the pawn away.
     const [closedKey, setClosedKey] = useState<string | null>(null);
-    const showing = arrival && !leaving && !unseen && hint && hint.key !== closedKey ? hint : null;
+    const showing = arrival && !leaving && !away && !unseen && hint && hint.key !== closedKey ? hint : null;
     const desired = useMemo<PresenceItem<BubbleValue>[]>(() => {
         if (!showing) return [];
         let line = lineForKey.current.get(showing.key);
@@ -343,7 +360,7 @@ export default function HintPawn({ world, hint, unseen, parked, contentRef, card
     // line of dialogue (`stretchKey`) wakes a dozing or knitting pawn.
     const landedAt = arrival ? arrival.entrance.startAt + arrival.entrance.animation.durationMs : 0;
     const { idle, idleStretch, noteTap } = useHintPawnIdles({
-        running: !!arrival && !leaving && !unseen && !parked && !dismissed,
+        running: !!arrival && !leaving && !away && !unseen && !parked && !dismissed,
         startAt: landedAt,
         wakeKey: stretchKey,
         resetKey: arrival?.id ?? null,
@@ -362,8 +379,8 @@ export default function HintPawn({ world, hint, unseen, parked, contentRef, card
         },
         [noteTap, sayOuch]
     );
-    // Hidden, leaving or gone home: no ouch stays up.
-    const ouchAllowed = !!arrival && !leaving && !unseen && !parked;
+    // Hidden, leaving, away for a game break or gone home: no ouch stays up.
+    const ouchAllowed = !!arrival && !leaving && !away && !unseen && !parked;
     useEffect(() => {
         if (!ouchAllowed) hushOuch();
     }, [ouchAllowed, hushOuch]);
@@ -386,7 +403,7 @@ export default function HintPawn({ world, hint, unseen, parked, contentRef, card
     };
     const onPointerDown = (e: React.PointerEvent) => {
         dragJustEnded.current = false;
-        if (leaving) return;
+        if (leaving || away) return;
         press.current = { id: e.pointerId, x0: e.clientX, y0: e.clientY, dragging: false, dx: 0 };
     };
     const onPointerMove = (e: React.PointerEvent) => {
@@ -412,6 +429,26 @@ export default function HintPawn({ world, hint, unseen, parked, contentRef, card
         if (p.dx <= -DISMISS_DRAG_PX) setLeaving(true);
         else setDrag(0, true);
     };
+
+    // ── Game breaks ── (see the header). Going away drops any drag in progress (the throw
+    // starts from rest); coming back flags `returning` for RETURN_MS, which swaps the
+    // drag box's transition for the slide-in while the throw's transform is removed.
+    const [returning, setReturning] = useState(false);
+    const wasAway = useRef(away);
+    useEffect(() => {
+        const cameBack = wasAway.current && !away;
+        wasAway.current = away;
+        if (away) {
+            press.current = null;
+            setDrag(0, false);
+            setReturning(false);
+            return;
+        }
+        if (!cameBack) return;
+        setReturning(true);
+        const timer = setTimeout(() => setReturning(false), RETURN_MS);
+        return () => clearTimeout(timer);
+    }, [away]);
 
     // The scene never changes during a session but for the world; memoised so the bubble's
     // and the drag's renders leave the pawn's rAF-driven figure alone.
@@ -561,17 +598,28 @@ export default function HintPawn({ world, hint, unseen, parked, contentRef, card
             >
                 <Box
                     ref={dragRef}
-                    className={leaving ? "hint-pawn__drag hint-pawn__drag--leaving" : "hint-pawn__drag"}
+                    className={[
+                        "hint-pawn__drag",
+                        leaving && "hint-pawn__drag--leaving",
+                        away && "hint-pawn__drag--away",
+                        returning && !away && "hint-pawn__drag--returning",
+                    ].filter(Boolean).join(" ")}
                     sx={{
                         position: "relative",
                         width: "100%",
                         height: "100%",
                         touchAction: "none",
-                        ...(leaving && {
+                        // The dismissing swipe and a game break's Play share one throw.
+                        ...((leaving || away) && {
                             // Off the screen's left edge, turned like a thrown tile.
                             transition: `transform ${LEAVE_MS}ms cubic-bezier(0.5, 0, 0.75, 0.4), opacity ${LEAVE_MS}ms ease-in !important`,
                             transform: `translateX(-${SCENE_BOX.width + GUTTER + 40}px) rotate(-12deg) !important`,
                             opacity: 0,
+                        }),
+                        // Back from a game break: the throw played in reverse, easing in with a
+                        // slight overshoot (the transform falls back to rest under it).
+                        ...(returning && !away && {
+                            transition: `transform ${RETURN_MS}ms cubic-bezier(0.2, 0.9, 0.3, 1.12), opacity ${RETURN_MS * 0.6}ms ease-out !important`,
                         }),
                     }}
                 >

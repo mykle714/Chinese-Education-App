@@ -21,7 +21,7 @@ import { EipPaletteCtx } from "./useEipPalette";
  *     dark without knowing about the theme. Components that read `COLORS.*`
  *     directly do NOT follow — see docs/EIP_SHEET_GESTURES.md § "Light / dark theme" for the list.
  *
- * Depends on: useEipPalette.ts. Depended on by: InfoCardSection.tsx, DictionaryCardDetailPage.tsx.
+ * Depends on: useEipPalette.ts. Depended on by: InfoCardSection.tsx.
  * Docs: docs/EIP_SHEET_GESTURES.md § "Light / dark theme".
  */
 

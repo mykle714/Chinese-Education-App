@@ -35,6 +35,7 @@ import GameBreakResultCard from "./gameBreak/GameBreakResultCard";
 import { flpBreakGameFor } from "../../../games/flpBreak";
 import { useWritingFlashcard } from "./useWritingFlashcard";
 import HintPawn from "./hintPawn/HintPawn";
+import type { GameBreakPhase } from "./gameBreak/useGameBreak";
 import { pawnHintFor } from "./hintPawn/pawnHints";
 import { useHintPawnEnabled } from "../../../hooks/useHintPawnSetting";
 import CardIconCanvas from "../../../cardIcons/editor/CardIconCanvas";
@@ -66,6 +67,12 @@ import type { VocabEntry, SideOneLanguage } from "../types";
 const TOWER_OFF_CARD_SELECTOR = ".mobile-demo-content, .mobile-demo-card-slot, .mobile-demo-draggable-container";
 /** A press that travels further than this is a drag, not a tap. */
 const TOWER_OFF_CARD_SLOP_PX = 10;
+/**
+ * The game-break phases in which the hint pawn is `away` — thrown off the left edge, back
+ * when the cards return (docs/HINT_PAWN.md § "Game breaks"). The title phase joins them only
+ * once Start is tapped (`playPending`); `skipping` uncovers the cards, so it is not here.
+ */
+const PAWN_AWAY_PHASES: ReadonlySet<GameBreakPhase> = new Set(["growing", "playing", "shrinking", "results", "leaving"]);
 
 interface FlashcardsLearnPageProps {
     /**
@@ -800,6 +807,9 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     onBack={handleBack}
                     onUndo={handleUndoLastMark}
                     editMode={editMode}
+                    // The break's area draws its own header row, flame included, from the grow
+                    // on (GameBreakChrome): step aside so only one minute-points tick runs.
+                    hidden={gameBreak.areaMounted}
                 />
             )}
             <ContentArea
@@ -1031,11 +1041,16 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                 {hintPawnEnabled && (
                     <HintPawn
                         world={flpWorld}
-                        hint={pawnHint}
-                        // Seen only once the card is: not under the tower's count card, the
-                        // break's card (Skip uncovers it, so it shows as that card flies off),
-                        // or the icon editor.
-                        unseen={tower.cardsCovered || (breakUp && gameBreak.phase !== "skipping") || editMode}
+                        // Over the break's title card the pawn stays but has nothing to say:
+                        // the card its hint described is covered.
+                        hint={gameBreak.phase === "title" ? null : pawnHint}
+                        // Seen only once the card is: not under the tower's count card or the
+                        // icon editor.
+                        unseen={tower.cardsCovered || editMode}
+                        // Play on the break's card (from the tap, before the prefetch settles)
+                        // until the cards return: thrown off left, slides back in after. Skip
+                        // on the title card never sends it away.
+                        away={(gameBreak.phase === "title" && gameBreak.playPending) || PAWN_AWAY_PHASES.has(gameBreak.phase)}
                         parked={parked}
                         // Its bubble is clipped to the space below the card (over the pill).
                         contentRef={contentAreaRef}
@@ -1146,6 +1161,10 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                             }}
                             // A study surface: the panel covers the page header, so it
                             // carries the minute-points flame itself.
+                            // Swiping right past Definitions = back one crumb (the same pop as a tap on the
+                            // previous crumb, so that word reopens on its remembered sub-tab). Off at the
+                            // root: nothing sits below it, so that edge keeps its rubber-band.
+                            onSwipeBack={eip.activeIndex > 0 ? () => eip.popTo(eip.activeIndex - 1) : undefined}
                             showMinutePoints
                         />
                     );

@@ -1,4 +1,4 @@
-import { cpcdNaturalSize, type CPCDSize } from "../../components/CPCDRow";
+import { cpcdNaturalSize, type CPCDSize } from "../../components/cpcdLayout";
 import { CELL_GAP, GRID_BOX_PADDING, GRID_MARGIN } from "./constants";
 
 /**

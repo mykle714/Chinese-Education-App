@@ -1,26 +1,24 @@
-import React, { useMemo } from "react";
+import React, { useLayoutEffect, useMemo, useRef } from "react";
 import { Box } from "@mui/material";
 import { GameSurfaceContext } from "../../../../games/shared/gameSurface";
-import { GameFrameExitContext } from "../../../../games/shared/gameFrameExit";
+import { GameFrameHostContext } from "../../../../games/shared/gameFrameExit";
 import type { GameStageFrameProps } from "../../../../games/types";
 import type { RampHue } from "../../../../theme/colors";
-import { SAFE_TOP } from "../../../../theme/safeArea";
-
-/** The Leave arrow's screen-reader name, top-left of the game (docs/FLP_GAME_BREAKS.md § 2). */
-const LEAVE_LABEL = "Leave";
+import { useGameBreakHost } from "./gameBreakHost";
 
 /**
  * The flp break host's chrome for a game Stage (`GameStageFrameProps`,
  * docs/FLP_GAME_BREAKS.md § 6) — deliberately almost nothing: in a break the game IS the
- * screen. The `GameFrame` inside drops its panel look (it reads the Leave context).
+ * screen, and the header row (Leave, the game's name, the audio chip, the flame) belongs
+ * to the AREA (GameBreakChrome), which draws it from the first frame of the grow.
  *
- *   - NO header bar: the flp header is covered, and the game's clock sits straight on the
- *     ground, with no band or line of its own (GameTimer). `headerRight` is a page-host
- *     concern and is ignored here; `title` shows beside Leave, as a header's would.
- *   - A status-bar spacer above the `GameFrame`, not padding inside it, so everything
- *     pinned to the frame's corners (Leave, the end popup's puck) clears the status bar.
- *   - Leave is a back arrow, top-left, with the game's name beside it: provided to every `GameFrame` inside through
- *     `GameFrameExitContext` (games/shared/gameFrameExit.ts).
+ *   - `onExitRequest` is handed UP to that row (`GameBreakHost.registerExit`), so Leave
+ *     does what the game says while the game is mounted. Held in a ref, so a Stage passing
+ *     a fresh callback each render re-registers nothing.
+ *   - `GameFrameHostContext` tells every `GameFrame` inside that it is hosted: the panel
+ *     look goes, the content fades in, and `exitRowTrailing` portals into the row's slot.
+ *   - `title` is the row's (the area reads it from the adapter's candidate); `headerRight`
+ *     is a page-host concern; both are ignored here.
  *   - The game's HUE still reaches the game's own parts through
  *     `GameSurfaceContext` — provided directly, never via `GameSurfaceProvider`, whose
  *     `useThemeColor` would repaint the browser chrome (decided 2026-10-18).
@@ -30,22 +28,32 @@ const LEAVE_LABEL = "Leave";
  * the whole Stage.
  */
 function makeGameBreakFrame(hue: RampHue): React.FC<GameStageFrameProps> {
-    const GameBreakFrame: React.FC<GameStageFrameProps> = ({ title, onExitRequest, children }) => {
-        const exit = useMemo(() => ({ label: LEAVE_LABEL, title, onExit: onExitRequest }), [title, onExitRequest]);
+    const GameBreakFrame: React.FC<GameStageFrameProps> = ({ onExitRequest, children }) => {
+        const breakHost = useGameBreakHost();
+        const onExitRef = useRef(onExitRequest);
+        onExitRef.current = onExitRequest;
+        const registerExit = breakHost?.registerExit;
+        useLayoutEffect(() => {
+            if (!registerExit) return;
+            registerExit(() => onExitRef.current());
+            return () => registerExit(null);
+        }, [registerExit]);
+
+        const trailingSlot = breakHost?.trailingSlot ?? null;
+        const frameHost = useMemo(() => ({ trailingSlot }), [trailingSlot]);
         return (
             <GameSurfaceContext.Provider value={hue}>
-                <GameFrameExitContext.Provider value={exit}>
+                <GameFrameHostContext.Provider value={frameHost}>
                     <Box
                         className="game-break-frame"
                         // A flex child, not `inset: 0`, so the area's safe-bottom padding
                         // holds; `relative` anchors the Stage's in-place overlays (its
-                        // end card, notices) to the screen.
+                        // end card, notices) to the screen below the status bar.
                         sx={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}
                     >
-                        <Box className="game-break-frame__status-spacer" sx={{ flexShrink: 0, height: SAFE_TOP }} />
                         {children}
                     </Box>
-                </GameFrameExitContext.Provider>
+                </GameFrameHostContext.Provider>
             </GameSurfaceContext.Provider>
         );
     };

@@ -14,6 +14,7 @@ export { default as IsoSolid } from "./IsoSolid";
 export { default as IsoShadow } from "./IsoShadow";
 export { default as IsoLevitate } from "./IsoLevitate";
 export { default as IsoSpacedText } from "./IsoSpacedText";
+export { default as IsoText, INK_CENTRE_DY } from "./IsoText";
 
 // Objects
 export { default as IsoPlatform, RIM_WIDTH } from "./IsoPlatform";
@@ -60,6 +61,7 @@ export {
 } from "./pawnEntrances";
 export { default as IsoCloud } from "./IsoCloud";
 export { default as IsoCloudShadow } from "./IsoCloudShadow";
+export { default as IsoBalloon } from "./IsoBalloon";
 export { default as IsoFog, type IsoFogPiercer } from "./IsoFog";
 export { planFogClouds, FOG_LEVELS, type FogCloud, type FogCover } from "./fogClouds";
 export { default as IsoRain, type IsoRainFall, type IsoRainSolid } from "./IsoRain";
@@ -72,7 +74,7 @@ export { openFloorSpot, hiddenBehind, type FloorSolid, type OpenFloorSpot } from
 export { default as IsoBurnMark, BURN_MARK_RADIUS } from "./IsoBurnMark";
 export { default as IsoLightningBolt } from "./IsoLightningBolt";
 export { seededRandom } from "./seededRandom";
-export { useCloudDrifts, sortCloudsBackToFront, type CloudDrift, type CloudPuff, type CloudSky } from "./useCloudDrifts";
+export { useCloudDrifts, sortCloudsBackToFront, type CloudDrift, type CloudDriftKind, type CloudPuff, type CloudSky } from "./useCloudDrifts";
 export { default as IsoWind } from "./IsoWind";
 export { useWindGusts, type WindGust, type WindStrand, type WindPt, type WindSky } from "./useWindGusts";
 export { planSidePath, useSkyTraffic, prefersReducedMotion, type SkyRegion, type SkySide, type SidePath } from "./skyTraffic";

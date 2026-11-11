@@ -10,7 +10,16 @@ import { COLORS } from "../theme/colors";
 import { SIZE, WEIGHT } from "../theme/scale";
 import { SHADOW } from "../theme/shadows";
 import { FONTS } from "../theme/fonts";
-import { miniCardFaceSx, type MiniCardSize } from "./miniCardFace";
+import {
+    DEFINITION_DESCENDER_ROOM,
+    DEFINITION_LINE_HEIGHT,
+    DEFINITION_MAX_LINES,
+    MINI_CARD_BAR_STRIP,
+    MINI_CARD_CONTENT_LAYOUT,
+    miniCardDefinitionBottom,
+    miniCardFaceSx,
+    type MiniCardSize,
+} from "./miniCardFace";
 
 /**
  * THE mini preview card — the one 92×132 "here is a word" tile every surface draws
@@ -31,6 +40,13 @@ import { miniCardFaceSx, type MiniCardSize } from "./miniCardFace";
  *
  * Layering: presentation only (src/components). It takes plain display values, never a
  * domain object, so no card wrapper's type leaks into it.
+ *
+ * ⚠️ It has an SVG TWIN: `MiniCardSvg` (src/components/MiniCardSvg.tsx) draws this same
+ * face — tile, icon, cpcd word, clamped gloss — natively in SVG for the acp's iso deck
+ * tops, where WebKit mis-paints this HTML inside a transformed <foreignObject>. It reads
+ * MINI_CARD_CONTENT_LAYOUT and the DEFINITION_* constants (miniCardFace.ts) and the cpcd tables
+ * from cpcdLayout.ts, so a change to those reaches both; a change to anything else about
+ * the contents (a new element, a new style) must be mirrored in miniCardSvgLayout.ts.
  *
  * Referenced by docs/DECKS_FEATURE.md (card previews), docs/QUICK_MARK.md,
  * docs/STUDY_CHALLENGE.md § 3.2, docs/SORT_CARDS_REQUIREMENTS.md and
@@ -70,7 +86,7 @@ export interface MiniCardProps extends Omit<BoxProps, "children"> {
     /**
      * The face's footprint — `regular` (92×132, every surface) or `compact` (78×112,
      * only the acp dock when a 4-card pack won't fit across). See MINI_CARD_DIMENSIONS
-     * in miniCardFace.ts; the contents re-lay per size via CONTENT_LAYOUT below.
+     * in miniCardFace.ts; the contents re-lay per size via MINI_CARD_CONTENT_LAYOUT (same file).
      */
     size?: MiniCardSize;
     /** Absolutely-positioned overlays: corner badges, action buttons, stamps. */
@@ -78,26 +94,10 @@ export interface MiniCardProps extends Omit<BoxProps, "children"> {
 }
 
 // ── Content layout per face size ─────────────────────────────────────────────────
-// Where the icon slot, the word and the definition sit, and at what type size. The
-// `regular` column is the original 92×132 layout, unchanged. `compact` (78×112) is a
-// genuine re-layout rather than a scaled copy: every offset shrinks roughly with the
-// card (~0.85×), and the type steps down ONE notch on the existing scales — the cpcd
-// switches to its own `compact` variant (16px glyphs / 9px pinyin at `xs`), es plain
-// text 14 → 12px, and the definition SIZE.body → SIZE.caption — so no new font sizes
-// are introduced. Referenced by docs/SORT_CARDS_REQUIREMENTS.md § 4.5 ("Compact dock").
-const CONTENT_LAYOUT: Record<MiniCardSize, {
-    sideInset: number;
-    iconTop: number;
-    iconSize: number;
-    keyTop: number;
-    cpcdCompact: boolean;
-    plainFontSize: string;
-    definitionFontSize: string;
-    definitionMinHeight: number;
-}> = {
-    regular: { sideInset: 8, iconTop: 14, iconSize: 26, keyTop: 46, cpcdCompact: false, plainFontSize: "14px", definitionFontSize: SIZE.body, definitionMinHeight: 24 },
-    compact: { sideInset: 6, iconTop: 11, iconSize: 22, keyTop: 38, cpcdCompact: true, plainFontSize: "12px", definitionFontSize: SIZE.caption, definitionMinHeight: 20 },
-};
+// MINI_CARD_CONTENT_LAYOUT (where the icon slot, the word and the definition sit per
+// face size), the mastery strip's geometry (MINI_CARD_BAR_STRIP) and the definition's
+// constants live in miniCardFace.ts, beside the tile's geometry, so MiniCardSvg — this
+// card's SVG twin — places its contents on the same numbers.
 
 // ── Mastery window strip (docs/MASTERY_REWORK.md § "Mini cards") ────────────────
 // The cdp's eight-mark window (`MasteryWindow`, the design's `.msb .cells`) shrunk to a
@@ -122,25 +122,7 @@ const CONTENT_LAYOUT: Record<MiniCardSize, {
 //
 // LINEAGE. Frame 17 draws this strip as cells in the MARK tier; only the strip's
 // PLACEMENT (full width, 8px inset, bottom of the card) and its hue rule are the frame's.
-const BAR_STRIP = {
-    height: 3.5,      // v2 frame 17's hairline (`.mcd .mk`, was 3)
-    cellGap: 1.5,     // the cdp's 3px gap does not survive the scale down; half of it does
-    inset: 8,         // left AND right — the window spans the card
-    bottom: 8,
-};
-
-/** How far (px) the definition sits below its natural anchor — see `definitionBottom`. */
-const DEFINITION_DROP = 2;
-/**
- * Extra bottom padding (px) inside the definition's clip box, so descenders (g, y, p)
- * on the last line are not cut off. At `lineHeight: 1.05` a glyph's descender reaches
- * ~1px past its line box, and `overflow: hidden` (required by the line clamp) clips at
- * the padding edge. The box's `bottom` is lowered by the same amount, so the text itself
- * does not move. Kept at 2px on purpose: a clamped THIRD line starts right below the
- * second, and its ascenders sit ~2px under that line's top, so more padding than this
- * would let the hidden line peek through.
- */
-const DEFINITION_DESCENDER_ROOM = 2;
+// Geometry: MINI_CARD_BAR_STRIP (miniCardFace.ts).
 
 const MasteryStrip: React.FC<{ bar: MasteryBar }> = ({ bar }) => {
     // The same eight-cell geometry the cdp window draws, from the same helper — the two
@@ -155,11 +137,11 @@ const MasteryStrip: React.FC<{ bar: MasteryBar }> = ({ bar }) => {
             className="mini-card__mastery-window"
             sx={{
                 position: "absolute",
-                bottom: BAR_STRIP.bottom,
-                left: BAR_STRIP.inset,
-                right: BAR_STRIP.inset,
+                bottom: MINI_CARD_BAR_STRIP.bottom,
+                left: MINI_CARD_BAR_STRIP.inset,
+                right: MINI_CARD_BAR_STRIP.inset,
                 display: "flex",
-                gap: `${BAR_STRIP.cellGap}px`,
+                gap: `${MINI_CARD_BAR_STRIP.cellGap}px`,
                 zIndex: 1,
             }}
         >
@@ -171,8 +153,8 @@ const MasteryStrip: React.FC<{ bar: MasteryBar }> = ({ bar }) => {
                         // Equal share of the row, so the eight cells always span the card
                         // whatever its width — no pixel math to keep in step with 92px.
                         flex: 1,
-                        height: BAR_STRIP.height,
-                        borderRadius: BAR_STRIP.height / 2,
+                        height: MINI_CARD_BAR_STRIP.height,
+                        borderRadius: MINI_CARD_BAR_STRIP.height / 2,
                         // Frame 17's empty-track tint, `.mcd .mk i{background:var(--outline)}`.
                         // Deliberately NOT the cdp's 6% fill + 12% inset ring: at 3.5px
                         // tall that ring would be most of the cell.
@@ -231,13 +213,10 @@ const MiniCard = forwardRef<HTMLDivElement, MiniCardProps>(function MiniCard(
     ref,
 ) {
     const fc = useTheme().palette.flashcard;
-    const layout = CONTENT_LAYOUT[size];
+    const layout = MINI_CARD_CONTENT_LAYOUT[size];
     // The definition sits just above the strip when there is one, and in the strip's
     // place when there isn't — suppressing the strip lets the card breathe.
-    // `DEFINITION_DROP` nudges the whole block 2px lower than that baseline: the
-    // definition grows UPWARD from this anchor, so a two-line gloss otherwise crowds
-    // the cpcd row above it (2026-09-28).
-    const definitionBottom = BAR_STRIP.bottom + (masteryBar ? BAR_STRIP.height + 5 : 0) - DEFINITION_DROP;
+    const definitionBottom = miniCardDefinitionBottom(!!masteryBar);
     return (
         <Box
             ref={ref}
@@ -322,10 +301,10 @@ const MiniCard = forwardRef<HTMLDivElement, MiniCardProps>(function MiniCard(
                     // Tighter than the 1.2 it used to be: at 14px the two-line clamp
                     // stood ~34px tall and its top line crowded the cpcd row. 1.05
                     // keeps the two lines distinct while buying back ~2px of headroom.
-                    lineHeight: 1.05,
+                    lineHeight: DEFINITION_LINE_HEIGHT,
                     overflow: "hidden",
                     display: "-webkit-box",
-                    WebkitLineClamp: 2,
+                    WebkitLineClamp: DEFINITION_MAX_LINES,
                     WebkitBoxOrient: "vertical",
                     minHeight: layout.definitionMinHeight,
                     zIndex: 1,

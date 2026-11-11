@@ -18,10 +18,19 @@ compare sheet, `src/components/CompareSheet.tsx`), and the own bodies of `Accoun
 `SettingsPanelBody` (the flp settings sheet), was deleted on 2026-08-28 when the
 last of its rows moved out — see [AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md).
 
-**Mount sites.** The eip sheet is not flp-private: the sort cards page (acp), the
-saved-card cdp and the Dictionary all mount the same `InfoCardSection`, and
-acp brings the `EipTabStrip` + `useEipTabs` trio with it from each on-deck card's info button
-([SORT_CARDS_REQUIREMENTS.md §4.7](./SORT_CARDS_REQUIREMENTS.md)). Everything on this
+**Mount sites.** The eip sheet is not flp-private: besides the flp (which mounts
+`InfoCardSection` itself), the sort cards page (acp), the saved-card cdp
+(`src/features/flashcards/VocabCardDetailPage.tsx`) and the Dictionary page
+(`src/features/dictionary/DictionaryPage.tsx`) all mount `EipSheet` → `InfoCardSection`, each
+with its own `useEipTabs` word trail — acp opens it from each on-deck card's info button
+([SORT_CARDS_REQUIREMENTS.md §4.7](./SORT_CARDS_REQUIREMENTS.md)). The sheet is the ONLY place
+a dictionary word is shown: there is no read-only dictionary card page (deleted 2026-11-10).
+
+| Host | `EipSheet` props that differ |
+|---|---|
+| acp (`AddCardsPage.tsx`) | `depth` 1 while its skipped-cards sheet is open |
+| saved-card cdp (`VocabCardDetailPage.tsx`) | `showSynonymsRelated`, `showLearning`, `learningSkipsRoot` (the Add key is hidden on the root — the saved card itself — and appears on drilled-in words); no `showWordTools` (its rail sits above the hero card, and its Compare raises `CompareSheet` via `useCompareSheet`) |
+| Dictionary page (`DictionaryPage.tsx`) | `showSynonymsRelated`, `showWordTools`, `showLearning`, `defaultHeightRatio` 0.8 | Everything on this
 page applies to all of them, and to the compare sheet, which is a plain `SheetPanel`
 host of its own ([WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md)) — the first one
 to use `depth` for real, stacking over the cdp's eip.
@@ -81,7 +90,7 @@ description of something on screen:
 | on mount | laid out at `default`, slid up from below the frame (§ Open slide) | painted **at** `minHeight`, no animation |
 | drag to the bottom | dismisses (`onClose` after the shrink) | stops dead at `minHeight` |
 | release below default | dismiss | snap back to `minHeight` |
-| release between the stops | collapse below `collapseThresholdRatio` of the travel, else grow to max | same rule, from `minHeight` |
+| release between the stops | the directional `snapCommitShare` rule (§ Height model) | same rule, from `minHeight` |
 | fling down | floors at `default` (never dismisses) | floors at `minHeight` |
 | scrim | yes | `showScrim={false}` — it is always on screen, so a permanent dim, and a scrim tap would have nothing to dismiss to |
 | `onClose` | required in practice | **omitted** — nothing to report |
@@ -119,19 +128,39 @@ strip as they scroll up. See docs/UX_AND_NAVIGATION.md § Edge fade.
 | **max** | `parentHeight * MAX_HEIGHT_RATIO` (**1**) | fully expanded — the sheet IS the screen |
 
 There is **no resting stop between 0 and default**. `computeSnapTarget(h, default,
-max, min, collapseRatio)` is the single rule every release path uses: below default →
-`0` (dismiss); at or above → collapse back to `default` while the sheet sits below
-`default + (max - default) * collapseRatio`, otherwise grow to `max`. A persistent
-sheet passes `min > 0`, which suppresses the dismiss stop (see above).
+max, min, direction, commitShare)` is the single rule every release path uses: below
+default → `0` (dismiss); at or above → the **directional** two-stop rule shared with td's
+tower ↔ cards snap (`src/utils/directionalSnap.ts` → `directionalSnapTarget`; td's use is
+docs/DECK_TOWER.md § "The snap zone"). A persistent sheet passes `min > 0`, which
+suppresses the dismiss stop (see above).
 
-`collapseRatio` comes from the **`collapseThresholdRatio`** prop and defaults to
-**0.5**, which is exactly the plain "nearest stop wins" midpoint rule. **The eip itself
-passes 0.25** (`InfoCardSection.tsx` → `EIP_COLLAPSE_THRESHOLD_RATIO`, every eip host: flp/td,
-cdp, Dictionary, acp), so a short upward pull from the open height
-maximizes — at the default 0.6 open height the flip point is 0.7 of the screen. A smaller value
-moves the collapse point **down**, so the sheet springs back open from heights that
-used to close it — a partial pull-down no longer counts as "close it". Note this only decides between the two upper stops; a
-modal panel's dismiss floor is still its default height, untouched by the ratio.
+**Directional thresholds (2026-11-10).** The choice between default and max depends on
+the way the sheet was **last moving**, not only where it was let go:
+
+| heading | commits to | once it has travelled | short of that |
+|---|---|---|---|
+| up (growing) | max | `commitShare` of the gap **above default** | springs back to default |
+| down (shrinking) | default | `commitShare` of the gap **below max** | springs back to max |
+| unknown | nearer stop | — (halfway point) | — |
+
+The direction is `snapDirectionRef` in `SheetPanel.tsx`, written by `writeVirtualHeight`
+(every gesture-driven height write — live finger, header drag, momentum — goes through it;
+the animated snaps call `writeHeight` directly and never touch it) via `nextSnapDirection`,
+which ignores steps under `DIRECTION_MIN_STEP_PX` (2) so a lifting finger's jitter cannot
+flip it. It resets to 0 when a new touch or header drag grabs the sheet. A drag up that
+turns back down is heading **down**, so it springs back to default from any height under
+the up-going breakpoint's mirror. A fling's momentum keeps the fling's direction.
+
+`commitShare` comes from the **`snapCommitShare`** prop (renamed from
+`collapseThresholdRatio`, whose rule was one undirected line) and defaults to **0.5**, at
+which the directional rule IS the plain nearest-stop midpoint whichever way the sheet
+moved — so every non-eip sheet behaves as before. **The eip passes 0.25**
+(`InfoCardSection.tsx` → `EIP_SNAP_COMMIT_SHARE`, every eip host: flp/td, cdp, Dictionary,
+acp) — the same share as td's `SNAP_COMMIT_SHARE`. At the default 0.6 open height, a pull up
+past 0.7 of the screen maximizes and a pull down from max below 0.9 shrinks. (Before
+2026-11-10 one undirected line at 0.7 served both trips, so shrinking from max needed
+three-quarters of the gap.) Only the {default, max} choice is affected; a modal panel's
+dismiss floor is still its default height.
 
 The open height is a fixed fraction of the screen, deliberately *not* measured from
 content, so every eip tab opens to the same extent.
@@ -259,6 +288,7 @@ LAST crumb, and the trail always reads as the path from the root to it.
 | Drill into a NEW word (breakdown row, example segment, "used in" row) | push it |
 | Drill into a word ALREADY on the stack, or tap its crumb | pop everything above it — it is the top again |
 | Escape (desktop) | pop the top (back one word); popping the root closes the panel |
+| Swipe right on the first sub-tab (Definitions) | pop the top (back one word); at the root it only rubber-bands — § Swiping past the first sub-tab goes back one word |
 | Down caret (⌄) | close the panel; the stack is kept (it outlives the panel — below) |
 | Open Compare with a Compare crumb already on the stack | pop down to it, refill slot A, clear slot B |
 
@@ -274,7 +304,7 @@ Code: `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` → `useEipTab
 
 ### The trail scrolls, holds up to 50 words, and outlives the panel
 
-**Its row is always present** — it carries the down caret, the speaker and the Dictionary eip's Add key
+**Its row is always present** — it carries the down caret, the speaker and the Add key (hosts passing `showLearning`)
 (§ Telescope) — but the **crumbs are hidden until the learner first navigates to another
 word**: a panel opened on a word shows an empty trail slot, not a lone crumb repeating the
 headword. The first push (a drill-in, or Compare) latches the crumbs on for that trail's
@@ -315,9 +345,8 @@ Three rules, all changed on **2026-09-06**:
 belongs to the CARD, so reopening the sheet on the same card resumes the same drill-in
 chain on the same word. It is dropped when the ROOT changes: the flp's next card (the
 `currentIndex` reset effect, plus `openForRoot` reseeding), another card's info button on
-acp, or the page unmounting. (The cdp is unaffected — it has no entry-tab
-strip at all; it drills in by NAVIGATING to the tapped word's own card detail, and its
-content sub-tab already survives a close for the page's life.)
+acp, or the page unmounting. (On the saved-card cdp the root never changes, so the trail
+lasts for the page's life.)
 
 ### Telescope — the eip's two panels (2026-10-29, Tower Tier 2)
 
@@ -326,7 +355,7 @@ The eip is two stacked panels (design file "Tower Tier 2 - Time of Day", EIP art
 | Panel | Rows | Component |
 |---|---|---|
 | **Upper** — the tinted `ground` | TITLE ("More Info" / "Compare" + flame — a leaf `PageHeader`; maximized only) · TRAIL (speaker · words · Add key) · HEADER (headword tile, gloss — ONE dd, the chosen sense's else the default's; a multi-sense word's full list sits at the top of the Definition tab, `EipSenseList`) | `EipUpperPanel` |
-| **Lower** — the white SHELF | its own small grabber · content tabs (sunken segmented track) · tab body | `InfoCardSection` (`.eip-shelf`) + `InfoCardPanelBody` (`hideEntryHeader`) |
+| **Lower** — the white SHELF | its own small grabber · content tabs (sunken segmented track) · tab body | `InfoCardSection` (`.eip-shelf`) + `InfoCardPanelBody` (draws no entry header — `EipEntryHeader` is mounted only by `InfoCardSection` in the upper panel) |
 
 The shelf has a 24px top radius and a solid 3px `edge` lip above it; the sheet's `surface`
 (the upper panel's ground) shows in its corners.
@@ -386,11 +415,11 @@ the caret's ink and the first crumb's ink. Toward max the cluster slides left by
   (`GLOSS_KEYCAP_CLEARANCE`) keeps it off the keycap, and its right inset is
   `EIP_PANEL_GUTTER`. (The box ran edge to edge so a swiped sense list clipped at the screen;
   the gloss has been one wrapping dd since 2026-11-05, so nothing swipes in it now.) A multi-character keycap pushes the gloss right; the
-  trail does not move. The cdps' inline panels keep the header's normal gap and padding.
+  trail does not move.
 - The cluster keeps its width on Compare, which has no speaker, so the trail does not jump
   when the learner moves between a word and a Compare crumb.
-- The speaker speaks the showing word. The entry header gets no `onSpeak` here, so that
-  header only draws a speaker in the cdps' inline panels.
+- The speaker speaks the showing word. It is the eip's only speaker: `EipEntryHeader` has
+  no speaker/Learning action stack (and always draws an md cpcd).
 
 **The title row is a real `PageHeader`** (leaf size, `arrowDirection="down"`,
 `safeAreaTop={false}`, `titleColor` = the palette ink, flame only with
@@ -462,9 +491,9 @@ The eip follows the app's colour **theme** (Settings → Theme, `ThemeMode` in
 `src/contexts/ThemeContext.tsx`), **not** the time of day. `eipPalette.ts` →
 `eipPaletteFor(mode)` returns one of two fixed palettes; `useEipPalette.ts` → `useEipPalette`
 reads the theme mode; `EipPaletteContext.tsx` → `EipPaletteProvider` publishes it, and pieces
-read it with `useEipColors()` (the LIGHT palette outside a provider). Both eip hosts mount
-the provider: the sheet (`InfoCardSection`) and the Dictionary cdp's inline panel
-(`src/features/dictionary/DictionaryCardDetailPage.tsx`).
+read it with `useEipColors()` (the LIGHT palette outside a provider). The sheet
+(`InfoCardSection`) mounts the provider — the eip's only host since the inline dictionary-cdp
+panel was deleted (2026-11-10).
 
 - **Light** — every theme but Dark (Light, Ocean, Nature). The design's Day artboard: a
   pale-sky tint on the upper panel's ground and wells; keys, shelf, cards and ink are the
@@ -480,10 +509,10 @@ the provider: the sheet (`InfoCardSection`) and the Dictionary cdp's inline pane
 - **History.** Until 2026-11-05 these were the DAY and NIGHT palettes, driven by the shared
   day clock (`src/timeOfDay/useDayClock.ts`) and blended across each twilight. The blend read
   as the eip dimming in daylight (fills sliding to slate under still-dark ink), so the clock
-  was dropped for the eip. The Deck Tower, the Dictionary page / dictionary cdp ground
+  was dropped for the eip. The Deck Tower, the Dictionary page ground
   (`tier2Look.ts`) and acp still follow the clock — so in the Light theme at night the
-  Dictionary cdp shows a slate page ground around a light inline eip, and in the Dark theme
-  by day a pale ground around a dark one.
+  Dictionary page shows a slate page ground behind a light eip sheet, and in the Dark theme
+  by day a pale ground behind a dark one.
 
 **Does not follow the dark palette:** anything reading `COLORS.*` directly — notably `SheetCloseX` (fixed `textFaint`). (The SensePicker's
 white menu used to be listed here; the eip header no longer mounts the picker.)
@@ -495,17 +524,19 @@ and the Add key's check green (#008A48). Design values mapped to the NEAREST tok
 selected tab chip's `0 1px 2px @.12` → `SHADOW.rest` (@.05). The Dictionary page's tier-2
 ground (`src/timeOfDay/tier2Look.ts`) carries the same day hexes for its page.
 
-### Add key — the Dictionary eip's Learning key (2026-10-29)
+### Add key — the eip's Learning key (2026-10-29)
 
 `EipAddKey` — the design's `.kc.add`, built exactly: a 92px raised key in the trail row,
 at its right end (`+ Add` on a 5px lip, lifted 1px; held, it sinks 4px and loses the lip;
 `✓ Added!` sits 2px low on a 2px lip with a green check). Driven by `useLearningToggle`
-(EipSheet `showLearning`, Dictionary page only); tapping "Added!" removes. The hook is
+(EipSheet `showLearning`: the Dictionary page and the saved-card cdp); tapping "Added!" removes. The hook is
 optimistic: Add ⇄ Added! flips on the tap and the request follows after paint, so the key is
-never disabled waiting on the network (LEAF_NODE_PAGES.md § "Read-only dictionary cdp"). **No glow** —
-the dictionary cdp keeps its glowing `LearningToggle` under the header speaker. Adding a word
-is a Dictionary-flow action only: no other eip host (flp, acp, saved-card cdp) offers one —
-the flp's old add-only "+" for drilled-in words was removed 2026-10-29.
+never disabled waiting on the network (LEAF_NODE_PAGES.md § "The Learning control"). **No glow.**
+With `learningSkipsRoot` (the saved-card cdp) the key is hidden while the trail's root is
+showing — the root is the saved card the page is about, so the key would only offer to un-save
+it — and appears on every word drilled into from it. It is the app's only Learning control
+(the dictionary cdp's glowing `LearningToggle` was deleted with that page, 2026-11-10). The
+flp and acp offer none — the flp's old add-only "+" for drilled-in words was removed 2026-10-29.
 
 **Both eip keycaps carry the straight-lip rounded edge** (a 1px top rim light just inside the
 outline ring, a 0.5px fillet over the lip; docs/designGuidelines.md § "The rounded edge").
@@ -871,6 +902,29 @@ sits far below the commit threshold (`paneWidth · TAB_SWIPE_COMMIT_RATIO`) and
 change. See `useTabSwipeTrack`'s touchmove handler and the constants at the top of
 `src/components/sheet/useTabSwipeTrack.ts`.
 
+### Swiping past the first sub-tab goes back one word
+
+On the eip sheet, the first sub-tab's left edge is not always an end. While the trail
+has a word **below** the showing one, a right-swipe on Definitions follows the finger
+like a swipe toward a real neighbour (no rubber-band), and a release past the commit
+threshold pops the showing word. It is the same `popTo(activeIndex − 1)` as tapping the
+previous crumb, so that word comes back on its **remembered** sub-tab, and the entry
+pager slides it in from the left. If it was a Compare crumb, CompareWorkspace shows.
+
+There is deliberately **no forward counterpart**: the trail is a stack (§ The trail is a
+breadcrumb stack), so nothing sits after the showing word, and a left-swipe on the last
+sub-tab still rubber-bands. At the root the host passes no handler, so both ends rubber-band.
+The Compare crumb has no sub-tab track, so a swipe on it does nothing.
+
+On release the hook clears its inline transform before calling the handler. The pop's
+entry-jump effect (`InfoCardPanelBody`) pins the track for the new word in the same
+commit, so nothing visibly snaps back. A handler that changes nothing leaves no stuck track.
+
+Code: `src/components/sheet/useTabSwipeTrack.ts` → `useTabSwipeTrack` (`onSwipePastFirst`,
+`settleDrag`, the touchmove `hasNeighbor` check); `InfoCardPanelBody.tsx` / `InfoCardSection.tsx`
+(`onSwipeBack`, a pass-through); the hosts `FlashcardsLearnPage.tsx` and `EipSheet.tsx`
+(`onSwipeBack`, set only when `eip.activeIndex > 0`).
+
 ---
 
 ## Word-trail transitions (entry pager)
@@ -904,8 +958,8 @@ Now:
    matched to `TAB_SWIPE_TRANSITION`) on a wrapper around the body whenever the active
    tab's **id** changes; the direction is the sign of the `activeIndex` delta, so a pushed
    word enters from the right and a pop (Escape, or tapping an earlier crumb) enters from the
-   left. Hosts opt in by passing `entryTabId` / `entryTabIndex` (flp and acp do; the
-   cdp has no trail and passes neither, disabling the animation).
+   left. Hosts opt in by passing `entryTabId` / `entryTabIndex` (the flp does, and `EipSheet`
+   does for all its hosts — acp, the saved-card cdp, the Dictionary page).
    - It is **enter-only** — the outgoing word's DOM is already gone — which is why the
      travel is a fraction of the panel width rather than a full page.
    - It is **imperative, not a keyed remount**: remounting would tear down the three
@@ -958,6 +1012,38 @@ cycles back — each confirmed by a small floating caption ("Characters Copied!"
   and the click still reaches the row.
 - **Latin-script (es) headwords are unaffected** — `ForeignText`'s plain-text branch has no
   pinyin half to alternate with and ignores the prop.
+
+---
+
+## CpcdPopup motion (2026-11-10)
+
+Every `CpcdPopup` — the est's segment definition box, the header's copy caption, and the
+Definition tab sense list's commonality popup — **grows in** with the hint bubble's
+grow-in, and fades away on exit (owner's picks):
+
+- **Enter:** grows out of its anchor from a speck, overshoots to 1.08, settles
+  (`HINT_MOTION.growMs`, plain ease-out — the overshoot is in the keyframes). Above its anchor
+  it grows up (`growIn`, origin bottom-centre); flipped below, it grows down
+  (`growInFromAbove`, origin top-centre), read from Popper's resolved `placement`.
+- **Exit:** a plain fade away (`fadeOut`, `FADE_OUT_MS` = 160ms, ease-out). The hint
+  bubble's pop (swell + ring) was tried first and dropped the same day as too loud for a
+  caption. A fading card takes no taps.
+- **Reduced motion:** a plain fade in; the exit is already a fade.
+- **Subject change while open** (`contentKey`: the sense index, the est's segment range): the
+  card re-mounts and grows in afresh at the new spot instead of sliding there. The copy caption
+  passes none.
+- **Mechanics:** Popper's `transition` mode keeps the popup mounted after `open` falls until
+  `TransitionProps.onExited`, which `CpcdPopupMotion` calls on a `FADE_OUT_MS` timer (not
+  `animationend`, which a skipped animation never fires). Callers clear their anchor and
+  caption on close, so the popup holds the last open anchor, caption, `interactive` (the est's
+  drill-in chevron and left-aligned layout) and `pressed` grey (`held`) through the fade —
+  the card fades out exactly as it last looked, nothing inside it changing first.
+
+**Code:** `src/components/CpcdPopup.tsx` → `CpcdPopup` (`held`, `contentKey`),
+`CpcdPopupMotion`; `FADE_OUT_MS`; `src/components/hintBubble/bubbleKeyframes.ts` (shared with
+`HintBubbleSurface`); `src/components/hintBubble/hintMotion.ts` → `HINT_MOTION`; callers
+`src/components/SegmentedSentenceDisplay.tsx`, `src/components/CPCDRow.tsx`,
+`src/features/flashcards/FlashcardsLearnPage/EipSenseList.tsx`.
 
 ---
 

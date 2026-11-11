@@ -61,7 +61,7 @@ neither could change it safely. It now lives in `src/cardIcons/editor/`.
 **Applied again, 2026-09-04.** `SheetPanel` — the modal/persistent bottom-sheet chrome —
 sat in the same folder while the old Home page's card sheets and the acp already used it. That was still
 *within* the flashcards feature, so it was legal; it stopped being legal the moment
-`src/components/CompareSheet.tsx` (mounted by the dictionary cdp) needed it. It moved to
+`src/components/CompareSheet.tsx` (mounted by the dictionary cdp, deleted 2026-11-10; today by the saved-card cdp) needed it. It moved to
 `src/components/sheet/`, taking the four styled surfaces it renders
 (`EicScrim`, `InfoSheetContainer`, `InfoSheetGrabber`, `SheetHeaderSlot`) out of
 `FlashcardsLearnPage/styled.ts` and into `src/components/sheet/sheetStyled.ts` — they had
@@ -104,7 +104,7 @@ extracted alongside a component therefore needs its own module — which is why
 > `fetch` directly.
 >
 > ⚠️ **Status: aspirational, not yet true.** ~42 direct `fetch(...)` call sites across
-> ~35 files still bypass it (`AuthContext.tsx`, `FlashcardsPage.tsx`, `EntriesPage.tsx`,
+> ~35 files still bypass it (`AuthContext.tsx`, `EntriesPage.tsx`,
 > `EditEntryPage.tsx`, the Reader dialogs, `useDictionarySearch.ts`,
 > `useSpeedReadingQueue.ts`, …). They work — the global
 > `fetchInterceptor` patch means they still get token refresh — but they re-hand-roll

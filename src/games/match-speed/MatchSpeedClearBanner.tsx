@@ -6,7 +6,7 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 import { CLEAR_BANNER_MS } from "./constants";
 
 /**
- * "Board Cleared!" — the pop-and-fade banner shown when the last pair leaves the
+ * "Board Cleared!" — the pop-and-fade banner shown when a match leaves no live card on the
  * board.
  *
  * Layer: presentational. It is **purely an indicator**: no score, no medal, no

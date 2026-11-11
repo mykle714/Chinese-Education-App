@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { iconSearchTerm, resolveSelectedSenseIndex, senseLabelForIndex, resolveDisplayDefinition } from "../../utils/definitionUtils";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { lensFromSearch } from "./collectionRef";
@@ -30,14 +30,13 @@ import { useTier2Look } from "../../timeOfDay/useTier2Look";
 import { useCardIconEditor } from "../../cardIcons/editor/useCardIconEditor";
 import CardIconCanvas from "../../cardIcons/editor/CardIconCanvas";
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "../../cardIcons/editor/CardEditToolbar";
-import { getBreakdownItems } from "../../utils/breakdownUtils";
-import { useOpenWordCard } from "../../hooks/useOpenWordCard";
 import MasteryWindow from "../../components/mastery/MasteryWindow";
 import WordToolsRail from "../../components/WordToolsRail";
 import { useCompareSheet } from "../../components/CompareSheet";
 import { HeaderIconButton } from "../../components/PageHeader";
 import SheetPill from "../../components/SheetPill";
-import InfoCardSection from "./FlashcardsLearnPage/InfoCardSection";
+import EipSheet from "./FlashcardsLearnPage/EipSheet";
+import { useEipTabs } from "./FlashcardsLearnPage/useEipTabs";
 import { apiGet } from '../../api/http';
 import { navigateBackOr } from '../../utils/navigateBack';
 
@@ -117,12 +116,15 @@ const VocabCardDetailPage: React.FC = () => {
     // rest, so it mounts on open and unmounts on close, which also resets its open
     // animation. `SheetPill` is the always-drawn capsule that opens it.
     const [infoOpen, setInfoOpen] = useState(false);
-    // Which eip tab the panel is on (0 definition / 1 examples / 2 breakdown). Owned by
-    // the PAGE rather than by useEipTabs: the cdp drills in by NAVIGATING to the tapped
-    // word's own card detail (handleWordOpen), so it never has more than one entry in the
-    // panel and has no entry-tab strip to keep state for. Deliberately NOT reset on close
-    // — reopening the panel on the same card returns to the tab you were reading.
-    const [infoTab, setInfoTab] = useState(0);
+    // The eip's WORD TRAIL (2026-11-10). Drill-ins (breakdown row, "Used In" row, example
+    // segment) push a crumb in this same sheet — the flp's behaviour — instead of
+    // navigating to another card detail page. That navigation used to land on the
+    // read-only dictionary cdp for any word without a vet row; that page is gone, and the
+    // eip is now the only way a linked word is shown. The trail outlives the panel (closing
+    // and reopening resumes it), and each crumb keeps its own sub-tab, so reopening returns
+    // to the tab you were reading. Seeded per open with `openForRoot` (a no-op when the
+    // root is already this card). Docs: docs/EIP_SHEET_GESTURES.md (§ mount sites).
+    const eip = useEipTabs({ language: entry?.language });
     // NOTE: the footer bar needs no handling here. It is rendered at FRAME level
     // (FooterPresenter, z-index 100), outside this page's DOM, so no z-index inside the
     // page could get the sheet above it — it once hovered over the sheet's bottom ~90px,
@@ -133,27 +135,6 @@ const VocabCardDetailPage: React.FC = () => {
     // sorted index, migration 99), falling back to the top/starred sense. Persisted on pick.
     const [selectedSenseIndex, setSelectedSenseIndex] = useState(0);
     useEffect(() => { setSelectedSenseIndex(entry ? resolveSelectedSenseIndex(entry) : 0); }, [entry?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // Drill-in: the info boxes' breakdown blocks, "Used In" rows and example-sentence
-    // segments open the tapped word's cdp — the learner's own saved card when they
-    // have one, else the read-only dictionary cdp (see useOpenWordCard). Prewarm the
-    // lookup cache with this card's breakdown characters + used-in words so the first
-    // tap navigates without a round trip.
-    const linkableWords = useMemo(
-        () => [
-            ...getBreakdownItems(entry).map((item) => item.character),
-            ...(entry?.usedIn ?? []).map((item) => item.entryKey),
-        ],
-        [entry]
-    );
-    const handleWordOpen = useOpenWordCard(linkableWords);
-
-    // Per-character rows for the eip's breakdown tab. Memoized because InfoCardSection
-    // takes it as a prop and the panel re-renders on every sheet-resize frame.
-    const infoBreakdownItems = useMemo(
-        () => getBreakdownItems(entry, selectedSenseIndex),
-        [entry, selectedSenseIndex]
-    );
 
     // "Compare", from the word-tools rail above the card and from the eip entry header —
     // raises the compare SHEET over this page with the word in slot A (see
@@ -280,6 +261,25 @@ const VocabCardDetailPage: React.FC = () => {
     // shift it caused.
     const toolbarInset = useToolbarInset(editMode, contentAreaRef, toolbarRef, CONTENT_PADDING, ".card-edit-toolbar__row");
 
+    // Open the eip on this card. Seeds the trail's root from the OVERRIDE-MERGED entry (a
+    // sense picked on the hero this visit lives in the editor's `selectedSense` override),
+    // so the panel header's dd matches the card — the flp's `openEicSheet` rule.
+    const openInfo = useCallback(() => {
+        const root = displayCurrentEntry ?? entry;
+        if (!root) return;
+        eip.openForRoot(root);
+        setInfoOpen(true);
+    }, [displayCurrentEntry, entry, eip]);
+
+    // Keep an OPEN eip in step with a sense picked on the hero card underneath it: trail
+    // crumbs hold a snapshot, so without this the panel header would keep the previous
+    // sense's dd. Keyed on the sense value (the entry object changes identity every render).
+    // Same effect as the flp's. See docs/DEFINITION_CLUSTERS.md.
+    useEffect(() => {
+        if (!infoOpen || !displayCurrentEntry) return;
+        eip.syncEntry(displayCurrentEntry);
+    }, [infoOpen, displayCurrentEntry?.id, displayCurrentEntry?.selectedSense]); // eslint-disable-line react-hooks/exhaustive-deps
+
     useEffect(() => {
         const fetchEntry = async () => {
             try {
@@ -341,10 +341,9 @@ const VocabCardDetailPage: React.FC = () => {
             onBack={() => navigate(-1)}
             // The Card Detail artboard draws this title at 18px. It stays dense now that
             // the header is down to `delete` + the title (add-to-deck and edit moved onto
-            // the card's own rail), because the read-only dictionary cdp is the SAME
-            // surface and the two must not disagree on their title size.
+            // the card's own rail).
             headerSize="dense"
-            // The Tier 2 ground (useTier2Look), like the dictionary cdp and every surface
+            // The Tier 2 ground (useTier2Look), like the Dictionary page and every surface
             // the Deck Tower reaches: it tints with the hour, and the slab footer follows
             // (docs/SHELF_REDESIGN.md § 7b "Time of day"). Since 2026-11-04 — before, the
             // cdp sat on the standard paper ground under the flat footer bar.
@@ -359,7 +358,7 @@ const VocabCardDetailPage: React.FC = () => {
                     <SheetPill
                         className="vocab-card-detail__info-pill"
                         label="More Info"
-                        onClick={() => setInfoOpen(true)}
+                        onClick={openInfo}
                         ariaLabel="Open extra info"
                         ariaExpanded={infoOpen}
                         // The cdp keeps the (slab) footer, so the pill floats above it
@@ -370,57 +369,28 @@ const VocabCardDetailPage: React.FC = () => {
                         // canvas being edited. Same rule the flp's pill follows.
                         disabled={editMode}
                     />
-                    {infoOpen && (
-                        /* THE eip — the exact component the flp and acp raise
-                           (InfoCardSection → SheetPanel + InfoCardPanelBody), not a
-                           cdp-shaped copy of its content. The panel brings the entry
-                           header, the underline tab strip, swipe-between-tabs and the
-                           sense picker with it; this page only supplies the entry and
-                           says where a drill-in tap lands.
-
-                           Two deliberate differences from the flp's mount:
-                             • no `tabStrip` — the cdp has no nested entry tabs (see
-                               `infoTab`), so there is nothing for the strip to show.
-                             • `showSynonymsRelated` — Synonyms + Related Words ride at
-                               the bottom of the definition tab, because they are the one
-                               thing the cdp's old stacked-SectionCard body showed that
-                               the eip has no tab for. */
-                        <InfoCardSection
-                            currentEntry={entry}
-                            selectedTab={infoTab}
-                            onTabChange={setInfoTab}
-                            breakdownItems={infoBreakdownItems}
-                            showPinyinColor={showPinyinColor}
-                            // The cdp's hero card does not flip, so there is no flipped
-                            // state to mirror. (The panel body does not read this prop
-                            // today — see the note on InfoCardPanelBodyProps.isFlipped.)
-                            isFlipped={false}
-                            onClose={() => setInfoOpen(false)}
-                            // Drill-in = NAVIGATION on this page: a breakdown row, a
-                            // "Used In" row or an example segment opens that word's own
-                            // card detail (the learner's saved card when they have one,
-                            // else the read-only dictionary cdp — see useOpenWordCard).
-                            // The flp pushes a nested eip tab instead; same taps, and the
-                            // difference is the whole point of a detail PAGE.
-                            onBreakdownItemClick={(item) => handleWordOpen(item.character)}
-                            onUsedInItemClick={(item) => handleWordOpen(item.entryKey)}
-                            onExampleSegmentClick={handleWordOpen}
-                            onSpeak={tts.speak}
-                            onSpeakSentence={tts.speakSentence}
-                            speakingKey={tts.speakingKey}
-                            // No add control: a card open on the cdp is already saved (and
-                            // adding from an eip is a Dictionary-flow action only).
-                            // The panel underlines the SAME pick the hero card shows — one
-                            // page-level index, set only by the hero's picker.
-                            selectedSenseIndex={selectedSenseIndex}
-                            showSynonymsRelated
-                            // A study surface (/flashcards/card is minute-eligible), and the
-                            // panel covers this page's header — so the sheet carries the
-                            // flame beside its ✕. No `onCloseX`: with no word trail here,
-                            // the ✕ falls through to SheetPanel's own dismiss.
-                            showMinutePoints
-                        />
-                    )}
+                    {/* THE eip — the same sheet the acp and the Dictionary page raise
+                        (EipSheet → InfoCardSection → SheetPanel + InfoCardPanelBody), with the
+                        word trail: a drill-in pushes a crumb here rather than navigating.
+                        Differences from the Dictionary page's mount:
+                          • no `showWordTools` — the word-tools rail sits above the hero card
+                            on this page, and its Compare raises the compare sheet (below);
+                          • `learningSkipsRoot` — the root is this saved card, so its Learning
+                            key would only offer to un-save the page you are on. Words drilled
+                            into from it get the key, since most of them are not saved.
+                        A study surface (/flashcards/card is minute-eligible), so EipSheet's
+                        flame stays on. */}
+                    <EipSheet
+                        eip={eip}
+                        open={infoOpen}
+                        onClose={() => setInfoOpen(false)}
+                        onSpeak={tts.speak}
+                        onSpeakSentence={tts.speakSentence}
+                        speakingKey={tts.speakingKey}
+                        showSynonymsRelated
+                        showLearning
+                        learningSkipsRoot
+                    />
                 </>
             )}
             headerExtraActions={entry && (

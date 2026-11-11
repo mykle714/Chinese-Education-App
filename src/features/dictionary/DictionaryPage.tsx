@@ -22,7 +22,6 @@ import { useTTS } from '../../hooks/useTTS';
 import { lookupVocabEntry } from '../../api/dictionary';
 import EipSheet from '../flashcards/FlashcardsLearnPage/EipSheet';
 import { useEipTabs } from '../flashcards/FlashcardsLearnPage/useEipTabs';
-import { dictionaryBrowseState } from './dictionaryBrowseState';
 import { registerDictionarySearchFocus } from './dictionarySearchFocus';
 import { DEFAULT_SOURCE_ATTRIBUTE } from '../beginnerKeyboard';
 import { useTier2Look } from '../../timeOfDay/useTier2Look';
@@ -71,11 +70,6 @@ const searchFieldSx = (look: Tier2Look) => ({
         '& input::placeholder': { color: look.muted, opacity: 1 },
     },
 });
-
-// dictionaryBrowseState (the persisted query/page/scroll singleton) now lives in
-// ./dictionaryBrowseState so the Layout route watcher can reset it on exit from
-// the Dictionary space. It is still seeded into useDictionarySearch below and
-// kept in sync by the effects further down.
 
 // The dictionary search accepts several shapes of query (see DictionaryDAL ->
 // searchByWord1): the headword itself, pinyin — tone-marked, plain, or numbered, spaced or
@@ -150,7 +144,7 @@ function DictionaryPage() {
         searchInput, setSearchInput, debouncedSearchTerm, entries, segmentGroups,
         isSegmentMode, loading, error, hasMore, loadingMore, loadMore, clearSearch,
         aiEntry, canAskAi, askingAi, aiNoMatch, aiError, aiLimitReached, aiLimitMessage, askAi,
-    } = useDictionarySearch(50, { search: dictionaryBrowseState.search });
+    } = useDictionarySearch(50);
 
     const userLanguage = (user?.selectedLanguage || 'zh') as Language;
     const welcome = welcomeCopyFor(userLanguage);
@@ -162,9 +156,6 @@ function DictionaryPage() {
 
     // Ref for the search input — the es PinyinKeypad inserts accents at its caret.
     const searchInputRef = useRef<HTMLInputElement>(null);
-    // Ref on the page Container, used to reach the MobileTabScreen scroll container
-    // (.mobile-tab-screen__scroll) that MobileTabScreen owns, for scroll save/restore.
-    const containerRef = useRef<HTMLDivElement | null>(null);
 
     // No auto-focus on visit (removed 2026-10-12): the learner taps the search box
     // to raise a keyboard. The 2026-10-10 auto-focus effect was deferred one frame to
@@ -184,45 +175,6 @@ function DictionaryPage() {
         };
     }, []);
 
-    // Keep the persisted query in sync so a drill-in → back restores it. Results load
-    // continuously now (no page to persist): only the first page is restored, so a
-    // saved scroll position deeper than that clamps to its end.
-    useEffect(() => { dictionaryBrowseState.search = searchInput; }, [searchInput]);
-
-    // Save scroll position continuously (so it's current whenever the user drills in)
-    // and restore it once results have rendered (which give the page its height).
-    const didRestoreScroll = useRef(false);
-    useEffect(() => {
-        const scroller = containerRef.current?.closest('.mobile-tab-screen__scroll') as HTMLElement | null;
-        if (!scroller) return;
-        const onScroll = () => { dictionaryBrowseState.scrollTop = scroller.scrollTop; };
-        scroller.addEventListener('scroll', onScroll, { passive: true });
-        return () => scroller.removeEventListener('scroll', onScroll);
-    }, []);
-    useEffect(() => {
-        if (didRestoreScroll.current) return;
-        const target = dictionaryBrowseState.scrollTop;
-        if (!target) { didRestoreScroll.current = true; return; }
-        // Only restore after the fetch settles AND results exist — otherwise the page
-        // is still empty/short and scrollTop would clamp back to 0.
-        if (loading) return;
-        if (entries.length === 0 && segmentGroups.length === 0) return;
-        const scroller = containerRef.current?.closest('.mobile-tab-screen__scroll') as HTMLElement | null;
-        if (!scroller) return;
-        didRestoreScroll.current = true;
-        // The result rows keep growing in height for a few frames after mount (cpcd /
-        // pinyin layout settling), which would clamp an early scrollTop set. Retry
-        // each frame until the target sticks, or the content simply isn't that tall.
-        let tries = 0;
-        const attempt = () => {
-            scroller.scrollTop = target;
-            if (Math.abs(scroller.scrollTop - target) > 1 && ++tries < 20) {
-                requestAnimationFrame(attempt);
-            }
-        };
-        requestAnimationFrame(attempt);
-    }, [loading, entries.length, segmentGroups.length]);
-
     // ── Result tap → the eip, as a bottom sheet over the results (2026-10-10) ──────────
     // A result used to NAVIGATE to the read-only dictionary cdp (`/dictionary/card/:word`).
     // It now raises the eip itself (EipSheet), so every link inside it — breakdown and
@@ -233,9 +185,10 @@ function DictionaryPage() {
     // `Compare` rail at the bottom of the definition tab, and the Learning toggle
     // (glowing "+" ⇄ "Added!") stacked under the header's speaker.
     //
-    // The cdp route still exists — the saved-card cdp's drill-in falls back to it for a
-    // word with no vet row (src/hooks/useOpenWordCard.ts) — it is just no longer reached
-    // from here.
+    // The cdp route itself was deleted 2026-11-10: the eip is now the only view of a
+    // dictionary word (the saved-card cdp drills in through the same word trail). Its
+    // deletion also retired the query/scroll persistence (`dictionaryBrowseState`) that
+    // existed only to survive the list → cdp → back round trip.
     const eip = useEipTabs({ language: userLanguage });
     const [eipOpen, setEipOpen] = useState(false);
     const tts = useTTS();
@@ -294,7 +247,6 @@ function DictionaryPage() {
         >
         <Container
             className="dictionary-page"
-            ref={containerRef}
             maxWidth="lg"
             sx={{
                 py: 4,

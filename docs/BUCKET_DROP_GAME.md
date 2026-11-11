@@ -11,11 +11,11 @@ lined with grey square keycap-shaped **holes** (buckets) — one row along the t
 of the run's foreign words are dealt as a pile in the middle; the player drags **any** word
 into the bucket holding its meaning, or leaves it anywhere on the field to clear the pile.
 A correct drop sinks the word into the hole and the bucket is replaced; the run is 20 words,
-and the clock stops on the last drop. Medals by time.
+and the clock stops on the last drop. Graded by a speed tier and an accuracy tier.
 
 **Status: BUILT on dev 2026-10-06. No migration, no new table or column** — the personal
 best rides the existing `game_personal_bests` (migration 171) under a new contract key.
-Deployed to PPE 2026-10-06. Medal thresholds are first guesses (§ 6).
+Deployed to PPE 2026-10-06. Tier cutoffs are placeholders (§ 6).
 
 Parent: [GAMES_FEATURE.md](./GAMES_FEATURE.md). flp break: [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md).
 
@@ -28,14 +28,13 @@ Parent: [GAMES_FEATURE.md](./GAMES_FEATURE.md). flp break: [FLP_GAME_BREAKS.md](
 | Contract | `server/contracts/personalBests.ts` → `PERSONAL_BEST_GAMES['bucket-drop']` | lower-is-better ms, per mode |
 | Registry | `src/games/registry.ts` (entry + `modes`), `src/games/runtime/challengeLaunch.ts` → `LAUNCHES['bucket-drop']` | router (while `standaloneGames` is on), challenge launch |
 | Page | `src/games/bucket-drop/BucketDropPage.tsx` | the route: title, edge-swipe block, launch mode, exit |
-| Stage | `src/games/bucket-drop/BucketDropStage.tsx` | the run, on either host: pool fetch, run track, stopwatch, marks, challenge round, PB, wins, popups, break results |
-| Stage | `src/games/bucket-drop/BucketDropEndPopup.tsx` | end card (modal, not minimizable); route only |
+| Stage | `src/games/bucket-drop/BucketDropStage.tsx` | the run, on either host: pool fetch, run track, stopwatch, marks, challenge round, PB, wins, popups, break results. The route has no end card: `BucketDropEndPopup` and Play Again were deleted 2026-11-10 (the routed page sits behind the OFF `standaloneGames` flag) |
 | Board | `src/games/bucket-drop/BucketDropBoard.tsx` | field measuring, queue state, hit-testing, drop/fall/leave animations |
 | Components | `src/games/bucket-drop/DropBucket.tsx`, `StackWord.tsx` | one bucket; one draggable word |
 | Pure | `src/games/bucket-drop/perimeterLayout.ts` → `layoutPerimeter` | slot geometry from field size |
 | Pure | `src/games/bucket-drop/bucketQueue.ts` → `dealQueue`, `resolveDrop`, `resizeQueue` | run model: remaining words + which bucket is in each slot |
 | Pure | `src/games/bucket-drop/poolRequest.ts` → `bucketDropPoolRequest` | the pool request, for the Stage and the break's prefetch |
-| Constants | `src/games/bucket-drop/constants.ts` | hue, modes, distribution, medals, result lines (`runResultTitle`, `runResultDetail`), geometry, timing |
+| Constants | `src/games/bucket-drop/constants.ts` | hue, modes, distribution, run tiers (`SPEED_TIERS`, `ACCURACY_TIERS`, `runResultTiers`), result lines (`runResultTitle`, `runResultDetail`), geometry, timing |
 | Launch | none today: the Games hub tile (plain link → Pinyin) was the route's one entry point and was deleted with `GamesPage.tsx` (2026-11-06); No Pinyin has no launcher (§ 1) |
 | Break | `src/games/flpBreak/bucketDropBreak.ts` → `BUCKET_DROP_BREAK`, `BucketDropBreakStage.tsx` | the flp game break adapter (§ 8) |
 | Tests | `src/__tests__/bucketDropPerimeter.test.ts`, `src/__tests__/bucketDropQueue.test.ts`, `src/games/__tests__/challengePool.test.ts`, `src/games/flpBreak/__tests__/bucketDropBreak.test.ts` | geometry (squares, no overlap), the queue over full runs, eligibility |
@@ -163,35 +162,41 @@ never on a reading run. The header carries the app-wide narration chip
 mid-run — shown only when `runTrack !== "reading"`, mirroring Bubble Match's
 `showAudioChip` (a reading run has nothing to narrate).
 
-## 6. Clock, medals, personal best
+## 6. Clock, run tiers, personal best
 
 - **Accumulated active time** (`BucketDropStage` → `activeMsRef`, `segmentStartRef`,
   `clockRunning`): runs while `phase === "playing"` and not `clockPaused`
   (provisional notice OR backgrounding — `useBackgroundPause`, which resumes by itself on return). Each
   running segment is banked on pause / end / unmount.
 - **Never on screen during play.** The clock runs in the background with no `GameTimer` and no
-  tick: `elapsedMs` only updates when a segment is banked. The time first appears on the end
-  popup or the break's results card.
-- The clock stops on the last drop; the end popup opens `DROP_FALL_MS` later so the fall
-  is seen.
-- **Medals** (`MEDAL_THRESHOLDS`): gold ≤ 45 s, silver ≤ 70 s, bronze ≤ 100 s, else none.
-  ⚠️ Placeholders — re-tune from real runs. A medalled run logs a win (`bucketDrop`, level 1).
+  tick: `elapsedMs` only updates when a segment is banked. The time first appears on the break's
+  results card.
+- The clock stops on the last drop; the results are reported `DROP_FALL_MS` later so the
+  fall is seen.
+- **Run tiers** (`constants.ts` → `runResultTiers`; shared model:
+  [GAMES_FEATURE.md § Run tiers](./GAMES_FEATURE.md)): 1 = best … 7.
+  - Speed (`SPEED_TIERS`): 35 s · 45 s · 55 s · 70 s · 85 s · 100 s, slower is tier 7.
+  - Accuracy (`ACCURACY_TIERS`): clean drops ÷ all drops (placed + misses):
+    100% · 95% · 90% · 80% · 70% · 60%.
+  - ⚠️ Placeholders — re-tune from real runs. Medals were removed 2026-11-10.
+- **Win:** every finished run logs one (`bucketDrop`, level 1), short pool included.
 - **Personal best**: fastest time per mode (`usePersonalBest('bucket-drop', mode)`).
 - A run the dictionary could not fill to 20 (`pool.length < TOTAL_WORDS`) still plays, but
-  earns no medal and records no best.
+  earns no tiers and records no best (`earnsResult`).
 
 ## 7. Study Challenge
 
 Pinyin mode only (`CHALLENGE_GAMES` → `bucket-drop` / `pinyin`, production, no language
 restriction). Scored like Word Search's stopwatch with misses added: contested ±100,
 filler +20 / −20, `missChargedOncePerWord`, and an `elapsedPenalty` of −10 per second of
-active time after a **45 s grace** (the gold line — keep the two together). Launch state
+active time after a **45 s grace** (the old gold line, now speed tier 2's cutoff — keep the
+two together). Launch state
 `{ mode: "pinyin" }` (`challengeLaunch.ts`).
 
 The Stage follows the shared contract (GAMES_FEATURE.md § Challenge-eligible games):
 `useChallengeRound({ gameId, mode, paused: clockPaused, running })`, `poolParams` on the
 pool request, wait for `ready`, `emit` hit/miss per drop, `finish(true)` on the last drop,
-`ChallengeRoundScoreboard` in place of the end card (no Play Again), Back via `useGameBack`.
+`ChallengeRoundScoreboard` at the end (no Play Again), Back via `useGameBack`.
 
 ## 8. flp game break
 
@@ -207,9 +212,9 @@ is the only way No Pinyin becomes playable again (§ 1).
   `seedIds` and `flpBreak`.
 - **Track:** the candidate's (`BucketDropStage` → `track`), not `runTrackFor`, so the marks land
   on the session's bar. On a Spanish reading flp the route's rule would mark production.
-- **Leave** ends a live run with what it placed: "Run ended", "n of 20 words", no medal, win or
+- **Leave** ends a live run with what it placed: "Run ended", "n of 20 words", no tiers, win or
   personal best (`finished` false).
-- **A finished run** still earns its win and best, and reports through `onRunEnded`
+- **A finished run** earns its tiers, win and best, and reports through `onRunEnded`
   `DROP_FALL_MS` after the last drop, so the fall is seen. A lent-card offer holds the report.
 - **Tower:** a recorded correct mark on an owned card calls `onCardCleared`. A word missed first
   writes only its negative mark, so it stays on the tower.
@@ -221,7 +226,7 @@ Code: `BucketDropStage.tsx` → `leaveBreak`, `earnsResult`, `sortOfferPending`;
 
 ## Open questions / flags
 
-- Medal thresholds and the 45 s challenge grace are guesses (§ 6, § 7).
+- Tier cutoffs and the 45 s challenge grace are guesses (§ 6, § 7).
 - `MAX_LIVE_BUCKETS` = 12 is a judgment call layered on the size rules (§ 2).
 - Words can be left overlapping each other; there is no collision or tidy-up (by design).
 - **Only 3 buckets on a phone** (§ 2) — 3 of the 20 words are placeable at a time, so most

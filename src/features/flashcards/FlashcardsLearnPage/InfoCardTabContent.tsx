@@ -75,22 +75,23 @@ export interface InfoCardTabContentProps {
     /**
      * Append the Synonyms + Related Words lists to the bottom of the DEFINITION tab.
      *
-     * Only the cdps pass this — the saved-card cdp's sheet (VocabCardDetailPage) and
-     * the dictionary cdp's inline panel (DictionaryCardDetailPage). The eip has three
+     * Passed by the saved-card cdp's eip (VocabCardDetailPage) and the Dictionary page's
+     * eip (both via EipSheet). The eip has three
      * tabs and none of them is synonyms, and those two lists are the one thing the
      * cdps' old stacked-`SectionCard` bodies showed that the panel does not. They ride under the definition rather than becoming a fourth tab because a
      * tab is a promise of content and most entries have neither list — an empty tab in
      * the strip on every card is a worse trade than a section that simply is not there.
      *
      * The flp and acp leave it undefined: on those surfaces the panel is the reading
-     * view for a word in a drill, and the lists are reference material the cdp is for.
+     * view for a word in a drill, and the lists are reference material.
      */
     showSynonymsRelated?: boolean;
     /**
      * Host-supplied content rendered at the very BOTTOM of the definition tab, below
-     * Synonyms + Related Words. Only the dictionary cdp passes it — its word-tools rail
-     * (`Write it` · `Compare`, WordToolsRail) lives here because that page has no card
-     * to set the rail above (DictionaryCardDetailPage). Undefined renders nothing.
+     * Synonyms + Related Words. Only the Dictionary page's eip passes it (EipSheet
+     * `showWordTools`) — its word-tools rail (`Write it` · `Compare`, WordToolsRail) lives
+     * here because a dictionary lookup has no card to set the rail above. Undefined
+     * renders nothing.
      */
     definitionFooter?: React.ReactNode;
 }
@@ -210,15 +211,17 @@ const InfoCardTabContent: React.FC<InfoCardTabContentProps> = ({
             // dd (owner's call 2026-11-05). EipSenseList renders nothing for a
             // single-sense word, so the tab then starts on the paragraph as before.
             const senseList = currentEntry ? (
-                <EipSenseList entry={currentEntry} selectedSenseIndex={selectedSenseIndex} />
+                <EipSenseList
+                    entry={currentEntry}
+                    selectedSenseIndex={selectedSenseIndex}
+                    showPinyinColor={showPinyinColor}
+                />
             ) : null;
 
             return definitionTabHasContent && currentEntry ? (
                 <Box className="mobile-demo-definition-wrapper" sx={{ display: "flex", flexDirection: "column" }}>
                     {senseList}
-                    {/* The paragraph plus the three measured facts — one shared component
-                        with the cdp (DefinitionFacts / `.dfx`). This used to be ~90 lines
-                        of centred chips duplicated verbatim in VocabCardDetailBody. */}
+                    {/* The paragraph plus the three measured facts — (DefinitionFacts / `.dfx`). */}
                     <DefinitionFacts
                         entry={currentEntry}
                         selectedSenseIndex={selectedSenseIndex}

@@ -29,8 +29,16 @@ import { useEffect, useLayoutEffect, useRef, type MutableRefObject, type RefObje
  *
  * LAYER: shared presentational hook (src/components/sheet). No data, no server calls.
  *
+ * SWIPING PAST THE FIRST TAB (`onSwipePastFirst`). A host may give a right-swipe on tab 0
+ * somewhere to go — the eip pops back one word on its breadcrumb trail. While that handler
+ * is set, tab 0's left edge stops rubber-banding: the track follows the finger exactly as
+ * it would toward a real neighbour, and a release past TAB_SWIPE_COMMIT_RATIO calls the
+ * handler instead of changing tab. The last tab's right edge always rubber-bands — there
+ * is no "forward" counterpart (the eip trail is a stack; nothing sits after the top).
+ *
  * Depended on by: src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx,
- * src/pages/AccountSheet.tsx. Docs: docs/EIP_SHEET_GESTURES.md (§ tab swipe).
+ * src/pages/AccountSheet.tsx. Docs: docs/EIP_SHEET_GESTURES.md (§ tab swipe,
+ * § Swiping past the first sub-tab goes back one word).
  */
 
 // Cumulative touch movement before the gesture commits to horizontal (tab swipe) vs
@@ -71,6 +79,10 @@ interface UseTabSwipeTrackOptions {
     /** While true, a tab change must NOT clear the track's inline styles — the host has
      *  pinned the track itself this frame (the eip's silent entry-change jump). */
     pinnedRef?: MutableRefObject<boolean>;
+    /** Where a right-swipe past the FIRST tab goes (the eip: back one word on its trail).
+     *  Undefined = nowhere, so tab 0's left edge rubber-bands. Read live on every move, so
+     *  a host may flip it between defined/undefined per render (e.g. only off the root). */
+    onSwipePastFirst?: () => void;
 }
 
 interface TabSwipeTrack {
@@ -90,6 +102,7 @@ export function useTabSwipeTrack({
     onTabChange,
     onGestureStart,
     pinnedRef,
+    onSwipePastFirst,
 }: UseTabSwipeTrackOptions): TabSwipeTrack {
     const selectedTabRef = useRef(selectedTab);
     // Pane width in px (= clip-box width). Feeds only the gesture threshold/clamp math —
@@ -109,6 +122,8 @@ export function useTabSwipeTrack({
     onGestureStartRef.current = onGestureStart;
     const tabCountRef = useRef(tabCount);
     tabCountRef.current = tabCount;
+    const onSwipePastFirstRef = useRef(onSwipePastFirst);
+    onSwipePastFirstRef.current = onSwipePastFirst;
 
     useLayoutEffect(() => {
         const el = clipRef.current;
@@ -164,11 +179,22 @@ export function useTabSwipeTrack({
             const tab = selectedTabRef.current;
             const count = tabCountRef.current;
             const target = dx < 0 ? tab + 1 : tab - 1;
-            const committed =
-                target >= 0 &&
-                target <= count - 1 &&
-                Math.abs(dx) > paneWidthRef.current * TAB_SWIPE_COMMIT_RATIO;
+            const pastThreshold = Math.abs(dx) > paneWidthRef.current * TAB_SWIPE_COMMIT_RATIO;
+            const committed = target >= 0 && target <= count - 1 && pastThreshold;
             track.style.transition = ""; // back to the sx transition
+            const swipePastFirst = onSwipePastFirstRef.current;
+            if (target === -1 && pastThreshold && swipePastFirst) {
+                // Swiped past tab 0 into the host's "before": hand off to it. Drop the
+                // override so the track settles back to its resting position — the host is
+                // about to replace what the track shows (the eip pops a word, and its
+                // entry-jump effect then pins the track for the new word while the pager
+                // slides it in from the left), so whatever this starts is overridden in the
+                // same commit. Clearing (rather than freezing at the drag offset) means a
+                // host that turns out not to change anything leaves no stuck track behind.
+                track.style.transform = "";
+                swipePastFirst();
+                return;
+            }
             if (committed) {
                 // Aim the inline transform at the target immediately so the snap starts
                 // this frame; the declarative transform catches up to the SAME value when
@@ -238,8 +264,12 @@ export function useTabSwipeTrack({
             const count = tabCountRef.current;
             // Toward a neighbouring tab: clamp the finger delta to at most one pane, so
             // the track can never pass the next resting position. Toward an END of the
-            // strip: rubber-band instead (see TAB_SWIPE_EDGE_RUBBER_RATIO).
-            const hasNeighbor = dx < 0 ? tab < count - 1 : tab > 0;
+            // strip: rubber-band instead (see TAB_SWIPE_EDGE_RUBBER_RATIO) — except tab 0's
+            // left end when the host handles a swipe past it (onSwipePastFirst), which
+            // follows the finger like a neighbour so the release can reach the threshold.
+            const hasNeighbor = dx < 0
+                ? tab < count - 1
+                : tab > 0 || onSwipePastFirstRef.current !== undefined;
             const clampedDx = hasNeighbor
                 ? Math.max(-paneWidthRef.current, Math.min(paneWidthRef.current, dx))
                 : Math.sign(dx) *

@@ -45,7 +45,7 @@ import { COLORS } from "./colors";
  *          src/features/deckTower/iso/IsoSolid.tsx (`roundedEdge` — the SVG form of the same edge
  *          on the iso solids: cards, raised plates, the notebook, the lever base, the acp bins'
  *          top layers; it reuses these constants).
- *   Inset: MobileFooter.tsx (`slabKeyShadow`, the active tab).
+ *   Inset: no current users (the footer's active tab dropped its keycap lip 2026-11-10).
  *   Straight lip: theme/towerPlate.ts (`restShadow` — flp plate buttons, game-break plates),
  *          gameBreak/GameBreakCard.tsx (the game token), FlashcardsLearnPage/EipAddKey.tsx,
  *          FlashcardsLearnPage/EipEntryHeader.tsx (headword tile), discover/AddCardsPage.tsx

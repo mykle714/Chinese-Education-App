@@ -393,8 +393,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             navigate('/login');
         });
 
-    // Change password function. Returns nothing: both call sites (ProfilePage,
-    // SettingsPage) only await it, and the refreshed user is applied here.
+    // Change password function. Returns nothing: its call site (AccountSecurityPage,
+    // `/settings/account`) only awaits it, and the refreshed user is applied here.
     const changePassword = async (currentPassword: string, newPassword: string): Promise<void> =>
         withAuth('change your password', async () => {
             const data = await apiPost<{ user: User }>('/api/auth/changePassword', {

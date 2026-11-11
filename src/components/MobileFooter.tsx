@@ -13,8 +13,7 @@ import { SLAB_CAST_SHADOW_VAR } from "./footerCastShadow";
 import { routeFooterStyle } from "../routes/routeMeta";
 import { tier2Var } from "../timeOfDay/tier2Chrome";
 import { CARD_SURFACE_RADIUS } from "../theme/surfaces";
-import { roundedEdgeFillet, roundedEdgeInsetFillet, roundedEdgeRimLight } from "../theme/roundedEdge";
-import { isFeatureEnabled } from "../../server/contracts/featureFlags";
+import { roundedEdgeFillet, roundedEdgeRimLight } from "../theme/roundedEdge";
 import { registerDictionaryTabTap, requestDictionarySearchFocus } from "../features/dictionary/dictionarySearchFocus";
 
 // Footer bar geometry (shelf redesign `.fbar`, docs/SHELF_REDESIGN.md A2a). Exported
@@ -53,7 +52,7 @@ export const FOOTER_TOTAL_CLEARANCE = `calc(${FOOTER_CLEARANCE}px + ${SAFE_BOTTO
 
 // ── The SLAB style (Tower Style design, `.sx-flp .ft`) ────────────────────────────
 // Worn only by routes whose registry row says `footerStyle: "slab"` (today: the Deck Tower at `/`,
-// and since 2026-10-29 the Dictionary tab — /dictionary and /dictionary/card/:word — and
+// and since 2026-10-29 the Dictionary tab, /dictionary — and
 // acp, /discover/sort/:language).
 // Instead of a flat bar flush to the edge it is a floating flashcard: a cream slab held
 // off the screen's sides and bottom, standing on a lip in the card's shaded wall colour,
@@ -75,9 +74,10 @@ const SLAB_FOOTER_LIP = 6;
 const SLAB_FOOTER_RADIUS = CARD_SURFACE_RADIUS;
 // The face's padding round the tab keys.
 const SLAB_FOOTER_PADDING = 6;
-// The active tab key's radius: CONCENTRIC with the slab — its radius minus the padding
-// between them, so the key's corner follows the slab's curve at an even 6px gap.
-const SLAB_KEY_RADIUS = SLAB_FOOTER_RADIUS - SLAB_FOOTER_PADDING;
+// The active tab key's radius. It started CONCENTRIC with the slab (its radius minus the
+// padding between them = 9); bumped +2 to 11 (user call 2026-11-10) so the key reads
+// slightly rounder — the corner gap to the slab is no longer exactly even.
+const SLAB_KEY_RADIUS = SLAB_FOOTER_RADIUS - SLAB_FOOTER_PADDING + 2;
 // The lip is a DIAGONAL wall (2026-11-08), showing below AND to the right of the face —
 // the slab's thickness seen from the tower's (1, 1) light, like the other raised keys
 // (td's filter keys, TowerFilterKeys.tsx; the mini cards' card stock, sortCardStock.ts →
@@ -235,49 +235,52 @@ const SlabFooterFace = styled(Box)(() => ({
     boxShadow: slabLipShadow(tier2Var("footerFace", COLORS.cardFace), tier2Var("footerWall", COLORS.cardWall)),
     display: "grid",
     // One equal column per tab — `grid-auto-flow: column` rather than a fixed count, so
-    // the slab stays balanced when a flagged tab (Arena) is absent.
+    // the slab stays balanced if a tab is ever flagged off.
     gridAutoFlow: "column",
     gridAutoColumns: "1fr",
     padding: SLAB_FOOTER_PADDING,
     boxSizing: "border-box",
+    // Containing block for the sliding SlabFooterSelector.
+    position: "relative",
 }));
 
-// The active key's wall depth, px — drawn INSIDE the key's box (inset shadows), so the key
-// never grows past its grid cell.
-const SLAB_KEY_LIP = 3;
-// The active key's lip: a DIAGONAL wall showing along its bottom AND right edges — the same
-// (1, 1) side face the slab itself shows (`slabLipShadow`), stepped 1px at a time so the
-// wall stays continuous round the key's radius. Inset because it is drawn within the key's
-// own box; the face's top-left rim light (theme/roundedEdge.ts) matches the slab's edge.
-// Its fillet is the INSET form (`roundedEdgeInsetFillet`): one step past the wall, listed
-// after the steps so they cover all but its last 0.5px — the outset `roundedEdgeFillet`
-// would paint outside the key.
-// (It used to be a straight `inset 0 -3px 0` bottom lip — the wall seen head-on, which
-// disagreed with the slab's diagonal wall from 2026-11-08.)
-const slabKeyShadow = (face: string, wall: string) =>
-    [
-        roundedEdgeRimLight(face),
-        ...Array.from({ length: SLAB_KEY_LIP }, (_, i) => `inset ${-(i + 1)}px ${-(i + 1)}px 0 ${wall}`),
-        roundedEdgeInsetFillet(face, wall, SLAB_KEY_LIP),
-    ].join(", ");
+// The active tab's selector: ONE flat rounded rectangle — the beige face panel (cardBeige)
+// with the app's 1px outline (CLAUDE.md § Buttons & cards) — that SLIDES between tab cells
+// rather than each tab drawing its own background. It was a keycap with a 3px inset
+// diagonal lip + rounded edge until 2026-11-10; the user asked for the plain rectangle the
+// app's other selectors use, so it is flat now (no lip, no rim light, no fillet — it is
+// not a raised object any more). The outline reads Tier 2's `outline` so the night slate
+// gets its white-12% ring.
+//
+// Geometry: it sits in the face's padding box, one column wide (the face is `1fr`
+// columns, so a column = (inner width) / tab count), and moves by `translateX(i * 100%)`
+// — a percentage of its OWN width, i.e. exactly one column per step. Transform-only, so
+// the slide is compositor-driven and never relayouts the tabs.
+const SLAB_SELECTOR_SLIDE = "transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1)";
+const SlabFooterSelector = styled(Box)(() => ({
+    position: "absolute",
+    top: SLAB_FOOTER_PADDING,
+    bottom: SLAB_FOOTER_PADDING,
+    left: SLAB_FOOTER_PADDING,
+    boxSizing: "border-box",
+    borderRadius: SLAB_KEY_RADIUS,
+    backgroundColor: tier2Var("footerKey", COLORS.cardBeige),
+    border: `1px solid ${tier2Var("outline", COLORS.border)}`,
+    transition: `${SLAB_SELECTOR_SLIDE}, opacity 150ms ease`,
+    pointerEvents: "none",
+    "@media (prefers-reduced-motion: reduce)": { transition: "none" },
+}));
 
-// One slab tab: icon over label. The active tab is a beige keycap set into the slab —
-// the card's inset face panel (cardBeige) with the shaded wall as its diagonal lip
-// (bottom + right, `slabKeyShadow`).
-const SlabFooterItem = styled(Box, {
-    shouldForwardProp: (prop) => prop !== "active",
-})<{ active?: boolean }>(({ active }) => ({
+// One slab tab: icon over label. Transparent — the selector behind it marks the active
+// one; `position: relative` lifts the tab's content above the absolutely-placed selector.
+const SlabFooterItem = styled(Box)(() => ({
+    position: "relative",
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
     gap: 2,
-    borderRadius: SLAB_KEY_RADIUS,
     cursor: "pointer",
-    backgroundColor: active ? tier2Var("footerKey", COLORS.cardBeige) : "transparent",
-    boxShadow: active
-        ? slabKeyShadow(tier2Var("footerKey", COLORS.cardBeige), tier2Var("footerWall", COLORS.cardWall))
-        : "none",
 }));
 
 // The top-level footer tabs. Every other surface is a drill-in reached from one of
@@ -285,17 +288,18 @@ const SlabFooterItem = styled(Box, {
 // destination either: it is a maximizable sheet (AccountSheet, with Settings as one of
 // its tabs) raised from the Deck Tower header's avatar.
 //
-// The four tabs, left to right: Flashcards · Arena · Dictionary · Menu (2026-11-06; the first tab was labelled "Deck" until 2026-11-08). Flashcards is
-// the Deck Tower, which renders at `/` (it replaced the old Home tab, the fdp, on
-// 2026-11-04). Arena is drawn only while the `arena` feature flag is on
-// (server/contracts/featureFlags.ts), like every other entry point to a flagged feature.
+// The four tabs, left to right: Flashcards · Lessons · Dictionary · Menu (2026-11-10; the
+// first tab was labelled "Deck" until 2026-11-08). Flashcards is the Deck Tower, which
+// renders at `/` (it replaced the old Home tab, the fdp, on 2026-11-04). Lessons
+// (`/lessons`) took Arena's slot on 2026-11-10 and is a "coming soon" placeholder for now;
+// Arena went back to being a Menu row (src/components/menuPopover/menuDestinations.ts).
 //
 // Menu is the one tab that is NOT a destination: it does not navigate. A tap raises
 // MenuPopover, a list of rows (Reader, Tester Dashboard, …) over whatever page is on screen.
 // It sits last so the popover can anchor bottom-right, right above it. The `/menu` bento
 // page it used to open was deleted 2026-11-06. `menu` remains a FooterTab because the
-// Menu-reached pages (Reader, the `/friends/*` drill-ins, …) still light it (routeMeta `footerTab`).
-export type FooterTab = "deck" | "menu" | "arena" | "dictionary";
+// Menu-reached pages (Reader, Arena, the `/friends/*` drill-ins, …) still light it (routeMeta `footerTab`).
+export type FooterTab = "deck" | "menu" | "lessons" | "dictionary";
 
 // Which footer is drawn: the app-wide flat `bar`, or the floating `slab` a route opts
 // into through its registry row (`footerStyle`, src/routes/routeMeta.ts).
@@ -308,9 +312,6 @@ interface FooterTabRow {
     icon: string;
     onClick: () => void;
 }
-
-// Read once at module load — a flag flip needs a rebuild anyway (docs/FEATURE_FLAGS.md).
-const ARENA_TAB_ON = isFeatureEnabled("arena");
 
 interface MobileFooterProps {
     activePage?: FooterTab;
@@ -343,9 +344,8 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "deck", varian
     // `icon` (a Material Symbols name) is drawn by the slab only — the bar stays text-only.
     const baseTabs: FooterTabRow[] = [
         { tab: "deck", label: "Flashcards", icon: "stacks", onClick: () => navigate("/") },
-        ...(ARENA_TAB_ON
-            ? [{ tab: "arena", label: "Arena", icon: "emoji_events", onClick: () => navigate("/arena") } satisfies FooterTabRow]
-            : []),
+        // Placeholder page for now (src/features/lessons/LessonsPage.tsx) — not flagged.
+        { tab: "lessons", label: "Lessons", icon: "school", onClick: () => navigate("/lessons") },
         {
             tab: "dictionary", label: "Dictionary", icon: "translate",
             // Single tap navigates only; a double tap also focuses the search field
@@ -359,22 +359,51 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "deck", varian
         // open its scrim covers this tab, so a second tap lands on the scrim.
         { tab: "menu", label: "Menu", icon: "apps", onClick: () => setMenuOpen(true) },
     ];
+    // The tab the selector shows, ahead of the route. React Router v7 runs every
+    // navigation as a React transition, so while the destination page is still loading
+    // (a lazy route chunk suspending) or mounting, `activePage` — read from the location
+    // by FooterPresenter — keeps the OLD tab, and the selector would wait for the page.
+    // A tap records the tab it is heading to as an urgent state update, which commits
+    // before the transition does, so the selector starts sliding on the tap itself.
+    // `fromKey` ties the record to the location it was made on (`location.key` is new for
+    // every completed navigation, redirects included): once the location moves on, the
+    // record is stale and the route is the truth again — no effect needed to clear it.
+    // Menu never records one (it opens the popover; it does not navigate).
+    const { key: locationKey } = useLocation();
+    const [pendingTab, setPendingTab] = useState<{ tab: FooterTab; fromKey: string } | null>(null);
+    const displayedTab = pendingTab && pendingTab.fromKey === locationKey ? pendingTab.tab : activePage;
+
     const TABS: FooterTabRow[] = baseTabs.map((t) => ({
         ...t,
         // The page on screen may take over a tab's tap (footerTabOverride.ts — acp opened
         // from the Deck Tower plays its circle Back on the Flashcards tab); otherwise navigate.
         onClick: () => {
+            if (t.tab !== "menu") setPendingTab({ tab: t.tab, fromKey: locationKey });
             if (!runFooterTabOverride(t.tab)) t.onClick();
         },
     }));
 
     if (variant === "slab") {
+        // Which cell the sliding selector sits in (-1 = no tab lit → selector hidden).
+        const activeIndex = TABS.findIndex((t) => t.tab === displayedTab);
         return (
             <>
                 <SlabFooter className="mobile-footer mobile-footer--slab" style={style}>
                     <SlabFooterFace className="mobile-footer__slab-face">
+                        {/* The sliding selector. Persists across footer routes (the footer is
+                            rendered once at frame level), so a tab change animates it from the
+                            old cell to the new one. A page that lights no tab hides it. */}
+                        <SlabFooterSelector
+                            className="mobile-footer__slab-selector"
+                            style={{
+                                width: `calc((100% - ${2 * SLAB_FOOTER_PADDING}px) / ${TABS.length})`,
+                                transform: `translateX(${Math.max(activeIndex, 0) * 100}%)`,
+                                opacity: activeIndex < 0 ? 0 : 1,
+                            }}
+                        />
                         {TABS.map(({ tab, label, icon, onClick }) => {
-                            const active = activePage === tab;
+                            // `displayedTab`, not `activePage`: the ink moves with the selector.
+                            const active = displayedTab === tab;
                             const tone = active
                                 ? tier2Var("footerInkActive", COLORS.onSurface)
                                 : tier2Var("footerInk", COLORS.textSecondary);
@@ -382,7 +411,6 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "deck", varian
                                 <SlabFooterItem
                                     key={tab}
                                     className={`mobile-footer-item mobile-footer-item--${tab}${active ? " mobile-footer-item--active" : ""}`}
-                                    active={active}
                                     onClick={onClick}
                                 >
                                     {/* Filled, weight 500 — the design's icon-font axes for this bar. */}
@@ -415,7 +443,7 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "deck", varian
         <>
             <Footer className="mobile-footer" style={style}>
                 {TABS.map(({ tab, label, onClick }) => {
-                    const active = activePage === tab;
+                    const active = displayedTab === tab;
                     return (
                         <FooterItem
                             key={tab}

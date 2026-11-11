@@ -1,30 +1,28 @@
 import React from "react";
 import { Box, ButtonBase, Typography, useTheme, type BoxProps } from "@mui/material";
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from "../../../utils/definitionUtils";
-import ForeignText, { type CPCDSize } from "../../../components/ForeignText";
+import ForeignText from "../../../components/ForeignText";
 import GlossText from "../../../components/GlossText";
 import { ddTextColor } from "../../../utils/cardTextColor";
 import { EIP_PANEL_GUTTER, InfoSheetEntryHeader } from "./styled";
 import { FC_FONT_CJK } from "../constants";
 import { SIZE, WEIGHT } from "../../../theme/scale";
-import { SpeakerButton } from "../../../components/SpeakerButton";
-import LearningToggle from "../../../components/LearningToggle";
-import type { LearningToggleState } from "../../../hooks/useLearningToggle";
 import type { VocabEntry } from "../types";
 import { COLORS } from "../../../theme/colors";
 import { keycapPressSx } from "../../../theme/keycapPress";
 import { roundedEdgeFilletDown, roundedEdgeRimLightTop } from "../../../theme/roundedEdge";
 import { useEipColors } from "./useEipPalette";
 
-// The eip's ENTRY HEADER — the band above the eip tabs: headword cpcd, speaker (+ the
-// dictionary eip's "+ to Learning") and the gloss — ONE dd: the selected sense's, else the
+// The eip's ENTRY HEADER — the band above the eip tabs: the headword keycap and the gloss — ONE dd: the selected sense's, else the
 // default's. A multi-sense word's full sense list is NOT drawn here: it sits as a numbered two-column
 // list at the top of the Definition tab (EipSenseList, owner's call 2026-11-05; it replaced the
 // header's swipeable dot-separated list, 2026-10-29 → 2026-11-05).
 //
-// Mounted on every eip host: by InfoCardSection in the eip SHEET's upper panel
-// (EipUpperPanel — flp/acp/saved-card cdp/Dictionary), and by InfoCardPanelBody in the
-// cdps' inline panels.
+// Mounted once, by InfoCardSection in the eip SHEET's upper panel (EipUpperPanel —
+// flp/acp/saved-card cdp/Dictionary). The speaker and the Learning key live in the sheet's
+// trail row (EipUpperPanel / EipAddKey), not here. Until 2026-11-10 InfoCardPanelBody also
+// mounted it inline for the read-only dictionary cdp, the one host that drew a speaker +
+// glowing Learning toggle beside the headword; that page and that stack are gone.
 //
 // Tower Tier 2 styling (2026-10-29), layout unchanged: the headword sits in a RAISED TILE
 // (the palette's `face` on a 4px `edge` lip, 14px radius, at least HEADWORD_TILE_MIN square
@@ -40,18 +38,6 @@ import { useEipColors } from "./useEipPalette";
 export interface EipEntryHeaderProps extends Omit<BoxProps, "children"> {
     entry: VocabEntry | null;
     showPinyinColor?: boolean;
-    // Headword cpcd size — "md" for the bottom sheet, "sm" for the centered popup.
-    cpcdSize?: CPCDSize;
-    // Speaker; undefined hides it. Only the cdps' inline panels pass it: the eip SHEET draws
-    // its speaker in the trail row instead (EipUpperPanel).
-    onSpeak?: (entry: VocabEntry) => void;
-    // Text currently narrated by useTTS — the speaker spins when it is this entry.
-    speakingKey?: string | null;
-    // The Learning TOGGLE (glowing "+" ⇄ "Added!", useLearningToggle) for the entry
-    // showing, in the slot under the speaker. Adding a word is a DICTIONARY-flow action
-    // only: the dictionary cdp passes this; the Dictionary page's eip draws its Add key
-    // in the trail row instead (EipAddKey). The flp's add-only "+" was removed 2026-10-29.
-    learning?: LearningToggleState;
     // Index into sortedSenseClusters(entry); drives the reading and the dd. Omitted → the
     // persisted pick, else the default (resolveDisplayDefinition / resolveDisplayPronunciation).
     // Display-only (owner's call 2026-10-29): the pick is made on the card face's SensePicker.
@@ -86,18 +72,9 @@ const HEADWORD_CPCD_TOP_TRIM = 3;
 const GLOSS_KEYCAP_CLEARANCE = 10;
 
 
-// Space between the headword cpcd and the speaker / Learning stack. Near zero on
-// purpose: the stack should hug the headword so the dd gets the width (see the
-// `.mobile-demo-eic-headword-group` wrapper below).
-const HEADWORD_ACTIONS_GAP = 2;
-
 const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
     entry,
     showPinyinColor = true,
-    cpcdSize = "md",
-    onSpeak,
-    speakingKey,
-    learning,
     selectedSenseIndex,
     glossToScreenEdge = false,
     className,
@@ -156,15 +133,12 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
             className={["mobile-demo-eic-header", className].filter(Boolean).join(" ")}
             {...rest}
         >
-            {/* Headword + action stack as ONE tight group: the stack hugs the cpcd
-                (HEADWORD_ACTIONS_GAP) instead of taking the header's full 14px gap, so
-                the width it gives back goes to the dd. The header's gap now only
-                separates this group from the dd row. The md cpcd cell already carries
-                ~7px of side slack around its glyph, so a near-zero gap still reads as
-                breathing room, not a collision. */}
+            {/* The headword keycap's group. It held a speaker / Learning stack beside the
+                keycap until the dictionary cdp's inline header went (2026-11-10); kept as
+                the non-shrinking box the dd row sits beside. */}
             <Box
                 className="mobile-demo-eic-headword-group"
-                sx={{ display: "flex", alignItems: "center", gap: `${HEADWORD_ACTIONS_GAP}px`, flexShrink: 0 }}
+                sx={{ display: "flex", alignItems: "center", flexShrink: 0 }}
             >
                 {entry && (
                     // `.ehd > .cp` — the headword KEYCAP: a raised tile with the app's
@@ -205,7 +179,7 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                         }}
                     >
                     <ForeignText
-                        size={cpcdSize}
+                        size="md"
                         justifyContent="flex-start"
                         className="mobile-demo-eic-header-cpcd"
                         text={entry.entryKey}
@@ -222,47 +196,6 @@ const EipEntryHeader: React.FC<EipEntryHeaderProps> = ({
                         tapToCopy
                     />
                     </ButtonBase>
-                )}
-                {/* Header actions — a VERTICAL STACK: Speaker on top, the Learning control
-                    under it (2026-10-10; was a 2-column grid, Speaker · Add). Either may be
-                    absent — Speaker needs onSpeak; the Learning slot needs `learning` (the
-                    compact glowing "+" ⇄ "Added!" toggle, LearningToggle).
-                    The header keeps ONLY the actions that are about the ENTRY ITSELF —
-                    hear it, save it. CARD operations have left the panel for good: the
-                    artboards make it information-only, so add-to-deck went onto the card's
-                    own `•••` rail and Practice Writing onto the word-tools rail.
-                    `InfoCardActionBar`, which used to carry all three at the end of the
-                    definition tab, is deleted. Compare lives ONLY on `WordToolsRail`
-                    (removed from this header 2026-09-04).
-
-                    Sits immediately after the headword rather than at the far right,
-                    because the far right now belongs to the sense chip — reading order
-                    is identity (word, how to hear it) → meaning → which sense. */}
-                {entry && (
-                    onSpeak ||
-                    learning?.available
-                ) && (
-                    <Box
-                        className="mobile-demo-eic-actions"
-                        sx={{
-                            display: "flex",
-                            flexDirection: "column",
-                            // Left-justified (2026-10-10; was centered): the speaker and the
-                            // "+" / "Added!" toggle share a left edge, so the wider "Added!"
-                            // pill hangs off to the right instead of straddling the speaker.
-                            alignItems: "flex-start",
-                            gap: "2px",
-                            flexShrink: 0,
-                        }}
-                    >
-                        {onSpeak && (
-                            <SpeakerButton
-                                onClick={() => onSpeak(entry)}
-                                isLoading={speakingKey === entry.entryKey}
-                            />
-                        )}
-                        {learning && <LearningToggle state={learning} />}
-                    </Box>
                 )}
             </Box>
             {/* `.eid` — the gloss, centered in the space beside the headword: one dd. */}

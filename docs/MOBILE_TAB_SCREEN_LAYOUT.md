@@ -36,7 +36,7 @@ pages don't re-implement (or drift from) them.
    level by `FooterPresenter` (so it animates independently of the page slides;
    see [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)). `MobileTabScreen` still reserves
    the clearance; the footer resolves its own active tab from the route. A route
-   whose `routeMeta` row sets `footerStyle: "slab"` (td, `/dictionary`, both cdps,
+   whose `routeMeta` row sets `footerStyle: "slab"` (td, `/dictionary`, the cdp,
    acp) gets the floating **slab** footer instead of the bar (`MobileFooter`
    `variant`, `SLAB_FOOTER_TOTAL_HEIGHT`).
 

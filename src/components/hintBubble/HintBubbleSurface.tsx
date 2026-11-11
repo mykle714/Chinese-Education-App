@@ -17,6 +17,8 @@
  * Interactive vs inert: pass `onSelect` for a tappable `<button>`; omit it for a plain,
  * non-focusable `<div>` that never catches a tap.
  *
+ * The keyframes live in ./bubbleKeyframes.ts, shared with CpcdPopup (2026-11-10).
+ *
  * Motion notes (the bk's § 6z-4 "Motion" decisions, kept for every user):
  *   - Plain ease-out: the overshoot lives in the keyframes. An overshooting curve on
  *     top would bounce EACH keyframe segment and read as jitter, not a spring.
@@ -28,44 +30,13 @@
  *   - `prefers-reduced-motion`: grow and pop collapse to plain fades, no ring.
  */
 import { Box, useMediaQuery } from '@mui/material';
-import { keyframes } from '@mui/material/styles';
 import type { ReactNode } from 'react';
 import { COLORS, SHADOW } from '../../theme';
 import { HINT_MOTION } from './hintMotion';
+import { fadeIn, fadeOut, growIn, growInFromLeft, popOut, popRing } from './bubbleKeyframes';
 
 /** How far the tail reaches down past the bubble's body. */
 export const HINT_BUBBLE_TAIL_SIZE = 7;
-
-// Grow from the tail: starts as a speck at whatever it points at, overshoots a touch, settles.
-const growIn = keyframes({
-  '0%': { transform: 'translateY(6px) scale(0.2)', opacity: 0 },
-  '60%': { transform: 'translateY(-1px) scale(1.08)', opacity: 1 },
-  '100%': { transform: 'translateY(0) scale(1)', opacity: 1 },
-});
-
-// The same grow for a bubble whose tail is on its LEFT edge: it comes in sideways.
-const growInFromLeft = keyframes({
-  '0%': { transform: 'translateX(-6px) scale(0.2)', opacity: 0 },
-  '60%': { transform: 'translateX(1px) scale(1.04)', opacity: 1 },
-  '100%': { transform: 'translateX(0) scale(1)', opacity: 1 },
-});
-
-// The pop: a quick swell, then gone — a soap bubble, not a fade.
-const popOut = keyframes({
-  '0%': { transform: 'scale(1)', opacity: 1 },
-  '35%': { transform: 'scale(1.16)', opacity: 0.9 },
-  '100%': { transform: 'scale(1.3)', opacity: 0 },
-});
-
-// The film left behind by the pop: a thin ring that expands and dissolves.
-const popRing = keyframes({
-  '0%': { transform: 'translate(-50%, -50%) scale(0.8)', opacity: 0 },
-  '25%': { opacity: 0.55 },
-  '100%': { transform: 'translate(-50%, -50%) scale(1.6)', opacity: 0 },
-});
-
-const fadeIn = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } });
-const fadeOut = keyframes({ from: { opacity: 1 }, to: { opacity: 0 } });
 
 interface HintBubbleSurfaceProps {
   /** 'in' grows (after `delayMs`) and stays; 'out' pops — the caller unmounts it after `HINT_MOTION.popMs`. */

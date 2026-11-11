@@ -150,6 +150,7 @@ Requirements:
 - ${MAX_SENSE_GLOSS_LEN} characters or fewer total.
 - Reads like a clean dictionary headword gloss, NOT a sentence. No trailing period.
 - No parentheticals, no square brackets, no usage notes, no examples, no Chinese characters.
+- ONE gloss, not a list: no semicolons, and do not join two synonyms ("to keep on; continue" is wrong — pick one).
 - Never abbreviate or clip a word: no "sb", "sth", "etc", "govt", "dept", "Univ", "tech", "intel", "psych", "med", "clf", "cl.", "abbr.", and no "...". Write every word in full.
 - If your idea does not fit, choose a DIFFERENT, simpler phrase that fits naturally — do not squeeze the same phrase by dropping articles or cutting words into a telegram.
 - Keep the part of speech: a verb sense normally reads "to …" (but a modal such as "must", "can", "should" never takes "to"); a noun sense is a noun.
@@ -207,6 +208,11 @@ export function validateShortGloss(raw, { classifier = null } = {}) {
   // strings differ; brackets are Spanish usage notes, which `ddt` does NOT strip.
   if (/[()[\]]/.test(gloss)) return { error: 'gloss contains a parenthetical or bracket' };
   if (/\.\.\.|…/.test(gloss)) return { error: 'gloss contains an ellipsis' };
+  // A semicolon is the source dictionary's gloss DELIMITER ("to jump; to hop" is two
+  // glosses, split apart by backfill-split-semicolon-definitions). A headline is ONE
+  // gloss, so "to keep on; continue" is a list smuggled into the card's dd (2026-11-10
+  // PPE audit: 84 discoverable zh senses had one). The client never splits it.
+  if (gloss.includes(';')) return { error: 'gloss contains a semicolon — give ONE gloss, not a list' };
   if (/[\u3400-\u9fff]/.test(gloss)) return { error: 'gloss contains Chinese characters' };
   const abbr = gloss.match(BANNED_ABBREVIATIONS);
   if (abbr) return { error: `gloss uses the abbreviation "${abbr[0]}" — write the word in full or rephrase` };

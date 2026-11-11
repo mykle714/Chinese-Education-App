@@ -12,7 +12,7 @@ import { useEipColors } from "./useEipPalette";
  * EipAddKey — the Dictionary eip's "Add ⇄ Added!" Learning key (Tower Tier 2 design,
  * `.kc.add`, artboard "Dictionary · entry"), built to the design exactly. It sits in the
  * word-trail row at its right end (EipUpperPanel). Driven by `useLearningToggle`, the
- * same state the dictionary cdp's glowing `LearningToggle` reads.
+ * one Learning control the eip has.
  *
  * A RAISED KEY: a solid lip under the face, no blur. Four states:
  *
@@ -23,8 +23,7 @@ import { useEipColors } from "./useEipPalette";
  *
  * The key's resting height drops by 3px once added (5px lip → 2px), so "Added!" reads as a
  * key that has been pressed and stayed down. Still a button when added: tap = remove, no
- * confirmation (removal demotes to 'provisional'; see useLearningToggle). No glow — the
- * dictionary cdp's `LearningToggle` keeps its breathing halo; this key does not.
+ * confirmation (removal demotes to 'provisional'; see useLearningToggle). No glow.
  *
  * Fixed 92px width so "Add" → "Added!" never moves the trail beside it; the label is
  * centred in the space right of the icon (design `.add i{flex:1;text-align:center}`).

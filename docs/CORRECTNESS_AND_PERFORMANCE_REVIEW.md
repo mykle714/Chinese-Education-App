@@ -298,7 +298,7 @@ grep -rln "api/flashcards/mark" src --include=*.ts --include=*.tsx
 > `useWorkingLoop` keys on the stable `Boolean(token)`).
 >
 > **One of these was a live user-visible bug, not just a latent risk.**
-> `DictionaryCardDetailPage`'s load effect was keyed `[word, token]`, and its body calls
+> `DictionaryCardDetailPage`'s (deleted 2026-11-10) load effect was keyed `[word, token]`, and its body calls
 > `setSelectedSenseIndex(0)`. So every ~15-minute silent refresh refetched the entry AND
 > silently reset the reader's chosen sense back to the default — the exact failure mode
 > the CLAUDE.md rule names, still live.

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { VIEW_RAY_Z, type Projector } from "./geometry";
 import { planSidePath, prefersReducedMotion, rand, useAltitudeWander, useSkyTraffic, type AltitudeWander, type AltitudeWanderConfig, type Pt2, type SkyRegion, type SkySide } from "./skyTraffic";
 
@@ -17,6 +17,17 @@ import { planSidePath, prefersReducedMotion, rand, useAltitudeWander, useSkyTraf
  * Clouds are cloudy weather (towerWeather.ts → `weatherCloudCount`), the commonest kind, so
  * they arrive quietly: the slots' first drifts are staggered like any later one
  * (`firstWaitMs`), and the band fills over a minute or so rather than all at once.
+ *
+ * The RED BALLOON: each drift has a 1-in-100 chance (`BALLOON_CHANCE`) of being a red
+ * balloon instead of a cloud (`kind: "balloon"`, drawn by IsoBalloon). It takes the cloud's
+ * slot, path, speed and side rule, but flies lower, in `sky.balloonBand` (just under the
+ * clouds), and its one "puff" is the balloon body's bounding box, so the path extent,
+ * depth sort and shadow (IsoCloudShadow) all work unchanged.
+ *
+ * A feature tester can also spawn a balloon on demand (`balloonRequest`, the Deck Tower's
+ * BalloonSpawnChip): it flies outside the slots and whatever the weather, in
+ * `sky.visibleBalloonBand`, so it is on screen even over a tower too short to reach the
+ * real band.
  *
  * Under prefers-reduced-motion the clouds still show — a still cloud reads as a cloud —
  * but nothing is scheduled: one cloud per slot, parked partway across (`PARKED_AT`),
@@ -37,25 +48,43 @@ export interface CloudPuff {
     h: number;
 }
 
+/** What a drift is: almost always a cloud; rarely (`BALLOON_CHANCE`) a red balloon. */
+export type CloudDriftKind = "cloud" | "balloon";
+
 export interface CloudDrift {
-    /** Unique per drift — the React key, so each drift mounts a fresh IsoCloud. */
+    /** Unique per drift — the React key, so each drift mounts a fresh IsoCloud / IsoBalloon. */
     id: number;
+    kind: CloudDriftKind;
     /** World x/y of the cloud's ORIGIN at the start and end of the WHOLE crossing. */
     from: Pt2;
     to: Pt2;
     /** Where along from→to (0–1) this drift begins: 0 off screen; more only for a reduced-motion parked cloud. */
     startT: number;
-    /** World height of the cloud's base. */
+    /** World height of the cloud's base (a balloon: the bottom of its body; its string hangs below). */
     z: number;
     /** How long this drift is on screen, from `startT` to the end (ms). */
     durationMs: number;
     side: SkySide;
-    /** The puffs, oriented to the path and scaled, in BACK-TO-FRONT draw order. */
+    /**
+     * The puffs, oriented to the path and scaled, in BACK-TO-FRONT draw order. A balloon has
+     * ONE: its body's bounding box (a 2r cube), which is what the shadow and path extent read.
+     */
     puffs: CloudPuff[];
 }
 
-/** The clouds' sky: the band their BASES sit in, the tower, the screen they cross. */
-export type CloudSky = SkyRegion;
+/**
+ * The clouds' sky: the band their BASES sit in, the tower, the screen they cross — plus the
+ * lower band the rare red balloon's body bottom sits in.
+ */
+export type CloudSky = SkyRegion & {
+    balloonBand: { zMin: number; zMax: number };
+    /**
+     * `balloonBand`, brought down inside the framed scene when the tower stops short of it.
+     * Only the tester spawn (`balloonRequest`) flies here, so a tap always shows a balloon;
+     * a natural balloon keeps the real band, like the clouds.
+     */
+    visibleBalloonBand: { zMin: number; zMax: number };
+};
 
 /**
  * The cloud shapes, authored with their long side along local x (the drift direction).
@@ -103,6 +132,18 @@ const WAIT_MAX_MS = 14000;
  */
 const ALTITUDE_WANDER: AltitudeWanderConfig = { knotMs: 20000, maxStep: 0.12 };
 
+/** The chance that a drift is a red balloon instead of a cloud (docs/ISO_ART_FRAMEWORK.md § "IsoBalloon"). */
+const BALLOON_CHANCE = 0.01;
+/** The balloon body's world radius (its width; IsoBalloon draws it a little taller than wide). */
+export const BALLOON_RADIUS = 0.55;
+/**
+ * Tester-spawned balloons' ids start here, clear of the slot drifts' (which count up from 1
+ * per activation), so the two never share a React key.
+ */
+const FORCED_BALLOON_ID_BASE = 1_000_000;
+/** Reduced motion only: how long a tester-spawned (parked, still) balloon stays up. */
+const FORCED_PARKED_MS = 15000;
+
 const waitMs = () => rand(WAIT_MIN_MS, WAIT_MAX_MS);
 const firstWaitMs = (slot: number) => rand(0, FIRST_LEAD_IN_MS) + slot * waitMs();
 
@@ -129,9 +170,16 @@ function shapeExtent(shape: CloudPuff[], scale: number) {
     };
 }
 
-function planDrift(id: number, parked: boolean, proj: Projector, sky: CloudSky, altitude: AltitudeWander): CloudDrift {
-    const shape = CLOUD_SHAPES[Math.floor(Math.random() * CLOUD_SHAPES.length)];
-    const scale = rand(SCALE_MIN, SCALE_MAX);
+/** The balloon's one "puff": its body's bounding box, a 2r cube on the origin. */
+const BALLOON_SHAPE: CloudPuff[] = [{ x: 0, y: 0, z: 0, w: 2 * BALLOON_RADIUS, d: 2 * BALLOON_RADIUS, h: 2 * BALLOON_RADIUS }];
+
+/** `forceBalloon`: the tester spawn — always a balloon, in the on-screen `visibleBalloonBand`. */
+function planDrift(id: number, parked: boolean, proj: Projector, sky: CloudSky, altitude: AltitudeWander, forceBalloon = false): CloudDrift {
+    const kind: CloudDriftKind = forceBalloon || Math.random() < BALLOON_CHANCE ? "balloon" : "cloud";
+    const balloonBand = forceBalloon ? sky.visibleBalloonBand : sky.balloonBand;
+    const shape = kind === "balloon" ? BALLOON_SHAPE : CLOUD_SHAPES[Math.floor(Math.random() * CLOUD_SHAPES.length)];
+    // A balloon is always one size: varying it would only read as varying distance.
+    const scale = kind === "balloon" ? 1 : rand(SCALE_MIN, SCALE_MAX);
     const { along, across } = shapeExtent(shape, scale);
     // The cloud's screen extent from its origin is (−across … +along) world units on the
     // path's axis, so `along + across` past each edge keeps the whole of it off screen.
@@ -140,10 +188,13 @@ function planDrift(id: number, parked: boolean, proj: Projector, sky: CloudSky, 
     const startT = parked ? rand(PARKED_AT.min, PARKED_AT.max) : 0;
     return {
         id,
+        kind,
         from: path.from,
         to: path.to,
         startT,
-        z: altitude.sample(sky.band),
+        // A balloon is up only now and then, so it does not follow the clouds' shared wander:
+        // any height in its own band will do.
+        z: kind === "balloon" ? rand(balloonBand.zMin, balloonBand.zMax) : altitude.sample(sky.band),
         durationMs: ((length * (1 - startT)) / rand(SPEED_MIN, SPEED_MAX)) * 1000,
         side: path.side,
         puffs: orientPuffs(shape, scale, path.alongX),
@@ -168,8 +219,13 @@ export function useCloudDrifts(opts: {
     sky: CloudSky;
     /** How many clouds may be in the sky at once (one slot each). */
     maxInSky?: number;
+    /**
+     * Feature testing: each CHANGE of this number spawns one balloon now, outside the slots
+     * and whatever `active` says (DeckTowerPage → BalloonSpawnChip). 0 / unchanged: none.
+     */
+    balloonRequest?: number;
 }): CloudDrift[] {
-    const { proj, active, sky, maxInSky = 3 } = opts;
+    const { proj, active, sky, maxInSky = 3, balloonRequest = 0 } = opts;
     const reduced = prefersReducedMotion();
     const altitude = useAltitudeWander(ALTITUDE_WANDER);
     // Moving clouds always start off screen (`parked` false), whatever useSkyTraffic's `first` says.
@@ -180,5 +236,41 @@ export function useCloudDrifts(opts: {
         () => (active && reduced ? Array.from({ length: maxInSky }, (_, i) => planDrift(i + 1, true, proj, sky, altitude)) : []),
         [active, reduced, maxInSky, proj, sky, altitude]
     );
-    return reduced ? parked : drifting;
+    const forced = useForcedBalloons(balloonRequest, reduced, proj, sky, altitude);
+    const base = reduced ? parked : drifting;
+    return forced.length === 0 ? base : [...base, ...forced];
+}
+
+/**
+ * The tester-spawned balloons: one per change of `request`, each removed when its crossing
+ * ends (or after FORCED_PARKED_MS when parked under reduced motion — a still balloon starting
+ * off screen would never be seen, so it parks partway across like a reduced-motion cloud).
+ */
+function useForcedBalloons(request: number, reduced: boolean, proj: Projector, sky: CloudSky, altitude: AltitudeWander): CloudDrift[] {
+    const [balloons, setBalloons] = useState<CloudDrift[]>([]);
+    // The request value last served: the effect also re-runs when proj/sky change, and only a
+    // NEW request may spawn (the initial value spawns nothing).
+    const served = useRef(request);
+    const nextId = useRef(FORCED_BALLOON_ID_BASE);
+    const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
+
+    useEffect(() => {
+        if (request === served.current) return;
+        served.current = request;
+        const drift = planDrift(nextId.current++, reduced, proj, sky, altitude, true);
+        setBalloons((list) => [...list, drift]);
+        const t = setTimeout(() => {
+            timers.current.delete(t);
+            setBalloons((list) => list.filter((d) => d.id !== drift.id));
+        }, reduced ? FORCED_PARKED_MS : drift.durationMs);
+        timers.current.add(t);
+    }, [request, reduced, proj, sky, altitude]);
+
+    // Cancel every pending removal on unmount (the page leaving), so none fires after.
+    useEffect(() => {
+        const pending = timers.current;
+        return () => pending.forEach(clearTimeout);
+    }, []);
+
+    return balloons;
 }

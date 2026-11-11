@@ -136,14 +136,15 @@ export function hasCustomTextLayout(saved: TextLayout | null | undefined): boole
 /**
  * Layout `max-width` of a placed text block, shared by the static back face and the fie so
  * both wrap identically. 92% of the card on a plain face. On card stock it also stops
- * at the printed panel (`--card-panel-width`, set by CardFaceSide), divided by
- * the block's scale because `transform: scale()` happens after layout: a block at scale 1.5
- * must lay out at 1/1.5 of the panel to wrap at the panel's edge on screen. The huge fallback
+ * at the panel's content area (`--card-content-width`, set by CardFaceSide: the printed
+ * panel minus the basic-layout content gutter, so a basic gloss never touches the rim),
+ * divided by the block's scale because `transform: scale()` happens after layout: a block at
+ * scale 1.5 must lay out at 1/1.5 of the area to wrap at its edge on screen. The huge fallback
  * makes `min()` resolve to 92% wherever the variable is unset.
  */
 export function textBlockMaxWidth(scale: number): string {
   const safeScale = scale > 0 ? scale : 1;
-  return `min(92%, calc(var(--card-panel-width, 10000%) / ${safeScale}))`;
+  return `min(92%, calc(var(--card-content-width, 10000%) / ${safeScale}))`;
 }
 
 /** CSS transform for a placed text block, positioned by its center via percentages of the

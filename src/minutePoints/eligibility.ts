@@ -1,6 +1,5 @@
 import {
   MINUTE_POINTS_ELIGIBLE_PAGES,
-  MINUTE_POINTS_ELIGIBLE_EXACT_PAGES,
   MINUTE_POINTS_AUTO_ACTIVE_PAGES,
 } from '../constants';
 
@@ -28,8 +27,7 @@ function underPrefix(pathname: string, prefix: string): boolean {
  * Does this route accrue minute points at all?
  */
 export function isMinutePointsEligiblePath(pathname: string): boolean {
-  return MINUTE_POINTS_ELIGIBLE_PAGES.some(prefix => underPrefix(pathname, prefix))
-    || MINUTE_POINTS_ELIGIBLE_EXACT_PAGES.includes(pathname);
+  return MINUTE_POINTS_ELIGIBLE_PAGES.some(prefix => underPrefix(pathname, prefix));
 }
 
 /**

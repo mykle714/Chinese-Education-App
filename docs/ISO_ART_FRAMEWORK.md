@@ -10,9 +10,12 @@ user is [DECK_TOWER.md](./DECK_TOWER.md), which uses `IsoScene`, `IsoPlatform`
 (`floating`), `IsoCardStack`, `IsoCardImprint`, `IsoFloorLabel`, `IsoPawn`, `IsoCloud` and `IsoWind`.
 The acp also imports it (`src/features/discover/SortBins.tsx`, which draws through its own
 `makeProjector`; `sortTimeOfDay.ts` → `mixHex`, `shadowTone`; `AddCardsPage.tsx` → `shadeHex`). Its decks'
-top faces are the one place HTML lies on an iso face: the real `MiniCard` in a `<foreignObject>`,
-mapped by `faceTransform` (`SortBins.tsx` → `DeckFace`; every other face print is SVG drawn in world
-units), and so
+top faces carry the mini card drawn as **native SVG** — `MiniCardSvg` (`src/components/MiniCardSvg.tsx`,
+MiniCard's SVG twin, laid out by `miniCardSvgLayout.ts` on MiniCard's own numbers) in card px,
+mapped by `faceTransform` composed with a px → world scale (`SortBins.tsx` → `DeckFace`). **No HTML
+on an iso face:** the face used to be the real `MiniCard` in a `<foreignObject>`, and WebKit (iOS
+Safari) painted that positioned HTML WITHOUT the SVG transforms — the face sat flat and unrotated at
+the scene's corner (2026-11-10). Every face print is SVG; and so
 does the flp's hint pawn (`hintPawn/HintPawn.tsx`: a tiny, non-bobbing `IsoPlatform` with an `IsoPawn`,
 [HINT_PAWN.md](./HINT_PAWN.md)).
 `IsoCarpet` (a low floor mat) and `IsoModeSwitch` (the Mix / Review floor switch) were deleted
@@ -30,7 +33,8 @@ The exemption covers iso scenes only; it is not a precedent for UI chrome.
 
 1. **Everything is an extruded rounded rect** in the world XY plane, pushed up along z.
    The exception is the ink figure: the pawn's body (a screen-space pill, which reads
-   the same from every angle). A cloud is a
+   the same from every angle), and the rare red balloon's body (`IsoBalloon`, a true
+   round solid like the pawn's head). A cloud is a
    cluster of rounded rects (pills), so it follows the rule. Wind (`IsoWind`) is not a
    solid at all: it is flat round-capped strokes, the kit's one stroke-only object.
 2. **Three flat tones per material:** a lit TOP, a mid LEFT wall and a dark RIGHT wall.
@@ -39,6 +43,8 @@ The exemption covers iso scenes only; it is not a precedent for UI chrome.
 4. **Every shadow is made by `IsoShadow`.** No component draws a shadow any other way.
 5. **Objects draw themselves.** A page only places objects and tells each one which
    surface it stands on.
+6. **Centred text goes through `IsoText` / `IsoSpacedText`, never `dominantBaseline`.**
+   See [Text in the iso kit](#text-in-the-iso-kit); eslint enforces it.
 
 ## Layers
 
@@ -57,7 +63,7 @@ The exemption covers iso scenes only; it is not a precedent for UI chrome.
 | Behaviour | `useCloudDrifts.ts` → `useCloudDrifts`, `CloudDrift`, `CloudSky`, `sortCloudsBackToFront` | Schedules the clouds drifting past the tower: shapes, speed, timing, mid-sky openers |
 | Behaviour | `fogClouds.ts` → `planFogClouds`, `FogCloud`, `FogUnit`, `FogBridge`, `FogCover`, `FOG_LEVELS` | Shapes the fog clouds (staggered, bridged units) and plans their lanes across a screen box (§ IsoFog) |
 | Behaviour | `useWindGusts.ts` → `useWindGusts`, `WindGust`, `WindStrand`, `WindPt`, `WindSky` | Schedules the wind gusts: strand shapes, curl, timing, on-screen placement |
-| Object | `IsoPlatform.tsx`, `IsoCard.tsx`, `IsoCardStack.tsx`, `IsoCardImprint.tsx`, `IsoFloorPrint.tsx`, `IsoPaperStack.tsx`, `IsoSortPlatform.tsx`, `IsoCardRuns.tsx`, `IsoFloorLabel.tsx`, `IsoHatch.tsx`, `IsoLever.tsx`, `IsoSmokePuff.tsx`, `IsoPawn.tsx` (+ its `PawnIdleProps.tsx`), `IsoCloud.tsx`, `IsoCloudShadow.tsx`, `IsoWind.tsx`, `IsoFog.tsx`, `IsoRain.tsx`, `IsoSnow.tsx`, `IsoSnowCap.tsx`, `IsoSnowFloor.tsx` (+ `snowTrail.ts`), `IsoLightningBolt.tsx`, `IsoBurnMark.tsx` | The things a scene is made of (one component each, below) |
+| Object | `IsoPlatform.tsx`, `IsoCard.tsx`, `IsoCardStack.tsx`, `IsoCardImprint.tsx`, `IsoFloorPrint.tsx`, `IsoPaperStack.tsx`, `IsoSortPlatform.tsx`, `IsoCardRuns.tsx`, `IsoFloorLabel.tsx`, `IsoHatch.tsx`, `IsoLever.tsx`, `IsoSmokePuff.tsx`, `IsoPawn.tsx` (+ its `PawnIdleProps.tsx`), `IsoCloud.tsx`, `IsoCloudShadow.tsx`, `IsoBalloon.tsx`, `IsoWind.tsx`, `IsoFog.tsx`, `IsoRain.tsx`, `IsoSnow.tsx`, `IsoSnowCap.tsx`, `IsoSnowFloor.tsx` (+ `snowTrail.ts`), `IsoLightningBolt.tsx`, `IsoBurnMark.tsx` | The things a scene is made of (one component each, below) |
 | Behaviour | `cardCollapse.ts` → `planCardCollapse`, `cardsShowingAt`, `fallMsFor`, `shadowLandTiming`, `CardCollapsePlan` | The pure plan for a stack losing cards and settling (§ IsoCardRuns) |
 | Rules | `light.ts` → `IsoSurface`, `shadowFootprint`, `shadowSpread`, `shadowTone`, `cloudShadowFootprint` | The light and the shadow rule |
 | Rules | `palette.ts` → `ISO` (incl. `yarn`), `shadeHex`, `mixHex`, `Material` | Colours (`mixHex` blends two colours continuously, e.g. the Deck Tower sky → space) |
@@ -292,6 +298,67 @@ the HTML card stock.
 | `IsoHatch` lift | no. Flush with the floor when risen, so it would only show mid-motion |
 | acp's `SortBins` | the TOP layer only (the shown top, the old top while placing, the lifted top on Undo — `TOP_EDGE_LIGHT`, the unwashed `ISO.edgeLight`, since the acp is lit by its `SortLook`); the under-layers no, like the card stack's body |
 
+## Text in the iso kit
+
+*Code: `src/features/deckTower/iso/IsoText.tsx` → `IsoText`, `INK_CENTRE_DY`;
+`src/features/deckTower/iso/IsoSpacedText.tsx` → `IsoSpacedText`; `eslint.config.js` → the
+"iso text" block.*
+
+**The pitfall.** The usual way to centre SVG text on a point is
+`dominant-baseline="central"`. It centres the font's em box, not its ink, and WebKit
+(iOS Safari, the Capacitor app) and Chromium compute that box differently for a CJK face.
+The kit prints in `FONTS.cjk` (975 Maru SC), so a `central` label looks centred in desktop
+Chrome and sits visibly off-centre on an iPhone. A desktop check, headless or not, cannot
+catch it. It has shipped twice: the Deck Tower's "LEARNING" plate, then the acp's 1–4
+rating numbers inside their dotted boxes (2026-11-10).
+
+**The rule.** Draw centred iso text with:
+
+| Need | Use |
+|---|---|
+| Centred text, no letter-spacing (figures, digits, emote marks) | `IsoText` — a `<text>` whose props type omits `dominantBaseline` and `dy` |
+| Centred, letter-spaced text (plates, head-band labels, floor prints) | `IsoSpacedText` (§ IsoSpacedText) |
+| Text deliberately placed by its baseline (words stacked above something) | a plain `<text>` with no baseline prop — e.g. the Deck Tower's `TapToStartHint` |
+
+Both components keep the **alphabetic** baseline, which every engine places identically,
+and shift it down by `INK_CENTRE_DY` (0.34 em), so the ink centres on `y`. eslint rejects
+any `dominantBaseline` attribute in `src/features/deckTower/iso/**` and in
+`features/discover/SortBins.tsx`.
+
+**Where 0.34 em comes from.** It is measured from Maru's own outlines (the cn-fontsource
+woff2 subsets, bounds via fontTools), not tuned by eye:
+
+| Glyphs | Ink centre above the baseline |
+|---|---|
+| capitals (`H`, `Z`, `LEARNING`) | 0.338 em |
+| digits `0`–`4` | 0.337–0.344 em |
+| `!` | 0.341 em |
+| `cards` (has an ascender) | 0.356 em |
+| x-height-only words (`acrs`) | 0.257 em, so it would sit ~0.08 em high (none drawn today) |
+
+Chromium's `central` put Maru at (hhea ascent 928 − descent 256) / 2 = 0.336 em. So the
+switch left desktop rendering unchanged to within 0.004 em and moved only WebKit.
+
+**Caveats.**
+- **The value belongs to the font.** If `FONTS.cjk`'s face changes (`useChineseFont` →
+  `DEFAULT_CHINESE_FONT_ID`), re-measure and update `INK_CENTRE_DY`. `IsoSpacedText` used
+  to carry its own 0.38 em, tuned for Noto Sans SC before the app moved to Maru. That is
+  exactly the drift a single shared constant avoids.
+- **Glyphs Maru lacks fall back per device.** The pawn's singing notes (♪ ♫,
+  `PawnIdleProps` → `PawnSingNotes`) are not in Maru, so they render in whatever the stack falls
+  back to (PingFang SC / a symbol face on iOS). The baseline is still Maru's and still
+  engine-independent, but their ink centre is the fallback's. Note glyphs usually run from
+  the baseline to about cap height, so 0.34 em is close but not measured. Drawing them as
+  paths would make them exact.
+- **Exemption.** acp's speech bubble (`SortBins` → `SpeechBubble`'s `sort-bins__bubble-text`)
+  stays on `central` behind an `eslint-disable` comment. It is set in `FONTS.sans`
+  (Instrument Sans, a Latin face without the CJK em-box disagreement), and it is multi-line
+  mixed-case prose with no single ink centre to measure.
+
+**Users of `IsoText`:** `IsoCard` (figure + caption), `IsoCardImprint` ("0" / "cards"),
+`IsoPawn` (the emote "!"), `PawnIdleProps` (mark discs, doze Z's), acp's `SortBins` →
+`NumberPrint`.
+
 ## Levitation
 
 `IsoLevitate` takes a `shadow` node and `children`. The shadow stays where it is while the
@@ -501,7 +568,7 @@ block is always centred on `at`. `tail` (flush-right only) hangs a mark — e.g.
 word-space past the last line's end, outside the alignment, so the lines' own last letters
 set the edge; with `anchor="end"`, `at` marks the tail's tip (measured after layout). `maxX` (`run="x"` only) slides the block left so its
 widest line (measured with `getBBox` after layout, once per text/size and per web-font
-load — `useFontLoadEpoch`, shared with IsoSpacedText) ends there. `align` sets each line
+load — `useFontLoadEpoch`, `src/hooks/useFontLoadEpoch.ts`, shared with IsoSpacedText) ends there. `align` sets each line
 within the block: `"center"` (default) or `"right"` (`textAnchor="end"` on the block's
 end, so shorter lines end flush with the widest).
 Not raised, not a shadow, `aria-hidden` and `pointer-events: none` (it labels something;
@@ -586,7 +653,7 @@ already darkens that floor to the same tone.
 
 ### IsoSpacedText
 
-*Code: `src/features/deckTower/iso/IsoSpacedText.tsx` → `IsoSpacedText`. Used by `IsoFloorLabel` (the plate text) and `IsoCard` (the head-band label).*
+*Code: `src/features/deckTower/iso/IsoSpacedText.tsx` → `IsoSpacedText`. Used by `IsoFloorLabel` (the plate text), `IsoCard` (the head-band label) and `IsoFloorPrint` (the floor prints).*
 
 `{ children: string, letterSpacing, ...<text> props }`. A centred (`textAnchor="middle"`), letter-spaced SVG `<text>`. Use it
 instead of a bare `letterSpacing` + `textAnchor="middle"` `<text>`: WebKit (iOS Safari) anchors on the run's UNSPACED width
@@ -603,12 +670,9 @@ plate), while Chrome centres it.
   fallback face is retaken when Noto Sans SC (or a `--cjk-font` override) arrives.
 - **No layout** (measure is 0 or throws, e.g. jsdom): falls back to plain `letterSpacing`.
 - **Vertical centring.** `y` is the line's visual centre; callers pass no `dominantBaseline` (the prop is omitted from
-  the type). `dominant-baseline="central"` centres the em box, and WebKit derives that box from Noto Sans SC's tall CJK
-  ascent/descent, so Latin caps land ~0.55 em lower than in Chrome (the iPhone "LEARNING" band text sat toward the
-  band's front edge). The text keeps the alphabetic baseline, which every engine agrees on, and shifts down by
-  `CAP_CENTRE_DY` (0.38 em ≈ half the cap height), so the capitals' ink centres on `y` in both engines.
-  Other iso `<text>` that still uses `central` (`IsoCard`'s figure + caption, `IsoCardImprint`, `IsoFloorPrint`,
-  `IsoPawn`) carries the same WebKit offset.
+  the type). It keeps the alphabetic baseline and shifts down by the kit-wide `INK_CENTRE_DY` (0.34 em, from
+  `IsoText.tsx`), so the ink centres on `y` in every engine. Why `central` is banned, and how the value was measured:
+  [Text in the iso kit](#text-in-the-iso-kit).
 
 ### IsoHatch
 
@@ -1044,7 +1108,8 @@ floor shadow is hidden where the tower stands over it. Objects standing on the f
 receive cloud shade; they are drawn over it.
 
 **Scheduling: `useCloudDrifts({ proj, active, sky, maxInSky })`.** `CloudSky` is a
-`SkyRegion` whose `band` is the range of cloud **bases**.
+`SkyRegion` whose `band` is the range of cloud **bases**, plus a `balloonBand` for the rare
+red balloon (§ IsoBalloon).
 
 - **Slots.** `maxInSky` slots (default 3). Waits between drifts are 4–14 s.
 - **Paths.** The cloud's near edge is 1.5–4.5 units out from `around`: `planSidePath` gets
@@ -1067,6 +1132,41 @@ receive cloud shade; they are drawn over it.
   scheduled. There is one cloud per slot, parked 15–75% of the way across (`PARKED_AT`, its
   `startT`), fully opaque.
 - **Memoize `sky`.** A new object restarts every slot.
+- **The red balloon.** Each planned drift (moving or parked) has a `BALLOON_CHANCE`
+  (1 in 100) of being `kind: "balloon"` instead of a cloud (§ IsoBalloon).
+
+### IsoBalloon
+
+`{ drift }` (a `CloudDrift` of `kind: "balloon"`). The rare red balloon that drifts by in
+place of a cloud. Code: `iso/IsoBalloon.tsx`; planned by `useCloudDrifts.ts` →
+`planDrift` (`BALLOON_CHANCE`, `BALLOON_RADIUS`, `BALLOON_SHAPE`); drawn instead of
+`IsoCloud` by `SkyTraffic.tsx` → `SkyTrafficLayer`.
+
+- **Scheduling.** It is a cloud drift in every respect except its look and height: it takes
+  a cloud slot, a side path, the cloud speed and the side draw-order rule, and is sorted
+  with the clouds. So it flies only under the `cloudy` weather. Its height is a random pick
+  in `sky.balloonBand` (the Deck Tower: cards 110–140, `BALLOON_BAND_CARDS`, just under the
+  clouds), not the clouds' shared altitude wander. It is always one size (no scale).
+- **One puff.** Its `puffs` is a single 2r cube on the drift origin (`BALLOON_SHAPE`), the
+  body's bounding box. The path extent, the depth sort and `IsoCloudShadow` all read it
+  unchanged, so it casts one round shadow under the same rules as a cloud.
+- **Shape.** The body is a true round solid like the pawn's head (§ Rules, rule 1's
+  exception). The outline is centred on the projected sphere centre, `BALLOON_RADIUS ·
+  facingScaleAt` wide, and stretched `BODY_STRETCH` taller with its bottom fixed. It is
+  kept as flat as the rest of the kit: the lit `ISO.balloon.top` (`redMk`) face over the
+  body in its `left` tone (a `shadeHex` step: the flagged wall divergence), stepped toward
+  the upper left (`LIT_FACE`) so one thin shade crescent shows on the lower right. No glint
+  and no third tone (a stepped three-ring version with a glint, 2026-11-10, read as more
+  depth than any other object). Below hang a shade-tone knot and a thin `ink` string with a
+  lazy S, `STRING_LENGTH` (3) world units long. The string casts no shadow.
+- **Motion.** The same as a cloud's (`cloudDriftMotion.ts`): no bob.
+- **Tester spawn.** `useCloudDrifts`'s `balloonRequest`: each change of the number spawns one
+  balloon now (`useForcedBalloons`), outside the slots and whatever `active` says, with ids
+  from `FORCED_BALLOON_ID_BASE` so they never share a key with a slot drift. It flies in
+  `sky.visibleBalloonBand`, which the Deck Tower brings down beside the tower when the tower
+  on screen is shorter than the real band (`DeckTowerPage.tsx` → `visibleBalloonBand`), so a
+  tap always shows one. Under reduced motion it parks partway across for `FORCED_PARKED_MS`
+  (15 s). Driven by `BalloonSpawnChip` (DECK_TOWER.md § Feature-tester rows).
 
 ### IsoFog
 

@@ -19,7 +19,8 @@ import {
     PERSONAL_BEST_MODE,
     POOL_DISTRIBUTION,
     WIN_LEVEL,
-    medalForTime,
+    runResultTiers,
+    runResultTitle,
 } from "../games/match-speed/constants";
 import type { GameCategory } from "../games/match-speed/types";
 import type { VocabEntry } from "../types";
@@ -241,18 +242,26 @@ describe("bufferedEntryIds", () => {
     });
 });
 
-describe("medalForTime", () => {
-    it("awards each tier up to and including its time limit", () => {
-        expect(medalForTime(80_000)?.medal).toBe("gold");
-        expect(medalForTime(100_000)?.medal).toBe("gold");
-        expect(medalForTime(100_001)?.medal).toBe("silver");
-        expect(medalForTime(150_000)?.medal).toBe("silver");
-        expect(medalForTime(150_001)?.medal).toBe("bronze");
-        expect(medalForTime(300_000)?.medal).toBe("bronze");
+describe("runResultTiers", () => {
+    it("grades a finished run on speed and accuracy", () => {
+        expect(runResultTiers(30, 30, 75_000)).toEqual({
+            speed: { tier: 1, elapsedMs: 75_000 },
+            accuracy: { tier: 1, correct: 30, attempts: 30 },
+        });
+        expect(runResultTiers(30, 40, 100_001)).toEqual({
+            speed: { tier: 3, elapsedMs: 100_001 },
+            accuracy: { tier: 5, correct: 30, attempts: 40 },
+        });
     });
 
-    it("has a real no-medal tier past bronze", () => {
-        expect(medalForTime(300_001)).toBeNull();
+    it("always lands a finished run on a tier, however slow", () => {
+        expect(runResultTiers(30, 30, 3_600_000)?.speed.tier).toBe(7);
+    });
+
+    it("gives an unfinished run no tiers", () => {
+        expect(runResultTiers(12, 14, 40_000)).toBeNull();
+        expect(runResultTitle(12)).toBe("Run ended");
+        expect(runResultTitle(30)).toBe("Finished!");
     });
 });
 

@@ -15,6 +15,7 @@ export default function PersonalBestLine({
     best,
     isNewBest,
     unitLabel,
+    align = "center",
     className,
 }: {
     game: PersonalBestGame;
@@ -22,6 +23,8 @@ export default function PersonalBestLine({
     isNewBest: boolean;
     /** Count games: the unit after the number ("matches"), so it reads like the popup above it. */
     unitLabel?: string;
+    /** Row alignment: centred on an end card, flush left inside a run-tier panel. */
+    align?: "center" | "start";
     className?: string;
 }) {
     if (best === null) return null;
@@ -30,7 +33,7 @@ export default function PersonalBestLine({
     return (
         <Box
             className={`personal-best-line${className ? ` ${className}` : ""}`}
-            sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 1, color: COLORS.textSecondary, fontSize: "0.9rem" }}
+            sx={{ display: "flex", alignItems: "center", justifyContent: align === "start" ? "flex-start" : "center", flexWrap: "wrap", gap: 1, color: COLORS.textSecondary, fontSize: "0.9rem" }}
         >
             <span className="personal-best-line__label">Personal best</span>
             <Box component="span" className="personal-best-line__value" sx={{ fontFamily: FONTS.mono, color: COLORS.onSurface, fontWeight: WEIGHT.semibold }}>

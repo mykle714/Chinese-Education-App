@@ -26,13 +26,13 @@ import type { VocabEntry } from "../types";
  *
  * Each pill self-hides when it cannot act — writing is Chinese-only and capped at four
  * characters (its button owns that gate), Compare needs a host that can receive the
- * word, Customize needs a card to edit (absent on the read-only dictionary cdp) — and
+ * word, Customize needs a card to edit (absent in the Dictionary eip) — and
  * when none survives the rail renders nothing rather than leaving an empty strip above
  * the card.
  *
- * Exception: the read-only dictionary cdp (DictionaryCardDetailPage) has NO card — the
- * page is the eip panel mounted inline — so it puts the rail at the bottom of the eip's
- * DEFINITION tab (InfoCardPanelBody `definitionFooter`), zeroing the margin through `sx`.
+ * Exception: the Dictionary page's eip has NO card, so it puts the rail at the bottom of
+ * the eip's DEFINITION tab (EipSheet `showWordTools` → InfoCardPanelBody
+ * `definitionFooter`), zeroing the margin through `sx`.
  *
  * Width is pinned to `CARD_BASE_WIDTH` so the rail is exactly as wide as the card it
  * captions. A rail running the full page gutter reads as page chrome; one that lines up
@@ -52,7 +52,7 @@ export interface WordToolsRailProps {
     onCompare?: (entry: VocabEntry) => void;
     /**
      * Open the flashcard icon editor (fie) on this word's card. Omit where there is no
-     * card to customize (the read-only dictionary cdp) — the pill then self-hides.
+     * card to customize (the Dictionary eip) — the pill then self-hides.
      */
     onCustomize?: () => void;
     /**

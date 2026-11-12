@@ -16,7 +16,7 @@ CLAUDE.md § "Nonstandard deploys need a temp runbook"; the deploy procedure its
 > `schema_migrations` and `migrate.sh --dry-run`, and treat any disagreement as this
 > file (or the runbook banner) being stale.
 
-PPE is current through migration **186** (2026-11-09). Latest code deploy: `6a227da` (2026-11-09, migrations 185 + 186 — applied by `migrate.sh` AFTER the rebuild, per the NM/IW runbook).
+PPE is current through migration **186** (2026-11-09). Latest code deploy: `fe8347c` (2026-11-12, no migrations).
 
 ## Open runbooks
 

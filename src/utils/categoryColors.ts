@@ -8,7 +8,7 @@ import { COLORS, RAMP, type RampHue } from "../theme/colors";
 //      `--yelMk` ("Target yellow"); it used to be the org hue.
 //   2. A band now has THREE tiers in use rather than a pastel + an ink:
 //        surface  CATEGORY_COLORS / BAND_COLORS.main — spines, big fills
-//        mid      BAND_MID                           — pills, chips, avatars
+//        mid      BAND_MID                           — pills, chips, avatars, acp bins + td Add Cards platform
 //        mark     BAND_MARK                          — mastery cells, mini-card bars
 //      The v1 `BAND_INK` (the ramp's dark `*A` member, used where a shape was too small
 //      to carry the pastel's outline ring) is gone with the ink tier: the MARK tier is

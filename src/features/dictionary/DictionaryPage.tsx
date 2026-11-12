@@ -34,21 +34,6 @@ import {
     DictionaryNoResults,
 } from './DictionaryPageParts';
 import { groupByMatchSection, matchSectionLabel } from './dictionaryMatchSections';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { usePageSlide } from '../../hooks/usePageSlide';
-import { readCirclePoint, type ScreenPoint } from '../../utils/pageTransition';
-
-/**
- * The Dictionary opened from the HOME SCREEN (docs/HOME_SCREEN.md § "Dictionary"): the home's
- * Dictionary key pushes this page with the circle transition and `{ homeBack: true,
- * circleFrom }`. Only then does the page wear a back arrow — opened from the footer it stays a
- * bare tab root. The arrow returns to td (the home screen is spent by then), closing the
- * circle back onto the point it grew from. Validated: nav state is untyped.
- */
-function readHomeBack(state: unknown): { circleFrom?: ScreenPoint } | null {
-    if (!(state as { homeBack?: unknown } | null)?.homeBack) return null;
-    return { circleFrom: readCirclePoint(state) };
-}
 
 // The search field as drawn in the 2026-10-29 redesign (artboard "Dictionary · search +
 // results", `.field`): a 50px well with a 14px corner, and a 2px INK ring while focused
@@ -120,21 +105,6 @@ const welcomeCopyFor = (language: Language): WelcomeCopy =>
 
 function DictionaryPage() {
     usePageTitle("Dictionary");
-    // Back to td when opened from the home screen (readHomeBack). The surface ref is only
-    // cloned by that Back's circle exit; the slide's enter `style` is not used (the circle
-    // transition already brought the page in).
-    const location = useLocation();
-    const navigate = useNavigate();
-    const homeBack = readHomeBack(location.state);
-    const { surfaceRef, exit } = usePageSlide({ axis: 'x' });
-    const backToTower = () =>
-        exit(() => {
-            // Pop to td's own entry, so the browser's Back and the arrow agree; a reload that
-            // made this the first entry has nothing to pop to and replaces itself with td.
-            const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
-            if (idx > 0) navigate(-1);
-            else navigate('/', { replace: true });
-        }, homeBack?.circleFrom);
     // Dictionary is always rendered in its mobile layout regardless of viewport
     // width — the desktop two-column layout has been retired.
     const isMobile = true;
@@ -230,14 +200,8 @@ function DictionaryPage() {
         // renders a bare MobileTabScreen: no back arrow, no slide — the footer switches
         // instead. MobileTabScreen's scroll area owns scrolling, so the page does not
         // wrap its content in its own scroll box.
-        // The surface box is what the home Back's circle exit clones (usePageSlide → exit).
-        <Box ref={surfaceRef} className="dictionary-page__surface" sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <MobileTabScreen
             title="Dictionary"
-            // Only when opened from the home screen (readHomeBack): a node-style arrow back to td.
-            showBack={homeBack !== null}
-            onBack={homeBack ? backToTower : undefined}
-            arrowDirection="left"
             contentClassName="dictionary-page__content"
             surfaceColor={look.ground}
             headerTitleColor={look.ink}
@@ -494,7 +458,6 @@ function DictionaryPage() {
             defaultHeightRatio={0.8}
         />
         </MobileTabScreen>
-        </Box>
     );
 }
 

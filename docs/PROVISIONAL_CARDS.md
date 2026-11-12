@@ -258,7 +258,7 @@ The end-of-session "sort these cards" CTA remains the pressure valve.
 |---|---|---|
 | `GET /api/onDeck/gamePool?surface=…` | Bubble Match, Match Speed, Speed Reading, Bucket Drop | Skipped when `need` is set (a partial refill — see below) |
 | `GET /api/onDeck/wordSearchGrid?surface=word-search` | Word Search | Escalating retry, see §6 |
-| `GET /api/onDeck/distributedWorkingLoop` | flp | Always `'flp'`. Called when a Deck Tower study session deals its loop (`useWorkingLoop`); an unplayed lent card is re-lent next time (§ 3b), not re-minted |
+| `GET /api/onDeck/distributedWorkingLoop` | flp | Always `'flp'`, and **only with `?lend=1`** — the session's lend switch, on once the learner's own off-cooldown cards are spent (DECK_TOWER.md § Running out of ready cards). Called when a Deck Tower study session deals its loop (`useWorkingLoop`); an unplayed lent card is re-lent next time (§ 3b), not re-minted |
 
 **Partial refills provision only if the game opts in.** Bubble Match's *Play Again*
 sends `need=N` to swap out only the pairs the player matched; lending on every tap
@@ -300,9 +300,9 @@ So lending is the **bottom** of every fill ladder:
 |---|---|---|
 | 1 | each quota, from its own category (`rankCardQueue`: recent longest-waiting first, then stale own-before-lent easiest first) | each requested bucket, FRESH cards only |
 | 2 | borrow across categories in the mode's `fillOrder` | borrow FRESH cards in `GAME_FALLBACK_ORDER` |
-| 3 | **COOLED cards**, nearest-to-ready first (`rankCardQueueCooled`) | COOLED cards (requested buckets → fallback) |
+| 3 | — (no cooled tier since 2026-11-11, below) | COOLED cards (requested buckets → fallback) |
 | 4 | — | soft-`avoid`ed cards (just cleared) |
-| **5** | **lend** (re-lend, then mint — § 3b) | **lend** (re-lend, then mint — § 3b) |
+| **5** | **lend** (re-lend, then mint — § 3b), **only with the session's lend switch on** | **lend** (re-lend, then mint — § 3b) |
 
 Two things moved on 2026-08-20:
 
@@ -311,6 +311,17 @@ Two things moved on 2026-08-20:
   what the borrow pass still held — a patch on the ordering rather than a fix to it);
 * **the flp gained a cooled tier**, which it never had. A loop that could not be filled
   from rested cards previously either minted new words or came back short.
+
+**The flp's cooled tier was removed again on 2026-11-11**, and its lend tier put behind a
+switch. Cooling cards on the flp played but earned nothing, cycled forever, and made the
+Deck Tower — which counts only off-cooldown cards — count down cards it never counted. The
+flp now deals the learner's own off-cooldown cards and nothing else; when they are spent it
+shows an out-of-ready-cards card and turns on the session's **lend switch** (`?lend=1` on the
+deal and break refill, `lend: true` on the mark), and only then lends
+([DECK_TOWER.md](./DECK_TOWER.md) § Running out of ready cards). The original problem the
+cooled tier solved — minting on every load — stays solved: the flp lends only after the
+learner has run out and seen the card, not to fill an underfilled quota. The games keep
+their cooled tier.
 
 #### Why lend-first was wrong
 
@@ -333,12 +344,12 @@ The replacement is not a cap or a subtraction — it is the ordering. A cooling 
 the learner's own is a better answer to "I have nothing fresh to show" than a word they
 have never chosen, and it is always available to a learner who has cards at all.
 
-#### What the cooled tier costs
+#### What the cooled tier costs (games)
 
 A mark fired at a still-cooling track is **dropped** at `POST /api/flashcards/mark`
 (the hard "next markable at" guard — [HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md) § 8). So
-tier-3 cards **play but earn nothing**, and on the flp a suppressed mark returns
-`newCard: null`, which winds the loop down rather than refilling it.
+tier-3 cards **play but earn nothing**. (This cost is why the flp no longer has the tier —
+see above.)
 
 That is the intended shape: the cooldown exists precisely so that re-answering a card
 inside its window earns nothing, and a learner who has reviewed their whole deck today
@@ -424,7 +435,7 @@ Whether the notice can **name** the words is a per-surface property, shared as
 |---|---|---|
 | Bubble Match, Speed Reading, Word Search, Bucket Drop | **yes** — tabulates the exact cards | fixed, known set |
 | Match Speed | no — generic message | deals from a rolling buffer |
-| flp | no — generic message | working loop refills as you go |
+| flp | no notice — the flp's out-of-ready-cards card announces lent cards (DECK_TOWER.md § Running out of ready cards) | working loop refills as you go |
 
 An itemized notice shows a **grid of the app's real mini vocab cards, two per row**,
 one per lent card (`src/components/ProvisionalCardGrid.tsx`). The cards are
@@ -541,8 +552,9 @@ accumulate it at a different — and progressively earlier — moment.
 
 All three now record at the **mark call site** instead, through the shared
 `useMarkedLentWords` (`src/hooks/useMarkedLentWords.ts`). The served set does not
-disappear — it still drives the things that are genuinely about arrival: flp's notice
-(`provisionalSeen`) and Hydra's one-shot mid-run notice (`hasLent`). Only the *offers*
+disappear — it still drives the things that are genuinely about arrival: Hydra's one-shot
+mid-run notice (`hasLent`). (flp's arrival notice, which read `provisionalSeen`, was replaced
+on 2026-11-11 by the out-of-ready-cards card, and `provisionalSeen` was deleted with it.) Only the *offers*
 moved to the reviewed set, including flp's back-arrow gate, which no longer stops a
 learner on the way out over words they never saw.
 
@@ -641,27 +653,27 @@ that once made lending unable to fill a round were removed with
 
 ### Which flp sessions may be topped up with lent cards
 
-When every card is cooling, one rule — `canLendProvisional` (`OnDeckVocabService.ts`) —
-decides whether the initial loop and the refill may lend:
+One rule — `canLendProvisional(lend, collection)` (`OnDeckVocabService.ts`) — decides whether
+the initial loop, the per-swipe refill (`getNextLibraryCardWithFallback`) and the break
+refill (`refillWorkingLoop`) may lend:
 
-> Lend only when the round is **unrestricted** (`collection` unset). A focused world's
-> round (`CollectionFilter` `{ kind: 'focus' }`) never lends.
+> Lend only when the session's **lend switch** is on (`lend`) **and** the round is
+> **unrestricted** (`collection` unset). A focused world's round (`CollectionFilter`
+> `{ kind: 'focus' }`) never lends.
 
-This same predicate gates the **tier-2 lend** described in § 4b — the two are the same
-call site.
-
-| Session | All cards cooling ⇒ |
+| Session | Off-cooldown cards spent ⇒ |
 |---|---|
-| Study Mix (every flp session) | lend to fill the 10-card loop |
-| Focused world | **short / empty**; a lent card is outside the day's set |
+| Study Mix, switch off (every visit starts here) | **short / empty** → the flp's out-of-ready-cards card turns the switch on |
+| Study Mix, switch on | lend to fill the 10-card loop |
+| Focused world | **short / empty**; a lent card is outside the day's set → the flp's "done for the day" card |
 
-The focused case comes back **short or empty on purpose** — there is no cooled-card last
-resort any more (`fetchCooledFallbackCards` and `pickLeastRecentlyCorrectFlp` are deleted).
-The client shows a "resting" empty state (`emptyMessage` in `FlashcardsLearnPage.tsx`), and
 `POST /api/flashcards/mark` returns **200 with `newCard: null`** rather than a 404 so
-`useWorkingLoop` winds the loop down cleanly. A focused loop also skips the *baseline*
-top-up (`OnDeckVocabController.getDistributedWorkingLoop` → `ensureBaselineForSurface` is
-not called for `collection.kind === 'focus'`), so it never lends at any point.
+`useWorkingLoop` winds the loop down cleanly; an empty loop is what raises the flp's card.
+The *baseline* top-up (`OnDeckVocabController.getDistributedWorkingLoop` →
+`ensureBaselineForSurface`) runs only with the switch on and outside a focused world, so a
+brand-new learner studies the cards they have before any are lent. The switch is the
+flp's client state (`useWorkingLoop` → `lendMode`) and resets when the Deck Tower visit ends
+([DECK_TOWER.md](./DECK_TOWER.md) § Running out of ready cards).
 
 ---
 

@@ -44,6 +44,7 @@ export { SpeakerButton };
 export { ChineseBlock, EnglishBlock, CardFaceSide } from "../card/CardFace";
 import { CardFaceSide, ChineseBlock, EnglishBlock } from "../card/CardFace";
 import BreakCardLayer from "./gameBreak/BreakCardLayer";
+import ReadyOutCardLayer, { type ReadyOutKind } from "./ReadyOutCardLayer";
 import { cardThrowSteps } from "./cardThrow";
 
 interface FlashCardSectionProps {
@@ -148,6 +149,14 @@ interface FlashCardSectionProps {
     cardsCovered?: boolean;
     /** The card's own box (the aspect-ratio wrapper) — the Deck Tower aims its camera at it. */
     cardFrameRef?: React.Ref<HTMLDivElement>;
+    /**
+     * The out-of-ready-cards card on top of the stack, or null (ReadyOutCardLayer;
+     * docs/DECK_TOWER.md § "Running out of ready cards"). Drawn over the word slots when
+     * the loop has cards, and in place of the empty-state card when it has none.
+     */
+    readyOutCard?: ReadyOutKind | null;
+    /** The `lend` card finished flying off. Must be stable (the memo). */
+    onReadyOutCardGone?: () => void;
 }
 
 export type WritingFaceRenderer = (entry: VocabEntry, side: "front" | "back", role: "front" | "peek" | "flying") => React.ReactNode;
@@ -464,6 +473,8 @@ const CardFace: React.FC<{
     );
 };
 
+const noop = () => {};
+
 const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     currentEntry,
     nextEntry,
@@ -499,6 +510,8 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     onBreakCardSwiped,
     cardsCovered = false,
     cardFrameRef,
+    readyOutCard = null,
+    onReadyOutCardGone,
 }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
@@ -792,7 +805,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                 </BreakCardLayer>
                             )}
                         </>
-                    ) : (
+                    ) : readyOutCard ? null : (
                         <Card
                             className="mobile-demo-flashcard-empty"
                             sx={{
@@ -822,6 +835,9 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                 </Typography>
                             </CardContent>
                         </Card>
+                    )}
+                    {readyOutCard && (
+                        <ReadyOutCardLayer key={readyOutCard} kind={readyOutCard} onGone={onReadyOutCardGone ?? noop} />
                     )}
                     {/* Swipe-direction tutorial labels — in the card's top corners, centred in its
                         top band (`--card-hint-band`; styled.ts). Children of the FRAME, not of a

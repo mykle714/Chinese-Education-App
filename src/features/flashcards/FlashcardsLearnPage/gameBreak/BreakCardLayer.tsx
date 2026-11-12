@@ -1,21 +1,16 @@
 import React, { useCallback, useEffect, useRef } from "react";
 import { Box } from "@mui/material";
 import { CardFaceSide } from "../../card/CardFace";
-import { CARD_DISMISS_THRESHOLD_VW, CARD_FLY_OUT_MS, FLY_OUT_ROTATION, FLY_OUT_X } from "../../constants";
+import { CARD_DISMISS_THRESHOLD_VW, CARD_FLY_OUT_MS, FLY_OUT_X } from "../../constants";
 import { CARD_SURFACE } from "../../../../theme/surfaces";
 import { useSwipeCommit, type SwipeDirection } from "../../../../hooks/useSwipeCommit";
-import { cardThrowSteps } from "../cardThrow";
+import { cardThrowSteps, swipePose } from "../cardThrow";
 
 /** The results card springing back from a swipe that didn't commit. */
 const SNAP_BACK_TRANSITION = `transform ${CARD_FLY_OUT_MS / 2}ms ease`;
 
 function prefersReducedMotion(): boolean {
     return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-}
-
-/** The card's pose `dx` along a swipe; the tilt reaches FLY_OUT_ROTATION at FLY_OUT_X. */
-function swipePose(dx: number): string {
-    return `translate(${dx}px, 0px) rotate(${(dx / FLY_OUT_X) * FLY_OUT_ROTATION}deg)`;
 }
 
 /**

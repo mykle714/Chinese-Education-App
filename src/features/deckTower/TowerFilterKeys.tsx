@@ -74,7 +74,7 @@ const GROUND_SHADOW = "var(--tower-cards-ground-shadow)";
 const plateWall = (deck: TowerDeck, face: string) =>
     deck.plateWallSteps ? shadeHex(face, deck.plateWallSteps.right) : bandMaterial(face).right;
 
-/** The keycap's shadow (towerKeycap.ts, shared with the home screen's buttons). */
+/** The keycap's shadow (towerKeycap.ts). */
 const keyShadow = (face: string, wall: string, sunk: number) =>
     towerKeyShadow(face, wall, sunk, { wallPx: WALL_UP_PX, castReachPx: CAST_REACH_PX }, GROUND_SHADOW);
 

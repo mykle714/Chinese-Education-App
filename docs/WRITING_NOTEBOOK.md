@@ -292,7 +292,11 @@ spacer always reaches a page past the deepest row seen (`rowCountFor`), so it ne
   then. A touch, wheel or key during the flight hands the scroll back to the learner.
 - **Back to top** (the toolbar's up arrow) reuses the same flight to `scrollTop = 0`: one
   `flyTo(dest)` in `NotebookGrid` serves both, exposed to the page as
-  `NotebookGridHandle.scrollToTop`.
+  `NotebookGridHandle.scrollToTop`. The chip passes `scrollSafeTap`
+  (`src/hooks/useScrollSafeTap.ts`) so a tap fires on release even while the sheet coasts,
+  and `flyTo` holds the scroller's `overflowY` hidden for the flight (restored on landing
+  or interrupt): WebKit's native momentum would otherwise overwrite each frame and the
+  sheet would just stop instead of flying.
 
 Code: `NotebookGrid`, `notebookLayout.ts`, `useNotebookSheet`.
 

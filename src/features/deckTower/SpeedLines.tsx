@@ -6,8 +6,8 @@ import { speedLineField } from "../../utils/speedLineField";
 
 /**
  * SpeedLines — the horizontal streaks that sell the Deck Tower's camera dash between
- * worlds (docs/DECK_TOWER.md § "Worlds → The pan"), and — turned vertical (`axis="y"`) —
- * the home screen's shifts (docs/HOME_SCREEN.md § "Enter", § "Back to home").
+ * worlds (docs/DECK_TOWER.md § "Worlds → The pan"). The vertical form (`axis="y"`) was built
+ * for the archived home screen's shifts and has no caller today (docs/DEFERRED_WORK.md).
  *
  * Layer: page-private component (feature module `src/features/deckTower`). Screen space,
  * not iso: a full-stage overlay of flat white bars racing across, opposite to the

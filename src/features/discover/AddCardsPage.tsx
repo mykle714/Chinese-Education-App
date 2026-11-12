@@ -45,7 +45,7 @@ import ShootingStars from "../deckTower/ShootingStars";
 import StarField from "../deckTower/StarField";
 import { INVALID_SHAKE_ANIMATION, INVALID_SHAKE_KEYFRAMES } from "../../theme/invalidShake";
 import { FLP_CARD_PANEL_RADIUS_RATIO, FLP_CARD_STOCK_INSET_RATIO } from "../flashcards/constants";
-import { CATEGORY_COLORS } from "../../utils/categoryColors";
+import { BAND_MID } from "../../utils/categoryColors";
 import type { SortBucket } from "./starterPacksApi";
 import { FONTS } from "../../theme/fonts";
 import { keycapPressSx } from "../../theme/keycapPress";
@@ -144,16 +144,17 @@ const ContentArea = styled(Box)({
 // One bin per utcm band, in band order (SortBins lays them out as an S piece on the ISO
 // grid: Target down-right (−isoY) of Unfamiliar, Comfortable up-right (+isoX) of Target,
 // Mastered down-right of Comfortable). Each is coloured with
-// its band's SURFACE (CATEGORY_COLORS) and its id is the sort API's bucket wire value,
+// its band's MID tier (BAND_MID — the tower deck plates' tier; the pale SURFACE tier
+// washed out on the platforms, owner's call 2026-11-11) and its id is the sort API's bucket wire value,
 // which seeds the band's core history server-side (SORT_BUCKET_CORE_POSITIVES).
 // Labels are the user's own learner-voice copy (2026-11-09; were "To Learn" /
 // "Already Learned" on a two-bin layout); each is said in a speech bubble over its bin
 // while a card is held over it (SortBins → `SpeechBubble`).
 const SORT_BINS: readonly SortBinSpec[] = [
-    { id: "library", label: "I’ve never seen this word in my life", color: CATEGORY_COLORS.Unfamiliar },
-    { id: "target", label: "This word feels familiar", color: CATEGORY_COLORS.Target },
-    { id: "comfortable", label: "Pretty sure I could pick this word out in a sentence", color: CATEGORY_COLORS.Comfortable },
-    { id: "already-learned", label: "Oh yeah I got this", color: CATEGORY_COLORS.Mastered },
+    { id: "library", label: "I’ve never seen this word in my life", color: BAND_MID.Unfamiliar },
+    { id: "target", label: "This word feels familiar", color: BAND_MID.Target },
+    { id: "comfortable", label: "Pretty sure I could pick this word out in a sentence", color: BAND_MID.Comfortable },
+    { id: "already-learned", label: "Oh yeah I got this", color: BAND_MID.Mastered },
 ] satisfies readonly (SortBinSpec & { id: SortBucket })[];
 /** The bins' ids — the buckets that carry a session count. */
 const SORT_BIN_IDS: readonly string[] = SORT_BINS.map((b) => b.id);

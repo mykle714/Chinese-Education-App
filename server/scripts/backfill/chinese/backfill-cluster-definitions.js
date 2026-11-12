@@ -83,6 +83,7 @@ import { createGlossOrderer } from './lib/orderGlosses.js';
 import { createFrequencyScorer } from './lib/frequencyScore.js';
 import { createClusterTiebreaker } from '../shared/lib/tiebreakOrder.js';
 import { createSenseShortGlosser, printShortGlossReview } from '../shared/lib/senseShortGloss.js';
+import { buildSenseRenameMap, carryForwardSenseRenames } from './lib/senseCarryForward.js';
 
 const SCRIPT_VERSION = 11; // bump when this script's logic/prompt changes (v11: OVER-COMPACTION FIX — Stage A's rule 3 and the A.5 merge rule now decide membership by a TRANSLATION TEST (would a sentence using this gloss translate the word with the cluster's label?) instead of "one origin / one underlying image", and the 会 worked example, which TAUGHT the bad merges (can + likely-to, meeting + association), now splits them. A 2026-10-29 audit found 118 discoverable senses (94 zh) hiding a distinct meaning, e.g. 开 "to open" holding turn on / drive / boil / write a prescription. Rows judged fine by that audit were re-stamped at v11 without re-running (server/scripts/backfill/shared/restamp-cluster-version.js); only the flagged rows re-cluster — do NOT --stale the corpus. v10: GRAMMATICAL-FUNCTION senses — Stage C's sense-mode rubric now scores a classifier/particle/complement sense by how often speakers pick THIS word for that job (not how common the job is) and receives the cluster's pos; Stage C.5 gains rule 3, core content meaning before grammatical function (exception: words learned AS the function word — 个/了/的/把) and also receives pos. Fixes 回 starring "classifier for times/occurrences" over "to go back / return". Scores + order only, labels untouched — re-run with --rescore-only, NEVER --stale. v9: Stage C.5 — tied clusters (equal frequencyScore) are now ORDERED by a dedicated ranking pass instead of falling through to whatever order Stage A emitted; array order is what every read-side stable sort uses to break a score tie, so this decides the starred/default sense. Ordering only — no cluster's score, label or glosses change, so --rescore-only picks it up safely. v8: THE FREQUENCY AXIS CHANGED — Stage C now scores how much a sense would STAND OUT in casual conversation rather than how often it occurs; bands 4+5 merged and the old band 1 split. All pre-2026-08-28 cluster scores are on the old axis — re-score with --rescore-only. v7: the shared rubric now credits BOUND FORMS through their compounds — a bound morpheme heard constantly inside common compounds is frequent, not rare — and the cluster write now enforces the word/cluster frequency invariant, det."frequencyScore" == MAX(cluster.frequencyScore), in the same statement; re-score with --rescore-only. v6: Stage C scores the SENSE, not the headword — the per-cluster call now passes `sense` so the scorer switches to sense mode, and its temperature drops 0.1 → 0; this is what made 老 default to "experienced" and 和 to "to mix / blend", and is why 39.4% of clustered entries had tied top scores. Re-run with --rescore-only; v5: Stage C rubric re-pointed from register to everyday-conversation frequency, and the per-cluster key renamed vernacularScore → frequencyScore, migration 122; v4: Stage A.5 merge prompt no longer fuses etymologically-related but context-distinct senses, e.g. 月 moon vs month; v2: cluster single-definition entries too — dropped the `definitions > 1` gate; single-def uses a zero-API fast path, definition verbatim as the sense; cluster `pos` now always a string[] via toPosArray)
 
@@ -131,6 +132,10 @@ const tempParams = (model) => /opus-4-8/.test(model) ? {} : { temperature: 0 };
 // Stdout marker for anything needing human eyes. Kept greppable + consistent so
 // the agent driving the mark-discoverable skill can detect and surface these.
 const REVIEW_MARKER = '⚠ CLUSTER REVIEW';
+// A re-cluster that renamed labels (carried forward automatically) / split one (pointers
+// left for reconcile-sentence-senses.js). Greppable like REVIEW_MARKER.
+const RENAME_MARKER = 'SENSE RENAMED';
+const SPLIT_MARKER = '⚠ SENSE SPLIT';
 
 // Shared cores (decision 5: one source of truth for ordering + frequency).
 const { pass1Sort, pass2Critique } = createGlossOrderer({ anthropic, cachedSystem });
@@ -665,19 +670,43 @@ async function run() {
           primaryNumbered: [row.numberedPinyin, primary?.numberedPinyin],
           existing: row.searchReadings,
         });
-        await client.query(
-          `UPDATE dictionaryentries_zh
-              SET "definitionClusters" = $1::jsonb,
-                  "frequencyScore" = CASE WHEN ${validatedClause(['frequencyScore'], 'dictionaryentries_zh')}
-                                          THEN $3::int ELSE "frequencyScore" END,
-                  "searchReadings" = $4,
-                  pronunciation    = COALESCE($5, pronunciation),
-                  "numberedPinyin" = COALESCE($6, "numberedPinyin"),
-                  tone             = COALESCE($7, tone)
-            WHERE id = $2`,
-          [JSON.stringify(writtenClusters), row.id, reconciled.wordScore, searchReadings,
-            primary?.pronunciation ?? null, primary?.numberedPinyin ?? null, primary?.tone ?? null]
-        );
+        // Labels this re-cluster renamed (glosses moved wholesale into one new cluster) are
+        // carried forward to every pointer in the SAME transaction as the cluster write, so
+        // no sentence tag / long-definition key / learner pick / breakdown tag is left
+        // pointing at a label that no longer exists. Split labels can't be carried (no one
+        // new label is right for every pointer) and are reported for
+        // reconcile-sentence-senses.js. See ./lib/senseCarryForward.js.
+        const { renames, splits } = buildSenseRenameMap(row.definitionClusters, writtenClusters);
+        await client.query('BEGIN');
+        try {
+          await client.query(
+            `UPDATE dictionaryentries_zh
+                SET "definitionClusters" = $1::jsonb,
+                    "frequencyScore" = CASE WHEN ${validatedClause(['frequencyScore'], 'dictionaryentries_zh')}
+                                            THEN $3::int ELSE "frequencyScore" END,
+                    "searchReadings" = $4,
+                    pronunciation    = COALESCE($5, pronunciation),
+                    "numberedPinyin" = COALESCE($6, "numberedPinyin"),
+                    tone             = COALESCE($7, tone)
+              WHERE id = $2`,
+            [JSON.stringify(writtenClusters), row.id, reconciled.wordScore, searchReadings,
+              primary?.pronunciation ?? null, primary?.numberedPinyin ?? null, primary?.tone ?? null]
+          );
+          const carried = await carryForwardSenseRenames(client, { word: row.word1, rowId: row.id, renames });
+          await client.query('COMMIT');
+          if (renames.size) {
+            console.log(`\n      ↪ ${RENAME_MARKER} ${row.word1}: ${[...renames].map(([a, b]) => `"${a}" → "${b}"`).join('; ')}`
+              + ` (sentence tags ${carried.sentenceTags} in ${carried.sentenceRows} rows, long-def keys ${carried.longDefKeys},`
+              + ` learner picks ${carried.picks}, breakdown rows ${carried.breakdownRows})`);
+          }
+          if (splits.length) {
+            console.log(`      ${SPLIT_MARKER} ${row.word1} (id=${row.id}): ${splits.map((l) => `"${l}"`).join('; ')}`
+              + ` — pointers left orphaned; run reconcile-sentence-senses.js --segments=${row.word1}`);
+          }
+        } catch (err) {
+          await client.query('ROLLBACK');
+          throw err;
+        }
         await stampEntries(client, 'dictionaryentries_zh', row.id);
         updated++;
         console.log(`${finalClusters.length} cluster(s) written`);

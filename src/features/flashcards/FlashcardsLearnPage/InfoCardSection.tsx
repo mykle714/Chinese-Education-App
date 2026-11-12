@@ -39,7 +39,8 @@ interface InfoCardSectionProps {
     speakingKey?: string | null;
     // The Learning state for the Dictionary eip's Add key (EipAddKey) — drawn in the
     // word-trail row's right end, NOT under the header speaker (the cdp's inline panel
-    // keeps that placement). Today: the Dictionary page's eip, via EipSheet.
+    // keeps that placement). Hosts: EipSheet (Dictionary page, saved-card cdp) and the flp
+    // (add-only — it passes this only while `inLibraryOnLoad === false`).
     learning?: LearningToggleState;
     // Compare tab (docs/WORD_COMPARE_FEATURE.md). `compareTab` set ⇒ the panel renders
     // CompareWorkspace instead of InfoCardPanelBody's normal definition/examples/breakdown

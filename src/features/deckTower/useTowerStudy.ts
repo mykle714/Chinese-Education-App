@@ -5,7 +5,6 @@ import { CARD_D, CARD_W, FLOOR_Z } from "./towerPlatforms";
 import type { TowerWorldId } from "./towerWorlds";
 import { COLORS } from "../../theme/colors";
 import type { FlpTowerHost } from "../flashcards/FlashcardsLearnPage/flpTowerHost";
-import { CARD_FLY_OUT_MS } from "../flashcards/constants";
 import { COVER_LIFT_MS, COVER_RETURN_MS, type TowerCover } from "./TowerCoverCard";
 
 /**
@@ -19,7 +18,7 @@ import { COVER_LIFT_MS, COVER_RETURN_MS, type TowerCover } from "./TowerCoverCar
  * (FlpTowerHost). No route change: the session is page state.
  *
  *   idle ──tap──▶ preparing ──(deal loaded + card measured)──▶ diving ──▶ uncovering ──▶ studying
- *     ▲                                                                                    │ back / dry
+ *     ▲                                                                                    │ back
  *     └──────────────────────────── climbing ◀──────────── covering ◀──────────────────────┘
  *
  *   preparing  the world's PARKED session (below) is un-parked — still invisible — and
@@ -34,16 +33,21 @@ import { COVER_LIFT_MS, COVER_RETURN_MS, type TowerCover } from "./TowerCoverCar
  *   uncovering the count card is handed to its own layer over the session (TowerCoverCard,
  *              `cover`), which rests a beat and slides it off the deck — uncovering the
  *              session's first card where it lay. Like taking the top card off a real deck.
- *   studying   the platform is gone and the camera stands still over the top card:
- *                - a CORRECT mark takes a card off;
+ *              Skipped on an EMPTY tower (a tap on its "0 cards" imprint): there is no
+ *              count card, so the session's card simply shows as the camera lands.
+ *   studying   the platform is gone and the camera stands still over the top card. The
+ *              tower's count is ITS OWN figure, never derived from the flp's working loop
+ *              (docs/DECK_TOWER.md § "Running out of ready cards"):
+ *                - a CORRECT mark on a card the learner owns takes a card off — a lent
+ *                  card was never on the tower, so it takes nothing off;
  *                - an INCORRECT mark changes nothing here (the flp tucks the card back
  *                  into the deck: FlashCardSection's tuck);
- *                - undoing a correct mark puts the card back;
+ *                - undoing a correct mark on an owned card puts the card back;
  *                - a game break's cleared cards are tallied while it runs and come off
  *                  together as it ends;
- *                - the tower running OUT while the session still deals (incorrect cards
- *                  coming round again, lent cards) simply stands at the session's size again;
- *                - the session running DRY (nothing left to deal) climbs out.
+ *                - the tower reaching 0 is the bottom: it stays at 0. The flp shows its
+ *                  out-of-ready-cards card and goes on with lent words, or its "done for
+ *                  the day" card; neither moves the tower, and the learner leaves.
  *   covering   the count card slides back onto the deck (at the session's tally), covering
  *              the session's card; skipped when the tower has run out (no top card).
  *   climbing   CLIMB_MS, the dive in reverse; then the page reconciles the tower with the
@@ -81,8 +85,6 @@ export type TowerStudyPhase = "idle" | "preparing" | "diving" | "uncovering" | "
 /** The dive onto the card, and the climb back out. */
 const DIVE_MS = 550;
 const CLIMB_MS = 480;
-/** The session running dry: how long its last card has to fly off before the camera climbs out. */
-const DRY_CLIMB_DELAY_MS = 700;
 /** Give up waiting for the session's card to measure after this, and dive onto the fallback frame. */
 const PREPARE_TIMEOUT_MS = 5000;
 /**
@@ -144,8 +146,8 @@ type LoopReport = Parameters<FlpTowerHost["onLoopChange"]>[0];
 /** What a session reports through, made once per world so a parked session's host is stable. */
 interface WorldHandles {
     onExit: () => void;
-    onMarked: (isCorrect: boolean) => void;
-    onUndone: (wasCorrect: boolean) => void;
+    onMarked: FlpTowerHost["onMarked"];
+    onUndone: FlpTowerHost["onUndone"];
     onGameCardCleared: () => void;
     onGameBreakChange: (up: boolean) => void;
     onLoopChange: (loop: LoopReport) => void;
@@ -237,11 +239,6 @@ export function useTowerStudy(opts: {
     const loops = useRef(new Map<TowerWorldId, LoopReport>());
     const frameEls = useRef(new Map<TowerWorldId, HTMLDivElement>());
     const freshAt = useRef(new Map<TowerWorldId, number>());
-    /** The studied session's last loop report (still loading when none has come in). */
-    const studiedLoop = (): LoopReport => {
-        const w = latest.current.world;
-        return (w && loops.current.get(w)) || { size: 0, loading: true, hasCard: false };
-    };
     const timers = useRef<number[]>([]);
     // The game break in progress, and the cards it has cleared so far (still on the tower).
     const gameBreakUp = useRef(false);
@@ -407,7 +404,12 @@ export function useTowerStudy(opts: {
                 return;
             }
             if (diving) {
-                // Down on the count card: slide it off the deck to show the first card.
+                // Down on the count card: slide it off the deck to show the first card. An
+                // empty tower has no count card, so the session's card just shows.
+                if (latest.current.cards === 0) {
+                    setPhase("studying");
+                    return;
+                }
                 setPhase("uncovering");
                 if (!slideCover("lifting", COVER_LIFT_MS, "studying")) setPhase("studying");
                 return;
@@ -456,34 +458,24 @@ export function useTowerStudy(opts: {
         setPhase("climbing");
     }, [clearClocks, slideCover]);
 
-    /** After the last card on the tower went: stand at what the session still deals, or leave. */
-    const afterTowerEmptied = useCallback(() => {
-        const t = window.setTimeout(() => {
-            if (latest.current.phase !== "studying" || latest.current.cards > 0) return;
-            const loop = studiedLoop();
-            if (loop.hasCard) setCards(Math.max(1, loop.size));
-            else if (!loop.loading) climbOut();
-        }, CARD_FLY_OUT_MS);
-        timers.current.push(t);
-    }, [climbOut]);
-
     // ── The flp's reports ─────────────────────────────────────────────────────
     // Each session reports through its own world's handles; only the studied session's
     // reports move the tower (a parked one cannot be swiped, but its loop reports land
     // here as it deals, and are kept for its next tap).
     const isStudied = (w: TowerWorldId) => latest.current.world === w;
+    // The tower's count is its own figure, not the loop's (docs/DECK_TOWER.md § "Running
+    // out of ready cards"): only a card it counted — one the learner owns, which the flp
+    // dealt because it was off cooldown — comes off or goes back. At 0 it stays at 0.
     const onMarked = useCallback(
-        (isCorrect: boolean) => {
-            if (latest.current.phase !== "studying" || !isCorrect) return;
-            const next = Math.max(0, latest.current.cards - 1);
-            setCards(next);
-            if (next === 0) afterTowerEmptied();
+        (isCorrect: boolean, lent: boolean) => {
+            if (latest.current.phase !== "studying" || !isCorrect || lent) return;
+            setCards(Math.max(0, latest.current.cards - 1));
         },
-        [afterTowerEmptied]
+        []
     );
     const onUndone = useCallback(
-        (wasCorrect: boolean) => {
-            if (latest.current.phase !== "studying" || !wasCorrect) return;
+        (wasCorrect: boolean, lent: boolean) => {
+            if (latest.current.phase !== "studying" || !wasCorrect || lent) return;
             setCards(latest.current.cards + 1);
         },
         []
@@ -493,10 +485,8 @@ export function useTowerStudy(opts: {
         const cleared = gameCleared.current;
         if (cleared === 0 || latest.current.phase !== "studying") return;
         gameCleared.current = 0;
-        const next = Math.max(0, latest.current.cards - cleared);
-        setCards(next);
-        if (next === 0) afterTowerEmptied();
-    }, [afterTowerEmptied]);
+        setCards(Math.max(0, latest.current.cards - cleared));
+    }, []);
     const onGameCardCleared = useCallback(() => {
         if (latest.current.phase !== "studying") return;
         gameCleared.current += 1;
@@ -510,20 +500,15 @@ export function useTowerStudy(opts: {
         },
         [settleGameCards]
     );
+    // A session that runs dry no longer climbs out by itself: the flp shows its
+    // out-of-ready-cards card (and deals lent words) or its "done for the day" card, and
+    // the learner leaves (docs/DECK_TOWER.md § "Running out of ready cards").
     const onStudiedLoopChange = useCallback(
         (loop: LoopReport) => {
-            const p = latest.current.phase;
             // The deal the tap is waiting on has come in.
-            if (p === "preparing" && !loop.loading) setDealReady(true);
-            // Nothing left to deal (every card resting): fly back out once the last card is gone.
-            if (p === "studying" && !loop.loading && !loop.hasCard) {
-                const t = window.setTimeout(() => {
-                    if (!studiedLoop().hasCard) climbOut();
-                }, DRY_CLIMB_DELAY_MS);
-                timers.current.push(t);
-            }
+            if (latest.current.phase === "preparing" && !loop.loading) setDealReady(true);
         },
-        [climbOut]
+        []
     );
 
     // Made once per world (the callbacks they wrap are stable), so a parked session's host
@@ -535,8 +520,8 @@ export function useTowerStudy(opts: {
         if (h) return h;
         h = {
             onExit: () => { if (isStudied(w)) climbOut(); },
-            onMarked: (isCorrect) => { if (isStudied(w)) onMarked(isCorrect); },
-            onUndone: (wasCorrect) => { if (isStudied(w)) onUndone(wasCorrect); },
+            onMarked: (isCorrect, lent) => { if (isStudied(w)) onMarked(isCorrect, lent); },
+            onUndone: (wasCorrect, lent) => { if (isStudied(w)) onUndone(wasCorrect, lent); },
             onGameCardCleared: () => { if (isStudied(w)) onGameCardCleared(); },
             onGameBreakChange: (up) => { if (isStudied(w)) onGameBreakChange(up); },
             onLoopChange: (loop) => {
@@ -565,18 +550,6 @@ export function useTowerStudy(opts: {
     useEffect(() => () => {
         for (const ro of frameObservers.current.values()) ro.disconnect();
     }, []);
-
-    // A session that ran dry before the camera was down (every card resting from the start)
-    // climbs straight back out once it is.
-    useEffect(() => {
-        if (phase !== "studying") return;
-        const loop = studiedLoop();
-        if (loop.loading || loop.hasCard) return;
-        const t = window.setTimeout(() => {
-            if (!studiedLoop().hasCard) climbOut();
-        }, DRY_CLIMB_DELAY_MS);
-        timers.current.push(t);
-    }, [phase, climbOut]);
 
     // Parked hosts, one per world, kept by identity until the world's deal is re-keyed.
     const parkedHosts = useRef(new Map<TowerWorldId, FlpTowerHost>());

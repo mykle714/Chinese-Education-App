@@ -3,11 +3,9 @@
  * arrow and the line its words stand on, stacked up from the arrow's tip.
  *
  * Its own module so TapToStartHint.tsx exports only a component
- * (react-refresh/only-export-components), and so the home screen can put its "Swipe down to
- * enter" on the same line without importing the hint.
+ * (react-refresh/only-export-components).
  *
- * Depended on by: TapToStartHint.tsx; home/HomeStage.tsx (`tapHintBaselineY`).
- * Docs: docs/DECK_TOWER.md § "Tap to Start"; docs/HOME_SCREEN.md § "The enter hint".
+ * Depended on by: TapToStartHint.tsx. Docs: docs/DECK_TOWER.md § "Tap to Start".
  */
 
 /** Gap between the arrow's tip and the fit tower's top, in viewBox px. */
@@ -22,7 +20,6 @@ export const TEXT_GAP = 10;
 
 /**
  * The words' baseline (viewBox y) for an arrow tip aimed at `tipY`: the stack is built up
- * from the tip — gap, head, shaft, gap, words. Shared with the home screen, which paints its
- * "Swipe down to enter" on the same line (HomeStage).
+ * from the tip — gap, head, shaft, gap, words.
  */
 export const tapHintBaselineY = (tipY: number): number => tipY - TIP_GAP - HEAD_LENGTH - SHAFT_LENGTH - TEXT_GAP;

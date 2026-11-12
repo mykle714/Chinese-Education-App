@@ -910,28 +910,29 @@ Because ranking needs `typedMarkHistory`, it is computed in app code and the can
 query (`OnDeckVocabService.fetchFlpCandidates` → `OnDeckVocabDAL.findFlpCandidates`, which holds the SQL) is deliberately **unlimited** — a partial scan would rank a
 random subset and return the wrong card. The working-loop deal reads it **once**, for every
 band (`OnDeckVocabService.loadFlpDealPool`), bands the rows in app code with `barCategory`
-(the TS mirror of `barCategoryExpr`) and ranks each band once; its quota, top-up and cooled
-tiers then take cards from that pool in memory. The mark refill
+(the TS mirror of `barCategoryExpr`) and ranks each band once; its quota and top-up tiers
+then take cards from that pool in memory. The mark refill
 (`getNextLibraryCardWithFallback`) still reads one band per call.
 
-### When a quota runs short: borrow, then cool, then lend
+### When a quota runs short: borrow, then (with the lend switch) lend
 
-> Corrected 2026-09-25: this section used to say "there is no cooled-card last resort",
-> which stopped being true on 2026-08-20. The ladder below is the shipped one
-> (`getDistributedWorkingLoop`, `getNextLibraryCardWithFallback`).
+> 2026-11-11: the flp no longer serves COOLING cards (the "cool" tier of the 2026-08-20
+> ladder is gone), and lending needs the session's lend switch. The ladder below is the
+> shipped one (`getDistributedWorkingLoop`, `getNextLibraryCardWithFallback`).
 
 A quota its own category could not fill is covered, in order, by:
 
 1. **fresh** cards borrowed from the session's other allowed categories;
-2. **cooling** cards, nearest-to-ready first (`rankCardQueueCooled`) — the learner's own
-   words, shown again early. They earn nothing: the mark is dropped by the cooldown gate;
-3. **lent** provisional cards — only in an unrestricted session (`canLendProvisional`:
-   no `CollectionFilter` — i.e. not a focus-mode session).
+2. **lent** provisional cards — only with the session's **lend switch** on and in an
+   unrestricted session (`canLendProvisional(lend, collection)`: not a focus-mode session).
+   The switch comes on when the learner's own off-cooldown cards are spent
+   (docs/DECK_TOWER.md § Running out of ready cards).
 
-| Session | After tiers 1–2 are spent ⇒ |
+| Session | After tier 1 is spent ⇒ |
 |---|---|
-| Study Mix (unfocused) | **lend provisional cards** (`lendIntoLoop` → `ProvisionalCardService.acquireLentCards`) |
-| A focused world (FOCUS_MODE.md) | return **short or empty**; the client shows a "resting" empty state |
+| Study Mix, switch off | return **short or empty**; an empty loop raises the flp's out-of-ready-cards card, which turns the switch on |
+| Study Mix, switch on | **lend provisional cards** (`lendIntoLoop` → `ProvisionalCardService.acquireLentCards`) |
+| A focused world (FOCUS_MODE.md) | return **short or empty**; the flp shows its "done for the day" card |
 
 `POST /api/flashcards/mark` returns **200 with `newCard: null`** when there is nothing to
 refill with. See docs/PROVISIONAL_CARDS.md § 4b and § 6.

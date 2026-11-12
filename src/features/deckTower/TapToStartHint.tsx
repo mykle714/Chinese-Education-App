@@ -25,8 +25,7 @@ import { HEAD_LENGTH, HEAD_WIDTH, SHAFT_LENGTH, SHAFT_WIDTH, TIP_GAP, tapHintBas
  *
  * Depends on: iso (`useIsoPalette().white`), theme/fonts + theme/scale, tapToStartGeometry.ts
  * (the arrow's and the words' stack).
- * Depended on by: DeckTowerPage.tsx. Docs: docs/DECK_TOWER.md § "Tap to Start",
- * docs/HOME_SCREEN.md § "The enter hint".
+ * Depended on by: DeckTowerPage.tsx. Docs: docs/DECK_TOWER.md § "Tap to Start".
  */
 
 /** The words, in viewBox px (≈ screen px on a phone: the viewBox is ~400 wide). */

@@ -4,7 +4,7 @@ import { markFlashcard, undoFlashcardMark } from "../../../api/flashcards";
 import { fetchDistributedWorkingLoop, fetchLoopRefill, type WorkingLoopRequest } from "../../../api/workingLoop";
 import { insertBehindFront, removeFromLoop } from "./loopSplice";
 import { CARD_FLY_OUT_MS } from "../constants";
-import { provisionalWords } from "../../../utils/provisionalCards";
+import { isProvisional } from "../../../utils/provisionalCards";
 import { useMarkedLentWords } from "../../../hooks/useMarkedLentWords";
 import type {
     VocabEntry,
@@ -60,16 +60,20 @@ interface UseWorkingLoopArgs {
      * rebuild `handleCardDismiss` every render.
      */
     onDismissed?: () => void;
-    /** `wasCorrect`: the undone mark was a right swipe (the snapshot's `isCorrect`). */
-    onUndone?: (wasCorrect: boolean) => void;
+    /**
+     * `wasCorrect`: the undone mark was a right swipe (the snapshot's `isCorrect`).
+     * `lent`: the restored card is a lent (provisional) one, which the tower never counted.
+     */
+    onUndone?: (wasCorrect: boolean, lent: boolean) => void;
     /**
      * Fired with each dismiss's DIRECTION, alongside `onDismissed` (true = right swipe =
-     * correct). Optimistic: it fires at the swipe, before the server answers, so a
-     * correct mark the server later drops on cooldown still counted here. The Deck Tower
-     * takes a card off its tower per correct mark and reconciles against the server's
-     * figure when the session ends (docs/DECK_TOWER.md § "Studying the tower").
+     * correct), and whether the card was LENT. Optimistic: it fires at the swipe, before
+     * the server answers. The Deck Tower takes a card off its own count per correct mark
+     * on a non-lent card — the loop deals only off-cooldown cards, which are exactly what
+     * the tower counts — and reconciles against the server's figure when the visit ends
+     * (docs/DECK_TOWER.md § "Studying the tower").
      */
-    onMarked?: (isCorrect: boolean) => void;
+    onMarked?: (isCorrect: boolean, lent: boolean) => void;
 }
 
 export interface UseWorkingLoopReturn {
@@ -94,15 +98,8 @@ export interface UseWorkingLoopReturn {
     handleUndoLastMark: () => Promise<void>;
     clearUndo: () => void;
     /**
-     * Temporary (provisional) words this session has SHOWN, accumulated across the
-     * initial loop AND every refill. Empty when the learner's own deck covered the
-     * session. Drives the notice — which announces that borrowed cards are in play, so
-     * it must fire on arrival. See docs/PROVISIONAL_CARDS.md.
-     */
-    provisionalSeen: string[];
-    /**
-     * Temporary words this session actually REVIEWED — the subset of `provisionalSeen`
-     * the learner marked. Drives the "keep these cards?" offers, which must not ask
+     * Temporary (provisional) words this session actually REVIEWED — the lent cards the
+     * learner marked. Drives the "keep these cards?" offers, which must not ask
      * about the loop's untouched tail: the loop holds ~10 cards, so a session ended
      * after three would otherwise offer ten. See docs/PROVISIONAL_CARDS.md § 5.
      */
@@ -113,6 +110,19 @@ export interface UseWorkingLoopReturn {
      * once; replacements are spliced in behind the front card when they arrive.
      */
     replaceGameCleared: (cardIds: readonly number[]) => void;
+    /**
+     * The session's LEND SWITCH (docs/DECK_TOWER.md § "Running out of ready cards"). Off,
+     * the loop holds only the learner's own off-cooldown cards and every refill is one
+     * too, so it runs down to empty. On, the deal and every refill may be lent cards.
+     */
+    lendMode: boolean;
+    /** Turn the lend switch on: the loop is re-dealt with lending allowed. No-op if on. */
+    enableLend: () => void;
+    /**
+     * Turn the lend switch off (the Deck Tower visit ended). If it was on, the loop is
+     * re-dealt from the learner's own ready cards, so the next visit starts on those.
+     */
+    resetLend: () => void;
 }
 
 /**
@@ -137,8 +147,29 @@ export function useWorkingLoop({
     // Latest-ref for the counter callbacks (see UseWorkingLoopArgs.onDismissed).
     const countersRef = useRef({ onDismissed, onUndone, onMarked });
     countersRef.current = { onDismissed, onUndone, onMarked };
-    // The deal's request: just the session's world (src/api/workingLoop.ts).
-    const loopRequest: WorkingLoopRequest = { world };
+    // The session's lend switch. Owned here, with the loop it governs — NOT by the Deck
+    // Tower, whose count is a separate figure (docs/DECK_TOWER.md § "Running out of ready
+    // cards"). Flipping it re-runs the deal effect below, so the loop is re-dealt under the
+    // new rule. A ref mirrors it for the background mark/refill calls.
+    const [lendMode, setLendMode] = useState(false);
+    const lendModeRef = useRef(lendMode);
+    lendModeRef.current = lendMode;
+    // Flipping the switch also marks the loop LOADING in the same batch: the deal effect
+    // only sets it a render later, and in between the page would read "switch on, loaded,
+    // no card" as "nothing more to deal" (FlashcardsLearnPage → `loopDry`). No-ops when the
+    // switch is already where it is asked to be, so nothing is re-dealt for nothing.
+    const enableLend = useCallback(() => {
+        if (lendModeRef.current) return;
+        setLoading(true);
+        setLendMode(true);
+    }, []);
+    const resetLend = useCallback(() => {
+        if (!lendModeRef.current) return;
+        setLoading(true);
+        setLendMode(false);
+    }, []);
+    // The deal's request: the session's world and its lend switch (src/api/workingLoop.ts).
+    const loopRequest: WorkingLoopRequest = { world, lend: lendMode };
     const [workingLoop, setWorkingLoop] = useState<VocabEntry[]>([]);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [loading, setLoading] = useState(true);
@@ -178,34 +209,18 @@ export function useWorkingLoop({
     const nextEntry: VocabEntry | null =
         workingLoop.length > 1 ? workingLoop[(currentIndex + 1) % workingLoop.length] : null;
 
-    // Temporary (provisional) cards the server lent so this loop could reach the flp
-    // baseline (docs/PROVISIONAL_CARDS.md). flp is NOT itemized — the loop refills as
-    // you go, so the played set isn't known up front and the arrival notice is generic
-    // — but the words are accumulated here anyway so the end-of-session offer can name
-    // them. The ref is the authoritative accumulator; the state exists to re-render.
-    const provisionalSeenRef = useRef<Set<string>>(new Set());
-    const [provisionalSeen, setProvisionalSeen] = useState<string[]>([]);
-    // The reviewed subset, recorded at the mark call site below. `note` is stable, so
-    // destructuring keeps `markCard`'s identity from churning as words are added.
+    // Temporary (provisional) cards the server lent once the session's lend switch came
+    // on (docs/PROVISIONAL_CARDS.md). The words the learner MARKED are recorded at the mark
+    // call site below, so the end-of-visit offer can name them. (The words merely SHOWN
+    // used to be accumulated too, for an arrival notice; the flp's out-of-ready-cards card
+    // replaced that notice on 2026-11-11.) `note` is stable, so destructuring keeps
+    // `markCard`'s identity from churning as words are added.
     const { words: provisionalReviewed, note: noteMarkedLent } = useMarkedLentWords();
 
-    // Fold every lent word the loop has shown into the accumulator. Keyed on the loop
-    // itself so refills (a mark's replacement card) are picked up as they land, not
-    // just the initial fetch.
-    useEffect(() => {
-        const words = provisionalWords(workingLoop);
-        if (words.length === 0) return;
-        let changed = false;
-        for (const word of words) {
-            if (!provisionalSeenRef.current.has(word)) {
-                provisionalSeenRef.current.add(word);
-                changed = true;
-            }
-        }
-        if (changed) setProvisionalSeen([...provisionalSeenRef.current]);
-    }, [workingLoop]);
-
     // Fetch distributed working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target).
+    // Re-runs when the lend switch flips: on, the loop is re-dealt with lent cards allowed
+    // (it was empty — that is what turned the switch on); off again at the end of a visit,
+    // it is re-dealt from the learner's own ready cards for the next one.
     useEffect(() => {
         // Only the LATEST fetch may apply. Without this, two overlapping fetches (React
         // StrictMode's dev double-mount, or a dep change while one is in flight) BOTH
@@ -268,9 +283,10 @@ export function useWorkingLoop({
     // on `token` would re-fetch the working loop and reset the card stack
     // mid-study. Boolean(token) only flips on login/logout. See CLAUDE.md
     // "Never reload on token refresh". prefetch/cardDragRef are stable refs;
-    // `loopRequest` is rebuilt every render, but it is a pure function of `world`.
+    // `loopRequest` is rebuilt every render, but it is a pure function of `world` and
+    // `lendMode`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [Boolean(token), world]);
+    }, [Boolean(token), world, lendMode]);
 
     // Mark card with retry logic.
     // `excludeIds` tells the server which cards are already in the working loop,
@@ -292,6 +308,9 @@ export function useWorkingLoop({
                 type: markType,
                 excludeIds,
                 world: world === "core" ? undefined : world,
+                // The lend switch AS IT IS when the mark is sent (a ref, so this callback
+                // keeps its identity): only then may the replacement be a lent card.
+                lend: lendModeRef.current || undefined,
                 // NOT merely diagnostic: once a card's core pbh reaches 6 the server
                 // records know marks ONLY from this surface (docs/MASTERY_REWORK.md § 6).
                 surface: FLP_MARK_SURFACE,
@@ -365,7 +384,7 @@ export function useWorkingLoop({
 
         setIsAnimating(true);
         countersRef.current.onDismissed?.();
-        countersRef.current.onMarked?.(isCorrect);
+        countersRef.current.onMarked?.(isCorrect, isProvisional(currentCard));
 
         // Begin fly-out: current front slot animates off-screen in the swipe
         // direction. The back slot (already showing the next card) is immediately
@@ -518,7 +537,8 @@ export function useWorkingLoop({
             setCurrentSideOneLanguage(lastMarkUndoSnapshot.currentSideOneLanguage);
             setNextSideOneLanguage(lastMarkUndoSnapshot.nextSideOneLanguage);
             setLastMarkUndoSnapshot(null);
-            countersRef.current.onUndone?.(lastMarkUndoSnapshot.isCorrect);
+            const restored = lastMarkUndoSnapshot.workingLoop.find((card) => card.id === lastMarkUndoSnapshot.cardId);
+            countersRef.current.onUndone?.(lastMarkUndoSnapshot.isCorrect, !!restored && isProvisional(restored));
         } catch (err) {
             console.error("Failed to undo last mark:", err);
             setError(err instanceof Error ? err.message : "Failed to undo last mark");
@@ -585,9 +605,9 @@ export function useWorkingLoop({
             })
             .catch((err) => console.error("Break refill failed; the loop keeps its remaining cards:", err))
             .finally(() => setBreakRefillsInFlight((n) => n - 1));
-        // `loopRequest` is a pure function of stable session inputs (see the fetch effect).
+        // `loopRequest` is a pure function of the session inputs (see the fetch effect).
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [world, prefetch, cardDragRef]);
+    }, [world, lendMode, prefetch, cardDragRef]);
 
     return {
         workingLoop,
@@ -607,10 +627,11 @@ export function useWorkingLoop({
         handleUndoLastMark,
         /** Forget the last mark's undo (a Deck Tower visit ended: FlpTowerHost `parked`). */
         clearUndo,
-        /** Lent words this session has SHOWN; drives the notice. */
-        provisionalSeen,
         /** Lent words this session REVIEWED; drives the "keep these" offers. */
         provisionalReviewed,
         replaceGameCleared,
+        lendMode,
+        enableLend,
+        resetLend,
     };
 }

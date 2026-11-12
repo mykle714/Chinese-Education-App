@@ -154,6 +154,8 @@ function NotebookToolbar({ count, word, showBackToTop, onBackToTop, onChangeWord
                         className="writing-notebook-page__back-to-top"
                         icon="keyboard_double_arrow_up"
                         ariaLabel="Back to the top of the sheet"
+                        // Fires on release, so it still lands while the sheet is coasting from a fling.
+                        scrollSafeTap
                         onClick={onBackToTop}
                     >
                         {null}

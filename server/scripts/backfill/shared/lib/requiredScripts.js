@@ -124,7 +124,10 @@ export const REQUIRED_SCRIPTS_ZH = [
   // per-occurrence `segmentOccurrenceTags`); those v7 rows are healed in place by the
   // script's `--locate-targets` mode, so a bump to 8 would regenerate the whole zh corpus
   // for no gain. check-manifest-sync.js accepts exactly this one gap and nothing else.
-  { id: 'chinese/backfill-example-sentences',         when: 'always',    version: 7, heldBackScriptVersion: 8, validationFields: ['exampleSentence0', 'exampleSentence1', 'exampleSentence2'] },
+  // driftProbe: a re-cluster of ANY segment can orphan this row's stored sense tags; repair
+  // is the script's `--reconcile` mode, NOT a regeneration. See DRIFT_PROBES below.
+  { id: 'chinese/backfill-example-sentences',         when: 'always',    version: 7, heldBackScriptVersion: 8, validationFields: ['exampleSentence0', 'exampleSentence1', 'exampleSentence2'],
+    driftProbe: 'sentenceSenseOrphan' },
   { id: 'chinese/backfill-classifier',                when: 'nounPos',   version: 2 },
   // ── the breakdown chain (multi-char rows only) ──────────────────────────────
   // Placed LAST, after everything that can still rewrite `definitions`: the sense-tagger
@@ -310,6 +313,56 @@ export const DRIFT_PROBES = {
         FROM tagged t
         LEFT JOIN valid v ON v.ch = t.ch AND v.sense = t.sense
        WHERE v.ch IS NULL`,
+  },
+
+  /**
+   * Orphaned example-sentence sense tags.
+   *
+   * Each stored sentence points at a segment's sense by its cluster LABEL
+   * (`senseDict[seg]`, `segmentOccurrenceTags[i].sense`), resolved by exact match on the
+   * read path. When a re-cluster renames a label, the clusterer now carries the rename
+   * forward itself (chinese/lib/senseCarryForward.js); what this probe still catches is a
+   * label that was SPLIT (no single new label is right for every sentence) plus anything
+   * written before the carry-forward existed. An orphaned tag renders the segment with the
+   * word's DEFAULT reading and a translation-matched gloss — e.g. 地 read dì where the
+   * sentence uses the particle de (2026-11-11; 85k tags were orphaned corpus-wide).
+   *
+   * Repair: backfill-example-sentences.js --reconcile (engine:
+   * chinese/lib/reconcileSenses.js). MUST agree with findOrphanedSenseTags
+   * (chinese/lib/sentenceSenseOrphans.js): a segment's clusters are its FIRST det row's
+   * (DISTINCT ON word1 … ORDER BY id, mirroring buildDictMap), and a segment with no
+   * clusters is never an orphan.
+   *
+   * zh-only: es sentences carry no senseDict.
+   */
+  sentenceSenseOrphan: {
+    step: 'chinese/backfill-example-sentences',
+    describe: 'example-sentence sense label no longer matches any cluster on that segment',
+    sql: (detTable) => `
+      WITH clustered AS (
+        SELECT DISTINCT ON (word1) word1, "definitionClusters" AS dc
+          FROM ${detTable}
+         WHERE jsonb_typeof("definitionClusters") = 'array'
+           AND jsonb_array_length("definitionClusters") > 0
+         ORDER BY word1, id
+      ), sentences AS (
+        SELECT h.id, h.word1, s
+          FROM ${detTable} h, jsonb_array_elements(h."exampleSentences") s
+         WHERE jsonb_typeof(h."exampleSentences") = 'array'
+      ), tags AS (
+        SELECT id, word1, kv.key AS seg, kv.value AS label
+          FROM sentences, jsonb_each_text(s->'senseDict') kv
+         WHERE jsonb_typeof(s->'senseDict') = 'object'
+        UNION ALL
+        SELECT id, word1, s->'segments'->>(o.key::int) AS seg, o.value->>'sense' AS label
+          FROM sentences, jsonb_each(s->'segmentOccurrenceTags') o
+         WHERE jsonb_typeof(s->'segmentOccurrenceTags') = 'object'
+           AND o.key ~ '^[0-9]+$' AND o.value->>'sense' IS NOT NULL
+      )
+      SELECT DISTINCT t.id, t.word1
+        FROM tags t
+        JOIN clustered c ON c.word1 = t.seg
+       WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(c.dc) x WHERE x->>'sense' = t.label)`,
   },
 };
 

@@ -29,6 +29,15 @@ const LIFT_SCALE = 1.1;
 // (to 60%) before falling away, so the mid-throw y is derived from this.
 const LIFT_RISE_PX = 40;
 
+/**
+ * A card's pose `dx` along a horizontal swipe; the tilt reaches FLY_OUT_ROTATION at
+ * FLY_OUT_X. Shared by the cards that are swiped off as a layer over the word stack
+ * (gameBreak/BreakCardLayer, ReadyOutCardLayer), which paint it imperatively.
+ */
+export function swipePose(dx: number): string {
+    return `translate(${dx}px, 0px) rotate(${(dx / FLY_OUT_X) * FLY_OUT_ROTATION}deg)`;
+}
+
 export function cardThrowSteps(sign: 1 | -1): CardThrowStep[] {
     return [
         {

@@ -255,6 +255,44 @@ rows are not re-stamped. An untaggable occurrence (e.g. 累 inside a translitera
 GSA split, like 达累斯萨拉姆) should have its `senseDict` key removed by hand so it falls
 back to the column reading.
 
+### Stale sense labels (re-clustering orphans a tag)
+
+A stored tag is a cluster **label**, resolved by exact string match (`resolveSenseView`).
+When a word is re-clustered and a label is renamed (地 "adverbial particle" → "adverbial
+particle (-ly)") or split (了 "completed-action / change-of-state particle" → two
+clusters), every sentence tagged earlier keeps a label that matches nothing. The segment
+then silently loses **both** halves of its popup: the gloss falls back to the translation
+match, and the pinyin falls back to the word's default reading. For a heteronym that is
+audibly wrong (地 read dì instead of de, 过 guò instead of guo). A PPE audit on 2026-11-11
+found 85k of 521k tags orphaned, ~2,400 sentences showing a wrong reading.
+
+"Orphaned" has one definition, `findOrphanedSenseTags`
+(`server/scripts/backfill/chinese/lib/sentenceSenseOrphans.js`): the segment HAS clusters
+(its first det row's, like `buildDictMap`) and none carries the label. Three mechanisms
+keep the count at zero:
+
+| Mechanism | Where | What it does |
+|---|---|---|
+| Carry-forward at re-cluster time | `chinese/lib/senseCarryForward.js` (`buildSenseRenameMap`, `carryForwardSenseRenames`), called from `backfill-cluster-definitions.js` inside the cluster write's transaction | An old cluster whose `glosses` all moved into ONE new cluster was renamed/merged: its label is rewritten in every pointer (these tags, the word's `longDefinition` keys, `vet.selectedSense`, `breakdown[char].sense`). Prints `SENSE RENAMED` |
+| Drift probe | `server/scripts/backfill/shared/lib/requiredScripts.js` → `DRIFT_PROBES.sentenceSenseOrphan`, on the `backfill-example-sentences` step | A label the clusterer could not carry (a SPLIT — it prints `⚠ SENSE SPLIT`) leaves host rows orphaned; the oracle planner re-plans them |
+| Reconcile | `chinese/lib/reconcileSenses.js` (`runSenseReconcile`), run as `backfill-example-sentences.js --reconcile [--words=…]` (what the planner schedules) or the CLI `chinese/reconcile-sentence-senses.js` | Pass 0: free label-text remap (`deterministicRemap`). Pass A: one model call per (segment, stale label) pair, answering one current label or null. Pass B: for null pairs, the shared tagger (`chinese/lib/segmentTagger.js`) re-labels only the stale occurrences, one call per sentence |
+
+Reconcile rules worth knowing: it changes only sense pointers (never text, so a validator's
+sentence approval survives); a tag the model still cannot place is **deleted** (renders the
+same as the orphan, and lets the probe reach 0); an API failure is never treated as
+"cannot place" and leaves the orphan for the next run; writes are per-row under
+`FOR UPDATE` and only replace a label that is still the stale one. `--estimate` prices a
+run without calls; `--limit-pairs` does **not** bound pass B.
+
+`--retag-segment` (above) is the other heal and answers a different question: it re-tags
+EVERY sentence containing a segment, for a segment that was clustered late and so has no
+tag at all. `--reconcile` touches only tags that exist but no longer resolve.
+
+Orphaned `longDefinition` keys are the same problem on the word's own row:
+`reconcile-sentence-senses.js --long-definitions` (`chinese/lib/reconcileLongDefs.js`) re-keys
+them, drops one that collides with a current (sense, POS) paragraph, and lists words whose
+paragraph fits no current sense for a `backfill-long-definitions.js --words=…` regeneration.
+
 > Replaces the former `segmentGloss` field (an AI-written per-segment "broken
 > English" reading) removed in `SCRIPT_VERSION 4`. `segmentGloss` bundled two jobs —
 > *sense selection* and *form inflection*; those are now `senseDict` (per-segment
@@ -264,7 +302,8 @@ back to the column reading.
 |---|---|---|
 | Generation | `server/scripts/backfill/chinese/backfill-example-sentences.js` (generator/validator/repair) | Produces the sentence text + `translatedVocab`/`sense`/`targetPos` (target-word coverage signal only) |
 | Segmentation audit | same file (`auditSegmentation`) | Runs the read-path GSA on the final text, then names the multi-char segments that aren't one word here; persists `segmentExceptions` and re-segments with them excluded |
-| Tagging pass | same file (`tagSentenceSegments` + `callSegmentTagger`) | Tags each surviving segment with `pos`/`sense`/`number`/`tense`; persists `segments` + the four segment-keyed dicts |
+| Tagging pass | same file (`tagSentenceSegments`) + `server/scripts/backfill/chinese/lib/segmentTagger.js` (`buildTagItems`, `createSegmentTagger` → `callSegmentTagger`, `resolveItemTag`; shared with the reconcile) | Tags each surviving segment with `pos`/`sense`/`number`/`tense`; persists `segments` + the four segment-keyed dicts |
+| Stale-label repair | `server/scripts/backfill/chinese/lib/reconcileSenses.js` (`runSenseReconcile`) | Re-points tags a re-cluster orphaned — see § Stale sense labels |
 | Read/enrichment | `server/dal/implementations/DictionaryDAL.ts` (`enrichExampleSentencesMetadataBatch`) + `server/dal/shared/segmentString.ts` (`buildSegmentMetadata`, `senseReading`) | Renders stored `segments` (live GSA fallback, honoring `segmentExceptions`); attaches per-segment pronunciation/definition/wordForms, resolving **both** dd and pronunciation from `senseDict` → `ddt(cluster)` / `cluster.reading` |
 | Presentation (one sentence) | `src/components/SegmentedSentenceDisplay.tsx` | Renders one sentence's segments as cpcd; hover/tap shows the segment popup; draws the headword underline (`vocabWord`) |
 | Presentation (est block) | `src/features/flashcards/ExampleSentenceList.tsx` | **Single source of truth for the est UI** — maps the sentence list into per-sentence cards (speaker button + `SegmentedSentenceDisplay` + English gloss). See below. |

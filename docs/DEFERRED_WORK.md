@@ -57,12 +57,13 @@ bottom of the fill ladder. Code: `server/services/FlashcardMarkService.ts` →
 landing inside the window is not recorded. Enforced once, server-side, at
 `POST /api/flashcards/mark`, so no surface opts in or out.
 
-**The collision.** Every surface now serves **cooled cards** when its fresh tiers come
+**The collision.** Every GAME surface serves **cooled cards** when its fresh tiers come
 up short — and since 2026-08-20 it does so *in preference to lending*, so this is more
 common than when the item was written, and deliberately so. The learner sees a normal
 round with normal scoring and **no movement in their history**, with nothing in the UI
-to explain it. On the flp the session simply ends: a suppressed mark returns
-`newCard: null`, so the loop winds down after the cards it was given.
+to explain it. The flp is out of this item since 2026-11-11: it no longer serves cooling
+cards at all, and shows an out-of-ready-cards card instead (DECK_TOWER.md § Running out
+of ready cards).
 
 **Resolved, and no longer part of this item:** *should the cooled tier be deleted in
 favour of lending?* No. Lending was demoted below it instead — minting words the learner
@@ -308,6 +309,16 @@ something.
 ### 21. One unscoped `backfill-breakdown-senses --reconcile` sweep to retire the orphan backlog
 
 *Added 2026-09-22.*
+
+> **Status 2026-11-12: the backlog is retired.** The `breakdownSenseOrphan` probe returns
+> **0** rows on PPE (checked 2026-11-12). Since the same date the clusterer carries renamed
+> labels forward into `breakdown[char].sense` itself (`chinese/lib/senseCarryForward.js`,
+> docs/DEFINITION_CLUSTERS.md § Renaming a sense), so the "each round orphans more than it
+> fixes" dynamic below no longer applies to renames — only to splits. What remains open is
+> the two **sub-cases** at the end of this item (乐 has no `yuè` sense; transliterations have
+> no phonetic candidate): those are tagging-correctness problems, not orphans, and whether
+> the sweep tagged 乐-compounds wrongly has not been checked. The history below is kept for
+> those sub-cases' context.
 
 | | |
 |---|---|
@@ -556,6 +567,30 @@ study time**, not with open tabs.
 | **Cost of leaving it** | Three copies of a correctness-sensitive clock to keep in step |
 | **Trigger** | Next change to either game's clock |
 | **References** | the files above; GAMES_FEATURE.md § Backgrounding pauses the clock |
+
+### 41. Code the archived home screen left without a caller
+
+*Added 2026-11-11.*
+
+| | |
+|---|---|
+| **What** | Two generalisations built for the home screen have no caller on `main`: `SpeedLines.tsx` → the vertical form (`axis="y"`), and `DeckTowerPlatform.tsx` → `plate?` / `lever?`, which are optional only because the home screen's platform omitted them (td always passes both, so make them required) |
+| **Why deferred** | A revival of the home screen (ARCHIVED_FEATURES.md) would need them back |
+| **Cost of leaving it** | A dead branch in SpeedLines, and two props whose optionality no caller uses |
+| **Trigger** | The archive is judged dead, or the launch screen's real animation lands without them |
+| **References** | the files above; LAUNCH_SCREEN.md; ARCHIVED_FEATURES.md § Home Screen |
+
+### 42. The gsa cannot segment AABB / ABB reduplication
+
+*Added 2026-11-11. Docs: [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) (Segmentation audit row).*
+
+| | |
+|---|---|
+| **What** | A reduplicated form of a known word (安静 → 安安静静, 高兴 → 高高兴兴, 清楚 → 清清楚楚, ABB forms like 绿油油) is not a det headword, so `segmentWithDict` breaks it into whatever substrings the det has. In 就's sentence 我就想安安静静地看会儿书 this gives 安安 + 静 + 静, with 安安 tagged "hi there (internet slang)". Proposed rule: before the length-tier pass, detect `AABB` where `AB` is in `dictMap` and emit one segment that carries `AB`'s meta, reading AB's syllables doubled (ān ān jìng jìng). Still to decide: whether ABB / ABAB (研究研究) are in scope, and how the tagger and popup label a segment that is not its own headword |
+| **Why deferred** | Changes `segmentWithDict`, which every est sentence and Reader document goes through. Stored `segments` would also need a re-segmentation pass. The owner chose to do it later (2026-11-11) |
+| **Cost of leaving it** | Reduplicated adjectives render as nonsense segments with wrong glosses. The segmentation audit (`auditSegmentation`) does not reliably catch them: 安安 was not flagged |
+| **Trigger** | The next change to `segmentWithDict`, or a learner/validator report of a split reduplication |
+| **References** | `server/dal/shared/segmentString.ts` → `segmentWithDict`; `server/scripts/backfill/chinese/backfill-example-sentences.js` → `auditSegmentation`, `loadSegmentDictData` |
 
 ## Recently closed
 

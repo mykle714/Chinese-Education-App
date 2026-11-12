@@ -149,6 +149,7 @@ const NotebookGrid = forwardRef<NotebookGridHandle, NotebookGridProps>(function 
         const interrupt = () => {
             if (flightRef.current !== null) cancelAnimationFrame(flightRef.current);
             flightRef.current = null;
+            el.style.overflowY = ""; // hand the scroll back (flyTo's momentum lock)
             setFlying(false);
         };
         el.addEventListener("wheel", interrupt, { passive: true });
@@ -183,6 +184,11 @@ const NotebookGrid = forwardRef<NotebookGridHandle, NotebookGridProps>(function 
             return;
         }
         const duration = jumpDurationMs(distance);
+        // Hold overflow hidden for the flight: the up arrow is often tapped while the sheet is
+        // still coasting from a fling, and WebKit's native momentum would overwrite each
+        // frame's scrollTop — the sheet would just stop instead of flying (the tower's
+        // `glideTo` lock, src/features/deckTower/towerScroll.ts). An inline "" restores the sx value.
+        el.style.overflowY = "hidden";
         setFlying(true);
         const start = performance.now();
         const step = (now: number) => {
@@ -192,6 +198,7 @@ const NotebookGrid = forwardRef<NotebookGridHandle, NotebookGridProps>(function 
                 flightRef.current = requestAnimationFrame(step);
             } else {
                 flightRef.current = null;
+                el.style.overflowY = "";
                 setFlying(false);
             }
         };

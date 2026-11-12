@@ -507,29 +507,35 @@ the Deck Tower's notebook stack (DECK_TOWER.md
 ### IsoSortPlatform
 
 `src/features/deckTower/iso/IsoSortPlatform.tsx` → `IsoSortPlatform`;
-`sortPlatformMetrics.ts` → `sortPlatformTopZ`, `SORT_PLATFORM_JUMP`, `HOP_PERIOD_MS`,
-`MINI_RIM`. acp's four band-coloured bins (SortBins.tsx → `BIN_CELLS`;
-SORT_CARDS_REQUIREMENTS.md § 5.3) in miniature, as one slab.
+`sortPlatformMetrics.ts` → `SORT_BIN_PLATFORM`, `SORT_BIN_THICKNESS`, `SORT_BIN_ASPECT`,
+`sortMiniScale`, `sortMiniThickness`, `sortPlatformTopZ`, `SORT_PLATFORM_JUMP`,
+`HOP_PERIOD_MS`. An exact miniature of ONE of acp's band-coloured bins
+(SORT_CARDS_REQUIREMENTS.md § 5.3) — the Deck Tower draws the third, Comfortable. acp's
+platform geometry (`SORT_BIN_PLATFORM`, `SORT_BIN_THICKNESS`) lives in
+`sortPlatformMetrics.ts` and is read by BOTH acp's `SortBins.tsx` (full size) and this
+component, which scales all of it uniformly by `sortMiniScale(rect)` (rect width over acp's
+6.4): footprint, corner radius, IsoPlatform's `RIM_WIDTH` bevel, thickness and print.
+(2026-11-11 history: one slab in four coloured quadrants → four platforms in acp's S piece
+→ a 2 × 2 → tiles set in a base → the first bin (red) → the Comfortable bin (green).)
 
-`{ rect, surface, shadowReceiver?, quadrantColors, thickness?, buriedTo?, progress?, hopping?, paused?, snow? }`.
-`thickness` (default `SLAB_THICKNESS`) deepens the slab — the Deck Tower passes the floor
-snow's depth on a snowy floor, so its top lies flush with the snow's. `buriedTo` (the snow
-surface's z) clips the slab to above the snow line in the scene's frame (a clip outside
-the hop: the band the walls fill at rest, grown by `BURIED_EDGE_GROW` so no anti-aliased
-edge survives), and draws the top face again unclipped; so at rest no wall shows, and
-while it hops the part lifted out of the snow does.
-A thin slab (0.28 units) lying flat on `surface` — standing up from it like any object on a
-floor, unlike IsoPlatform, whose top is pinned at z = 0 — with IsoPlatform's light rim
-bevel at this scale (`platformTone`). Its four quadrants are each in one band's colour,
-`quadrantColors` in acp's bin order (Unfamiliar, Target, Comfortable, Mastered), placed to
-keep acp's S-piece neighbours: Unfamiliar left on screen, Target at the front, Comfortable
-right, Mastered at the back (`QUADRANT_CELLS`). Each quadrant is the whole slab drawn in its
-tone, clipped to its quarter's COLUMN (the screen hull of the vertical prism over the
-quarter, open past the slab on its outer sides), painted back to front (`backToFront`): the
-front column wins where two overlap, so the walls and top split exactly along the quarter
-lines while the slab keeps its one rounded outline. A column reaches `SEAM_OVERLAP` past a
-quarter line under a neighbour painted after it, so no hairline shows at the seams. `snow`
-is one `IsoSnowCap` over the whole top (all four colours hidden), inside the hop. It casts a standing object's `IsoShadow` (with `casterHeight`), classed
+`{ rect, surface, shadowReceiver?, color, print?, thickness?, buriedTo?, progress?, hopping?, paused?, snow? }`.
+`rect` is the slab's footprint, sized `w × SORT_BIN_ASPECT` deep (acp's 6.4 × 8). `color`
+is the band colour, washed by the scene, through `platformTone` (rim tone on the top, the
+true tone on the top inset by the scaled `RIM_WIDTH`). `print` is drawn FLAT in acp's bin
+coordinates (`SORT_BIN_PLATFORM`, x −1 → 5.4, y −1 → 7) and mapped onto the top face by a
+translate + uniform scale composed with `faceTransform` at the top's z (exact at the slab's
+centre); the Deck Tower passes acp's own `SortBinPrint` (src/features/discover/SortBinPrint.tsx
+— the "3" in the deck's dotted outline), so the print is acp's, not a copy.
+`thickness` (default `sortMiniThickness(rect)`, acp's 1.2-on-6.4 ratio — 0.24 on the
+Deck Tower) deepens the slab — the Deck Tower passes the floor snow's depth on a snowy
+floor, so its top lies flush with the snow's. `buriedTo` (the snow surface's z) clips the
+slab to above the snow line in the scene's frame (a clip outside the hop: the band the walls
+fill at rest, grown by `BURIED_EDGE_GROW` so no anti-aliased edge survives), and draws the
+top face again unclipped; so at rest no wall shows, and while it hops the part lifted out of
+the snow does. `snow` is one `IsoSnowCap` over the whole top (the print hidden), inside the
+hop. The slab lies flat on `surface` — standing up from it like any object on a floor,
+unlike IsoPlatform, whose top is pinned at z = 0, and unlike acp's bins, which float — and
+casts a standing object's `IsoShadow` (with `casterHeight`), classed
 `iso-sort-platform__shadow`. It is drawn in world z, never by a screen-y translate, so it
 stays right under a moving camera. `progress` (0 → 1) grows the slab up out of the surface.
 `hopping` plays one big jump (`SORT_PLATFORM_JUMP`, 1.6 units) with rebounds at 0.28 and
@@ -819,8 +825,16 @@ walk → land:
   foot circle (`PAWN_FOOT_RADIUS`) plus `OBSTACLE_CLEARANCE` off every obstacle, at
   `WALK_SPEED`. The body bounces once per step (`STEP_RATE`, `STEP_HOP`) and waddles
   side to side (`WADDLE_DEG`).
+- **Walks are whole steps.** The picked spot is pulled back along its line to a whole
+  number of steps (`STEP_DISTANCE` = one step of ground, ≈0.44 units; picks left under
+  1.2 units are retried, so a walk is 3–12 steps), and the step phase restarts at each
+  walk's start (`usePawnMotion.ts` → `pickWalkTarget`, `stepWalkTarget`). The walk
+  therefore ends exactly as a step lands: feet down, upright. The remainder of a walk
+  resumed after an edge hop is cut the same way, and if less than one step is left the
+  pawn pauses where the hop put it.
 - **Land.** On arrival it keeps stepping in place until its feet touch down, so it never
-  drops out of mid-air.
+  drops out of mid-air. With whole-step walks this ends on the arrival frame; it only
+  shows when a walk is cut short (a `held` summit).
 
 **Steps.** `steps` (`PawnStep[]`, `{ rect, height }`) are raised floor regions it walks
 ONTO, not around — e.g. a raised `IsoFloorLabel` at its current `raised · RAISED_HEIGHT`.
@@ -842,8 +856,8 @@ height exactly, so a pawn on a pressed plate sinks with it and rides its spring 
      surface's live height; the arc rides on top in `hop` (body only — the shadow shrinks).
   3. **Recover** (`HOP_RECOVER_MS`) — on touch-down the landing surface is committed, a
      `HOP_LAND_SQUASH` squash eases out over `HOP_SQUASH_MS`, and it stands the rest of the
-     beat before walking on to the same target from feet-down (or pausing, if the hop carried
-     it to the walk's end).
+     beat before walking on toward the same target from feet-down, the rest cut to whole
+     steps (or pausing, if less than one step is left).
   A plate pressed flush (rise under `HOP_MIN_RISE`) is walked over without a hop.
 - **Fallback ease.** Any other edge crossing — a startle leap landing on the step, an entrance,
   a hop cut short by a startle (the startle effect hands the lift over mid-glide) — eases the

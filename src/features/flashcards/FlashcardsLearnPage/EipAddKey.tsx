@@ -38,7 +38,7 @@ import { useEipColors } from "./useEipPalette";
  * docs/EIP_SHEET_GESTURES.md § Add key.
  *
  * Layer: feature component (src/features/flashcards). Depends on: EipPaletteContext,
- * useLearningToggle. Depended on by: EipUpperPanel. Docs: docs/EIP_SHEET_GESTURES.md § Add key.
+ * useLearningToggle. Depended on by: EipUpperPanel (hosts: EipSheet; the flp, add-only). Docs: docs/EIP_SHEET_GESTURES.md § Add key.
  */
 
 /** The check's green: oklch(55% 0.15 155), clamped to sRGB. */

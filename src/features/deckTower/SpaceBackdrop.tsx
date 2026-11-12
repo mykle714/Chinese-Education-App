@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef } from "react";
+import React, { useEffect, useLayoutEffect, useRef } from "react";
 import { Box } from "@mui/material";
 import { mixHex, shadeHex } from "./iso";
 import { setFooterCastShadow, translucentShadow } from "../../components/footerCastShadow";
@@ -42,6 +42,15 @@ import { heightAbovePlatform, towerSceneOf } from "./towerScroll";
  *     frame as `band` — and the sky HOLDS it for the whole session. It does not follow
  *     the camera's dive or the tower's growth, so the sky never changes mid-study.
  *
+ *   - THE SKY FADES (docs/LAUNCH_SCREEN.md § "The sky fade"). A change of `palette.sky` that is
+ *     not a world pan (the weather arriving or changing, the clock moving through a
+ *     twilight) eases from the colour on screen to the new one over SKY_FADE_MS instead of
+ *     snapping. `snapSky` follows the palette at once instead: during a world pan, and while
+ *     the launch screen fully covers td (so the circle opens onto the true time of day and
+ *     whatever weather is known by then). Only the backdrop (and
+ *     the footer's cast shadow, which is derived from it) fades: the iso scene's own
+ *     sky-derived tones (the ground plane under the platform) take the new colour at once.
+ *
  * ⚡ Scroll handling writes the styles directly to the DOM (rAF-throttled), NOT through
  * React state. A state update per scroll frame would re-render the whole scene (tower,
  * pawn, clouds, wind) at 60 fps for a colour change.
@@ -51,7 +60,7 @@ import { heightAbovePlatform, towerSceneOf } from "./towerScroll";
  * it, and whatever covers the scroller covers it too.
  *
  * Depends on: iso/palette.ts (`mixHex`); StarField.tsx; AuroraLayer.tsx; ShootingStars.tsx; WeatherLayer.tsx; towerWorlds.ts (the palettes, via the page).
- * Depended on by: DeckTowerPage.tsx. Docs: docs/DECK_TOWER.md § "Sky → space".
+ * Depended on by: DeckTowerPage.tsx. Docs: docs/DECK_TOWER.md § "Sky → space", docs/LAUNCH_SCREEN.md § "The sky fade".
  */
 
 /** The space band in the scene's viewBox coordinates (see the header comment). */
@@ -79,6 +88,8 @@ interface SpaceBackdropProps {
     groundStars?: number;
     /** Fire occasional meteors over the sky (timeOfDay.ts `shootingStars`: night). */
     shootingStars?: boolean;
+    /** Feature testing (ShootingStarChip): each bump fires one meteor burst now (ShootingStars `burstRequest`). */
+    shootingStarRequest?: number;
     /** Rain / snow / lightning to draw over the sky (fog is ignored here — DeckTowerPlatform draws it; towerWeather.ts `weatherEffect`), or undefined for none. */
     weather?: WeatherEffect;
     /** Bumps per lightning flash (DeckTowerPage → useLightningFlashes), for WeatherLayer. */
@@ -94,7 +105,17 @@ interface SpaceBackdropProps {
      * middle is the altitude.
      */
     scrollerBottomInset?: number;
+    /** Follow `palette.sky` at once, with no fade: a world pan is blending the palette, or the launch screen hides td (see the header). */
+    snapSky?: boolean;
 }
+
+/**
+ * How long a sky colour change takes when it is not a pan (owner, 2026-11-11: "fade over
+ * much longer", ~10 s): long enough to read as the weather rolling in, not a UI change.
+ */
+export const SKY_FADE_MS = 10_000;
+/** A fade repaints at most this often: the colour moves slowly, and `apply` measures layout. */
+const SKY_FADE_FRAME_MS = 50;
 
 /** Stars only start to show once the blend is this far along, so they never sit on a light sky. */
 const STARS_FADE_FROM = 0.35;
@@ -109,7 +130,7 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
     return u * u * (3 - 2 * u);
 }
 
-const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palette, bottom, altitudeY = null, scrollerBottomInset = 0, groundStars = 0, shootingStars = false, weather, flashId }) => {
+const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palette, bottom, altitudeY = null, scrollerBottomInset = 0, groundStars = 0, shootingStars = false, shootingStarRequest = 0, weather, flashId, snapSky = false }) => {
     const backdropRef = useRef<HTMLDivElement>(null);
     const starsRef = useRef<HTMLDivElement>(null);
     const starLayerRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -124,6 +145,26 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
     const altitudeRef = useRef(altitudeY);
     altitudeRef.current = altitudeY;
     const applyRef = useRef<(() => void) | null>(null);
+
+    // ── The sky fade (see the header) ────────────────────────────────────────────
+    // `skyShown`: the sky colour on screen before the climb's mix into space, so a new
+    // fade starts from wherever the last one had got to. `skyFade`: the fade in progress.
+    const skyShown = useRef(palette.sky);
+    const skyFade = useRef<{ from: string; t0: number } | null>(null);
+    /** The sky right now (before the space mix): mid-fade, or the palette's own. */
+    const skyBase = (now: number): string => {
+        const target = paletteRef.current.sky;
+        const fade = skyFade.current;
+        if (!fade) return target;
+        const u = (now - fade.t0) / SKY_FADE_MS;
+        if (u >= 1) {
+            skyFade.current = null;
+            return target;
+        }
+        return mixHex(fade.from, target, smoothstep(0, 1, u));
+    };
+    const skyBaseRef = useRef(skyBase);
+    skyBaseRef.current = skyBase;
 
     // Re-subscribes when the band changes (the deck count arriving refits the viewBox).
     // A LAYOUT effect, so the colour is set before the first paint. (It runs BEFORE the
@@ -156,7 +197,9 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
             const viewHeight = scrollerRect.height - scrollerBottomInset;
             const midY = altitudeRef.current ?? band.viewBoxMinY + (scrollerRect.top + viewHeight / 2 - svgRect.top) / scale;
             const t = (band.yFrom - midY) / (band.yFrom - band.yTo);
-            const skyNow = mixHex(paletteRef.current.sky, paletteRef.current.space, smoothstep(0, 1, t));
+            const base = skyBaseRef.current(performance.now());
+            skyShown.current = base;
+            const skyNow = mixHex(base, paletteRef.current.space, smoothstep(0, 1, t));
             if (skyNow !== lastSky) {
                 lastSky = skyNow;
                 backdrop.style.backgroundColor = skyNow;
@@ -230,10 +273,37 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
         };
     }, [scrollerRef, band, scrollerBottomInset]);
 
+    // A new sky colour: under `snapSky` (a pan, the launch cover) it is taken at once;
+    // anything else fades to it from the colour on screen. Runs before the repaint effect
+    // below, so that repaint already reads the new fade.
+    useLayoutEffect(() => {
+        if (snapSky) skyFade.current = null;
+        else if (skyShown.current !== palette.sky) skyFade.current = { from: skyShown.current, t0: performance.now() };
+        // `snapSky` is read, not a trigger: a pan ending (or the cover opening) must not start
+        // a fade by itself.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [palette.sky]);
+
     // A new palette (a world pan's colour blend), or a study starting / ending (`altitudeY`), repaints straight away.
     useLayoutEffect(() => {
         applyRef.current?.();
     }, [palette.sky, palette.space, altitudeY, groundStars, weather]);
+
+    // While a fade runs, repaint on a slow frame until it ends (`skyBase` clears it).
+    useEffect(() => {
+        if (!skyFade.current) return;
+        let raf = 0;
+        let lastAt = 0;
+        const tick = (now: number) => {
+            if (now - lastAt >= SKY_FADE_FRAME_MS) {
+                lastAt = now;
+                applyRef.current?.();
+            }
+            if (skyFade.current) raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(raf);
+    }, [palette.sky]);
 
     return (
         <Box
@@ -243,7 +313,7 @@ const SpaceBackdrop: React.FC<SpaceBackdropProps> = ({ scrollerRef, band, palett
         >
             <StarField fieldRef={starsRef} layerRefs={starLayerRefs} opacity={0} />
             <AuroraLayer strength={palette.aurora} rootRef={auroraRef} />
-            <ShootingStars active={shootingStars} />
+            <ShootingStars active={shootingStars} burstRequest={shootingStarRequest} />
             {weather && <WeatherLayer effect={weather} rootRef={weatherRef} flashId={flashId} />}
         </Box>
     );

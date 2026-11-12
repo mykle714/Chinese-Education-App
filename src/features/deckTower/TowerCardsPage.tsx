@@ -204,6 +204,9 @@ const TowerCardsPage = forwardRef<HTMLDivElement, TowerCardsPageProps>(function 
                         variant="outlined"
                         color={ink}
                         outlineColor={ink}
+                        // The arrow lives inside td's scroller, so a tap while the grid is
+                        // still coasting would otherwise only stop the fling (useScrollSafeTap).
+                        scrollSafeTap
                         onClick={onUp}
                     />
                 </Box>

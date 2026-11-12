@@ -20,7 +20,9 @@ export type { PlateTones };
  *   - its page buttons (Write it, Compare, More Info) are drawn as the tower's floor-plate
  *     push button, in white (`plateTones`; towerPlate.ts);
  *   - every swipe and undo is reported, so the host can take cards off its tower and put
- *     them back.
+ *     them back. The tower's count is the host's OWN figure: the flp never sizes it (no
+ *     report carries the loop's length), and a lent card never moves it
+ *     (docs/DECK_TOWER.md § "Running out of ready cards").
  *
  * Depended on by: FlashcardsLearnPage.tsx (reads it), FlashCardSection.tsx (via the page);
  * src/features/deckTower/useTowerStudy.ts (builds it).
@@ -38,10 +40,13 @@ export interface FlpTowerHost {
     parked: boolean;
     /** The learner left the session (back arrow, or "Leave anyway" on the sort offer). */
     onExit: () => void;
-    /** A card was swiped: true = correct (right). Fired at the swipe, before the server answers. */
-    onMarked: (isCorrect: boolean) => void;
-    /** A mark was undone; `wasCorrect` says which way it had been swiped. */
-    onUndone: (wasCorrect: boolean) => void;
+    /**
+     * A card was swiped: true = correct (right). Fired at the swipe, before the server
+     * answers. `lent`: the card is a lent (provisional) one, which the tower never counted.
+     */
+    onMarked: (isCorrect: boolean, lent: boolean) => void;
+    /** A mark was undone; `wasCorrect` says which way it had been swiped, `lent` as above. */
+    onUndone: (wasCorrect: boolean, lent: boolean) => void;
     /**
      * A game break took a card off the tower: a correct mark the server recorded on a card
      * the learner owns. The host holds these until the game ends (`onGameBreakChange`).
@@ -52,11 +57,12 @@ export interface FlpTowerHost {
      */
     onGameBreakChange: (up: boolean) => void;
     /**
-     * The session's deal changed: how many cards the working loop holds, whether it is
-     * still loading, and whether there is a card on top. `hasCard: false` once loaded
-     * means the session has run dry (every card resting).
+     * The session's deal changed: whether it is still loading, and whether there is a card
+     * on top. The host waits on `loading` before its dive, and re-deals a parked session
+     * whose deal came back empty (`hasCard: false`) when its tower counts cards. Running dry
+     * while studied is the flp's own business (its out-of-ready-cards card), not the host's.
      */
-    onLoopChange: (loop: { size: number; loading: boolean; hasCard: boolean }) => void;
+    onLoopChange: (loop: { loading: boolean; hasCard: boolean }) => void;
     /**
      * The tower's count card lies over the cards (the dive onto it, and the climb after it
      * is put back): hidden at ONCE, with no fade — they are simply under it. The count card

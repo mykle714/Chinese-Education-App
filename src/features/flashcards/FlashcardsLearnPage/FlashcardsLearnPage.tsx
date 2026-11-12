@@ -3,9 +3,9 @@ import { Box, Slide, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/m
 import DelayedCircularProgress from "../../../components/DelayedCircularProgress";
 import { useAuth } from "../../../AuthContext";
 import type { Language } from "../../../types";
-import ProvisionalCardsNotice from "../../../components/ProvisionalCardsNotice";
 import ProvisionalSortOffer from "../../../components/ProvisionalSortOffer";
 import { ContentArea, MoreInfoPill } from "./styled";
+import type { ReadyOutKind } from "./ReadyOutCardLayer";
 import { afterNextPaint } from "../../../utils/afterNextPaint";
 import { useEventCallback } from "../../../hooks/useEventCallback";
 import WordToolsRail from "../../../components/WordToolsRail";
@@ -25,6 +25,7 @@ import { getBreakdownItems as buildBreakdownItems } from "../../../utils/breakdo
 import { useEipTabs } from "./useEipTabs";
 import EipTabStrip from "./EipTabStrip";
 import TooManyTabsSnackbar from "./TooManyTabsSnackbar";
+import { useLearningToggle } from "../../../hooks/useLearningToggle";
 import FlashCardSection, { ChineseBlock, EnglishBlock } from "./FlashCardSection";
 import { useGameBreak } from "./gameBreak/useGameBreak";
 import { useBreakClears } from "./gameBreak/useBreakClears";
@@ -92,7 +93,10 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // The arrival notice for lent cards. Shown once per session: it opens as soon as
     // the loop reports a lent card and stays dismissed for the rest of the session,
     // so a mid-session refill that lends another card doesn't re-interrupt the learner.
-    const [noticeDismissed, setNoticeDismissed] = useState(false);
+    // The out-of-ready-cards card on top of the stack (§ "Running out of ready cards"
+    // below; ReadyOutCardLayer → ReadyOutKind), or null.
+    const [readyOut, setReadyOut] = useState<ReadyOutKind | null>(null);
+    const readyOutUp = readyOut !== null;
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
     // The session's BAR is the tower world being studied, always in Study Mix.
@@ -104,16 +108,6 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // with its faces drawn by useWritingFlashcard (FlashCardSection's `writingFace`), and
     // marks are per character.
     const writingMode = flpWorld === 'writing';
-    // Empty-state copy, shown when the working loop runs dry. The server honors the know
-    // cooldown rather than re-serving a resting card, so a reading or writing session can
-    // come back empty: "resting" is the honest word — the learner has these cards, they
-    // just aren't due. A core session covers the gap with lent cards and uses
-    // FlashCardSection's default copy. See docs/PROVISIONAL_CARDS.md.
-    const emptyMessage: string | undefined =
-        readingMode ? 'Every card is resting for reading. Check back later!'
-        : writingMode ? 'Every card is resting for writing. Check back later!'
-        : undefined;
-
     // Only tone colour is read from the shared learn settings. The shared `showPinyin`
     // pref is deliberately NOT read here: flp pinyin is fixed by the bar (normal flp
     // always shows it; the reading flp hides it on the question face) — see
@@ -160,32 +154,33 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         handleCardDismiss,
         handleUndoLastMark,
         clearUndo,
-        provisionalSeen,
         provisionalReviewed,
         replaceGameCleared,
+        lendMode,
+        enableLend,
+        resetLend,
     } = useWorkingLoop({
         token,
         world: flpWorld,
         prefetch: tts.prefetch,
         cardDragRef,
         onDismissed: () => breakCountersRef.current.dismissed(),
-        onUndone: (wasCorrect) => {
+        onUndone: (wasCorrect, lent) => {
             breakCountersRef.current.undone();
-            tower.onUndone(wasCorrect);
+            tower.onUndone(wasCorrect, lent);
         },
         onMarked: tower.onMarked,
     });
 
-    // A tower session tells its host what the deal holds: the tower spawns more cards when
-    // it runs out while the loop still has some, and climbs out when the loop runs dry.
+    // A tower session tells its host whether its deal is in and holds a card: the host
+    // waits on it before diving, and re-deals a parked session dealt empty. NOT the loop's
+    // size: the tower's count is its own figure (docs/DECK_TOWER.md § "Running out of
+    // ready cards").
     const onTowerLoopChange = tower.onLoopChange;
     const hasCard = currentEntry !== null;
     useEffect(() => {
-        onTowerLoopChange({ size: workingLoop.length, loading, hasCard });
-    }, [onTowerLoopChange, workingLoop.length, loading, hasCard]);
-
-    // Not over the tower while parked: the notice waits for the visit.
-    const noticeOpen = !noticeDismissed && provisionalSeen.length > 0 && !parked;
+        onTowerLoopChange({ loading, hasCard });
+    }, [onTowerLoopChange, loading, hasCard]);
 
     // Drag/flip logic. Depends on the working loop's isAnimating + currentIndex,
     // and feeds dismisses back into it via handleCardDismiss.
@@ -304,7 +299,38 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // The break's card on top is one more card in the stack, so everything the session does
     // around a card (undo, a tap off it) carries on until Play or Skip takes it away.
     const stackIsCards = gameBreak.phase === "cards" || gameBreak.phase === "title";
-    const breakLocksUndo = !stackIsCards;
+    // The out-of-ready-cards card locks undo too: the loop under it is being (or has been)
+    // re-dealt, and the deal clears the snapshot anyway.
+    const breakLocksUndo = !stackIsCards || readyOutUp;
+
+    // ── Running out of ready cards (docs/DECK_TOWER.md § "Running out of ready cards") ──
+    // The loop deals only the learner's own OFF-COOLDOWN cards until they are spent. The
+    // loop running dry during a visit (and not mid-break: a break's clears refill on their
+    // own) is the moment:
+    //   - lend switch OFF → turn it on and re-deal (`pending`). `enableLend` flips `loading`
+    //     in the same batch, so the next render already waits on the new deal;
+    //   - the re-deal lands with cards → `lend`: "You're out of ready cards", over the
+    //     first lent word; swiped or tapped off, study carries on;
+    //   - nothing to deal even with the switch on (a focused world never lends; or the
+    //     dictionary has nothing left) → `done`: "Done for the day", which stays.
+    // A visit that starts dry (a tap on the empty tower) goes straight down this path.
+    // The tower is not told any of it: its count is its own and simply stands at 0.
+    const loopDry = !parked && !loading && !hasCard && gameBreak.phase === "cards";
+    useEffect(() => {
+        if (!loopDry) return;
+        if (!lendMode) {
+            setReadyOut("pending");
+            enableLend();
+            return;
+        }
+        setReadyOut("done");
+    }, [loopDry, lendMode, enableLend]);
+    useEffect(() => {
+        if (readyOut !== "pending" || loading) return;
+        setReadyOut(hasCard ? "lend" : "done");
+    }, [readyOut, loading, hasCard]);
+    // The `lend` card has flown off: the lent word under it is the top card now.
+    const onReadyOutCardGone = useCallback(() => setReadyOut(null), []);
     // The tower takes the game's cleared cards off as the game goes away.
     const breakGameUp = gameBreak.phase === "growing" || gameBreak.phase === "playing";
     const onTowerGameBreakChange = tower.onGameBreakChange;
@@ -475,7 +501,8 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         // Parked under the tower: nobody is looking at the card yet. It is narrated when the
         // visit starts (`parked` is a dep).
         // Likewise during a break: the next card waits under the break's card, unseen.
-        if (!narrateNow || !currentEntry || parked || breakUp) return;
+        // Not under the out-of-ready-cards card: the word there is hidden until it goes.
+        if (!narrateNow || !currentEntry || parked || breakUp || readyOutUp) return;
         // autoSpeak is a no-op when autoplay is off, so the setting is enforced
         // in one place rather than re-checked at every narration site.
         tts.autoSpeak(currentEntry);
@@ -489,7 +516,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         // tts.autoSpeak/cancel are stable across renders; depending on them would
         // re-fire narration on every settings change.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [narrateNow, currentEntry?.id, parked, breakUp]);
+    }, [narrateNow, currentEntry?.id, parked, breakUp, readyOutUp]);
 
     // EIC modal sheet — opened by the centered "More Info" pill button.
     const [isEicOpen, setIsEicOpen] = useState(false);
@@ -501,6 +528,17 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // the currentIndex effect). The active tab owns its own selected sub-tab, so the
     // page no longer tracks a separate selectedTab.
     const eip = useEipTabs();
+
+    // The eip's Add key (EipAddKey), ADD-ONLY here: it shows only on a word the server
+    // said was NOT in Learning when the word loaded (lent 'provisional' cards included,
+    // so Add promotes them). After a tap it stays as "Added!" (still removable) while the
+    // word is showing; the next load of that word (trail A → B → A, or reopening the eip)
+    // re-evaluates it and the key disappears. Fed `null` while the panel is closed or on
+    // the Compare tab, which leaves the hook inert (no fetch).
+    // Docs: docs/EIP_SHEET_GESTURES.md § Add key.
+    const eipLearningEntry = isEicOpen && eip.activeTab?.kind === "entry" ? eip.activeTab.entry : null;
+    const eipLearning = useLearningToggle(eipLearningEntry, (eipLearningEntry?.language ?? "zh") as Language);
+    const eipAddKeyShown = eipLearning.inLibraryOnLoad === false;
 
     const openEicSheet = () => {
         if (!displayCurrentEntry) return;
@@ -554,6 +592,10 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
             setExitOfferOpen(false);
             gameBreak.reset();
             closeEip();
+            // The lend switch belongs to the visit: the next one starts on the learner's
+            // own ready cards again (re-dealt now, while parked, if the switch was on).
+            resetLend();
+            setReadyOut(null);
         }
         wasParked.current = parked;
     // `gameBreak.reset` changes with the break's phase; only the edge matters here.
@@ -583,8 +625,9 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     }, [isFlipped]);
 
     const handleMoreInfoClick = () => {
-        // Disabled while the card editor is open (the pill is also greyed out).
-        if (editMode) return;
+        // Disabled while the card editor is open (the pill is also greyed out), and under
+        // the out-of-ready-cards card (the word under it is hidden).
+        if (editMode || readyOutUp) return;
         if (!isFlipped) {
             setShowFlipHint(true);
             return;
@@ -727,7 +770,9 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
 
     // Phone-frame sizing comes from MobileDemoFrame via Layout.tsx
 
-    if (loading) {
+    // The whole-page spinner is for a deal with nothing to show yet. The lend re-deal keeps
+    // the page up: its card stack shows the pending out-of-ready-cards card meanwhile.
+    if (loading && !readyOutUp) {
         return (
             <Box
                 className="flashcards-learn__loading-wrapper"
@@ -767,15 +812,9 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
 
     return (
         <>
-            {/* Generic (non-itemized) notice: flp refills its working loop as the
-                learner goes, so the played set isn't known when the session opens.
-                See docs/PROVISIONAL_CARDS.md. */}
-            <ProvisionalCardsNotice
-                open={noticeOpen}
-                onDismiss={() => setNoticeDismissed(true)}
-                surfaceName="this study session"
-                language={(user?.selectedLanguage ?? "zh") as Language}
-            />
+            {/* No arrival notice for lent cards: the out-of-ready-cards card in the stack
+                announces them (§ "Running out of ready cards"; it replaced the generic
+                ProvisionalCardsNotice here on 2026-11-11). */}
             {/* End-of-session offer. Unlike a game, flp has no scoreboard to attach
                 this to — a session ends when the learner LEAVES — so the offer gates
                 the back arrow instead (see `handleBack` below), listing every lent
@@ -919,7 +958,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     Hidden on the writing flp too: `Write it` is what the card already is,
                     `Compare` would show the characters before they are written, and the
                     writing face is not the word layout `Customize` edits. */}
-                {displayCurrentEntry && !editMode && !writingMode && (
+                {displayCurrentEntry && !editMode && !writingMode && !readyOutUp && (
                     <WordToolsRail
                         className="mobile-demo-word-tools"
                         entry={displayCurrentEntry}
@@ -957,7 +996,9 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     isDragging={isDragging}
                     isFlipped={isFlipped}
                     isAnimating={isAnimating}
-                    emptyMessage={emptyMessage}
+                    // The out-of-ready-cards card on top (`pending` draws as a blank card).
+                    readyOutCard={readyOut}
+                    onReadyOutCardGone={onReadyOutCardGone}
                     showPinyinColor={showPinyinColor}
                     readingMode={readingMode}
                     sideOneLanguage={currentSideOneLanguage}
@@ -1083,10 +1124,10 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                         ref={moreInfoPillRef}
                         className="mobile-demo-more-info-pill"
                         isFlipped={isFlipped}
-                        isDisabled={editMode || breakUp}
+                        isDisabled={editMode || breakUp || readyOutUp}
                         plate={tower.plateTones}
                         onClick={() => (isFlipped && !editMode ? afterNextPaint(handleMoreInfoClick) : handleMoreInfoClick())}
-                        aria-disabled={editMode || breakUp}
+                        aria-disabled={editMode || breakUp || readyOutUp}
                         aria-label="Open extra info"
                     >
                         <Typography sx={{ fontSize: SIZE.body, color: theme.palette.flashcard.onSurface, lineHeight: 1, transform: "translateY(-1px)" }}>↑</Typography>
@@ -1166,6 +1207,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                             // root: nothing sits below it, so that edge keeps its rubber-band.
                             onSwipeBack={eip.activeIndex > 0 ? () => eip.popTo(eip.activeIndex - 1) : undefined}
                             showMinutePoints
+                            learning={eipAddKeyShown ? eipLearning : undefined}
                         />
                     );
                 })()}
@@ -1176,6 +1218,19 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     <GameBreakArea gameBreak={gameBreak} onCardCleared={onBreakCardCleared} />
                 )}
                 <TooManyTabsSnackbar signal={eip.overflowSignal} />
+                {/* The eip Add key's failures only — a successful add/remove is shown by the key. */}
+                <Snackbar
+                    className="flp-eip__learning-error-snackbar"
+                    open={eipLearning.error !== null}
+                    autoHideDuration={2500}
+                    onClose={eipLearning.clearError}
+                    anchorOrigin={{ vertical: "top", horizontal: "center" }}
+                    sx={{ zIndex: 2000 }}
+                >
+                    <Alert severity="error" variant="filled" onClose={eipLearning.clearError}>
+                        {eipLearning.error}
+                    </Alert>
+                </Snackbar>
                 {/* Icon-layout save/reset failure toast (e.g. backend PATCH error).
                     Replaces the prior silent console.error so the editor stays open
                     and the user knows the write didn't land. */}

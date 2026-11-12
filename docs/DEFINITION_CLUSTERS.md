@@ -404,7 +404,38 @@ The two intentionally diverge — `definitions` is **not** a strict flatten of
 | **C.5 — Tiebreak order** | Ranks the clusters that came back with the **same** `frequencyScore`, because array order is what every read-side sort uses to break a score tie (see "Ties" below). One call per entry that *has* a tie, none otherwise. The model is shown each tied cluster's `sense`, `glosses` and `pos` (pos since v10). Permutes tied clusters **within the slots they already occupy** — cross-band order is left to the read-side sort, and no `sense`, `glosses`, `pos` or score is edited. On any failure the original order is kept and a review note is printed. Skippable with `--no-tiebreak`. | `shared/lib/tiebreakOrder.js` (`createClusterTiebreaker` → `tiebreakClusterOrder`, `tieGroups`) |
 | **C.6 — Short lead gloss** | On a multi-sense entry (≥2 displayable clusters), any cluster whose **displayed** lead (`ddt`, i.e. `stripParentheses(glosses[0])`) exceeds 20 chars gets ONE synthesized ≤20-char gloss **for that sense** placed first; the long source gloss stays right behind it. Runs after C/C.5 so neither scoring nor the tiebreak sees a synthesized gloss; skipped on `--rescore-only`. See "Short lead gloss per sense" below. | `shared/lib/senseShortGloss.js` (`createSenseShortGlosser` → `shortenLongLeads`) |
 
-The clusterer then writes **only** `definitionClusters` and stamps the run log.
+The clusterer then writes, in one transaction, `definitionClusters` plus the columns that
+follow from them (the word-level `frequencyScore` invariant, `searchReadings`, and the
+primary `pronunciation`/`numberedPinyin`/`tone`), carries renamed sense labels forward
+(below), and stamps the run log.
+
+### Renaming a sense: labels are carried forward
+
+A cluster's `sense` label is an identity other data points at, and re-clustering can
+rename it. Four stored values hold a label and resolve it by exact match:
+
+| Pointer | Column | Breaks as |
+|---|---|---|
+| Example-sentence tags | `exampleSentences[*].senseDict[word]`, `.segmentOccurrenceTags[i].sense`, the host's own `.sense` | default pinyin + translation-matched gloss in the est (docs/EXAMPLE_SENTENCES.md § Stale sense labels) |
+| Long-definition keys | the word's `longDefinition[*].sense` (one entry per sense × POS) | that sense's paragraph vanishes from the eip sense list |
+| Learner sense picks | `vocabentries_zh."selectedSense"` | the learner's chosen sense silently resets to the default |
+| Breakdown tags | `breakdown[char].sense` on compounds | a stale gloss in the bt |
+
+Before the write, `buildSenseRenameMap` compares old and new clusters by **glosses** (which
+partition the definitions): an old cluster whose glosses all landed in ONE new cluster was
+renamed or merged, and `carryForwardSenseRenames` rewrites all four pointers to the new
+label in the same transaction (stdout: `SENSE RENAMED <word>: "old" → "new" (counts)`). If
+the glosses scattered across several new clusters, the old sense was **split** and no
+single label is right for every pointer, so nothing is rewritten. The run prints
+`⚠ SENSE SPLIT <word> (id=…)` and the drift probe `sentenceSenseOrphan` (requiredScripts.js)
+re-plans the affected sentences for `backfill-example-sentences.js --reconcile`. When an old
+cluster's glosses were all rewritten, the label-text rule `deterministicRemap` decides.
+Rows a validator approved for `definitions` keep their `longDefinition` keys untouched
+(the approval covers that text). `--rescore-only` never renames, so it never triggers this.
+
+Code: `server/scripts/backfill/chinese/lib/senseCarryForward.js`,
+`server/scripts/backfill/chinese/lib/sentenceSenseOrphans.js`; tests in
+`server/scripts/backfill/chinese/lib/senseLabels.test.mjs`.
 
 ### Short lead gloss per sense
 

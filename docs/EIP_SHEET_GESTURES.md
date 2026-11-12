@@ -535,8 +535,23 @@ never disabled waiting on the network (LEAF_NODE_PAGES.md § "The Learning contr
 With `learningSkipsRoot` (the saved-card cdp) the key is hidden while the trail's root is
 showing — the root is the saved card the page is about, so the key would only offer to un-save
 it — and appears on every word drilled into from it. It is the app's only Learning control
-(the dictionary cdp's glowing `LearningToggle` was deleted with that page, 2026-11-10). The
-flp and acp offer none — the flp's old add-only "+" for drilled-in words was removed 2026-10-29.
+(the dictionary cdp's glowing `LearningToggle` was deleted with that page, 2026-11-10). acp
+offers none.
+
+**The flp's key is ADD-ONLY (2026-11-11).** The flp mounts `InfoCardSection` itself, so it
+calls `useLearningToggle` directly (`FlashcardsLearnPage.tsx` → `eipLearning`) and passes
+`learning` only while the hook's `inLibraryOnLoad === false`: the server's answer when the
+showing word was last *loaded*, not moved by taps. So a word already in Learning shows no key;
+a word that is not (including a lent `'provisional'` card) shows `+ Add`; after a tap it stays
+as `✓ Added!` (still tappable to remove) while that word is showing, and the next load
+re-evaluates it and the key disappears. The hook re-loads on any entry change: walking the
+trail away and back, or closing and reopening the eip (the hook is fed `null` while the panel
+is closed or on the Compare tab). The flp root, the card being studied, is a working-loop
+entry with no `discoverable` field, so the hook is inert there (`available` false) and the key
+shows only on drilled-in words. A failed add/remove raises the flp's own
+`flp-eip__learning-error-snackbar`. (An earlier add-only "+" on the flp was removed 2026-10-29;
+this replaced it.) Code: `src/hooks/useLearningToggle.ts` → `inLibraryOnLoad`,
+`FlashcardsLearnPage.tsx` → `eipAddKeyShown`.
 
 **Both eip keycaps carry the straight-lip rounded edge** (a 1px top rim light just inside the
 outline ring, a 0.5px fillet over the lip; docs/designGuidelines.md § "The rounded edge").

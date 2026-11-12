@@ -142,7 +142,10 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
   try {
     newCard = await onDeckVocabService.getNextLibraryCardWithFallback(
       userId, preferredCategory, markResult.language,
-      excludeIds, collection, refillWorld
+      excludeIds, collection, refillWorld,
+      // The session's lend switch (docs/DECK_TOWER.md § "Running out of ready cards"):
+      // only a session the learner has let into new words may be refilled with one.
+      req.body?.lend === true
     );
   } catch (refillError) {
     console.error(`Replacement pick failed after a committed mark (card ${cardId}):`, refillError);
@@ -153,8 +156,10 @@ router.post('/api/flashcards/mark', authenticateToken, handle(async (req, res) =
   // session, not an error, so it is always a 200 with newCard:null and the client
   // winds the loop down. It means one of:
   //   - a focused round whose day's set is exhausted;
-  //   - an unrestricted round where every card is cooling AND the dictionary has no
-  //     more words to lend (the service already tried — getNextLibraryCardWithFallback).
+  //   - a round with nothing off cooldown left and its lend switch OFF (the client
+  //     then raises its "out of ready cards" card — docs/DECK_TOWER.md);
+  //   - a round with the lend switch ON where the dictionary has no more words to lend
+  //     (the service already tried — getNextLibraryCardWithFallback).
   // Study used to 404 here on the assumption it could always find a card. It can't any
   // more: honoring the cooldown means an unrestricted session can legitimately run dry,
   // and a 404 would surface as "failed to save progress" even though the mark committed.

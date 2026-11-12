@@ -186,13 +186,23 @@ The manifest — not this document — decides what "pending" means:
   applicability nor version-staleness can see it — the planner runs each probe as its
   own set query and OR-s the ids into the candidate scope. It prints these under
   `⚠ cross-row drift`, with both an in-batch and a **corpus-wide** count.
-  Today the only probe is `breakdownSenseOrphan`: `backfill-breakdown-senses` stores a
-  cluster's `sense` LABEL per component character, and a later re-clustering of that
-  character can rename the label, orphaning the pointer. **Repair is
-  `--reconcile`** on that script, NOT `--force` — `--force` re-tags all ~9.5k rows and
-  re-spends every prompt to fix the ~1k that drifted. A corpus-wide count that stays
-  flat across rounds means the reconcile pass is not actually running; say so in the
-  report rather than looping on it.
+  There are two probes, and **both repair with the named script's `--reconcile`**:
+  - `breakdownSenseOrphan`: `backfill-breakdown-senses` stores a cluster's `sense`
+    LABEL per component character, and a later re-clustering of that character can
+    rename the label, orphaning the pointer. Repair is `--reconcile` on that script, NOT
+    `--force` — `--force` re-tags all ~9.5k rows and re-spends every prompt to fix the
+    ~1k that drifted.
+  - `sentenceSenseOrphan`: an example sentence's `senseDict` / per-occurrence tag names
+    a segment's cluster label that no longer exists. Repair is
+    `backfill-example-sentences.js --reconcile --words=<drifted hosts>` — NEVER a plain
+    `--words=` run, which regenerates the sentences. Its prompts are a pair mapper (one per
+    stale label) and then the ordinary segment tagger for split labels; a re-run after
+    apply can chain one more link (pairs answered null go on to the tagger).
+  Since 2026-11-12 the clusterer carries RENAMED labels forward itself
+  (`chinese/lib/senseCarryForward.js`, stdout `SENSE RENAMED`), so these probes should now
+  only fire for labels it reports as `⚠ SENSE SPLIT`. Surface those lines in the report.
+  A corpus-wide count that stays flat across rounds means the reconcile pass is not
+  actually running; say so in the report rather than looping on it.
 - **Opt-in steps** (`optional: true`): excluded from the plan *and* from the promotion
   bar unless asked for. Today this is `backfill-icons` only — since v2 its LLM
   acceptability-judge call is oracle-capturable, but the icons8 search/getById HTTP

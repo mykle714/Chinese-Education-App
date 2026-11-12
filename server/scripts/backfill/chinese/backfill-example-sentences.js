@@ -67,6 +67,10 @@
  *     # heal stored sentences that repeat the headword (target index + per-occurrence tags)
  *   npx tsx /app/scripts/backfill-example-sentences.js --retag-segment=累 [--words=...] [--dry-run]
  *     # re-tag ONE segment (POS/sense) across stored sentences after its det row was (re)clustered
+ *   npx tsx /app/scripts/backfill-example-sentences.js --reconcile [--words=...] [--dry-run]
+ *     # repair ORPHANED sense labels (a re-cluster renamed/split the label) in the --words host
+ *     # rows' sentences — what the planner schedules for DRIFT_PROBES.sentenceSenseOrphan.
+ *     # Engine: ./lib/reconcileSenses.js (also the CLI reconcile-sentence-senses.js)
  */
 
 import dotenv from 'dotenv';
@@ -86,9 +90,21 @@ import {
   buildExcludeSet,
   segmentWithDict,
 } from '../../../dal/shared/segmentString.js';
+// The segment-wise tagger is shared with chinese/reconcile-sentence-senses.js (the
+// stale-sense repair), so both writers of senseDict tag with one prompt + one rule set.
+import {
+  buildTagItems,
+  createSegmentTagger,
+  resolveItemTag,
+  codePointLength,
+  HAN_REGEX,
+  ALLOWED_POS_TAG_SET,
+} from './lib/segmentTagger.js';
+import { runSenseReconcile } from './lib/reconcileSenses.js';
 const SCRIPT_VERSION = 8; // bump when this script's logic/prompt changes (v8: the generator wraps the demonstrated target occurrence in 【】 → stored `vocabCharIndex`; the tagger labels a REPEATED segment once per occurrence → stored `segmentOccurrenceTags`. requiredScripts.js deliberately stays at 7 — v7 rows only differ on the ~0.4% of sentences that repeat the headword, healed in place by --locate-targets instead of a corpus-wide regeneration) (v7: add the segmentation-audit pass — a model call between the GSA and the tagger names multi-char segments the context-free GSA glued together wrongly, stored per-sentence as `segmentExceptions` and fed back as exclude tokens before tagging) (v6: move `tense` from a single sentence-level generation field to a per-verb segment-keyed `tenseDict` emitted by the tagging pass; generation no longer emits `tense`) (v5: pull per-token POS/number out of generation into a post-generation segment-wise tagging pass — GSA-segment-keyed partOfSpeechDict/numberDict/senseDict + persisted `segments`; generation now emits only `targetPos` for coverage)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const callSegmentTagger = createSegmentTagger({ anthropic });
 
 // run-log: track duration, version, words/mode, and token usage/cost
 const { stampEntries, validatedClause, staleClause } = initRunLog({ script: 'chinese/backfill-example-sentences', version: SCRIPT_VERSION, anthropic: anthropic });
@@ -118,6 +134,15 @@ const isDryRun = process.argv.includes('--dry-run');
 // --dry-run. Rows are NOT re-stamped.
 const retagSegmentArg = process.argv.find(a => a.startsWith('--retag-segment='));
 const retagSegment = retagSegmentArg ? retagSegmentArg.slice('--retag-segment='.length).trim() || null : null;
+
+// --reconcile: repair sense labels a re-cluster ORPHANED (renamed or split) in the host
+// rows' stored sentences, instead of generating. Unlike --retag-segment it touches only
+// tags that no longer resolve, and costs at most one call per stale (segment, label) pair
+// plus one per sentence for split labels. The oracle planner names this step when
+// DRIFT_PROBES.sentenceSenseOrphan fires (shared/lib/requiredScripts.js); the probe and
+// this mode MUST agree on "orphaned" — both use findOrphanedSenseTags' definition.
+// Rows are NOT re-stamped (the stamp records the generation prompt, which did not re-run).
+const isReconcile = process.argv.includes('--reconcile');
 
 // When --spot-check is passed, process only 3 entries and print full sentence output
 const isSpotCheck = process.argv.includes('--spot-check');
@@ -150,14 +175,10 @@ const emptinessFilter = isAllDiscoverable
 const GENERATOR_MODEL = 'claude-sonnet-4-6';
 const VALIDATOR_MODEL = 'claude-sonnet-4-6';
 const REGENERATOR_MODEL = 'claude-opus-4-8';
-// Post-generation segment-wise tagger (POS + sense + number per GSA segment).
-const TAGGER_MODEL = 'claude-sonnet-4-6';
 // Segmentation auditor — names segments the context-free GSA glued together wrongly.
 const AUDITOR_MODEL = 'claude-sonnet-4-6';
 
-const ALLOWED_TENSES = new Set(['past', 'present', 'future']);
-const ALLOWED_NUMBERS = new Set(['singular', 'plural']);
-const ALLOWED_POS_TAG_SET = new Set(ALLOWED_POS_TAGS);
+// ALLOWED_POS_TAG_SET comes from ./lib/segmentTagger.js (one set for the generator + tagger).
 const ALLOWED_POS_LINE = ALLOWED_POS_TAGS.join(', ');
 
 // A sense qualifies as a coverage target when its per-cluster frequencyScore is
@@ -356,7 +377,6 @@ function isValidSentenceShape(s) {
 // ─────────────────────────────────────────────────────────────────────────────
 const MARKER_PAIR_REGEX = /【([^【】]*)】/g;
 const stripMarkers = (text) => text.replace(/[【】]/g, '');
-const codePointLength = (text) => [...text].length;
 
 // Every code-point offset at which `word` starts in `text`.
 function occurrenceOffsets(text, word) {
@@ -924,159 +944,6 @@ ${candidates.map((seg, i) => `${i + 1}. "${seg}"`).join('\n')}`;
   return accepted;
 }
 
-// Static tagger instructions → cached system; only the per-sentence text + segment
-// list ride in the user message.
-const SEGMENT_TAGGER_SYSTEM = `You label the segments of a Chinese sentence with grammatical metadata for a language-learning app. You are given the sentence, its English translation, and its FIXED segmentation — use exactly the segments provided, in the given order; never re-split, merge, or add segments.
-
-A segment that appears MORE THAN ONCE in the sentence is listed once per occurrence, keyed "<segment>#<n>" (n counts its occurrences left to right) and shown in context with that occurrence wrapped in 【】. Label each occurrence on its own — the same characters can do different jobs in one sentence (e.g. in 听了老师的解释，我心中了然, the first 了 is an aspect particle and the second means "to understand").
-
-For EACH listed key return:
-- "pos": the segment's part of speech IN THIS sentence — one of: ${ALLOWED_POS_LINE}. If a verb segment is used nominally (gerund / subject / object), tag it "noun".
-- "sense": ONLY for keys shown with a "candidate senses" list — copy verbatim the ONE listed label that matches how the segment is used here, character-for-character. Never invent, translate, paraphrase, shorten, or combine labels. Omit "sense" for keys with no candidate list.
-- "number": ONLY for segments you tag "noun" — "singular" or "plural", judged from the English translation. Omit for non-nouns.
-- "tense": ONLY for segments you tag "verb" or "auxiliary verb" — "past", "present", or "future", judged from THAT verb's own temporal meaning in this sentence (a sentence may contain verbs in different tenses; label each on its own). Reason from meaning, not just grammatical markers (了 can mark a present state change; progressive aspect can appear in past or future contexts). Omit for non-verbs.
-
-Respond with ONLY a JSON object mapping each key, exactly as listed, to its metadata:
-{"<key>": {"pos": "<pos_tag>", "sense": "<label>", "number": "singular|plural", "tense": "past|present|future"}}`;
-
-const HAN_REGEX = /\p{Script=Han}/u;
-
-/**
- * Split a segmentation into tagging items: one per UNIQUE Han segment, except that a
- * segment string occurring more than once gets one item PER OCCURRENCE (key
- * "<segment>#<n>", plus a 【】-marked context line), so its occurrences can be labelled
- * independently. Punctuation is never tagged.
- *
- * `vocabCharIndex` (when set) picks out the one occurrence of the headword the sentence
- * demonstrates; only that occurrence is the "target" whose sense/POS are fixed by
- * generation. Without it (legacy rows, split words) every occurrence of the headword is
- * treated as the target — the pre-v8 behaviour.
- */
-function buildTagItems(foreignText, segments, targetWord, vocabCharIndex) {
-  const occurrences = [];
-  let charStart = 0;
-  segments.forEach((seg, index) => {
-    if (HAN_REGEX.test(seg)) occurrences.push({ seg, index, charStart });
-    charStart += codePointLength(seg);
-  });
-
-  const totalBySeg = new Map();
-  for (const o of occurrences) totalBySeg.set(o.seg, (totalBySeg.get(o.seg) ?? 0) + 1);
-
-  const targetSegIndex = Number.isInteger(vocabCharIndex)
-    ? occurrences.find(o => o.seg === targetWord && o.charStart === vocabCharIndex)?.index ?? null
-    : null;
-
-  const chars = [...foreignText];
-  const seenBySeg = new Map();
-  return occurrences.map(o => {
-    const nth = (seenBySeg.get(o.seg) ?? 0) + 1;
-    seenBySeg.set(o.seg, nth);
-    const repeated = totalBySeg.get(o.seg) > 1;
-    const segLength = codePointLength(o.seg);
-    return {
-      ...o,
-      repeated,
-      key: repeated ? `${o.seg}#${nth}` : o.seg,
-      context: repeated
-        ? `${chars.slice(0, o.charStart).join('')}【${o.seg}】${chars.slice(o.charStart + segLength).join('')}`
-        : null,
-      isTarget: !!targetWord && o.seg === targetWord && (targetSegIndex === null || o.index === targetSegIndex),
-    };
-  });
-}
-
-// One model call per sentence → Map<item key, { pos?, sense?, number?, tense? }>. Fails
-// OPEN (empty map) so a flaky/unparseable response never blocks storage: the caller
-// still auto-fills single-cluster + target senses and falls back to the dictionary POS.
-async function callSegmentTagger(sentence, items, clustersBySeg) {
-  const result = new Map();
-  if (items.length === 0) return result;
-
-  const segLines = items.map((item, i) => {
-    const clusters = clustersBySeg.get(item.seg) ?? [];
-    // Offer sense candidates only for multi-sense NON-target occurrences: the target
-    // occurrence's sense is already fixed (generation-validated), and single-sense
-    // segments are auto-filled by the caller without spending the model on them.
-    const candidates = clusters.length > 1 && !item.isTarget
-      ? ` — candidate senses: ${clusters.map(c => `"${c.sense}"`).join('; ')}`
-      : '';
-    const context = item.context ? ` — this occurrence: ${item.context}` : '';
-    return `${i + 1}. "${item.key}"${candidates}${context}`;
-  }).join('\n');
-
-  const userText = `Chinese: ${sentence.foreignText}
-English: ${sentence.english}
-
-Segments (label every one, keyed by the exact key shown):
-${segLines}`;
-
-  try {
-    const response = await anthropic.messages.create({
-      model: TAGGER_MODEL,
-      max_tokens: Math.max(500, 120 * items.length),
-      temperature: 0.1,
-      system: cachedSystem(SEGMENT_TAGGER_SYSTEM),
-      messages: [{ role: 'user', content: userText }],
-    });
-    const parsed = parseJsonFromResponse(response.content[0].text);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      for (const [key, meta] of Object.entries(parsed)) {
-        if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
-          result.set(key, {
-            pos: typeof meta.pos === 'string' ? meta.pos : undefined,
-            sense: typeof meta.sense === 'string' ? meta.sense : undefined,
-            number: typeof meta.number === 'string' ? meta.number : undefined,
-            tense: typeof meta.tense === 'string' ? meta.tense : undefined,
-          });
-        }
-      }
-    }
-  } catch (err) {
-    // An oracle export capture is a control-flow signal, not a tagger failure — it must
-    // propagate so the round can author the tag prompt. Swallowing it (the old bare
-    // `catch {}`) silently produced empty numberDict/tenseDict on every stamped row.
-    if (err?.oracleExport) throw err;
-    // swallow — see fail-open note above
-  }
-  return result;
-}
-
-/**
- * Resolve one tagging item's final labels from the model's raw tag, applying the
- * fallbacks. Returns only the fields that resolved.
- */
-function resolveItemTag(item, rawTag, sentence, clusters, dictPos) {
-  const tag = rawTag ?? {};
-  const out = {};
-
-  // POS — the target occurrence reuses the generation-validated targetPos; others take
-  // the model's tag, falling back to the dictionary's primary POS.
-  if (item.isTarget && ALLOWED_POS_TAG_SET.has(sentence.targetPos)) out.pos = sentence.targetPos;
-  else if (ALLOWED_POS_TAG_SET.has(tag.pos)) out.pos = tag.pos;
-  else {
-    const fallback = dictPos.find(p => ALLOWED_POS_TAG_SET.has(p));
-    if (fallback) out.pos = fallback;
-  }
-
-  // Sense — target: the fixed generation sense; single-cluster: that cluster;
-  // multi-cluster: the model's pick if it is one of this segment's own labels.
-  if (item.isTarget && sentence.sense) out.sense = sentence.sense;
-  else if (clusters.length === 1) out.sense = clusters[0].sense;
-  else if (clusters.length > 1 && typeof tag.sense === 'string' && clusters.some(c => c.sense === tag.sense)) {
-    out.sense = tag.sense;
-  }
-
-  // Number — only for noun segments with a valid value.
-  if (out.pos === 'noun' && ALLOWED_NUMBERS.has(tag.number)) out.number = tag.number;
-
-  // Tense — only for verb segments with a valid value. Per-verb (not per-sentence)
-  // so a sentence mixing tenses inflects each verb's popup gloss independently.
-  if ((out.pos === 'verb' || out.pos === 'auxiliary verb') && ALLOWED_TENSES.has(tag.tense)) out.tense = tag.tense;
-
-  return out;
-}
-
 /**
  * Produce the render data for one finished sentence:
  *   { segments, segmentExceptions, audited, partOfSpeechDict, senseDict, numberDict,
@@ -1485,6 +1352,16 @@ async function run() {
     if (retagSegment) {
       console.log(`🏷️  Retag-segment heal mode: ${retagSegment}\n`);
       await runRetagSegment(client, retagSegment);
+      return;
+    }
+    if (isReconcile) {
+      console.log('🔗 Reconcile mode: orphaned sense labels\n');
+      await runSenseReconcile(client, {
+        anthropic,
+        hostWords: targetWords,
+        dryRun: isDryRun,
+        logLabel: 'example-sentences-reconcile',
+      });
       return;
     }
 

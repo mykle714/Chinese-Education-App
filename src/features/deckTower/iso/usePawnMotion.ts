@@ -195,6 +195,12 @@ const STEP_RATE = 3.4;
 const STEP_HOP = 0.13;
 /** Side-to-side waddle, alternating per step. */
 const WADDLE_DEG = 4;
+/**
+ * Ground one step covers (≈0.44 units; one sway of the waddle). Every walk is a whole
+ * number of these (`stepWalkTarget`), so the pawn arrives exactly as a step lands, feet
+ * down and upright, instead of treading in place to finish it.
+ */
+const STEP_DISTANCE = WALK_SPEED / STEP_RATE;
 const PAUSE_MIN_MS = 900;
 const PAUSE_MAX_MS = 3300;
 /**
@@ -203,7 +209,10 @@ const PAUSE_MAX_MS = 3300;
  */
 const OPENING_PAUSE_MIN_MS = 3500;
 const OPENING_PAUSE_MAX_MS = 6000;
-/** Shortest and longest walk worth taking; shorter picks look like twitching. */
+/**
+ * Shortest and longest walk worth taking; shorter picks look like twitching. With walks in
+ * whole steps these allow 3–12 steps (1.32–5.29 units).
+ */
 const WALK_MIN = 1.2;
 const WALK_MAX = 5.5;
 const PICK_TRIES = 16;
@@ -490,6 +499,35 @@ function pickTarget(from: Pt2, roam: PawnRoam, minDist = WALK_MIN, maxDist = WAL
         const dist = Math.hypot(p.x - from.x, p.y - from.y);
         if (dist < minDist || dist > maxDist) continue;
         if (pathClear(from, p, roam.obstacles)) return p;
+    }
+    return null;
+}
+
+/**
+ * `target`, pulled back along the straight line from `from` to the nearest whole number of
+ * steps (STEP_DISTANCE), rounding down; null when not even one step fits. Rounding
+ * down keeps the point on the original segment, so a path that was clear (and legal — the
+ * roam regions are convex, see onFloor) stays so.
+ */
+function stepWalkTarget(from: Pt2, target: Pt2): Pt2 | null {
+    const dist = Math.hypot(target.x - from.x, target.y - from.y);
+    // The epsilon keeps a target that is already a whole number of steps from losing one to rounding.
+    const steps = Math.floor(dist / STEP_DISTANCE + 1e-6);
+    if (steps < 1) return null;
+    const k = (steps * STEP_DISTANCE) / dist;
+    return { x: from.x + (target.x - from.x) * k, y: from.y + (target.y - from.y) * k };
+}
+
+/**
+ * A wander target (pickTarget) cut to a whole number of steps. Cutting only shortens, so
+ * the result is still ≤ WALK_MAX; a pick that drops under WALK_MIN is retried.
+ */
+const WALK_PICK_ROUNDS = 4;
+function pickWalkTarget(from: Pt2, roam: PawnRoam): Pt2 | null {
+    for (let i = 0; i < WALK_PICK_ROUNDS; i++) {
+        const raw = pickTarget(from, roam);
+        const p = raw && stepWalkTarget(from, raw);
+        if (p && Math.hypot(p.x - from.x, p.y - from.y) >= WALK_MIN) return p;
     }
     return null;
 }
@@ -1213,7 +1251,9 @@ export function usePawnMotion(opts: {
                 // Never set off mid-air (thrown up by the plate): wait for the feet.
                 if (now >= m.until && !feetAirborne() && !stepsRef.current[s.stepIdx]?.summit?.held) {
                     const here = walkRoam();
-                    const target = here ? pickTarget(s.pos, here) : null;
+                    const target = here ? pickWalkTarget(s.pos, here) : null;
+                    // Start on a step boundary, so the whole-step distance ends on one too.
+                    s.stepPhase = 0;
                     s.mode = target ? { kind: "walk", target } : { kind: "pause", until: now + PAUSE_MIN_MS };
                 }
             } else if (m.kind === "walk" || m.kind === "land") {
@@ -1262,6 +1302,9 @@ export function usePawnMotion(opts: {
                 }
                 // One bounce per step: |sin| touches down every π. On arrival keep stepping
                 // in place until the feet are down, so the pawn never drops out of mid-air.
+                // A wander walk is whole steps (stepWalkTarget), so it arrives as the
+                // phase crosses a multiple of π and this ends the same frame; the tread in
+                // place only shows when a walk is cut short (the summit `held`).
                 const before = Math.floor(s.stepPhase / Math.PI);
                 s.stepPhase += dt * STEP_RATE * Math.PI;
                 if (s.mode.kind === "land" && Math.floor(s.stepPhase / Math.PI) !== before) {
@@ -1305,13 +1348,15 @@ export function usePawnMotion(opts: {
                     sx = 1 + 0.75 * d;
                     sy = 1 - d;
                 } else {
-                    // Walk on from feet-down — or, if the hop carried it to the walk's end, pause.
+                    // Walk on from feet-down, the rest of the way cut to whole steps — or, if
+                    // not even one step is left (the hop carried it to or near the walk's
+                    // end), pause here.
                     s.pos = { ...m.to };
                     s.stepPhase = 0;
-                    const atEnd = Math.hypot(m.resume.x - s.pos.x, m.resume.y - s.pos.y) < 1e-6;
-                    s.mode = atEnd
-                        ? { kind: "pause", until: now + PAUSE_MIN_MS + Math.random() * (PAUSE_MAX_MS - PAUSE_MIN_MS) }
-                        : { kind: "walk", target: m.resume };
+                    const resume = stepWalkTarget(s.pos, m.resume);
+                    s.mode = resume
+                        ? { kind: "walk", target: resume }
+                        : { kind: "pause", until: now + PAUSE_MIN_MS + Math.random() * (PAUSE_MAX_MS - PAUSE_MIN_MS) };
                 }
             } else if (m.kind === "stretch") {
                 const t = now - m.t0;

@@ -101,9 +101,8 @@ export interface OutPlan {
  * scene already fully off screen (a drag can outrun the finger) has no out phase left.
  * With no carry (0, 0) it is the plain ease-in over `DASH_MOTION.outMs`.
  *
- * Shared by the world pan (`outPlan`, a sideways swipe) and the home screen's return
- * (home/useHomeEntrance.ts, the pull past the deck's top carrying its rubber band on —
- * docs/HOME_SCREEN.md § "Back to home").
+ * Used by the world pan (`outPlan`, a sideways swipe). (The archived home screen's pull
+ * home shared it — docs/ARCHIVED_FEATURES.md.)
  */
 export function carriedOutPlan(start: number, v0: number): OutPlan {
     const s = Math.min(1, Math.max(0, start));

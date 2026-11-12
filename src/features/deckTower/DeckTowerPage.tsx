@@ -63,6 +63,7 @@ import { RAIN_ALPHA, RAIN_LEAN, RAIN_STROKE_PX, SNOW_ALPHA, SNOW_R, SNOW_SPEED, 
 import { useTowerSnow } from "./useTowerSnow";
 import { SNOW_COMPONENTS, type SnowComponent } from "./towerSnow";
 import BalloonSpawnChip from "./BalloonSpawnChip";
+import ShootingStarChip from "./ShootingStarChip";
 import SnowResetChip from "./SnowResetChip";
 import { useSoftIntro } from "../../softIntro/useSoftIntro";
 import { useWeatherEffectsEnabled } from "../../hooks/useWeatherEffectsSetting";
@@ -101,11 +102,9 @@ import type { GameExit } from "../../games/runtime/gameExit";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { useClaimStudySurface } from "../../minutePoints/studySurface";
 import TowerCardsPage from "./TowerCardsPage";
-import HomeStage from "./home/HomeStage";
-import { useHomeEntrance } from "./home/useHomeEntrance";
-import { useHomePull, type PullRelease } from "./home/useHomePull";
-import { homeDueOnLaunch, markHomeTaken } from "./home/homeLaunch";
-import type { ScreenPoint } from "../../utils/pageTransition";
+import LaunchScreen from "./launch/LaunchScreen";
+import { launchLook } from "./launch/launchLook";
+import { launchDueOnMount, markLaunchTaken } from "./launch/launchDue";
 import { TOWER_SCENE_CLASS, TOWER_SECTION_CLASS, heightAbovePlatform, platformScrollTop, towerSceneOf, useTowerCardsScroll } from "./towerScroll";
 import { withLens } from "../flashcards/collectionRef";
 import type { VocabEntry } from "../../types";
@@ -702,7 +701,6 @@ const DeckTowerPage: React.FC = () => {
     // The flp hint pawn's visit scope (docs/HINT_PAWN.md § "Dismissing"): a swipe-away
     // lasts until td is left, across every session and world, so the visit starts here.
     useHintPawnVisit();
-    // (The footer's hide — `useHideFooter` — is with the home stage below: it hides for both.)
     useBlockEdgeSwipe(study.active);
     useClaimStudySurface(study.phase === "studying");
     // A world's two decks, read through its own bar: Learning = that bar's OFF-COOLDOWN
@@ -722,8 +720,6 @@ const DeckTowerPage: React.FC = () => {
     });
 
     const world = useMemo(() => litWorld(skyWorlds[worldId], light), [skyWorlds, worldId, light]);
-    // The home screen's platform always stands in the MAIN world's colours, lit for the hour.
-    const homeWorld = useMemo(() => litWorld(skyWorlds.core, light), [skyWorlds, light]);
     const worldIndex = shownWorlds.indexOf(worldId);
     const leftWorld = worldIndex > 0 ? shownWorlds[worldIndex - 1] : undefined;
     const rightWorld = worldIndex < shownWorlds.length - 1 ? shownWorlds[worldIndex + 1] : undefined;
@@ -926,6 +922,10 @@ const DeckTowerPage: React.FC = () => {
     // weather (useCloudDrifts → `balloonRequest`).
     const [balloonRequest, setBalloonRequest] = useState(0);
     const spawnBalloon = useCallback(() => setBalloonRequest((n) => n + 1), []);
+    // Feature testing (ShootingStarChip): each bump fires one meteor burst now, whatever the
+    // time of day (SpaceBackdrop → ShootingStars `burstRequest`).
+    const [shootingStarRequest, setShootingStarRequest] = useState(0);
+    const fireShootingStars = useCallback(() => setShootingStarRequest((n) => n + 1), []);
     // Wind blows only once the tower reaches the wind band, in EVERY world (2026-11-08: the
     // skill worlds' always-on wind was dropped). Clouds still keep the skill worlds' sky.
     const windActive = skyLive && cardsOnTower >= WIND_BAND_CARDS.from;
@@ -1019,95 +1019,30 @@ const DeckTowerPage: React.FC = () => {
     // browser's clamp of it) is not the learner moving, so it must not overwrite `climb`.
     const placedScrollTop = useRef<number | null>(null);
 
-    // ── The home screen (docs/HOME_SCREEN.md) ─────────────────────────────────────
-    // The HOME STAGE (home/HomeStage.tsx) stands ABOVE the tower: its own platform and pawn
-    // over td's sky, with Dictionary and Enter under it. The app opens on it once per launch;
-    // Enter takes the camera down to the deck's top and scrolls on down to the platform, and a
-    // fresh pull past the deck's top takes it back up (home/useHomeEntrance.ts,
-    // home/useHomePull.ts). While it is up: no header, no footer, no world swipe, and the
-    // tower's own events (the opening grow, cooldown drops, the banking run) WAIT, so they play
-    // once the learner can see them.
-    const [homeOnLaunch] = useState(homeDueOnLaunch);
+    // ── The launch screen (docs/LAUNCH_SCREEN.md) ─────────────────────────────────
+    // Once per app launch td opens behind a full-screen cover (launch/LaunchScreen.tsx): the
+    // nearest phase's sky colour with a pawn dropping onto a mini platform. It opens with a
+    // circle once td is ready (`launchReady`: the weather has settled and the shown world's
+    // deck count is in), after one full drop, and at most MAX_WAIT_MS after mount. While it is
+    // up td's own events WAIT (the opening grow, cooldown drops, the banking run), so they play
+    // once the learner can see them, and the scroller is locked.
+    const [launchOnMount] = useState(launchDueOnMount);
     useEffect(() => {
-        if (homeOnLaunch) markHomeTaken();
-    }, [homeOnLaunch]);
-    // The sky's altitude through a shift's cruise, as viewBox y's (SpaceBackdrop `altitudeY`):
-    // from where the shift left to where it lands. Measured by `onCruise`.
-    const homeAltitudes = useRef<{ from: number; to: number } | null>(null);
-    // Set while a shift holds the scroller at the tower's top (a refit must keep it there):
-    // from Enter's cruise to its landing, and from a return's start to its cruise.
-    const homeAtTop = useRef(false);
-    /** viewBox y at the middle of the view for a given scrollTop — SpaceBackdrop's own altitude
-     * formula. Both rects carry the scroller's shift transform, so it cancels. */
-    const altitudeAt = (el: HTMLDivElement): ((top: number) => number) | null => {
-        const svg = towerSceneOf(el);
-        if (!svg) return null;
-        const svgRect = svg.getBoundingClientRect();
-        const scale = svgRect.width / scene.width;
-        const svgContentTop = svgRect.top - el.getBoundingClientRect().top + el.scrollTop;
-        const viewH = el.clientHeight - footerPx();
-        return (top) => scene.minY + (top + viewH / 2 - svgContentTop) / scale;
-    };
-    const home = useHomeEntrance({
-        shown: homeOnLaunch,
-        scrollerRef,
-        // Nothing is on screen: move the scroller to where the shift lands, and blend the sky there.
-        onCruise: (direction) => {
-            const el = scrollerRef.current;
-            if (!el) return;
-            cardsScroll.cancelGlide();
-            const midAt = altitudeAt(el);
-            // Enter lands on the tower's top; a return parks the scroller on the platform line,
-            // where it stands under the home (the launch's own state).
-            const to = direction === "enter" ? 0 : platformScrollTop(el);
-            homeAltitudes.current = midAt ? { from: midAt(el.scrollTop), to: midAt(to) } : null;
-            el.scrollTop = to;
-            placedScrollTop.current = el.scrollTop;
-            climb.current = heightAbovePlatform(el);
-            homeAtTop.current = direction === "enter";
-        },
-        descentTarget: () => (scrollerRef.current ? platformScrollTop(scrollerRef.current) : 0),
-        onPlaced: (top) => {
-            placedScrollTop.current = top;
-        },
-        onLanded: () => {
-            homeAtTop.current = false;
-            homeAltitudes.current = null;
-            const el = scrollerRef.current;
-            if (el) {
-                el.scrollTop = platformScrollTop(el);
-                placedScrollTop.current = el.scrollTop;
-            }
-            climb.current = 0;
-            cardsScroll.syncHeader();
-        },
-        onHome: () => {
-            homeAtTop.current = false;
-            homeAltitudes.current = null;
-        },
-    });
-    const homeUp = home.phase !== "done";
-    const homeShifting = home.phase === "enter" || home.phase === "return";
-    // The home stage itself is on screen (at rest and through both shifts; not the descent).
-    const homeStageShown = home.phase === "home" || homeShifting;
-    const homePhaseRef = useRef(home.phase);
-    homePhaseRef.current = home.phase;
-    // The footer slides back in as the descent starts, and away as a return starts; a study hides it too.
-    useHideFooter(study.active || homeStageShown);
-    // The sky's altitude override through a shift, once its cruise has measured it (null = follow the scroll).
-    const homeAltitudeY =
-        homeShifting && homeAltitudes.current
-            ? homeAltitudes.current.from + (homeAltitudes.current.to - homeAltitudes.current.from) * home.frame.altitudeT
-            : null;
-    // The banking run is held only until the learner first leaves the home: a later return home
-    // must not cancel a run already playing (it is stamped seen as it starts).
-    const homeLeftOnce = useRef(!homeOnLaunch);
-    if (!homeUp) homeLeftOnce.current = true;
-    const bankingHeld = homeUp && !homeLeftOnce.current;
-    // Dictionary from home: the circle grows out of the key; its Back comes to td (the home
-    // screen is spent by then), closing the circle onto the same point (DictionaryPage → `homeBack`).
-    const openDictionaryFromHome = (at: ScreenPoint) =>
-        slideNavigate("/dictionary", { circleFrom: at, state: { circleFrom: at, homeBack: true } });
+        if (launchOnMount) markLaunchTaken();
+    }, [launchOnMount]);
+    const [launchUp, setLaunchUp] = useState(launchOnMount);
+    // True until the circle starts to open: while td is fully hidden its sky takes every
+    // change at once (SpaceBackdrop `snapSky`), so the circle opens onto the true time of day
+    // and the real weather if it has arrived, else clear. Changes after that fade as usual.
+    const [launchCovering, setLaunchCovering] = useState(launchOnMount);
+    // The cover's own look, fixed at mount (always day, clear weather).
+    const [launchCover] = useState(launchLook);
+    const launchReady = towerWeather.settled && readyCounts[worldId].loaded;
+    const openLaunch = useCallback(() => setLaunchCovering(false), []);
+    const endLaunch = useCallback(() => setLaunchUp(false), []);
+    // The footer slides away while a session is up, and stays away under the launch screen
+    // (which covers td's screen but not the footer), sliding in once the cover has opened.
+    useHideFooter(study.active || launchUp);
     // ── The cards page under the platform (§ "The cards page") ────────────────────
     // Its root (the header hand-off measures its top; a world swipe slides it with the
     // scene) and the page header's layer, which its title row pushes off. The platform stop
@@ -1127,10 +1062,10 @@ const DeckTowerPage: React.FC = () => {
             const el = scrollerRef.current;
             climb.current = el ? heightAbovePlatform(el) : 0;
         },
-        enabled: !study.active && !homeUp,
+        enabled: !study.active && !launchUp,
         // The snap stays out of the way of the page's own camera moves (the same set that
         // blocks a pan — `panBlocked` below, which is declared after this hook).
-        snapEnabled: !(pan.busy || swap.busy || resize.busy || study.active || homeUp),
+        snapEnabled: !(pan.busy || swap.busy || resize.busy || study.active || launchUp),
     });
     // The header layer remounts when a session's camera comes back up: re-apply the push.
     useLayoutEffect(() => {
@@ -1162,14 +1097,6 @@ const DeckTowerPage: React.FC = () => {
     useLayoutEffect(() => {
         const el = scrollerRef.current;
         if (!el) return;
-        // The home move owns the scroller: through the shift it stands at the tower's top, and
-        // the descent reads the platform line live every frame (useHomeEntrance).
-        if (homePhaseRef.current === "descend") return;
-        if ((homePhaseRef.current === "enter" || homePhaseRef.current === "return") && homeAtTop.current) {
-            el.scrollTop = 0;
-            placedScrollTop.current = el.scrollTop;
-            return;
-        }
         const keepClimb = keepClimbFor.current === scene.viewBox;
         keepClimbFor.current = null;
         // A refit places the scroller itself: a glide still running would drag it off.
@@ -1344,12 +1271,12 @@ const DeckTowerPage: React.FC = () => {
         }
         startResize(r.heldCards ?? 0, toCards);
     };
-    // Held while the home screen is up: the opening grow plays once the descent has landed,
-    // where it can be seen (docs/HOME_SCREEN.md § "What waits").
+    // Held while the launch screen is up: the opening grow plays once the circle has opened,
+    // where it can be seen (docs/LAUNCH_SCREEN.md § "What waits").
     useEffect(() => {
-        if (homeUp) return;
+        if (launchUp) return;
         for (const id of WORLD_ORDER) resolveRecount.current(id);
-    }, [readyCounts.core.version, readyCounts.reading.version, readyCounts.writing.version, homeUp]);
+    }, [readyCounts.core.version, readyCounts.reading.version, readyCounts.writing.version, launchUp]);
     // ── Cooldown releases (docs/DECK_TOWER.md § "Cooldown releases") ────────────────
     // A card whose cooldown ends while the page is up joins the tower then, as its OWN sky
     // drop: useFlpReadyCounts holds the release schedule and reports cards that came due
@@ -1373,7 +1300,7 @@ const DeckTowerPage: React.FC = () => {
                 continue;
             }
             const fromCards = towerCounts[id];
-            if (pan.busy || homeUp || fromCards === undefined) continue;
+            if (pan.busy || launchUp || fromCards === undefined) continue;
             startResize(fromCards, fromCards + 1);
             r.applyReleases(1);
         }
@@ -1385,7 +1312,7 @@ const DeckTowerPage: React.FC = () => {
         resizes.core.busy, resizes.reading.busy, resizes.writing.busy,
         swaps.core.busy, swaps.reading.busy, swaps.writing.busy,
         swaps.core.towerDeck, swaps.reading.towerDeck, swaps.writing.towerDeck,
-        pan.busy, study.active, worldId, homeUp,
+        pan.busy, study.active, worldId, launchUp,
     ]);
     // Back from a hidden tab: re-read every world (timers sleep in the background, and
     // another device may have marked cards meanwhile). The tower shown is held first, so
@@ -1444,47 +1371,7 @@ const DeckTowerPage: React.FC = () => {
 
     // ── Moving between worlds ────────────────────────────────────────────────────
     // Not while this world's deck swap runs: its fall is measured for the scene on screen.
-    const panBlocked = pan.busy || swap.busy || resize.busy || study.active || homeUp;
-    // Back up to the home: a FRESH pull past the deck's top (momentum stops there — useHomePull).
-    // Not while anything else is moving the camera (`panBlocked` covers the home move itself).
-    //
-    // THE RELEASE CARRIES ON (docs/HOME_SCREEN.md § "Back to home"). On iOS the pull is the
-    // native rubber band: at release the tower stands stretched down by it (a negative
-    // scrollTop) and WebKit is about to spring it back. Left alone, the shift's commit locks
-    // the scroller mid-bounce, the tower snaps back up, and only then slides down from rest —
-    // the "jumps, then transitions" the world swipe had before `PanCarry`. So, in the release's
-    // own event: lock the scroll at 0 (ending the bounce) and hold the content down by the
-    // stretch with a transform, then hand the stretch and its speed to the shift, whose out
-    // phase starts from there. React's own overflow/transform take over on the shift's first
-    // commit (`pinnedPull` below). No stretch (Android, desktop) carries nothing.
-    const pinnedPull = useRef(false);
-    const pullHome = (release: PullRelease) => {
-        const el = scrollerRef.current;
-        if (!el || homePhaseRef.current !== "done") return;
-        const stretch = Math.max(0, -el.scrollTop);
-        const stageH = el.offsetHeight || 1;
-        if (stretch > 0) {
-            el.style.overflowY = "hidden";
-            el.scrollTop = 0;
-            placedScrollTop.current = 0;
-            el.style.transform = `translateY(${stretch.toFixed(2)}px)`;
-            pinnedPull.current = true;
-        }
-        // The band gives less than the finger travels (its resistance), so the content moved
-        // at the finger's speed scaled by the share of the travel it shows.
-        const give = release.travel > 0 ? Math.min(1, stretch / release.travel) : 0;
-        home.returnHome({ shift: stretch / stageH, velocity: (release.speed * give) / stageH });
-    };
-    useHomePull({ scrollerRef, enabled: !panBlocked, onPull: pullHome });
-    // Hand the pinned band back to React once the shift's first frame has committed (its
-    // transform starts at the same offset), before that frame paints.
-    useLayoutEffect(() => {
-        const el = scrollerRef.current;
-        if (!pinnedPull.current || !el || home.phase === "done") return;
-        pinnedPull.current = false;
-        el.style.overflowY = "";
-        el.style.transform = "";
-    }, [home.phase]);
+    const panBlocked = pan.busy || swap.busy || resize.busy || study.active || launchUp;
     const goTo = (to: TowerWorldId | undefined, carry?: PanCarry) => {
         if (to && !panBlocked) pan.go(to, carry);
     };
@@ -1575,14 +1462,15 @@ const DeckTowerPage: React.FC = () => {
     // ── Tap to Start (docs/DECK_TOWER.md § "Tap to Start") ───────────────────────
     // Only the Learning tower starts a session — the flp deals exactly that deck: this
     // world's bar, in Study Mix over the whole library (the only loop the flp deals). Not
-    // mid-swap, mid-pan or mid-resize, and not on an empty or still-loading tower.
+    // mid-swap, mid-pan or mid-resize, and not on a still-loading tower. An EMPTY tower
+    // starts one too (a tap on its "0 cards" imprint): the session opens straight on the
+    // flp's out-of-ready-cards card (docs/DECK_TOWER.md § "Running out of ready cards").
     const startable =
         swap.titleDeck === "learn-now" &&
         swap.towerDeck === "learn-now" &&
         !swap.busy &&
         !study.active &&
-        towerCounts[worldId] !== undefined &&
-        towerCount > 0;
+        towerCounts[worldId] !== undefined;
     // The tap STUDIES the tower in place (useTowerStudy): no navigation. The session is the
     // world's bar in Study Mix — already mounted
     // and dealt under the tower (useTowerStudy § "Studying the tower" → "Parked sessions").
@@ -1649,8 +1537,8 @@ const DeckTowerPage: React.FC = () => {
     }, [userId, language, coreSettledCount]);
 
     return (
-        // The banking run waits for the home screen to go (it is stamped seen as it starts).
-        <DailyBankingProvider held={bankingHeld}>
+        // The banking run waits for the launch screen to go (it is stamped seen as it starts).
+        <DailyBankingProvider held={launchUp}>
             <MobileTabScreen
                 // The world's title ("Flashcards", "Reading", "Writing")
                 // is the header's title. It stays put through a pan and swaps text mid-pan,
@@ -1673,10 +1561,8 @@ const DeckTowerPage: React.FC = () => {
                                 position: "relative",
                                 zIndex: 2,
                                 ...TOWER_TYPE_SX,
-                                // Away while the home stage is up; fades in as the descent starts.
-                                opacity: homeStageShown ? 0 : towerUiOpacity,
-                                transition: homeUp ? "opacity 320ms ease-out" : undefined,
-                                pointerEvents: study.active || homeUp ? "none" : undefined,
+                                opacity: towerUiOpacity,
+                                pointerEvents: study.active ? "none" : undefined,
                             }}
                         >
                             {header}
@@ -1695,6 +1581,7 @@ const DeckTowerPage: React.FC = () => {
                                         <LightningStrikeChips onStrike={() => forceStrike(false)} onStrikePawn={() => forceStrike(true)} />
                                         <SnowResetChip onReset={towerSnow.reset} />
                                         <BalloonSpawnChip onSpawn={spawnBalloon} />
+                                        <ShootingStarChip onFire={fireShootingStars} />
                                         <BankingAlwaysPlayToggle />
                                     </TesterSharedRow>
                                     <ForcedBreakPicker world={worldId} language={language as Language} />
@@ -1732,12 +1619,17 @@ const DeckTowerPage: React.FC = () => {
                         palette={pan.palette}
                         groundStars={light.groundStars}
                         shootingStars={light.shootingStars && !auroraUp}
+                        shootingStarRequest={shootingStarRequest}
                         weather={weatherFx}
                         flashId={lightningFlashes.flashId}
                         // To the screen's bottom edge, not the footer's top: the slab footer
                         // floats, so sky shows in the gaps beside and below it.
                         bottom={0}
-                        altitudeY={studyAltitudeY ?? homeAltitudeY}
+                        altitudeY={studyAltitudeY}
+                        // Mid-pan the sky follows the blend at once; any other change of colour
+                        // (the weather, the clock) fades (SKY_FADE_MS). Under the closed launch
+                        // screen it also follows at once, so the circle opens onto the truth.
+                        snapSky={pan.busy || launchCovering}
                         scrollerBottomInset={footerSpacerPx}
                     />
 
@@ -1769,16 +1661,11 @@ const DeckTowerPage: React.FC = () => {
                             right: 0,
                             bottom: 0,
                             overflowX: "hidden",
-                            // Locked through a study and the home move (the descent scrolls it itself).
-                            overflowY: study.active || homeUp ? "hidden" : "auto",
+                            // Locked through a study and under the launch screen.
+                            overflowY: study.active || launchUp ? "hidden" : "auto",
                             overscrollBehavior: "contain",
-                            touchAction: study.active || homeUp ? "none" : "pan-y",
-                            // The home stage: the tower is laid out (measurable) but unseen;
-                            // Enter raises it in from below, a return drops it off the bottom
-                            // (`towerY`, stage heights).
-                            visibility: home.phase === "home" ? "hidden" : undefined,
-                            transform: homeShifting ? `translateY(${(home.frame.towerY * 100).toFixed(2)}%)` : undefined,
-                            pointerEvents: homeUp ? "none" : undefined,
+                            touchAction: study.active || launchUp ? "none" : "pan-y",
+                            pointerEvents: launchUp ? "none" : undefined,
                             // No visible scrollbar (desktop draws a chunky grey one over the sky).
                             // Wheel / trackpad / touch scrolling all still work.
                             scrollbarWidth: "none",
@@ -1852,7 +1739,8 @@ const DeckTowerPage: React.FC = () => {
                             <TapToStartHint
                                 centreX={hintFit.minX + hintFit.width / 2}
                                 tipY={hintFit.towerTopY}
-                                visible={startable && !pan.busy}
+                                // Not over an empty tower: the cue points at a tower to study down.
+                                visible={startable && towerCount > 0 && !pan.busy}
                             />
                             {/* Keyed by world: arriving mounts a fresh platform and pawn. */}
                             <DeckTowerPlatform
@@ -2079,32 +1967,8 @@ const DeckTowerPage: React.FC = () => {
                     {pan.busy && pan.direction !== 0 && (
                         <SpeedLines direction={pan.direction} strength={pan.speed} bottom={0} color={light.wash(ISO.wind)} />
                     )}
-                    {/* The home shifts: the pan's streaks turned vertical — rising as Enter takes the camera
-                        down, falling as a return takes it back up. */}
-                    {homeShifting && (
-                        <SpeedLines axis="y" direction={home.phase === "return" ? 1 : -1} strength={home.frame.speed} bottom={0} color={light.wash(ISO.wind)} />
-                    )}
-
-                    {/* THE HOME STAGE (docs/HOME_SCREEN.md) — over everything td draws, on td's sky. */}
-                    {homeStageShown && (
-                        <HomeStage
-                            proj={proj}
-                            // td's frame: its width and bottom edge are the same for every tower.
-                            frame={scene}
-                            // The enter hint stands on Tap to Start's line (HomeEnterHint).
-                            hintTipY={hintFit.towerTopY}
-                            world={homeWorld}
-                            wash={light.wash}
-                            rain={auroraUp ? undefined : rainFall}
-                            snowFall={auroraUp ? undefined : snowFall}
-                            fog={fogClouds && weatherFx ? { opacity: weatherFx.fog, clouds: fogClouds } : undefined}
-                            sky={pan.palette.sky}
-                            shiftY={homeShifting ? home.frame.homeY : 0}
-                            busy={home.phase !== "home"}
-                            onDictionary={openDictionaryFromHome}
-                            onEnter={home.enter}
-                        />
-                    )}
+                    {/* THE LAUNCH SCREEN (docs/LAUNCH_SCREEN.md): over all of td's screen. */}
+                    {launchUp && <LaunchScreen look={launchCover} ready={launchReady} onOpen={openLaunch} onDone={endLaunch} />}
 
                 </Box>
                 {focusLevers.core.dialog}

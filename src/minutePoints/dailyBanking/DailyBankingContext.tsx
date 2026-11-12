@@ -105,7 +105,7 @@ function useDailyBankingRun(store: FrameStore, held: boolean): void {
     useEffect(() => { tokenRef.current = token; }, [token]);
 
     useEffect(() => {
-        // Held (td's home screen is up — docs/HOME_SCREEN.md § "What waits"): the run is
+        // Held (td's launch screen is up — docs/LAUNCH_SCREEN.md § "What waits"): the run is
         // stamped seen as it starts, so starting it unseen would lose it for the day.
         if (!user?.id || held) return;
         let cancelled = false;
@@ -163,7 +163,7 @@ function useDailyBankingRun(store: FrameStore, held: boolean): void {
 
 /**
  * Mounted by DeckTowerPage around its screen. Only td plays the banking run.
- * `held`: the run waits (td's home screen covers the header); it starts once released.
+ * `held`: the run waits (td's launch screen covers the header); it starts once released.
  */
 export function DailyBankingProvider({ children, held = false }: { children: React.ReactNode; held?: boolean }) {
     const value = useMemo<DailyBankingContextValue>(

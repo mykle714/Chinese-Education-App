@@ -4,6 +4,30 @@ Features that were built, then deliberately removed from `main` with their code 
 frozen git branch so they can be revived quickly. Nothing here is live: no route, no
 table, no cron step. Start from the archive branch's `archive/REVIVAL.md`, not from this file.
 
+## Home Screen (removed 2026-11-11)
+
+| | |
+|---|---|
+| **Branch** | `archive/home-screen` (local only so far; push with `git push origin archive/home-screen`) |
+| **Base commit** | `f276eb7`: the last `main` commit that contained the home screen |
+| **Revival guide** | `archive/REVIVAL.md` on that branch: what it was, every file deleted, every wiring point in shared files, the revival checklist |
+| **Schema** | None (client only) |
+| **Docs** | `docs/HOME_SCREEN.md` lives only on the branch |
+
+```bash
+git show archive/home-screen:archive/REVIVAL.md
+```
+
+**What it was.** A stage of the Deck Tower the app opened on once per launch: td's own
+platform and pawn standing above the tower on td's sky, a placeholder title, a Dictionary
+keycap (circle transition to `/dictionary`, whose back arrow returned to td), and "Swipe down
+to enter". A fresh pull past the deck's top went back up to it. Replaced by the launch screen
+([LAUNCH_SCREEN.md](./LAUNCH_SCREEN.md)).
+
+**Left on `main`, now without a caller** (tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md)):
+`SpeedLines` `axis="y"`; `DeckTowerPlatform`'s optional `plate` / `lever` props (td always
+passes both).
+
 ## Night Market + Immersive World (removed 2026-11-09)
 
 | | |

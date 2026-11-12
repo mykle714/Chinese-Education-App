@@ -24,7 +24,18 @@ export { default as IsoCardImprint } from "./IsoCardImprint";
 export { default as IsoFloorPrint } from "./IsoFloorPrint";
 export { default as IsoPaperStack } from "./IsoPaperStack";
 export { default as IsoSortPlatform } from "./IsoSortPlatform";
-export { sortPlatformTopZ, SORT_PLATFORM_JUMP, SLAB_THICKNESS } from "./sortPlatformMetrics";
+export {
+    sortPlatformTopZ,
+    sortBinCellOffset,
+    sortMiniScale,
+    sortMiniThickness,
+    SORT_PLATFORM_JUMP,
+    SORT_BIN_ASPECT,
+    SORT_BIN_CELLS,
+    SORT_BIN_GAP,
+    SORT_BIN_PLATFORM,
+    SORT_BIN_THICKNESS,
+} from "./sortPlatformMetrics";
 export { PAPER_SHEET_THICKNESS, paperStackHeight } from "./paperStackMetrics";
 export { default as IsoFloorLabel, RAISED_HEIGHT } from "./IsoFloorLabel";
 export { default as IsoLever } from "./IsoLever";

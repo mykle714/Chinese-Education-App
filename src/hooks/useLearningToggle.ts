@@ -27,7 +27,13 @@ import type { Language, VocabEntry } from "../types";
  * Only discoverable entries can join Learning, and only for a signed-in user; for any
  * other entry (or `null`) the hook stays inert and `available` is false.
  *
- * Host: EipSheet (the Dictionary page's and the saved-card cdp's eip), drawn as EipAddKey.
+ * `inLibraryOnLoad` is the server's answer when the word was last loaded, untouched by
+ * taps. The flp eip is ADD-ONLY: it draws the key only when this is `false`, so a word
+ * already in Learning shows no key, a tapped word keeps "Added!" (and stays removable)
+ * while it is showing, and the key disappears the next time that word is loaded.
+ *
+ * Hosts: EipSheet (the Dictionary page's and the saved-card cdp's eip) and the flp
+ * (FlashcardsLearnPage, add-only), both drawn as EipAddKey.
  * (The read-only dictionary cdp drew it as a glowing `LearningToggle` until both were
  * deleted 2026-11-10.) Docs: docs/EIP_SHEET_GESTURES.md § Add key.
  */
@@ -38,6 +44,10 @@ export function useLearningToggle(entry: VocabEntry | null | undefined, language
 
     // What the control SHOWS: the server's answer at first, then the learner's latest tap.
     const [status, setStatus] = useState<{ entryKey: string; inLibrary: boolean } | null>(null);
+    // What the server said when THIS word's status was last LOADED (taps don't move it).
+    // Lets an add-only host (the flp eip) hide the key on words already in Learning while
+    // still showing "Added!" after a tap — until the next load re-evaluates the word.
+    const [loaded, setLoaded] = useState<{ entryKey: string; inLibrary: boolean } | null>(null);
     // Failure message for the host's snackbar. Success is silent — the toggle is the feedback.
     const [error, setError] = useState<string | null>(null);
 
@@ -66,6 +76,7 @@ export function useLearningToggle(entry: VocabEntry | null | undefined, language
                 confirmedRef.current.set(entryKey, data.inLibrary);
                 desiredRef.current.set(entryKey, data.inLibrary);
                 setStatus({ entryKey, inLibrary: data.inLibrary });
+                setLoaded({ entryKey, inLibrary: data.inLibrary });
             })
             .catch((err) => {
                 console.error("Failed to load Learning status:", err);
@@ -73,6 +84,7 @@ export function useLearningToggle(entry: VocabEntry | null | undefined, language
                 confirmedRef.current.set(entryKey, false);
                 desiredRef.current.set(entryKey, false);
                 setStatus({ entryKey, inLibrary: false });
+                setLoaded({ entryKey, inLibrary: false });
             });
         return () => { cancelled = true; };
         // Keyed on the stable auth identity (via `available`), never `token`
@@ -80,6 +92,10 @@ export function useLearningToggle(entry: VocabEntry | null | undefined, language
     }, [entryKey, available, language]);
 
     const inLibrary = available && entryKey && status?.entryKey === entryKey ? status.inLibrary : undefined;
+    // The server's answer at the last load of the showing word; `undefined` while loading.
+    // Re-evaluated whenever the word is loaded again (the effect above re-runs when the
+    // entry changes, e.g. trail A → B → A, or the eip reopening on the next card).
+    const inLibraryOnLoad = available && entryKey && loaded?.entryKey === entryKey ? loaded.inLibrary : undefined;
 
     // Drives the server to the learner's latest tap for `key`. One loop per key: taps that
     // land while a request is in flight only move `desired`, and the loop sends one more
@@ -124,7 +140,7 @@ export function useLearningToggle(entry: VocabEntry | null | undefined, language
 
     const clearError = useCallback(() => setError(null), []);
 
-    return { available, inLibrary, toggle, error, clearError };
+    return { available, inLibrary, inLibraryOnLoad, toggle, error, clearError };
 }
 
 export type LearningToggleState = ReturnType<typeof useLearningToggle>;

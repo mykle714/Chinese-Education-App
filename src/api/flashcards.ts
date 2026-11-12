@@ -72,6 +72,13 @@ export interface MarkFlashcardRequest {
      */
     world?: FlpWorld;
     /**
+     * flp working-loop only: the session's LEND SWITCH. True once the learner has run out
+     * of off-cooldown cards and swiped past the flp's "new words next" card; the
+     * replacement may then be a lent card. Omitted = no lending
+     * (docs/DECK_TOWER.md § "Running out of ready cards").
+     */
+    lend?: boolean;
+    /**
      * Which surface produced this mark.
      *
      * ONE server rule branches on it: once a card's core pbh reaches 6, know
@@ -146,6 +153,7 @@ export async function markFlashcard(
         type: request.type,
         excludeIds: request.excludeIds ?? [],
         world: request.world,
+        lend: request.lend,
         surface: request.surface,
         writing: request.writing,
     });

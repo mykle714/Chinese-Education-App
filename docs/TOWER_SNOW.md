@@ -98,12 +98,12 @@ navigate away in the same tap and the page can unmount before an effect would ru
   While the snow lies (`snowLying`: snowy, not sliding off a door):
   - the tower and the notebook stack are banked in by an `IsoSnowSkirt`, which paints
     their walls' lowest 0.4 (all of them, if shorter) in the snow's top tone. The sort
-    platform (0.28) is thinner than the snow, so on any snowy floor it is drawn as deep as
+    platform (0.24) is thinner than the snow, so on any snowy floor it is drawn as deep as
     the snow (`sortThickness`, IsoSortPlatform `thickness`): its top lies flush with the
     snow's, the snow meeting it at its outer edge with its bevel showing, and it casts no
     shadow. It takes no skirt — painting over its walls left their anti-aliased edges
     showing as lines — but does not draw its walls below the snow line at all
-    (IsoSortPlatform `buriedTo`); hopping, the part lifted out of the snow shows. A thin notebook is still shorter than the snow:
+    (IsoSortPlatform `buriedTo`); one cap covers its top, print included; hopping, the part lifted out of the snow shows. A thin notebook is still shorter than the snow:
     its top shows sunk below the snow's (no fix yet);
   - shadows fall on the snow's top (`shadowReceiverFor`): an object standing out of the
     snow casts onto it, and the skirt repaints the part inside its band; a buried one casts
@@ -208,8 +208,7 @@ platform. `IsoSnow` is the snow counterpart of `IsoRain`. Each flake has a landi
 open floor or a solid's top (the same `rainSolids`). Its sway eases out over the last
 36 px so it lands on its spot, where it lies fading for 0.9 s. The flake look is the sky's
 (`towerWeather.ts` `SNOW_*`), unwashed like the sky's. It is not mounted during a study or
-under an aurora, and it starts no higher than `rainCeilingY`. The home screen's platform
-gets falling snow but no settled snow.
+under an aurora, and it starts no higher than `rainCeilingY`.
 
 ## Tester reset
 

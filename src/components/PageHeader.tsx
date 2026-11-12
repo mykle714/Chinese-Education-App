@@ -4,6 +4,7 @@ import { Box, Typography } from "@mui/material";
 import { styled, type SxProps, type Theme } from "@mui/material/styles";
 import { useNavigate } from "react-router-dom";
 import Icon from "./Icon";
+import { useScrollSafeTap } from "../hooks/useScrollSafeTap";
 import { CYCLE_CHIP_FONT_PX, cycleChipFontPx } from "./cycleChipSizing";
 import {
     BACK_ARROW_ICON,
@@ -383,10 +384,19 @@ export const HeaderIconButton: React.FC<{
     pressed?: boolean;
     /** Glyph fill: 0 = outlined (default), 1 = filled — e.g. a toggle's on state, so it does not rely on colour alone. */
     fill?: 0 | 1;
-}> = ({ icon, onClick, label, color = COLORS.iconColor, disabled = false, variant = "bare", outlineColor = COLORS.border, className, title, pressed, fill = 0 }) => (
+    /**
+     * Fire on a touch's release instead of its `click`, so a tap still lands while the page
+     * is coasting from a fling (the browser spends that tap's click on stopping the scroll).
+     * For scroll actions only — see `useScrollSafeTap` for why it is opt-in.
+     */
+    scrollSafeTap?: boolean;
+}> = ({ icon, onClick, label, color = COLORS.iconColor, disabled = false, variant = "bare", outlineColor = COLORS.border, className, title, pressed, fill = 0, scrollSafeTap = false }) => {
+    const tapHandlers = useScrollSafeTap(onClick);
+    const pressProps = disabled ? {} : scrollSafeTap ? tapHandlers : { onClick };
+    return (
     <Box
         className={className ? `page-header__btn ${className}` : "page-header__btn"}
-        onClick={disabled ? undefined : onClick}
+        {...pressProps}
         role="button"
         aria-label={label}
         aria-disabled={disabled || undefined}
@@ -406,7 +416,8 @@ export const HeaderIconButton: React.FC<{
     >
         <Icon name={icon} size={HEADER_ICON_PX} color={color} fill={fill} />
     </Box>
-);
+    );
+};
 
 /**
  * `.lhd .tg` — a mono toggle chip ("pinyin"). Off = grey fill + ink2 text; on =
@@ -481,10 +492,15 @@ export const HeaderActionChip: React.FC<{
     ink?: string;
     disabled?: boolean;
     className?: string;
-}> = ({ children, onClick, icon, ariaLabel, ink = COLORS.iconColor, disabled = false, className }) => (
+    /** Fire on a touch's release so a tap lands mid-fling — as HeaderIconButton's `scrollSafeTap`. */
+    scrollSafeTap?: boolean;
+}> = ({ children, onClick, icon, ariaLabel, ink = COLORS.iconColor, disabled = false, className, scrollSafeTap = false }) => {
+    const tapHandlers = useScrollSafeTap(onClick);
+    const pressProps = disabled ? {} : scrollSafeTap ? tapHandlers : { onClick };
+    return (
     <Box
         className={className ? `page-header__action ${className}` : "page-header__action"}
-        onClick={disabled ? undefined : onClick}
+        {...pressProps}
         role="button"
         aria-label={ariaLabel}
         aria-disabled={disabled || undefined}
@@ -504,7 +520,8 @@ export const HeaderActionChip: React.FC<{
         {icon && <Icon name={icon} size={OUTLINED_CHIP_ICON_PX} color={ink} />}
         {children}
     </Box>
-);
+    );
+};
 
 /**
  * Horizontal breathing room inside a HeaderCycleChip, in `ch` of its mono face, on

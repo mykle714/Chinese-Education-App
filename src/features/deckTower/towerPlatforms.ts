@@ -1,4 +1,4 @@
-import { RIM_WIDTH, insetRect, leverFootprint, type PawnRoam, type WorldRect } from "./iso";
+import { RIM_WIDTH, SORT_BIN_ASPECT, SORT_BIN_PLATFORM, insetRect, leverFootprint, type PawnRoam, type WorldRect } from "./iso";
 import { FLP_CARD_ASPECT, FLP_CARD_CORNER_RATIO } from "../flashcards/constants";
 
 /**
@@ -74,13 +74,30 @@ const PAWN_AT = { x: 9.1, y: 7.5 };
 const NOTEBOOK: WorldRect = { x: 9.35, y: 0.6, w: 1.2, d: 1.55, r: 0.1 };
 
 /**
- * The mini sort platform (IsoSortPlatform, docs/DECK_TOWER.md § "The sort platform") —
- * main world only: the same right corner the notebook takes on the writing world. Its
- * proportions are acp's bin slab's (6.4 × 8, SortBins.tsx → PLATFORM) scaled down; its
- * left edge stands 1.4 units off the tower's right face (CARD x + w = 7.9) — the pawn needs
- * 1.2 (2 × PAWN_FOOT_RADIUS + 2 × OBSTACLE_CLEARANCE) to walk between them.
+ * The mini sort platform's footprint (IsoSortPlatform, docs/DECK_TOWER.md § "The sort
+ * platform") — main world only: the same right corner the notebook takes on the writing
+ * world. An exact miniature of acp's Comfortable bin: acp's platform proportions (`SORT_BIN_ASPECT`,
+ * 6.4 × 8) and corner radius, scaled to this width (0.2 of acp's; sortPlatformMetrics.ts →
+ * `sortMiniScale`).
+ *
+ * Its right edge is pinned so the SHADOW stays off the floor's edge (owner's call
+ * 2026-11-11): at its 0.24 thickness (`sortMiniThickness`) the shadow reaches ~0.39 past its
+ * right (+x) edge (light.ts → the contact slide plus `shadowSpread`), so the right edge sits
+ * at 10.43 and the shadow ends ~10.82, just inside the rim (PLATFORM.w − RIM_WIDTH = 10.84).
+ * Its left edge (9.15) stands 1.25 off the tower's right face (CARD x + w = 7.9), just over
+ * the 1.2 the pawn needs to walk between them (2 × PAWN_FOOT_RADIUS + 2 ×
+ * OBSTACLE_CLEARANCE). The back edge sits 0.45 in from the floor's back side (0.29 inside the
+ * rim; shadows never fall that way).
  */
-const SORT_BIN: WorldRect = { x: 9.3, y: 0.45, w: 1.36, d: 1.7, r: 0.22 };
+const SORT_BIN_RIGHT = 10.43;
+const SORT_BIN_W = 1.28;
+const SORT_BIN: WorldRect = {
+    x: SORT_BIN_RIGHT - SORT_BIN_W,
+    y: 0.45,
+    w: SORT_BIN_W,
+    d: SORT_BIN_W * SORT_BIN_ASPECT,
+    r: SORT_BIN_PLATFORM.r * (SORT_BIN_W / SORT_BIN_PLATFORM.w),
+};
 
 /**
  * Where a corner fixture's soft-introduction floor print stands (IsoFloorPrint,

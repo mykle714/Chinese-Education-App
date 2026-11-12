@@ -113,7 +113,7 @@ set everywhere at once: every candidate query narrows to the ids, and every lend
 
 | Request | World | Notes |
 |---|---|---|
-| `GET /api/onDeck/distributedWorkingLoop` | `?world=` | baseline top-up skipped |
+| `GET /api/onDeck/distributedWorkingLoop` | `?world=` | baseline top-up skipped, and no lending even with the flp's `?lend=1` switch on — when the set is spent the flp shows its "done for the day" card (DECK_TOWER.md § Running out of ready cards) |
 | `POST /api/flashcards/mark` (refill) | body `world` | resolved after the mark commits, so the card just marked correct is already out |
 | `GET /api/onDeck/gamePool` | `worldForMarkType(markType)` | baseline top-up skipped; a short pool is a smaller board. With `?flpBreak=1` the round is inverted instead (§ 4a) |
 | `GET /api/onDeck/wordSearchGrid` | its mark type's world | no lending escalation. With `?flpBreak=1` the round is inverted instead (§ 4a) |

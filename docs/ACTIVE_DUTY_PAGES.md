@@ -31,7 +31,7 @@ Referenced code: `src/routes/routeMeta.ts` → `ROUTE_META`, `FLAGGED_OFF_PATHS`
 |---|---|---|---|
 | `/` | `DeckTowerPage` (td) | — the home page; footer **Flashcards** tab | 2026-11-10 |
 | `/lessons` | `LessonsPage` (placeholder) | footer **Lessons** tab (`MobileFooter`) | 2026-11-10 |
-| `/dictionary` | Dictionary | footer **Dictionary** tab; td home screen's Dictionary key | 2026-11-10 |
+| `/dictionary` | Dictionary | footer **Dictionary** tab | 2026-11-11 |
 | `/flashcards/card/:id` | `VocabCardDetailPage` (cdp) | td cards page → a card (`DeckTowerPage` → `slideNavigate(withLens(...))`) | 2026-11-10 |
 | `/discover/sort/:language` | acp | td's sort platform (`DeckTowerPage` → `useDiscoverNavigation().sortPath`) | 2026-11-10 |
 | `/flashcards/writing/notebook` | `WritingNotebookPage` | td writing world → notebook stack (`DeckTowerPage` → `NOTEBOOK_PATH`) | 2026-11-10 |
@@ -53,7 +53,7 @@ Rendered in place, with no URL of their own. Everything they render is active du
 | flp (`FlashcardsLearnPage`) and its eip | td → tap the Learning tower (study in place) | 2026-11-10 |
 | Menu popover (hp) | footer **Menu** tab | 2026-11-10 |
 | AccountSheet (Account / Friends / Settings tabs) | td header avatar (`DeckTowerAvatar`) | 2026-11-10 |
-| td home screen | td, once per launch | 2026-11-10 |
+| td launch screen | td, once per launch | 2026-11-11 |
 
 ## Flagged off (reachable once the flag flips)
 

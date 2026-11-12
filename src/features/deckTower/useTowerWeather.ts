@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../AuthContext";
-import { fetchWeather, type WeatherNow } from "../../api/weather";
+import { fetchWeather, fetchWeatherShared, type WeatherNow } from "../../api/weather";
 import { WEATHER_KINDS } from "../../../server/contracts/wire";
 import { useWeatherEffectsEnabled } from "../../hooks/useWeatherEffectsSetting";
 import { pinnedWeather, type WeatherOverride } from "./towerWeather";
@@ -13,7 +13,8 @@ import { pinnedWeather, type WeatherOverride } from "./towerWeather";
  *
  *   - Off (null) unless the per-device "Weather effects" setting is on
  *     (useWeatherEffectsEnabled, src/hooks/useWeatherEffectsSetting.ts).
- *   - When on, fetches GET /api/weather on mount, every `REFRESH_MS` while mounted, and
+ *   - When on, fetches GET /api/weather on mount (sharing the app-level prefetch's request —
+ *     useWeatherPrefetch, `fetchWeatherShared`), every `REFRESH_MS` while mounted, and
  *     when the tab comes back after being hidden longer than that. Anything but an `ok`
  *     answer draws no weather (the server already backs off a failing upstream).
  *   - The load effect keys on `user?.id`, never on `token` (CLAUDE.md § "Never
@@ -25,7 +26,7 @@ import { pinnedWeather, type WeatherOverride } from "./towerWeather";
  *     time-of-day pin. A pin shows even with the setting off, so a tester can preview
  *     every effect without granting location.
  *
- * Depends on: src/api/weather.ts, src/hooks/useWeatherEffectsSetting.ts, towerWeather.ts.
+ * Depends on: src/api/weather.ts (`fetchWeather`, `fetchWeatherShared`), src/hooks/useWeatherEffectsSetting.ts, towerWeather.ts.
  * Depended on by: DeckTowerPage.tsx (also towerAurora.ts via the page), discover/AddCardsPage.tsx (the observation only — acp draws no particles).
  */
 
@@ -68,9 +69,14 @@ export function useTowerWeather(allowOverride: boolean): {
         }
         setAnswered(false);
         let cancelled = false;
+        // The FIRST read takes the shared request (fetchWeatherShared), which the app-level
+        // prefetch (useWeatherPrefetch) has usually already started; refreshes ask afresh.
+        let first = true;
         const load = () => {
             fetchedAt.current = Date.now();
-            fetchWeather()
+            const request = first ? fetchWeatherShared(userId) : fetchWeather();
+            first = false;
+            request
                 .then((res) => {
                     if (cancelled) return;
                     setReal(res.status === "ok" ? res.weather : null);

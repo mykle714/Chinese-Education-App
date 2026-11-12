@@ -27,7 +27,7 @@ import {
     RAISED_HEIGHT,
     SORT_PLATFORM_JUMP,
     sortPlatformTopZ,
-    SLAB_THICKNESS,
+    sortMiniThickness,
     backToFront,
     depthRankAmong,
     flatPath,
@@ -59,7 +59,8 @@ import type { PlatformLightning } from "./towerLightning";
 import type { SwapPawn } from "./useDeckSwap";
 import { usePlatePress } from "./usePlatePress";
 import { IMPACT_MS, type TowerDrop } from "./towerResizes";
-import { CATEGORY_COLORS } from "../../utils/categoryColors";
+import { BAND_MID } from "../../utils/categoryColors";
+import { SORT_BIN_PRINT_INK, SortBinPrint } from "../discover/SortBinPrint";
 import { COLORS } from "../../theme/colors";
 import type { TowerCollapse } from "./useTowerResize";
 import { useSoftIntro } from "../../softIntro/useSoftIntro";
@@ -74,9 +75,6 @@ import { useSoftIntro } from "../../softIntro/useSoftIntro";
  * (useDeckSwap.ts). The page keys it by world, so arriving in another world mounts a
  * fresh platform (and pawn). It owns only its pawns' depth slots; every number it draws
  * is handed in.
- *
- * The home screen renders the same component (home/HomeScene.tsx, docs/HOME_SCREEN.md
- * § "The platform") with no deck, no plate and no lever — the pawn alone.
  *
  * Draw order inside the platform (IsoPlatform):
  *   decals    the cards' imprint under the stack ("0 cards", IsoCardImprint — drawn
@@ -254,8 +252,8 @@ interface DeckTowerPlatformProps {
     /** A swap's old towers are still on screen: an INCOMING pawn is not startled by them. */
     swapOutgoing: boolean;
     /**
-     * The deck plate on the floor. Undefined: none — the home screen's platform
-     * (home/HomeScene.tsx) carries no deck, so it has no plate to name one.
+     * The deck plate on the floor. Undefined: none. (Only the archived home screen omitted it;
+     * td always passes one — a candidate to make required, docs/DEFERRED_WORK.md.)
      */
     plate?: {
         /** The deck it names. Switching decks swaps it in one frame — a hard cut, no animation. */
@@ -271,8 +269,8 @@ interface DeckTowerPlatformProps {
     /**
      * The focus lever in the floor's left corner (IsoLever, docs/FOCUS_MODE.md § 5): its
      * animated numbers (useLeverMotion) and its tap. Fully sunk with its hatch shut, it
-     * draws nothing — the floor is flush — and takes no taps. Undefined: no lever at all
-     * (the home screen's platform); its obstacle slot is still held, like the stack's.
+     * draws nothing — the floor is flush — and takes no taps. Undefined: no lever at all; its
+     * obstacle slot is still held, like the stack's. (Only the archived home screen omitted it.)
      */
     lever?: {
         pull: number;
@@ -305,7 +303,7 @@ interface DeckTowerPlatformProps {
     /**
      * The mini sort platform in the floor's right corner (main world, while the Learning
      * tower is drawn; docs/DECK_TOWER.md § "The sort platform") — acp's four bins in
-     * miniature (one slab lying flat on the floor, a band colour per quadrant), and its button. It moves with the tower like the notebook stack does.
+     * miniature (an exact miniature of acp's Comfortable bin lying flat on the floor), and its button. It moves with the tower like the notebook stack does.
      * `hopping`: it jumps every 2 s, the "cards low — go sort" call. Never passed together
      * with `notebook` (they take the same corner, on different worlds).
      */
@@ -358,7 +356,7 @@ interface DeckTowerPlatformProps {
     snowFall?: IsoSnowFall;
     /**
      * Snow lying on this platform (useTowerSnow, docs/TOWER_SNOW.md). Each cover is present
-     * only while that component is snowy (or brushing off). Undefined: none (the home screen).
+     * only while that component is snowy (or brushing off). Undefined: none.
      */
     snow?: {
         covers: Partial<Record<SnowComponent, SnowCover>>;
@@ -457,7 +455,8 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     // reaches exactly to its top outline), not partway up its top. It casts no shadow then
     // (`shadowReceiverFor`: not taller than the snow). Any floor snow, sliding or not, so it
     // does not jump as the sheet slides off a trap door it is falling with.
-    const sortThickness = floorSnow ? Math.max(SLAB_THICKNESS, FLOOR_SNOW_DEPTH) : SLAB_THICKNESS;
+    const sortSlab = sortMiniThickness(layout.sortBin);
+    const sortThickness = floorSnow ? Math.max(sortSlab, FLOOR_SNOW_DEPTH) : sortSlab;
     // A corner fixture is an obstacle only where it stands: the pawn walks round the
     // notebook stack on the writing world and the sort platform on main, and has that
     // corner to itself elsewhere.
@@ -682,6 +681,13 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                 }}
                 style={{ cursor: stack.onTap ? "pointer" : undefined, outline: "none" }}
             >
+                {stack.count === 0 && stack.onTap && (
+                    // An empty tower draws nothing to tap, so its footprint (the "0 cards"
+                    // imprint, drawn with the floor decals) is the hit target: a tap there
+                    // starts a visit on the flp's out-of-ready-cards card
+                    // (docs/DECK_TOWER.md § "Running out of ready cards").
+                    <path className="deck-tower-page__empty-stack-hit" d={flatPath(proj, layout.card, floor.z)} fill="transparent" />
+                )}
                 {stack.collapse ? (
                     <IsoCardRuns
                         key={`collapse-${stack.collapse.key}`}
@@ -882,18 +888,15 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
             }),
         );
     }
-    // The mini sort platform (main world, Learning only): acp's four bins in miniature,
-    // lying flat on the floor — one slab, its quadrants in the four bands' colours (acp's
-    // platforms: CATEGORY_COLORS, the band SURFACE tier), washed for the time of day. Its tap target
-    // covers it from the floor to the top of its jump, so a hopping platform is still
-    // easy to catch.
+    // The mini sort platform (main world, Learning only): an exact miniature of acp's THIRD
+    // bin (Comfortable) lying flat on the floor — its platform in the band's colour (BAND_MID,
+    // the band MID tier), washed for the time of day, with acp's print ("3" in the deck's
+    // dotted outline, SortBinPrint) in the same washed ink. Comfortable rather than the first
+    // bin (owner's call 2026-11-11): of the four band colours, green stands clearest of the
+    // main world's gold floor without repeating a colour already beside it (the yellow
+    // Learning plate, the blue Mastered plate and sky), and carries the print well. Its tap target covers it from the
+    // floor to the top of its jump, so a hopping platform is still easy to catch.
     if (sortBin) {
-        const sortQuadrantColors = [
-            wash(CATEGORY_COLORS.Unfamiliar),
-            wash(CATEGORY_COLORS.Target),
-            wash(CATEGORY_COLORS.Comfortable),
-            wash(CATEGORY_COLORS.Mastered),
-        ] as const;
         const sortTopZ = sortPlatformTopZ(floor.z, sortBin.progress, sortThickness);
         layers.push(
             cornerButton({
@@ -914,7 +917,8 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                             rect={layout.sortBin}
                             surface={ground}
                             shadowReceiver={shadowReceiverFor(sortTopZ - floor.z)}
-                            quadrantColors={sortQuadrantColors}
+                            color={wash(BAND_MID.Comfortable)}
+                            print={<SortBinPrint number={3} ink={wash(SORT_BIN_PRINT_INK)} />}
                             thickness={sortThickness}
                             // Its walls hidden under the lying snow (no skirt: it paints over the
                             // walls, but their anti-aliased edges still showed through).

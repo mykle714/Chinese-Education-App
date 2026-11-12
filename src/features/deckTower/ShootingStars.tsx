@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import { keyframes } from "@mui/material/styles";
 import { ISO } from "./iso";
@@ -14,37 +14,40 @@ import { ISO } from "./iso";
  *
  * How it works:
  *   - While `active` (timeOfDay.ts `shootingStars`: the look is mostly night), a timer
- *     fires a BURST every `BURST_MEAN_MS` ± `BURST_JITTER` (≈ 9–21 s), so the rhythm
- *     never reads as a metronome. The first burst also waits a random interval, so
- *     arriving at night doesn't fire one instantly.
- *   - A burst is 1–3 meteors, `STAGGER_MS` apart. They share one direction (like a
- *     shower from one radiant) so a burst reads as one event, not a scatter; the
- *     direction (down-left / down-right) is re-picked per burst.
+ *     ticks every `ROLL_INTERVAL_MS` (5 s) and each tick fires a BURST with probability
+ *     `BURST_CHANCE` (1%) — a rare event, ≈ one every 8 min of night on average. The first
+ *     roll waits one full tick, so arriving at night doesn't fire one instantly.
+ *   - A burst is 1–3 meteors, `STAGGER_MS` apart. Every meteor falls down-LEFT (one
+ *     fixed radiant), so a burst reads as one event, not a scatter.
  *   - A meteor is a flat streak — a round head and a tapering tail polygon in `ISO.star`,
- *     no gradient or glow (the iso style has none) — that slides along its heading and
- *     fades in and out by one CSS animation; it removes itself on `animationend`.
+ *     no gradient or glow (the iso style has none) — that slides in a straight line along
+ *     its heading and fades in and out by one CSS animation; it removes itself on
+ *     `animationend`.
  *   - Skipped while the tab is hidden, and entirely under `prefers-reduced-motion`.
+ *   - Feature testers fire a burst on demand (`burstRequest`, bumped by ShootingStarChip
+ *     via DeckTowerPage → SpaceBackdrop), bypassing all of the above.
  *
  * State lives HERE, not in SpaceBackdrop, so a burst re-renders only this small layer —
  * never the backdrop's scroll-driven DOM writes or the scene.
  *
- * Depends on: iso/palette.ts (`ISO.star`). Depended on by: SpaceBackdrop.tsx,
+ * Depends on: iso/palette.ts (`ISO.star`). Depended on by: SpaceBackdrop.tsx (and through it
+ * DeckTowerPage.tsx + ShootingStarChip.tsx for `burstRequest`),
  * features/discover/AddCardsPage.tsx. Fills its nearest positioned ancestor.
  */
 
-/** Mean gap between bursts, and its ± fraction of jitter (uniform): 15 s ± 40%. */
-const BURST_MEAN_MS = 15_000;
-const BURST_JITTER = 0.4;
+/** A burst is rolled every `ROLL_INTERVAL_MS`, firing with probability `BURST_CHANCE`. */
+const ROLL_INTERVAL_MS = 5_000;
+const BURST_CHANCE = 0.01;
 /** Meteors per burst, inclusive. */
 const BURST_MIN = 1;
 const BURST_MAX = 3;
 /** Delay between successive meteors of one burst (uniform range). */
 const STAGGER_MS = [180, 650] as const;
-/** One meteor's flight. */
-const DURATION_MS = [750, 1100] as const;
+/** One meteor's flight (fast: a meteor is a flick, not a drift). */
+const DURATION_MS = [420, 650] as const;
 /** How far the head travels, px. */
 const TRAVEL_PX = [150, 260] as const;
-/** Degrees below horizontal the meteor falls at. */
+/** Degrees below horizontal the meteor falls at (always toward the left). */
 const ANGLE_DEG = [18, 38] as const;
 /** The tail's length and the head's radius, px. */
 const TAIL_PX = [55, 90] as const;
@@ -74,60 +77,96 @@ interface Meteor {
 
 const between = ([lo, hi]: readonly [number, number]) => lo + Math.random() * (hi - lo);
 
+
 function prefersReducedMotion(): boolean {
     return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 }
 
-const ShootingStars: React.FC<{ active: boolean }> = ({ active }) => {
+interface ShootingStarsProps {
+    /** Run the random night schedule (timeOfDay.ts `shootingStars`). */
+    active: boolean;
+    /**
+     * Feature testing (ShootingStarChip): each change of this counter fires one burst NOW,
+     * whatever `active`, the time of day or `prefers-reduced-motion` — a tester who taps the
+     * chip must see the meteors. Pair it with the time-of-day row's Night to see them as
+     * the learner does (by day the white streaks are faint against the sky).
+     */
+    burstRequest?: number;
+}
+
+const ShootingStars: React.FC<ShootingStarsProps> = ({ active, burstRequest = 0 }) => {
     const [meteors, setMeteors] = useState<Meteor[]>([]);
     const nextId = useRef(0);
+    // Every pending timer (the next roll and any staggered meteors), shared by the night
+    // schedule and the tester trigger so one cleanup can clear them all.
+    const timers = useRef(new Set<number>());
 
+    const later = useCallback((fn: () => void, ms: number) => {
+        const id = window.setTimeout(() => {
+            timers.current.delete(id);
+            fn();
+        }, ms);
+        timers.current.add(id);
+    }, []);
+
+    /** Queues one burst of 1–3 meteors, `STAGGER_MS` apart. */
+    const fireBurst = useCallback(() => {
+        const count = BURST_MIN + Math.floor(Math.random() * (BURST_MAX - BURST_MIN + 1));
+        let at = 0;
+        for (let i = 0; i < count; i++) {
+            const meteor: Meteor = {
+                id: nextId.current++,
+                // Always falls left, so it starts in the right part of the sky to have
+                // room to cross the screen.
+                x: 0.35 + Math.random() * 0.6,
+                y: Math.random() * SPAWN_TOP_MAX,
+                // Mirrored about the vertical: 180° − fall heads down-left.
+                angle: 180 - between(ANGLE_DEG),
+                travel: between(TRAVEL_PX),
+                tail: between(TAIL_PX),
+                duration: between(DURATION_MS),
+            };
+            later(() => setMeteors((m) => [...m, meteor]), at);
+            at += between(STAGGER_MS);
+        }
+    }, [later]);
+
+    // The night schedule: one roll per tick; a hit fires a burst. The loop reschedules
+    // itself either way.
     useEffect(() => {
         if (!active || prefersReducedMotion()) return;
-        // Every pending timer (the next burst and any staggered meteors), cleared together.
-        const timers = new Set<number>();
-        const later = (fn: () => void, ms: number) => {
-            const id = window.setTimeout(() => {
-                timers.delete(id);
-                fn();
-            }, ms);
-            timers.add(id);
+        let rollTimer = 0;
+        const schedule = () => {
+            rollTimer = window.setTimeout(() => {
+                if (document.visibilityState === "visible" && Math.random() < BURST_CHANCE) fireBurst();
+                schedule();
+            }, ROLL_INTERVAL_MS);
         };
-
-        const burst = () => {
-            if (document.visibilityState === "visible") {
-                const count = BURST_MIN + Math.floor(Math.random() * (BURST_MAX - BURST_MIN + 1));
-                // One heading per burst: mirrored about the vertical for a leftward fall.
-                const leftward = Math.random() < 0.5;
-                let at = 0;
-                for (let i = 0; i < count; i++) {
-                    const fall = between(ANGLE_DEG);
-                    const meteor: Meteor = {
-                        id: nextId.current++,
-                        // A leftward meteor starts further right, so it crosses the screen.
-                        x: leftward ? 0.35 + Math.random() * 0.6 : 0.05 + Math.random() * 0.6,
-                        y: Math.random() * SPAWN_TOP_MAX,
-                        angle: leftward ? 180 - fall : fall,
-                        travel: between(TRAVEL_PX),
-                        tail: between(TAIL_PX),
-                        duration: between(DURATION_MS),
-                    };
-                    later(() => setMeteors((m) => [...m, meteor]), at);
-                    at += between(STAGGER_MS);
-                }
-            }
-            schedule();
-        };
-        const schedule = () => later(burst, BURST_MEAN_MS * (1 - BURST_JITTER + Math.random() * 2 * BURST_JITTER));
-
         schedule();
         return () => {
-            timers.forEach((id) => window.clearTimeout(id));
-            // Leaving night mid-flight drops the meteors rather than letting them finish
-            // over a sky that is no longer night.
+            window.clearTimeout(rollTimer);
+            // Leaving night mid-flight drops the meteors (and any still staggered) rather
+            // than letting them finish over a sky that is no longer night.
+            timers.current.forEach((id) => window.clearTimeout(id));
+            timers.current.clear();
             setMeteors([]);
         };
-    }, [active]);
+    }, [active, fireBurst]);
+
+    // The tester trigger. Compared against the last value seen, not against 0, so a
+    // remount with a non-zero counter does not fire a phantom burst.
+    const lastRequest = useRef(burstRequest);
+    useEffect(() => {
+        if (burstRequest === lastRequest.current) return;
+        lastRequest.current = burstRequest;
+        fireBurst();
+    }, [burstRequest, fireBurst]);
+
+    // Unmount: drop every pending timer.
+    useEffect(() => {
+        const pending = timers.current;
+        return () => pending.forEach((id) => window.clearTimeout(id));
+    }, []);
 
     const remove = (id: number) => setMeteors((m) => m.filter((x) => x.id !== id));
 

@@ -158,7 +158,7 @@ interface TowerCardsScrollArgs {
 }
 
 /**
- * useTowerCardsScroll — the three scroll behaviours the cards page brings to td, and the
+ * useTowerCardsScroll — the four scroll behaviours the cards page brings to td, and the
  * glide they share:
  *
  * 1. THE PLATFORM STOP. Momentum always stops at the platform line, from above or below:
@@ -200,8 +200,18 @@ interface TowerCardsScrollArgs {
  *    momentum would reach (release velocity × `MOMENTUM_PROJECTION_MS`), and glides there
  *    with the momentum dropped (the scroller's overflow held `hidden` for the glide) —
  *    waiting for an iOS fling to coast to a stop took most of a second. A release whose
- *    momentum would leave the zone is left to coast. Everything else (wheel, trackpad, a
- *    fling released outside the zone that coasts into it) waits for `SETTLE_MS` of quiet.
+ *    momentum would carry it up past the platform line is left to coast (the platform stop
+ *    catches it); one that would carry it down past the cards line glides to the cards
+ *    line instead (behaviour 4). Everything else (wheel, trackpad, a fling released outside
+ *    the zone that coasts into it) waits for `SETTLE_MS` of quiet.
+ *
+ * 4. THE CARDS STOP. Heading DOWN, momentum stops at the cards line: a fling from the
+ *    platform lands on the top of the cards page rather than sailing on into the grid. Two
+ *    catches: the release snap aims at the line when its projection overshoots it, and the
+ *    scroll listener pins a no-finger downward CROSSING of the line exactly as the platform
+ *    stop does (wheel, trackpad, and momentum the projection under-read). A finger dragging
+ *    across is left alone, and an UPWARD crossing out of the grid is not caught — that fling
+ *    carries on to the platform stop.
  *
  * THE GLIDE (`glideTo`) is a rAF tween rather than `scrollTo({ behavior: "smooth" })`: a
  * smooth scroll crosses the platform line with no finger down, which the platform stop
@@ -351,9 +361,13 @@ export function useTowerCardsScroll({ scrollerRef, headerLayerRef, cardsPageRef,
             const top = el.scrollTop;
             if (!inZone(top, platformLine, cardsLine)) return false;
             const projected = top + releaseVelocityOf(dragSamples, performance.now()) * MOMENTUM_PROJECTION_MS;
-            if (projected >= cardsLine || projected <= platformLine) return false;
-            cancelAnimationFrame(restoreFrame); // the platform stop's unlock must not undo the snap's lock
-            glideToRef.current(snapTargetOf(projected, platformLine, cardsLine, lastDirection), SNAP_MS, easeOutCubic, true);
+            // Heading up past the platform line: left to coast, the platform stop catches it.
+            if (projected <= platformLine) return false;
+            cancelAnimationFrame(restoreFrame); // a stop's unlock must not undo the snap's lock
+            // Heading down past the cards line: the cards stop (behaviour 4) — glide to the
+            // line rather than coasting into the grid.
+            const target = projected >= cardsLine ? cardsLine : snapTargetOf(projected, platformLine, cardsLine, lastDirection);
+            glideToRef.current(target, SNAP_MS, easeOutCubic, true);
             return true;
         };
         const armSettle = () => {
@@ -401,9 +415,16 @@ export function useTowerCardsScroll({ scrollerRef, headerLayerRef, cardsPageRef,
             }
             if (!touching) armSettle();
             if (touching) return;
-            const line = platformScrollTop(el);
-            const crossed = (prev < line - ON_LINE_PX && top > line + ON_LINE_PX) || (prev > line + ON_LINE_PX && top < line - ON_LINE_PX);
-            if (!crossed) return;
+            const platformLine = platformScrollTop(el);
+            const crossedPlatform =
+                (prev < platformLine - ON_LINE_PX && top > platformLine + ON_LINE_PX) || (prev > platformLine + ON_LINE_PX && top < platformLine - ON_LINE_PX);
+            // The cards stop (behaviour 4): DOWNWARD crossings only — a fling up out of the
+            // grid is meant to carry on to the platform.
+            const cards = cardsPageRef.current;
+            const cardsLine = cards ? cardsTopScrollTop(el, cards) : null;
+            const crossedCards = cardsLine !== null && prev < cardsLine - ON_LINE_PX && top > cardsLine + ON_LINE_PX;
+            if (!crossedPlatform && !crossedCards) return;
+            const line = crossedPlatform ? platformLine : (cardsLine as number);
             // Stop the fling: one frame of overflow-hidden ends native momentum, then the
             // stylesheet's own overflow comes back (an inline "" defers to the class).
             el.style.overflowY = "hidden";
@@ -446,7 +467,6 @@ export function useTowerCardsScroll({ scrollerRef, headerLayerRef, cardsPageRef,
             },
             /** Stop a glide in flight — the page is about to place the scroller itself. */
             cancelGlide: () => cancelGlideRef.current(),
-            /** Glide back up (or down) to the platform line — the cards header's up arrow. */
             /**
              * The cards header's up arrow: climbs ONE stop. Down in the grid (below the cards
              * line) it glides back to the top of the cards page; at the top of the cards page
@@ -458,7 +478,10 @@ export function useTowerCardsScroll({ scrollerRef, headerLayerRef, cardsPageRef,
                 const cards = cardsPageRef.current;
                 const cardsLine = cards ? cardsTopScrollTop(el, cards) : null;
                 const inGrid = cardsLine !== null && el.scrollTop > cardsLine + ON_LINE_PX;
-                glideToRef.current(inGrid ? cardsLine : platformScrollTop(el), GLIDE_MS);
+                // `lock`: the arrow is often tapped mid-fling. The tap usually halts the native
+                // momentum, but where it does not, momentum would overwrite the glide's frames
+                // and the page would just stop — overflow-hidden drops it for the trip.
+                glideToRef.current(inGrid ? cardsLine : platformScrollTop(el), GLIDE_MS, easeInOutCubic, true);
             },
             /** Glide down to the cards line, the title row at the top — the cards cue. */
             toCards: () => {

@@ -269,16 +269,17 @@ cards straight after the game (2026-11-03).
 - **The refill** (`OnDeckVocabController.getLoopRefill` → `OnDeckVocabService.refillWorkingLoop`)
   is the swipe refill run once per cleared card: same `getNextLibraryCardWithFallback`,
   same world / focus resolution as the loop fetch, lending on its own
-  when the pool is spent. The one difference: the preferred band is the cleared card's
+  when the pool is spent — only once the session's lend switch is on (`?lend=1`,
+  DECK_TOWER.md § Running out of ready cards). The one difference: the preferred band is the cleared card's
   band on the session bar *after* the game's mark, since the pre-mark band is gone by then.
   A short answer winds those slots down, as a swipe refill that came back empty does.
 - **An emptied loop.** If the game cleared every loop card, `useWorkingLoop` reports
-  `loading` until the refill lands, so neither the empty state nor the tower's climb-out
-  fires in between.
+  `loading` until the refill lands, so the flp's out-of-ready-cards card does not fire in
+  between (it also waits for the break to be over: `loopDry` requires the `cards` phase).
 
 | Endpoint | Params |
 |---|---|
-| `GET /api/onDeck/loopRefill` | `replace` (cleared ids), `exclude` (the loop's ids), both capped at `MAX_SEED_IDS`; plus the loop's own `world` (`workingLoopParams`) |
+| `GET /api/onDeck/loopRefill` | `replace` (cleared ids), `exclude` (the loop's ids), both capped at `MAX_SEED_IDS`; plus the loop's own `world` and lend switch (`workingLoopParams`) |
 
 Code: `src/features/flashcards/FlashcardsLearnPage/gameBreak/useBreakClears.ts` →
 `useBreakClears`; `useWorkingLoop.ts` → `replaceGameCleared`; `loopSplice.ts` →

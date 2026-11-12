@@ -672,7 +672,7 @@ isoY −2        [ M ]
 ```
 
 In the iso kit's world (+x down-right, +y down-left) a +isoX cell is a step of world −y
-and a +isoY cell a step of world −x, each one platform plus `GRID_GAP` (1.9 units) of
+and a +isoY cell a step of world −x, each one platform plus `SORT_BIN_GAP` (1.9 units) of
 floor. The group is centred horizontally in the 390 box and the viewBox is derived from
 the cells (`LAYOUT`): from a full deck on the farthest bin down to 16px past the nearest
 bin's front corner. The bins are `BIN_SCALE` (0.7) the size of the artboard's two —
@@ -680,25 +680,30 @@ applied to the projector's `UNIT`, so slab, deck and type all shrink together. A
 1.9 the group spans ~372 of the 390 box (~9px each side), about as large as it can go. Bins are
 painted farthest first (`DRAW_ORDER`, by world x + y) so a nearer bin paints over the
 shadow of the one behind it. The toolbar stays top-right, above the Mastered bin.
-*Code:* `SortBins.tsx` → `BIN_CELLS`, `CELL_WORLD`, `GRID_GAP`, `DRAW_ORDER`, `LAYOUT`,
-`BIN_SCALE`.
+*Code:* `SortBins.tsx` → `CELL_WORLD`, `DRAW_ORDER`, `LAYOUT`, `BIN_SCALE`;
+`src/features/deckTower/iso/sortPlatformMetrics.ts` → `SORT_BIN_CELLS`, `SORT_BIN_PLATFORM`,
+`SORT_BIN_GAP`, `sortBinCellOffset`, `SORT_BIN_THICKNESS`; `SortBinPrint.tsx` → `SortBinPrint`
+(the number + dotted outline). The platform geometry and the print are shared with the Deck
+Tower's Add Cards button, an exact miniature of the Comfortable bin — DECK_TOWER.md § The sort
+platform.
 
 | Bin | Platform colour | Deck |
 | --- | --- | --- |
-| Unfamiliar (`library`) | `CATEGORY_COLORS.Unfamiliar` (red surface) | cards sorted into it **this visit** |
-| Target (`target`) | `CATEGORY_COLORS.Target` (yellow surface) | 〃 |
-| Comfortable (`comfortable`) | `CATEGORY_COLORS.Comfortable` (green surface) | 〃 |
-| Mastered (`already-learned`) | `CATEGORY_COLORS.Mastered` (blue surface) | 〃 |
+| Unfamiliar (`library`) | `BAND_MID.Unfamiliar` (`redM`) | cards sorted into it **this visit** |
+| Target (`target`) | `BAND_MID.Target` (`yelM`) | 〃 |
+| Comfortable (`comfortable`) | `BAND_MID.Comfortable` (`grnM`) | 〃 |
+| Mastered (`already-learned`) | `BAND_MID.Mastered` (`bluM`) | 〃 |
 
-- **One hue per band.** Each bin is its utcm band's SURFACE tier
-  (`src/utils/categoryColors.ts` → `CATEGORY_COLORS`), on the **platform** — the
+- **One hue per band.** Each bin is its utcm band's MID tier
+  (`src/utils/categoryColors.ts` → `BAND_MID`; the SURFACE tier until 2026-11-11 — too pale on the platforms, the same reason the tower deck plates use mid), on the **platform** — the
   platforms are no longer white, and the decks on them are cream card stock (below). The
   platforms — and the number and outline printed on them — go through the **tower's own
   ambient wash** (`SortLook.wash` = `towerLight(time).wash` = `phaseWash`): the identity by
   day, night's cool dim light after dark. That is exactly how the Deck Tower's Add Cards
-  button colours its four quadrants (IsoSortPlatform `quadrantColors` =
-  `wash(CATEGORY_COLORS.…)` → `platformTone`), so each band reads the same on the button
-  and on the page, by day and by night (user request 2026-11-09; until then the page
+  button — a miniature of the Comfortable bin — colours its platform and print
+  (IsoSortPlatform `color` = `wash(BAND_MID.Comfortable)` → `platformTone`, SortBinPrint ink
+  = `wash(SORT_BIN_PRINT_INK)`), so the bin reads the same on the button and on the page,
+  by day and by night (user request 2026-11-09; until then the page
   darkened its platforms 10% at night with `platformShade`, a step the button did not
   share). The deck cards are not washed — they stay the dock's cream stock.
   *Code:* `AddCardsPage.tsx` → `SORT_BINS`; `SortBins.tsx` → `SortBin` (`tone`,

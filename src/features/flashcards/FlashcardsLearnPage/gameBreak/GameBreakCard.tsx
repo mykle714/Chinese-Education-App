@@ -7,9 +7,8 @@ import { COLORS, RAMP } from "../../../../theme/colors";
 import { LEADING, SIZE, WEIGHT } from "../../../../theme/scale";
 import { SHADOW } from "../../../../theme/shadows";
 import { roundedEdgeFilletDown, roundedEdgeRimLightTop } from "../../../../theme/roundedEdge";
-import { shadeHex } from "../../../../theme/shadeHex";
 import { CREAM_PLATE_TONES } from "../../../../theme/towerSlab";
-import { PLATE_WALL_PX, towerPlateSx, type PlateTones } from "../../../../theme/towerPlate";
+import { hueTones, plateButtonSx } from "./interimCardPlate";
 import SidewaysCardFace from "./SidewaysCardFace";
 
 /** The glyph token: a slab like the tower's plates, cut thicker so it is the card's one object. */
@@ -23,19 +22,6 @@ const PANEL_PAD = "calc(var(--card-stock-inset, 0px) + 16px)";
  */
 const SIDEWAYS_ACTIONS_MAX_PX = 340;
 
-/** A game hue as slab tones: the face is its mid tier, the wall a shade down. */
-function hueTones(mid: string): PlateTones {
-    return { top: mid, left: shadeHex(mid, 0.1), right: shadeHex(mid, 0.2) };
-}
-
-const plateButtonSx = (tones: PlateTones) => ({
-    ...towerPlateSx(tones),
-    height: 46,
-    borderRadius: "14px",
-    fontSize: SIZE.body,
-    // The wall hangs below the box; keep it clear of the panel's foot.
-    marginBottom: `${PLATE_WALL_PX}px`,
-});
 
 /**
  * GameBreakCard — the face of the break's card (docs/FLP_GAME_BREAKS.md § 5): one side, in

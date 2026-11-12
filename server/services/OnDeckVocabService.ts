@@ -11,7 +11,7 @@ import { ValidationError } from '../types/dal.js';
 import type { BuiltinCollectionId } from '../dal/shared/vetTable.js';
 import { computeTypeCategory } from '../utils/masteryCompute.js';
 import { flpReadyCountsByBand, flpUpcomingReady, type FlpUpcomingRelease } from '../contracts/flpReadiness.js';
-import { rankCardQueue, rankCardQueueCooled, isMarkOnCooldown } from './cardQueueRanking.js';
+import { rankCardQueue, isMarkOnCooldown } from './cardQueueRanking.js';
 import type { CardAudioService } from './CardAudioService.js';
 import type { ProvisionalCardService } from './ProvisionalCardService.js';
 import {
@@ -40,10 +40,9 @@ export type { CollectionFilter } from '../dal/interfaces/IOnDeckVocabDAL.js';
  * `band` at the head of its queue, skipping any already in `picked`.
  */
 interface FlpDealPool {
-  /** Off-cooldown cards, in rankFlpEligible order (the quota and top-up tiers). */
+  /** Off-cooldown cards, in rankFlpEligible order (the quota and top-up tiers). The flp
+      never deals a cooling card, so there is no cooled tier (2026-11-11). */
   eligible(band: string, limit: number, picked: VocabEntry[]): VocabEntry[];
-  /** Cooling cards, nearest-to-ready first (rankCardQueueCooled — the cooled tier). */
-  cooled(band: string, limit: number, picked: VocabEntry[]): VocabEntry[];
 }
 
 /** The shape of a working loop: ordered quotas plus the top-up priority. */
@@ -148,14 +147,22 @@ export class OnDeckVocabService {
   }
 
   /**
-   * Whether a session may be topped up with LENT cards when its own pool is spent.
+   * Whether an flp session may be topped up with LENT cards when its own pool is spent.
    *
-   * Lending into a NAMED set is worse than waste — a focused round padded with words
-   * outside the day's set is not that day's set. Such a session honors the cooldown
-   * and comes back short instead.
+   * Two conditions, both required:
    *
-   *   Study Mix, unrestricted → lend
-   *   focused (docs/FOCUS_MODE.md § 4) → never lend
+   *   1. `lend` — the session's LEND SWITCH (2026-11-11). An flp session serves only the
+   *      learner's own off-cooldown cards until they run out; then the flp shows an
+   *      interim card ("out of ready cards — new words next") and re-deals with the
+   *      switch on (`?lend=1` on the deal / break refill, `lend: true` on the mark).
+   *      The switch is client state and resets when the Deck Tower visit ends
+   *      (docs/DECK_TOWER.md § "Running out of ready cards").
+   *   2. An unrestricted scope. Lending into a NAMED set is worse than waste — a focused
+   *      round padded with words outside the day's set is not that day's set. Such a
+   *      session comes back short and the flp shows "done for the day" instead.
+   *
+   *   switch on, unrestricted          → lend
+   *   switch off, or focused (FOCUS_MODE.md § 4) → never lend
    *
    * Until 2026-11-04 this also took the loop's category list and refused when
    * Unfamiliar was not among them (a lent card bands Unfamiliar): that guarded the
@@ -163,8 +170,8 @@ export class OnDeckVocabService {
    * Every flp session now draws from all four bands, so only the scope matters. The
    * restricted cases also used to include `?collection=` and `?deck=` launches.
    */
-  private canLendProvisional(collection?: CollectionFilter | null): boolean {
-    return !collection;
+  private canLendProvisional(lend: boolean, collection?: CollectionFilter | null): boolean {
+    return lend && !collection;
   }
 
   // A card is FRESH for a game when a mark of the type that game emits would actually
@@ -724,23 +731,19 @@ export class OnDeckVocabService {
    *
    * Priority: the preferred category, then the rest in STUDY_MIX_FILL_ORDER
    * (Target -> Comfortable -> Unfamiliar -> Mastered — the same order the initial
-   * loop borrows in), then a COOLING card, and only then a LENT one. At each step we take the
-   * head of that category's queue (rankFlpEligible: marked in the last 30 days,
-   * longest-waiting first; then the rest, own before lent, easiest first).
-   * `excludeIds` keeps cards already in the loop out.
+   * loop borrows in), and only then a LENT card. At each step we take the head of that
+   * category's queue (rankFlpEligible: marked in the last 30 days, longest-waiting
+   * first; then the rest, own before lent, easiest first). `excludeIds` keeps cards
+   * already in the loop out.
    *
-   * BORROW, THEN COOL, THEN LEND (2026-08-20, replacing the 2026-08-17 lend-first
-   * rule). Lending is the bottom of the ladder because it exists for a learner who has
-   * not sorted enough cards, not for one whose answered card happened to empty its own
-   * category — which is every learner, on every correct mark, once a category runs dry.
-   *
-   * WHEN EVERY CANDIDATE IS COOLING a resting card is re-served rather than a new word
-   * minted. It is deliberately shown knowing its mark will be dropped at
-   * POST /api/flashcards/mark: the cooldown exists precisely so re-answering a card
-   * inside its window earns nothing, and the learner keeps studying their own deck.
-   * Only when there is no resting card either does an unrestricted session lend
-   * (canLendProvisional); a focused one returns null and the client winds the loop
-   * down. Enriches only the chosen card.
+   * NEVER A COOLING CARD (2026-11-11). The flp used to re-serve the nearest-to-ready
+   * cooling card when nothing was off cooldown (the 2026-08-20 "borrow, cool, lend"
+   * ladder). Those cards played but earned nothing (their marks are dropped at
+   * POST /api/flashcards/mark), and they made the Deck Tower count down cards it never
+   * counted. Now nothing fresh ⇒ null, unless the session's lend switch is on
+   * (canLendProvisional), when a lent card is served. A null winds the client's loop
+   * down; an empty loop is what raises the flp's "out of ready cards" card.
+   * Enriches only the chosen card.
    *
    * `collection` is the session's focus-mode scope (docs/FOCUS_MODE.md § 4), resolved
    * server-side by the caller — the mark endpoint is what refills the loop, so a
@@ -757,7 +760,9 @@ export class OnDeckVocabService {
     excludeIds: number[] = [],
     collection?: CollectionFilter | null,
     /** The session's flp bar (studyMode.ts) — core unless this is a reading/writing session. */
-    world: MasteryWorldId = OnDeckVocabService.FLP_WORLD
+    world: MasteryWorldId = OnDeckVocabService.FLP_WORLD,
+    /** The session's lend switch (canLendProvisional): may this refill be a lent card? */
+    lend = false
   ): Promise<VocabEntry | null> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -788,18 +793,6 @@ export class OnDeckVocabService {
       return null;
     };
 
-    // Take the nearest-to-ready COOLING card from the first category that has one.
-    // These are the learner's own cards, re-shown early; the mark they earn is
-    // dropped at POST /api/flashcards/mark, which is what the cooldown means.
-    const serveCooled = async (categories: string[]): Promise<VocabEntry | null> => {
-      for (const category of categories) {
-        const cards = await this.fetchFlpCandidates(userId, category, language, excludeIds, collection, [], world);
-        const resting = rankCardQueueCooled(cards, now, { world });
-        if (resting.length > 0) return resting[0];
-      }
-      return null;
-    };
-
     // Lend one card and serve it. Policy (re-lend before minting) lives in
     // ProvisionalCardService; the row comes back by id, so it is re-queried with
     // `lentIds` — the ordinary candidate path is sorted-only. Returns null when
@@ -825,16 +818,11 @@ export class OnDeckVocabService {
     // 2. Borrow a FRESH card from the remaining categories.
     if (!winner) winner = await serveFrom(borrowOrder);
 
-    // 3. Nothing is off cooldown anywhere — re-serve the card closest to ready,
-    //    preferred category first (2026-08-20). This tier used to be a LEND, sitting
-    //    both here and above the borrow pass, which minted a card on every correct
-    //    mark once the answered card's own category ran dry: 14 lends in a single
-    //    dev session, and a bucket that grew without bound.
-    if (!winner) winner = await serveCooled([...preferredFirst, ...borrowOrder]);
-
-    // 4. Genuinely nothing to serve — the learner has too few cards. Lend one, if
-    //    this session is allowed to show a lent card at all.
-    if (!winner && this.canLendProvisional(collection)) {
+    // 3. Nothing is off cooldown anywhere. Lend one, if this session's lend switch is
+    //    on and its scope allows a lent card at all; otherwise there is no refill and
+    //    the client's loop winds down. (A cooling card is never re-served — see the
+    //    docblock.)
+    if (!winner && this.canLendProvisional(lend, collection)) {
       winner = await serveLent();
     }
 
@@ -868,7 +856,9 @@ export class OnDeckVocabService {
     replacedIds: number[],
     excludeIds: number[],
     collection: CollectionFilter | null,
-    world: MasteryWorldId
+    world: MasteryWorldId,
+    /** The session's lend switch, forwarded to each pick (canLendProvisional). */
+    lend = false
   ): Promise<VocabEntry[]> {
     if (replacedIds.length === 0) return [];
     // `markType` is only used for freshness, which `ignoreCooldown` skips, and for the
@@ -881,7 +871,7 @@ export class OnDeckVocabService {
     for (const card of replaced) {
       const preferred = barCategory(card.typedMarkHistory, world, card.writingMastery);
       const next = await this.getNextLibraryCardWithFallback(
-        userId, preferred, language, [...exclude], collection, world
+        userId, preferred, language, [...exclude], collection, world, lend
       );
       if (!next) break; // the pool is spent; later picks would come back empty too
       exclude.add(next.id);
@@ -893,8 +883,7 @@ export class OnDeckVocabService {
   /**
    * The working-loop deal's candidate pool: every flp candidate row, read ONCE
    * (`fetchFlpCandidates` with no band), banded in app code on `world`'s bar and ranked
-   * once per band. The deal's quota, top-up and cooled tiers then take cards from it in
-   * memory.
+   * once per band. The deal's quota and top-up tiers then take cards from it in memory.
    *
    * Until 2026-11-08 each tier re-ran the candidate query for one band — five or more
    * full reads per deal, each evaluating `barCategoryExpr` on every one of the user's
@@ -926,9 +915,8 @@ export class OnDeckVocabService {
       if (list) list.push(card);
       else byBand.set(band, [card]);
     }
-    // Ranked lazily, once per band and tier: a deal often never reaches the cooled tier.
+    // Ranked lazily, once per band: a deal often never reaches the top-up bands.
     const eligible = new Map<string, VocabEntry[]>();
-    const cooled = new Map<string, VocabEntry[]>();
     const take = (ranked: VocabEntry[], limit: number, picked: VocabEntry[]): VocabEntry[] => {
       if (limit <= 0) return [];
       const pickedIds = new Set(picked.map((c) => c.id));
@@ -945,14 +933,6 @@ export class OnDeckVocabService {
         if (!ranked) {
           ranked = this.rankFlpEligible(byBand.get(band) ?? [], now, world);
           eligible.set(band, ranked);
-        }
-        return take(ranked, limit, picked);
-      },
-      cooled: (band, limit, picked) => {
-        let ranked = cooled.get(band);
-        if (!ranked) {
-          ranked = rankCardQueueCooled(byBand.get(band) ?? [], now, { world });
-          cooled.set(band, ranked);
         }
         return take(ranked, limit, picked);
       },
@@ -1033,21 +1013,21 @@ export class OnDeckVocabService {
    * before lent, easiest first. Enriches cards with related words that share
    * characters.
    *
-   * WHEN A QUOTA IS SHORT the loop BORROWS, then COOLS, then LENDS (2026-08-20): the
-   * shortfall is covered from the other categories first, then by re-showing
-   * the learner's own cooling cards, and only then with lent cards. Lending exists to
-   * get a learner started who has not sorted enough cards — not to paper over a quota
-   * that a healthy deck simply cannot fill (the Mix loop asks for 1 Mastered + 2
-   * Comfortable that a young deck does not have).
+   * WHEN A QUOTA IS SHORT the loop BORROWS from the other categories' off-cooldown
+   * cards, and then, only with the session's LEND SWITCH on (`lend`), LENDS. Without
+   * the switch a short loop simply comes back short — or empty, which is what raises
+   * the flp's "out of ready cards" card and its re-deal with `lend` on
+   * (canLendProvisional; docs/DECK_TOWER.md § "Running out of ready cards").
    *
-   * The cooled tier deliberately re-serves resting cards: they are shown but earn
-   * nothing, because a mark on a cooling track is dropped at POST /api/flashcards/mark.
-   * A focused session (docs/FOCUS_MODE.md § 4) still cannot lend, but it does reach
-   * the cooled tier. See canLendProvisional and docs/PROVISIONAL_CARDS.md § 4b.
+   * NO COOLED TIER (2026-11-11). Until then a short loop was padded with the learner's
+   * own COOLING cards before lending (the 2026-08-20 "borrow, cool, lend" ladder). They
+   * played but earned nothing, and the Deck Tower — which counts only off-cooldown
+   * cards — counted them down anyway, then reconciled back up on the climb-out. The flp
+   * now deals only off-cooldown cards, and lent ones once the learner agrees.
    *
    * `collection` is the server-resolved focus scope; it restricts the whole loop —
-   * quotas, top-up and the cooled fill alike. The mark endpoint re-resolves the same
-   * scope for its refills.
+   * quotas and top-up alike, and a focused loop never lends. The mark endpoint
+   * re-resolves the same scope for its refills.
    */
   async getDistributedWorkingLoop(
     userId: string,
@@ -1058,7 +1038,9 @@ export class OnDeckVocabService {
         lend a second time to find them (docs/PROVISIONAL_CARDS.md § 4b). */
     lentIds: number[] = [],
     /** The session's flp bar — `reading` / `writing` for those flps, else core. */
-    world: FlpWorld = 'core'
+    world: FlpWorld = 'core',
+    /** The session's lend switch (canLendProvisional): may the loop be topped up with lent cards? */
+    lend = false
   ): Promise<VocabEntry[]> {
     if (!userId) {
       throw new ValidationError('User ID is required');
@@ -1076,10 +1058,8 @@ export class OnDeckVocabService {
 
     const now = Date.now();
     // Study Mix: fetch each quota in order, then top up to WORKING_LOOP_SIZE in the
-    // fill order. Mix may draw from all four bands, and walks its cooled tier in the
-    // same TCUM order it borrows in.
+    // fill order. Mix may draw from all four bands.
     const config = DEFAULT_LOOP_CONFIG;
-    const loopCategories: string[] = [...STUDY_MIX_FILL_ORDER];
     const workingLoop: VocabEntry[] = [];
 
     // One read of every candidate, banded and ranked in memory (loadFlpDealPool).
@@ -1093,39 +1073,24 @@ export class OnDeckVocabService {
     // The cross-category top-up runs below, as tier 1 of the shared fill ladder.
     const fillOrder = config.fillOrder;
 
-    // FILL ORDER: BORROW → COOL → LEND (2026-08-20, replacing "lend first, borrow
-    // second" of 2026-08-17).
+    // FILL ORDER: BORROW → LEND (2026-11-11; the COOL tier between them is gone).
     //
     // A quota its own category could not fill is covered, in this order:
     //   1. FRESH cards borrowed from the other categories;
-    //   2. COOLING cards — the learner's own words, shown again early. They earn
-    //      nothing (the mark is dropped at POST /api/flashcards/mark), which is
-    //      exactly what a cooldown means;
-    //   3. LENT cards, and only here.
+    //   2. LENT cards — only with the session's lend switch on, and never in a
+    //      focused world (canLendProvisional).
     //
-    // The old ordering minted a card whenever a quota underfilled, and a quota
-    // underfills constantly for an ordinary learner — the Mix loop asks for 1
-    // Mastered + 2 Comfortable that a young deck simply does not have. Lending is
-    // for a learner who has not sorted enough cards, not for one whose cards are
-    // merely resting or unevenly distributed.
-    //
-    // A focused session never lends: it plays the day's set and nothing else. It
-    // comes back short on purpose — but it DOES reach tier 2.
-    // See canLendProvisional and docs/PROVISIONAL_CARDS.md.
+    // Without the switch a short loop stays short, and an empty one tells the client
+    // the learner is out of ready cards (docs/DECK_TOWER.md § "Running out of ready
+    // cards"). Lending sits strictly after every off-cooldown card of the learner's
+    // own, so a card coming off cooldown mid-session is still dealt before a lent one.
     for (const category of fillOrder) {
       if (workingLoop.length >= WORKING_LOOP_SIZE) break;
       workingLoop.push(...pool.eligible(category, WORKING_LOOP_SIZE - workingLoop.length, workingLoop));
     }
 
-    // 2. COOLING cards, nearest-to-ready first, across every category this loop may
-    //    draw from.
-    for (const category of loopCategories) {
-      if (workingLoop.length >= WORKING_LOOP_SIZE) break;
-      workingLoop.push(...pool.cooled(category, WORKING_LOOP_SIZE - workingLoop.length, workingLoop));
-    }
-
-    // 3. LEND — the learner really is short of cards.
-    if (workingLoop.length < WORKING_LOOP_SIZE && this.canLendProvisional(collection)) {
+    // 2. LEND — the learner is out of ready cards and has agreed to new words.
+    if (workingLoop.length < WORKING_LOOP_SIZE && this.canLendProvisional(lend, collection)) {
       const lent = await this.lendIntoLoop(
         userId, language, WORKING_LOOP_SIZE - workingLoop.length,
         workingLoop.map(c => c.id), now, collection, world

@@ -4,22 +4,25 @@ import {
     IsoPlatform,
     IsoScene,
     IsoSolid,
-    IsoText,
     ISO,
     faceTransform,
-    insetRect,
     makeProjector,
     platformTone,
     prism,
+    sortBinCellOffset,
+    SORT_BIN_CELLS,
+    SORT_BIN_PLATFORM,
+    SORT_BIN_THICKNESS,
     type WorldRect,
 } from "../deckTower/iso";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
 import type { SortLook } from "./sortTimeOfDay";
+import { SORT_BIN_DECK as DECK, SORT_BIN_DECK_W as DECK_W, SORT_BIN_NUMBER_AT, SORT_BIN_PRINT_INK as PRINT_INK, SortBinPrint } from "./SortBinPrint";
 import { KEYCAP_POP_TRANSITION } from "../../theme/keycapPress";
 import MiniCardSvg from "../../components/MiniCardSvg";
-import { MINI_CARD_HEIGHT, MINI_CARD_WIDTH } from "../../components/miniCardFace";
+import { MINI_CARD_WIDTH } from "../../components/miniCardFace";
 import { useFontLoadEpoch } from "../../hooks/useFontLoadEpoch";
 import { measureAdvance } from "../../utils/canvasText";
 import type { DiscoverCard } from "../../types";
@@ -32,7 +35,7 @@ import { stripParentheses } from "../../utils/definitionUtils";
  *
  * Layer: feature UI (`src/features/discover`), drawn with the Deck Tower's iso kit
  * (docs/ISO_ART_FRAMEWORK.md). One IsoScene holds all four bins, laid out as a
- * tetromino on the ISO GRID (BIN_CELLS; +isoX "right" = up-right, +isoY "top" = up-left):
+ * tetromino on the ISO GRID (sortPlatformMetrics.ts → SORT_BIN_CELLS; +isoX "right" = up-right, +isoY "top" = up-left):
  * an S piece — Target down-right of Unfamiliar, Comfortable up-right of Target, Mastered
  * down-right of Comfortable (user layout 2026-11-09). Each bin is
  *   - a platform in its band's colour floating over the page ground (IsoPlatform
@@ -84,14 +87,14 @@ export interface SortBinsHitTester {
 
 export interface SortBinSpec {
     id: string;
-    /** The platform's and deck's colour (the band's ramp SURFACE tier). */
+    /** The platform's and deck's colour (the band's ramp MID tier, `BAND_MID`). */
     color: string;
     /** The bin's sentence: said in its speech bubble while a card is held over it, and its accessible name. */
     label: string;
 }
 
 interface SortBinsProps {
-    /** Exactly four bins, in BIN_CELLS order (Unfamiliar, Target, Comfortable, Mastered). */
+    /** Exactly four bins, in SORT_BIN_CELLS order (Unfamiliar, Target, Comfortable, Mastered). */
     bins: readonly SortBinSpec[];
     /** The cards sorted into each bin this session, by bin id, oldest first. */
     decks: Record<string, readonly DiscoverCard[]>;
@@ -109,24 +112,16 @@ interface SortBinsProps {
  * How much smaller the four S-laid bins are than the artboard's two (`setProj(13, …)`).
  * Applied to the projector's UNIT, so every world-unit size below (slab, deck, type)
  * shrinks with it. 0.7 (raised from 0.66 on 2026-11-09, user request "increase the size
- * of the platforms") with GRID_GAP 1.9 spans ~372 of the 390 box — ~9px each side, so
+ * of the platforms") with SORT_BIN_GAP 1.9 spans ~372 of the 390 box — ~9px each side, so
  * this is about the largest the S piece can go without overflowing a phone's width.
  */
 const BIN_SCALE = 0.7;
 const UNIT = 13 * BIN_SCALE;
-/**
- * The deck's footprint — a card lying on the platform, in the mini card's own 92 × 132
- * proportions (its face is the mini card, MiniCardSvg in DeckFace) and centred on the platform (y
- * spans 3 ± d/2). The corner is the mini card's 8px radius at this width (8 × 4.4 / 92).
- */
-const DECK_W = 4.4;
-const DECK_D = (DECK_W * MINI_CARD_HEIGHT) / MINI_CARD_WIDTH;
-const DECK: WorldRect = { x: 0, y: 3 - DECK_D / 2, w: DECK_W, d: DECK_D, r: (8 * DECK_W) / MINI_CARD_WIDTH };
 /** World units per mini-card px on the deck's face (DeckFace's scale). */
 const FACE_UNITS_PER_PX = DECK_W / MINI_CARD_WIDTH;
 /** The platform, a unit wider than the deck all round. */
-const PLATFORM: WorldRect = { x: -1, y: -1, w: 6.4, d: 8, r: 1 };
-const PLATFORM_THICKNESS = 1.2;
+const PLATFORM: WorldRect = SORT_BIN_PLATFORM;
+const PLATFORM_THICKNESS = SORT_BIN_THICKNESS;
 /** The ground the platforms' shadows fall on, this far below their undersides. */
 const GROUND_GAP = 1.6;
 /**
@@ -140,72 +135,10 @@ const LAYER_SOLID = 0.34;
  * deck stops growing. Cut from 20 to 10 with the thicker cards, so a full deck stays
  * about as tall as it was (4.2 vs 4 units). On the iso grid a full deck
  * (~32px at BIN_SCALE) stays clear of the platform behind it: its top maps ~3.3 world
- * units back along the floor diagonal, short of the neighbour across the GRID_GAP.
+ * units back along the floor diagonal, short of the neighbour across the SORT_BIN_GAP.
  * The scene's viewBox (LAYOUT) makes room for it on the farthest bin.
  */
 const MAX_LAYERS = 10;
-/**
- * Where the empty platform's number sits: the platform's centre (DECK is inset 1 unit on
- * each side of PLATFORM in x, and centred in y), so the first card covers it.
- */
-const NUMBER_AT = { x: 2.2, y: 3 };
-/**
- * The bin's rating number (1–4, the page prompt's "Rate each card 1–4"), printed big in the
- * middle of the empty platform's top (NumberPrint) — the whole top is its own now that the
- * sentence moved to the speech bubble (user request 2026-11-09). Type size in world units:
- * a digit ~2.9 units tall on the platform's 6.4 × 8 top.
- */
-const BIN_NUMBER_SIZE = 4;
-/**
- * Extra weight on the number, world units of same-ink stroke round each glyph (half of it
- * lands outside the outline). 975 Maru SC ships one weight and synthesised bold is the
- * browser's only step up, so a heavier number needs the stroke (user request 2026-11-09).
- */
-const NUMBER_EMBOLDEN = 0.18;
-/**
- * The dotted outline on the platform's top where the deck will stand (user request
- * 2026-11-09): the first card's own footprint (DECK — the mini card's shape and corner),
- * inset by half the stroke plus NUMBER_BOX_CLEARANCE so the line lies wholly under the
- * card and the first sort covers it completely (flush at half the stroke, the dots'
- * anti-aliased outer edge still peeked out round the card — user report 2026-11-09). Short rounded dashes ("longer dots", user request 2026-11-09 —
- * were round dots): NUMBER_BOX_DASH long plus the round caps (one stroke width more),
- * then NUMBER_BOX_DASH_GAP (less the caps) clear — ~0.4 inked to ~0.3 clear (0.6 / 0.35
- * read "too long"). Thinned 0.2 → 0.12 ("less thick"), the dash and gap retuned so the
- * dashes keep their length.
- * Stroked in the number's grey (PRINT_INK, washed). Before this it was a solid line
- * inset from the platform's edge (2026-11-09, briefly).
- */
-const NUMBER_BOX_STROKE = 0.12;
-const NUMBER_BOX_DASH = 0.28;
-const NUMBER_BOX_DASH_GAP = 0.42;
-const NUMBER_BOX_CLEARANCE = 0.15;
-/**
- * The outline's own corner radius — rounder than the inset card's (insetRect leaves only
- * ~0.2 of DECK's 0.38 corner), user request 2026-11-09 "more rounded corners". A rounder
- * corner only pulls the line further inside the card, so it stays covered.
- */
-const NUMBER_BOX_RADIUS = 0.7;
-const NUMBER_BOX: WorldRect = { ...insetRect(DECK, NUMBER_BOX_STROKE / 2 + NUMBER_BOX_CLEARANCE), r: NUMBER_BOX_RADIUS };
-/**
- * The outline's dash pattern, fitted to the loop: a whole number of dash + gap periods round
- * the rounded rect's perimeter (four straight runs + one full circle of corners), each
- * stretched or squeezed a little from NUMBER_BOX_DASH / NUMBER_BOX_DASH_GAP. With a
- * fractional count the last dash ran into the first where the <rect>'s stroke starts and
- * ends (its top-left, past the corner) — user report 2026-11-09.
- */
-const NUMBER_BOX_DASHES = (() => {
-    const { w, d, r } = NUMBER_BOX;
-    const perimeter = 2 * (w + d) - 8 * r + 2 * Math.PI * r;
-    const period = NUMBER_BOX_DASH + NUMBER_BOX_DASH_GAP;
-    const fit = perimeter / Math.max(1, Math.round(perimeter / period)) / period;
-    return `${NUMBER_BOX_DASH * fit} ${NUMBER_BOX_DASH_GAP * fit}`;
-})();
-/**
- * The ink of what is printed on a bin — its number — and of the speech bubble's sentence: the framework's secondary-text grey (`textSecondary`,
- * --muted), user request 2026-11-09 "make all the text grey" (was `onSurface`). The mid
- * grey `greyA` was the other candidate but is too light to read on the pastel band colours.
- */
-const PRINT_INK = COLORS.textSecondary;
 
 // ── The speech bubble (viewBox px ≈ screen px: the scene is ~390 wide on a phone) ─────
 /**
@@ -270,39 +203,18 @@ function stackingRootOf(el: Element | null): HTMLElement {
 const proj = makeProjector(UNIT);
 
 /**
- * The tetromino, in ISO GRID cells (the project's iso convention — docs/NIGHT_MARKET_FEATURE.md
- * § "Coordinate System": +isoX is "right", up-right on screen; +isoY is "top", up-left on
- * screen; −isoY is down-right). One cell per bin, in `bins` order — an S piece (user
- * layout 2026-11-09, flipped from the Z): Target down-right of Unfamiliar (−isoY),
- * Comfortable up-right of Target (+isoX), Mastered down-right of Comfortable (−isoY).
- * On screen the bins zigzag left to right high, low, high, low.
- *
- *     isoY  0   [ U ]
- *     isoY −1   [ T ][ C ]
- *     isoY −2        [ M ]
- *          isoX  0    1
+ * The tetromino (sortPlatformMetrics.ts → `SORT_BIN_CELLS`, `SORT_BIN_GAP`,
+ * `sortBinCellOffset`, kept beside the platform geometry the Deck Tower's Add Cards button
+ * shares — that button is one bin, so it reads only `SORT_BIN_PLATFORM`): an S piece —
+ * Target down-right of Unfamiliar, Comfortable up-right of Target, Mastered down-right of
+ * Comfortable. `CELL_WORLD` is each bin's world offset,
+ * in `bins` order.
  */
-const BIN_CELLS = [
-    { isoX: 0, isoY: 0 },
-    { isoX: 0, isoY: -1 },
-    { isoX: 1, isoY: -1 },
-    { isoX: 1, isoY: -2 },
-] as const;
-/** World units of floor between neighbouring platforms (1.4 → 1.9 on 2026-11-09, "a little" further apart). */
-const GRID_GAP = 1.9;
-/**
- * A cell's offset in WORLD units. The iso kit's world runs +x down-right and +y
- * down-left (docs/ISO_ART_FRAMEWORK.md), so +isoX (up-right) is world −y and +isoY
- * (up-left) is world −x; one cell is a platform plus the gap on that axis.
- */
-const CELL_WORLD = BIN_CELLS.map((c) => ({
-    x: -c.isoY * (PLATFORM.w + GRID_GAP),
-    y: -c.isoX * (PLATFORM.d + GRID_GAP),
-}));
+const CELL_WORLD = SORT_BIN_CELLS.map(sortBinCellOffset);
 /**
  * Paint order: farthest first (smallest world x + y — the cell highest up the screen), so
  * a nearer bin always paints over the shadow and front edge of the one behind it.
- * Indices into `bins` / BIN_CELLS.
+ * Indices into `bins` / SORT_BIN_CELLS.
  */
 const DRAW_ORDER = CELL_WORLD.map((w, i) => ({ depth: w.x + w.y, i })).sort((a, b) => a.depth - b.depth).map(({ i }) => i);
 
@@ -586,47 +498,13 @@ const DeckFace: React.FC<{ card: DiscoverCard; z: number }> = ({ card, z }) => (
 );
 
 /**
- * The bin's rating number printed flat in the middle of its platform's top (z 0), big,
- * in 975 Maru SC (the app's rounded face, reached through `FONTS.cjk` — useChineseFont
- * sets it; user request 2026-11-09, was the UI sans). Maru ships one weight, so the bold
- * is browser-synthesised and thickened further by a same-ink stroke (NUMBER_EMBOLDEN),
- * inside a dotted outline of the deck's footprint (NUMBER_BOX). The deck's first card
+ * The bin's rating number and the deck's dotted outline (SortBinPrint, shared with the Deck
+ * Tower's Add Cards button), printed flat on the platform's top (z 0). The deck's first card
  * covers both completely.
  */
 const NumberPrint: React.FC<{ number: number; ink: string }> = ({ number, ink }) => (
-    <g className="sort-bins__number" transform={faceTransform(proj, 0, NUMBER_AT)}>
-        <rect
-            className="sort-bins__number-box"
-            x={NUMBER_BOX.x}
-            y={NUMBER_BOX.y}
-            width={NUMBER_BOX.w}
-            height={NUMBER_BOX.d}
-            rx={NUMBER_BOX.r}
-            fill="none"
-            stroke={ink}
-            strokeWidth={NUMBER_BOX_STROKE}
-            strokeDasharray={NUMBER_BOX_DASHES}
-            strokeLinecap="round"
-        />
-        {/* IsoText, not dominantBaseline="central": centres the digit's INK on NUMBER_AT in
-            WebKit too (the numbers sat off the dotted box's centre on iPhone, 2026-11-10). */}
-        <IsoText
-            className="sort-bins__number-text"
-            x={NUMBER_AT.x}
-            y={NUMBER_AT.y}
-            textAnchor="middle"
-            fontFamily={FONTS.cjk}
-            fontSize={BIN_NUMBER_SIZE}
-            fontWeight={WEIGHT.bold}
-            fill={ink}
-            // Heavier than Maru's one weight can go: synthesised bold plus a stroke in the
-            // same ink round every glyph (NUMBER_EMBOLDEN, round joins keep it soft).
-            stroke={ink}
-            strokeWidth={NUMBER_EMBOLDEN}
-            strokeLinejoin="round"
-        >
-            {number}
-        </IsoText>
+    <g className="sort-bins__number" transform={faceTransform(proj, 0, SORT_BIN_NUMBER_AT)}>
+        <SortBinPrint number={number} ink={ink} />
     </g>
 );
 
@@ -659,8 +537,8 @@ const SortBin = memo(function SortBin({ spec, number, cards, active, look }: Sor
     const count = cards.length;
     const shown = Math.min(count, MAX_LAYERS);
     // The platform takes the band colour through the tower's wash (SortLook.wash): the
-    // same colour, by day and night, as this band's quadrant of the Deck Tower's Add Cards
-    // button (IsoSortPlatform → `quadrantColors`, DeckTowerPlatform `wash(CATEGORY_COLORS…)`).
+    // same colour, by day and night, as the Deck Tower's Add Cards button, a miniature of the
+    // Comfortable bin (IsoSortPlatform → `color`, DeckTowerPlatform `wash(BAND_MID.Comfortable)`).
     const wash = look.wash;
     const tone = useMemo(() => platformTone(wash(spec.color)), [spec.color, wash]);
     const printInk = wash(PRINT_INK);

@@ -20,12 +20,19 @@ import type { FlpWorld } from '../../server/contracts/studyMode';
 export interface WorkingLoopRequest {
     /** The session's flp bar — the Deck Tower world being studied. */
     world: FlpWorld;
+    /**
+     * The session's LEND SWITCH: on once the learner has run out of off-cooldown cards
+     * (docs/DECK_TOWER.md § "Running out of ready cards"). Off, the server deals only
+     * the learner's own ready cards and may come back short or empty.
+     */
+    lend: boolean;
 }
 
-/** The request's query params. `core` is the server default, so it is never sent. */
+/** The request's query params. `core` and no lending are the server defaults, so neither is sent. */
 function workingLoopParams(request: WorkingLoopRequest): URLSearchParams {
     const params = new URLSearchParams();
     if (request.world !== 'core') params.set('world', request.world);
+    if (request.lend) params.set('lend', '1');
     return params;
 }
 

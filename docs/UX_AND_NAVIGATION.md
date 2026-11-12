@@ -16,7 +16,7 @@ specific doc.
 | **eip bottom-sheet gestures** | [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) | `SheetPanel`'s height model: three stops (0 / default / max) with the default height as the floor, one snap rule, the resize-vs-scroll mode lock, and release momentum that stops at the default height instead of dismissing. |
 | **Add Cards (Discover flow)** | [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) | `/discover/sort/:language` drag-to-sort page (acp), a Deck drill-in reached from td's sort platform: node page (back arrow → `/`, keeps the footer with Deck lit), hosting the Quick Mark panel and skipped-cards sheet. |
 | **Soft introductions (si)** | [SOFT_INTRODUCTION.md](./SOFT_INTRODUCTION.md) | A minor UI element styled one way (intro) for a learner's first encounters, then another (graduated) once both a visit count and a day count are met. Per-device localStorage only; feature testers pick Auto / Force intro / Force graduated in Settings → "Soft introductions" (under "Enable testing features"). |
-| **Deck Tower** | [DECK_TOWER.md](./DECK_TOWER.md) | `/`, the app's landing page and the footer's Flashcards tab: the Learning deck (off-cooldown cards) drawn as an isometric tower of cards on a platform, in the "Good Job!" art style (flat three-tone shading, no outlines). Built from the iso art framework. Tapping the floor plate switches to the Mastered deck through an animated transition ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md)). Tapping the Learning tower studies it in place — the camera dives onto the top card and the flp is laid over it, no route change (§ Studying the tower). Once per launch it opens on the **home screen** ([HOME_SCREEN.md](./HOME_SCREEN.md)): a stage of td with no header or footer, whose Dictionary key circles out to `/dictionary` (whose back arrow returns to td) and whose "Swipe down to enter" (a swipe, or a tap on the words) shifts down into the tower; a fresh pull past the deck's top goes back up to it. |
+| **Deck Tower** | [DECK_TOWER.md](./DECK_TOWER.md) | `/`, the app's landing page and the footer's Flashcards tab: the Learning deck (off-cooldown cards) drawn as an isometric tower of cards on a platform, in the "Good Job!" art style (flat three-tone shading, no outlines). Built from the iso art framework. Tapping the floor plate switches to the Mastered deck through an animated transition ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md)). Tapping the Learning tower studies it in place — the camera dives onto the top card and the flp is laid over it, no route change (§ Studying the tower). Once per launch it opens behind the **launch screen** ([LAUNCH_SCREEN.md](./LAUNCH_SCREEN.md)): a solid sky colour with a pawn dropping onto a mini platform, which opens with a circle onto td once td is ready. |
 | **Iso art framework** | [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md) | The "Good Job!"-style SVG kit in `src/features/deckTower/iso/`: projection and geometry, one component per object (platform, card, card stack, pawn), the single light and the one shadow rule (`IsoShadow`), levitation, and the palette. |
 
 ---
@@ -68,6 +68,25 @@ devices — the `@media (hover: hover) and (pointer: fine)` block in `index.css`
 cpcd selectable on desktop but keeps it non-selectable on mobile. Don't sprinkle
 per-component `userSelect: "none"`; rely on the global default and only opt specific
 content into `userSelect: "text"` (desktop-gated) when called out.
+
+### Buttons that must work mid-fling (scroll-to-top)
+
+A tap that lands while a scroller is still coasting from a fling is spent by iOS/Chrome
+Android on **stopping** the scroll: `pointerdown`/`pointerup` fire but `click` does not, so
+an `onClick` scroll-to-top button needs two taps. And a JS scroll tween started while
+native momentum is still running gets each frame overwritten, so the page stops instead of
+gliding. Any back-to-top / scroll-action button therefore needs both of these:
+
+1. **Fire on release.** Pass `scrollSafeTap` to `HeaderIconButton` / `HeaderActionChip`
+   (`src/components/PageHeader.tsx`), or spread `useScrollSafeTap(onTap)`
+   (`src/hooks/useScrollSafeTap.ts`) onto a custom button. Opt-in only: the trailing `click`
+   comes after the action, so don't use it for a button that opens something under the finger.
+2. **Kill momentum for the tween.** Hold the scroller's `overflowY` hidden for the tween,
+   then clear the inline style (`""` restores the stylesheet value). `towerScroll.ts` →
+   `glideTo(…, lock = true)`; `NotebookGrid.tsx` → `flyTo`.
+
+Used by td's cards page up arrow (`TowerCardsPage`) and the Writing Notebook's back-to-top
+(`WritingNotebookPage`).
 
 ### Pan/zoom surfaces
 
@@ -563,7 +582,7 @@ hold.
 | `MinimizablePopup` → `GameEndPopup`, `ProvisionalSortOffer`, `ProvisionalSortDonePopup`, Memory Map's inspect popup | frame; 200 / 210 (flp's exit offer 1400) | `src/components/MinimizablePopup.tsx` |
 | `ChallengeSheet`, `SteppedHelpPopup` | frame; 1200 / 1300 | `src/features/studyChallenge/ChallengeSheet.tsx`, `src/components/SteppedHelpPopup.tsx` |
 | `ChallengeRoundScoreboard` | `nearestOverlayHost` — the leaf Surface, which already fills the screen on a footerless game page; 1200 | `src/games/runtime/ChallengeRoundScoreboard.tsx` |
-| `ProvisionalCardsNotice` | `position: fixed` inside a transformed leaf Surface (flp, games), which makes the Surface its containing block — the whole screen; 1400 | `src/components/ProvisionalCardsNotice.tsx` |
+| `ProvisionalCardsNotice` | `position: fixed` inside a transformed leaf Surface (games; the flp dropped it 2026-11-11), which makes the Surface its containing block — the whole screen; 1400 | `src/components/ProvisionalCardsNotice.tsx` |
 
 **Deliberate exceptions:**
 - **Speed Reading** passes `inPlace` to its sort offer (it has no end popup; results go to
@@ -601,5 +620,6 @@ popup, and MUI dialogs dimming the whole desktop browser window in MUI's own bla
 - `src/contexts/ThemeContext.tsx` → `MuiDialog`, `src/components/sheet/SheetPanel.tsx`, `src/features/beginnerKeyboard/useKeyboardInset.ts` — keyboard clearance for popups (see above)
 - `src/components/overlayHost.ts` → `frameOverlayHost`, `nearestOverlayHost`, `dialogContainer`; `src/hooks/useScreenOverlayHost.ts` → `useScreenOverlayHost` — where a dim is hosted (§ Dimming the background)
 - `src/hooks/useScrollStretch.ts` — displacement-driven elastic card spacing (see above)
+- `src/hooks/useScrollSafeTap.ts` → `useScrollSafeTap`; `src/components/PageHeader.tsx` → `HeaderIconButton` / `HeaderActionChip` `scrollSafeTap` — buttons that must fire mid-fling (§ Buttons that must work mid-fling)
 - `src/games/bubble-match/BubbleMatchPage.tsx` — edge-swipe reference implementation
 - `MobileTabScreen`, `LeafPage`, `NodePage` components — see the sub-docs above

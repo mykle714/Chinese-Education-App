@@ -12,6 +12,7 @@ import { APP_ROUTES, type AppRoute } from "./routes/registry";
 import { useAppHeight } from "./hooks/useAppHeight";
 import { useBlockZoom } from "./hooks/useBlockZoom";
 import { useChineseFont } from "./hooks/useChineseFont";
+import { useWeatherPrefetch } from "./hooks/useWeatherPrefetch";
 
 /**
  * Render one registry row as a <Route>.
@@ -41,6 +42,15 @@ function renderRoute(route: AppRoute) {
   return <Route key={route.path} path={route.path} element={element} />;
 }
 
+/**
+ * App-wide prefetches that need the signed-in user, so they mount INSIDE AuthProvider.
+ * Renders nothing. Today: the Deck Tower's weather (useWeatherPrefetch).
+ */
+function AppPrefetch() {
+  useWeatherPrefetch();
+  return null;
+}
+
 function App() {
   // App-wide: disable pinch / double-tap zoom (mobile-first UI, zoom is never
   // wanted). Complements the viewport meta in index.html, which iOS ignores.
@@ -59,6 +69,7 @@ function App() {
   return (
     <ThemeContextProvider>
       <AuthProvider>
+        <AppPrefetch />
         <VocabularyUpdateProvider>
           <ConfirmationProvider>
             {/*

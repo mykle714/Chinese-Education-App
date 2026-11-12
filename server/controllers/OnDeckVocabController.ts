@@ -184,7 +184,12 @@ export class OnDeckVocabController {
 
   /**
    * Get the Study Mix working loop (1 Mastered, 2 Comfortable, 2 Unfamiliar, 5 Target).
-   * GET /api/onDeck/distributedWorkingLoop?world=<core|reading|writing>
+   * GET /api/onDeck/distributedWorkingLoop?world=<core|reading|writing>[&lend=1]
+   *
+   * `lend=1` is the session's LEND SWITCH: the client sets it once the learner has run out
+   * of off-cooldown cards and seen the flp's "new words next" card. Without it the loop
+   * holds only the learner's own off-cooldown cards, and may come back short or empty
+   * (docs/DECK_TOWER.md § "Running out of ready cards").
    *
    * A focused world (docs/FOCUS_MODE.md § 4) narrows the loop to today's set; the mark
    * endpoint re-resolves the same scope for its refills. The `mode` (Review/Challenge),
@@ -201,21 +206,20 @@ export class OnDeckVocabController {
       const language = await getUserLanguage(userId);
       const collection = await this.applyFocus(res, userId, language, world);
 
-      // flp never blocks on deck size any more: top the user up to the flp baseline
-      // first, so a learner with an empty deck still gets a full working loop. The
-      // response shape is unchanged — the client spots the temporary cards by their
-      // `starterPackBucket` and shows the generic notice (flp is not itemized,
-      // because the loop refills as you go and the played set isn't known up front).
-      //
-      // The top-up fires only for a learner short on SORTED cards, and the loop's own
-      // lend tier sits below its cooled tier, so an established learner with a resting
-      // deck is never lent anything (docs/PROVISIONAL_CARDS.md § 4b).
-      // A focused loop skips it: it serves the day's set and nothing else.
-      const { lentIds } = collection?.kind === 'focus'
+      // The session's lend switch (see the docblock). Off, nothing is lent: not the
+      // baseline top-up below, not the loop's own lend tier.
+      const lend = String(req.query.lend ?? '') === '1';
+
+      // With the switch on, top a learner short on SORTED cards up to the flp baseline
+      // first, so even an empty deck yields a full loop of new words. The client spots
+      // the temporary cards by their `starterPackBucket`. Skipped with the switch off
+      // (the learner has not run out of their own cards yet) and in a focused world
+      // (it serves the day's set and nothing else).
+      const { lentIds } = !lend || collection?.kind === 'focus'
         ? { lentIds: [] as number[] }
         : await this.provisionalCardService.ensureBaselineForSurface(userId, language, 'flp');
 
-      const workingLoop = await this.onDeckVocabService.getDistributedWorkingLoop(userId, language, collection, lentIds, world);
+      const workingLoop = await this.onDeckVocabService.getDistributedWorkingLoop(userId, language, collection, lentIds, world, lend);
       res.json(workingLoop);
     } catch (error: any) {
       handleControllerError(error, res, 'OnDeckVocabController.getDistributedWorkingLoop');
@@ -225,14 +229,14 @@ export class OnDeckVocabController {
   /**
    * Replacements for the working-loop cards an flp game break cleared
    * (docs/FLP_GAME_BREAKS.md § 4a).
-   * GET /api/onDeck/loopRefill?replace=<ids>&exclude=<ids>[&world=]
+   * GET /api/onDeck/loopRefill?replace=<ids>&exclude=<ids>[&world=][&lend=1]
    *
    * `replace` = the cleared cards (capped at MAX_SEED_IDS — a break's seed is the loop,
    * so it can clear no more than that); `exclude` = the loop's ids. The session params
    * are the loop's own (`workingLoopParams`), resolved exactly as the loop fetch
    * resolves them — the world, then focus — so a refill can never widen the session.
-   * No baseline top-up: the loop already holds the baseline, and the picker lends on
-   * its own when the pool is spent (getNextLibraryCardWithFallback tier 4).
+   * No baseline top-up: the picker lends on its own when the pool is spent and the
+   * session's lend switch (`lend=1`) is on (getNextLibraryCardWithFallback tier 3).
    */
   getLoopRefill = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -245,8 +249,10 @@ export class OnDeckVocabController {
       const language = await getUserLanguage(userId);
       const collection = await this.applyFocus(res, userId, language, world);
 
+      const lend = String(req.query.lend ?? '') === '1';
+
       const cards = await this.onDeckVocabService.refillWorkingLoop(
-        userId, language, replacedIds, excludeIds, collection, world
+        userId, language, replacedIds, excludeIds, collection, world, lend
       );
       // Same graceful degrade as the swipe refill: a cold TTS cache costs latency only.
       // The pre-warm stamps `hasAudio`, so its result is what goes out.

@@ -55,8 +55,8 @@ export interface SortLook {
      * The tower's ambient wash at this time (`towerLight(time).wash` = `phaseWash`,
      * src/timeOfDay/wash.ts): the identity by day, night's cool dim light after dark. The
      * bins' band-coloured platforms and what is printed on them go through it, so they are
-     * lit exactly like the Deck Tower's Add Cards button (IsoSortPlatform, whose quadrants
-     * are the same band colours through the same wash) — user request 2026-11-09, "make
+     * lit exactly like the Deck Tower's Add Cards button (IsoSortPlatform, a miniature of
+     * the Comfortable bin in the same band colour and print ink through the same wash) — user request 2026-11-09, "make
      * sure the colours are consistent between night and day and between the button and the
      * page". (Replaced `platformShade`, a 10% HSL darken at night that the button did not
      * share.) The cards are not washed: they stay the dock's cream stock in every phase.

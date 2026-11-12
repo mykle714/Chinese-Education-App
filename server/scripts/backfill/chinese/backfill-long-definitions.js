@@ -363,10 +363,58 @@ function parseJsonFromResponse(text) {
 // up, and emitted in slot order — the order the read boundary and validator document assume.
 // A slot the model skipped is simply absent; the validator's coverage rule catches that.
 // Returns null if no slot got a usable definition.
+/**
+ * Every balanced top-level JSON array in `text`, in order (string/escape-aware scan).
+ *
+ * WHY: the generator sometimes writes a DRAFT array first — the template echoed with an
+ * empty `"detail"` field — then "Let me write the actual definitions:" and the real array.
+ * parseJsonFromResponse's greedy first-`[`-to-last-`]` slice spans both plus the prose,
+ * fails JSON.parse, and the whole (correct) answer was rejected as "empty/unparseable".
+ * Seen 2026-11-12 on 前面 / 可见 / 天生, every retry.
+ */
+function topLevelJsonArrays(text) {
+  const s = String(text ?? '');
+  const out = [];
+  let depth = 0, start = -1, inString = false, escaped = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { if (depth > 0) inString = true; continue; }
+    if (ch === '[' || ch === '{') {
+      if (depth === 0) { if (ch !== '[') continue; start = i; }
+      depth++;
+    } else if ((ch === ']' || ch === '}') && depth > 0) {
+      depth--;
+      if (depth === 0 && start >= 0) {
+        try { out.push(JSON.parse(s.slice(start, i + 1))); } catch { /* not JSON — skip */ }
+        start = -1;
+      }
+    }
+  }
+  return out;
+}
+
 function parseDefArray(responseText, slots) {
-  const raw = parseJsonFromResponse(responseText);
-  const items = Array.isArray(raw) ? raw : null;
-  if (!items) return null;
+  // The model's FINAL array is its answer: try the arrays last-first and keep the first one
+  // that yields at least one usable slot (see topLevelJsonArrays for why there can be two).
+  const candidates = topLevelJsonArrays(responseText).reverse();
+  const single = parseJsonFromResponse(responseText);
+  if (Array.isArray(single) && candidates.length === 0) candidates.push(single);
+  for (const items of candidates) {
+    const parsed = parseDefItems(items, slots);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+/** Match one candidate array's elements to the requested slots (body of the old parseDefArray). */
+function parseDefItems(items, slots) {
+  if (!Array.isArray(items)) return null;
 
   const norm = s => (typeof s === 'string' ? s.trim().toLowerCase() : '');
   const key = (sense, pos) => `${norm(sense)} ${norm(pos)}`;

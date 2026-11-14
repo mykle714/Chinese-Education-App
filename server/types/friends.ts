@@ -52,7 +52,8 @@ export interface Friendship {
 export interface FriendSummary {
   userId: string;
   name: string | null;
-  email: string;
+  /** The public handle (migration 188). Never the email (docs/LOGIN_REWORK.md Q20). */
+  username: string;
   avatarIconId: string | null;
   /** ISO timestamp of the accept. */
   friendsSince: string | null;
@@ -76,7 +77,8 @@ export interface FriendSummary {
 export interface FriendLeaderboardEntry {
   userId: string;
   name: string | null;
-  email: string;
+  /** The public handle (migration 188). Never the email (docs/LOGIN_REWORK.md Q20). */
+  username: string;
   avatarIconId: string | null;
   /** The person's selected language — the scope of BOTH numbers below. */
   language: string;
@@ -110,7 +112,8 @@ export interface FriendRequestSummary {
   direction: RequestDirection;
   userId: string;
   name: string | null;
-  email: string;
+  /** The public handle (migration 188). Never the email (docs/LOGIN_REWORK.md Q20). */
+  username: string;
   avatarIconId: string | null;
   /** ISO timestamp the request was sent. */
   requestedAt: string;
@@ -118,7 +121,17 @@ export interface FriendRequestSummary {
 
 /** POST /api/friends/requests body. */
 export interface SendFriendRequestBody {
-  /** The target account's `users.id` (UUID) — the app's only friend handle today. */
+  /**
+   * What the requester typed: a FRIEND CODE (migration 187; any case, hyphen optional) or a
+   * USERNAME (migration 188; "@" optional). The field kept its name from when only codes were
+   * accepted. FriendsService.sendRequest → `resolveTarget` decides which (docs/LOGIN_REWORK.md Q20).
+   */
+  friendCode?: string;
+  /**
+   * LEGACY: the target's `users.id` (UUID) — the handle before friend codes. Still accepted
+   * so a client built before migration 187 keeps working through a deploy; read only when
+   * `friendCode` is absent. Remove with docs/DEFERRED_WORK.md (friend-code cleanup).
+   */
   userId?: string;
 }
 

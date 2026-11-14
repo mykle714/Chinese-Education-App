@@ -1,3 +1,4 @@
+import { displayName } from "../../utils/displayName";
 import { useCallback, useEffect, useState } from "react";
 import { Box, Button, Switch, Typography } from "@mui/material";
 import HistoryIcon from "@mui/icons-material/History";
@@ -37,7 +38,7 @@ import { navigateBackOr } from "../../utils/navigateBack";
 
 /**
  * Study Challenges (docs/STUDY_CHALLENGE.md § 1) — a NodePage under the Friends
- * drill-in, sibling to `/friends/sent` and `/friends/requests`.
+ * tab (AccountSheet → Friends → Challenges tile).
  *
  * ⚠️ THIS PAGE IS A LIST OF FRIENDS, NOT A LIST OF CHALLENGES. The friend is the
  * unit: one row per friend, always present, whether or not a challenge is active,
@@ -137,7 +138,7 @@ function ChallengesPage() {
                 setPanelTarget({
                     mode: action,
                     friendUserId: row.friend.userId,
-                    friendName: row.friend.name || row.friend.email,
+                    friendName: displayName(row.friend),
                     challengeId: row.challenge?.id,
                 });
                 break;
@@ -289,7 +290,7 @@ function ChallengesPage() {
                                     key={row.friend.userId}
                                     className="challenges-page__row"
                                     name={row.friend.name}
-                                    email={row.friend.email}
+                                    username={row.friend.username}
                                     avatarIconId={row.friend.avatarIconId}
                                     secondary={challengeStatusLine(row.challenge, anytime) ?? undefined}
                                     // ⚠️ THE WHOLE ROW IS THE BUTTON, and it never

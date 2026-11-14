@@ -3,7 +3,7 @@ import { Box, Typography } from "@mui/material";
 import { INFO_SPECIMENS } from "./infoTypeSpecimens";
 import { INFO_FACE_CATALOG, infoFaceStack, loadInfoFace, type InfoFaceOption } from "./infoTypeCandidates";
 import { COLORS } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../theme/fonts";
 import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
 
 /**
@@ -288,7 +288,7 @@ const InfoTypeLab: React.FC<{ tabs: React.ReactNode }> = ({ tabs }) => {
                             clear columns
                         </Box>
                     )}
-                    <Typography sx={{ fontFamily: FONTS.mono, fontSize: SIZE.micro, color: COLORS.textFaint }}>
+                    <Typography sx={{ ...DATA_TYPE, fontSize: SIZE.micro, color: COLORS.textFaint }}>
                         {selectedIds.length} column{selectedIds.length === 1 ? "" : "s"}
                     </Typography>
                 </Box>
@@ -321,7 +321,7 @@ const InfoTypeLab: React.FC<{ tabs: React.ReactNode }> = ({ tabs }) => {
                                             // The lab's OWN chrome stays on FONTS.mono, never
                                             // FONTS.label — a row label that re-faces with the
                                             // thing under test is unreadable as a control.
-                                            fontFamily: FONTS.mono,
+                                            ...DATA_TYPE,
                                             fontSize: SIZE.micro,
                                             letterSpacing: TRACKING.caps,
                                             textTransform: "uppercase",
@@ -367,7 +367,7 @@ const Slider: React.FC<{
     onChange: (v: number) => void;
 }> = ({ label, value, min, max, step, shipped, format, onChange }) => (
     <Box sx={{ display: "flex", alignItems: "center", gap: "8px" }}>
-        <Typography sx={{ fontFamily: FONTS.mono, fontSize: SIZE.micro, letterSpacing: TRACKING.caps, textTransform: "uppercase", color: COLORS.textFaint, whiteSpace: "nowrap" }}>
+        <Typography sx={{ ...DATA_TYPE, fontSize: SIZE.micro, letterSpacing: TRACKING.caps, textTransform: "uppercase", color: COLORS.textFaint, whiteSpace: "nowrap" }}>
             {label}
         </Typography>
         <Box
@@ -383,7 +383,7 @@ const Slider: React.FC<{
         />
         <Typography
             sx={{
-                fontFamily: FONTS.mono,
+                ...DATA_TYPE,
                 fontSize: SIZE.micro,
                 color: value === shipped ? COLORS.textFaint : COLORS.onSurface,
                 fontWeight: value === shipped ? WEIGHT.regular : WEIGHT.semibold,
@@ -516,7 +516,7 @@ const Tag: React.FC<{ children: React.ReactNode; tone?: string }> = ({ children,
         component="span"
         className="info-type-lab__tag"
         sx={{
-            fontFamily: FONTS.mono,
+            ...DATA_TYPE,
             fontSize: SIZE.micro,
             letterSpacing: TRACKING.wide,
             color: COLORS.iconColor,

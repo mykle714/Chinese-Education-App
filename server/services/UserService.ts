@@ -3,21 +3,60 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { IRefreshTokenDAL } from '../dal/interfaces/IRefreshTokenDAL.js';
-import { User, UserCreateData, UserLoginData, AuthResponse, Language } from '../types/index.js';
+import { User, AuthResponse, Language } from '../types/index.js';
 import { ValidationError, DuplicateError, NotFoundError, DALError } from '../types/dal.js';
 import { resolveTimezone } from '../utils/streakDate.js';
-import { CHINESE_FONT_IDS, ISO_DATE_PATTERN, USER_GENDERS, type UserGender } from '../contracts/wire.js';
+import { CHINESE_FONT_IDS, ISO_DATE_PATTERN, USER_GENDERS, normalizeUsername, usernameProblem, USERNAME_MAX_LENGTH, RESERVED_USERNAMES, type UserGender } from '../contracts/wire.js';
 
 // JWT secret key - should be in environment variables in PPE
 const JWT_SECRET = process.env.JWT_SECRET;
 const SALT_ROUNDS = 10;
+
+/**
+ * A bcrypt hash of a throwaway string, compared against when an email has no account (or the
+ * account has no password), so a sign-in attempt takes the same time either way. Without it
+ * the response time would reveal whether an email is registered, which the owner chose to
+ * hide (docs/LOGIN_REWORK.md Q13 / Q17). Computed once, lazily.
+ */
+let dummyHashPromise: Promise<string> | null = null;
+function dummyPasswordHash(): Promise<string> {
+  if (!dummyHashPromise) dummyHashPromise = bcrypt.hash('no-account-timing-equalizer', SALT_ROUNDS);
+  return dummyHashPromise;
+}
+
+/** The one message for a wrong password AND an unknown email (Q17): it must not say which. */
+export const WRONG_CREDENTIALS_MESSAGE = 'Wrong email or password';
+
+/**
+ * Everything needed to create an account (docs/LOGIN_REWORK.md § 4d, Q14). An account is only
+ * created AFTER its channel was proven (an email code or a Firebase-verified phone), so the
+ * matching verified-at stamp is set at creation and an unverified account never exists.
+ */
+export interface NewAccountInput {
+  /** Exactly one of email / phone identifies the account at creation. */
+  email?: string | null;
+  /** E.164, already verified by Firebase. */
+  phone?: string | null;
+  /** RAW password (hashed here). Email accounts only; required for one (Q9). */
+  password?: string | null;
+  /** As typed; normalized + validated here. */
+  username: string;
+  name?: string | null;
+  timezone?: string;
+  gender?: UserGender | null;
+  birthDate?: string | null;
+}
 
 // Token lifetimes for the access/refresh scheme (migration 85). The access token
 // is a short-lived stateless JWT (verified by authMiddleware); the refresh token
 // is a long-lived opaque random string tracked in `refresh_tokens` so it can be
 // rotated and revoked.
 const ACCESS_TOKEN_TTL = '15m';
-const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+// 180 days, sliding: every rotation (refresh) issues a fresh 180-day expiry, so only
+// 180 days without opening the app ends a session. Raised from 30 days 2026-11-13 so a
+// learner signs in roughly once per device (docs/LOGIN_REWORK.md § 4e). The cookie Max-Age
+// is derived from `expiresAt` (UserController), so this constant is the only knob.
+const REFRESH_TOKEN_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 
 // Reuse-detection grace window (ms). When an ALREADY-revoked refresh token is
 // presented, a genuine replay/theft is indistinguishable from a benign
@@ -110,23 +149,36 @@ export class UserService {
   ) {}
 
   /**
-   * Create a new user with password hashing and validation
+   * Create an account whose channel (email or phone) has ALREADY been verified
+   * (docs/LOGIN_REWORK.md Q14: verify first, then details). Called by SignInService once a
+   * sign-up ticket checks out; never directly from an HTTP body.
+   *
+   * Email accounts carry a password (Q9); phone accounts never do (Q3). The username is
+   * required, unique and validated (Q20–Q21); the name is optional (Q19).
    */
-  async createUser(userData: UserCreateData): Promise<User> {
-    // Business validation
-    this.validateUserData(userData);
-    
-    // Check if user already exists
-    const existingUser = await this.userDAL.findByEmail(userData.email);
-    if (existingUser) {
-      throw new DuplicateError('Email already exists');
+  async createUser(input: NewAccountInput): Promise<User> {
+    const email = input.email ? input.email.trim().toLowerCase() : null;
+    const phone = input.phone ?? null;
+    if (!email === !phone) {
+      throw new ValidationError('An account is created with exactly one of email or phone');
     }
-    
-    // Hash password (business logic)
-    const hashedPassword = await bcrypt.hash(userData.password, SALT_ROUNDS);
-    
-    // Create user with hashed password.
-    //
+    if (email) {
+      this.validateEmail(email);
+      if (!input.password) throw new ValidationError('Password is required');
+      this.validatePasswordStrength(input.password);
+      if (await this.userDAL.findByEmail(email)) throw new DuplicateError('Email already exists');
+    } else if (input.password) {
+      // A password belongs to the email channel (chk_users_password_needs_email).
+      throw new ValidationError('A phone account has no password');
+    }
+    if (phone && (await this.userDAL.findByPhone(phone))) {
+      throw new DuplicateError('Phone number already in use');
+    }
+    const name = this.normalizeOptionalName(input.name);
+    const username = await this.assertUsernameAvailable(input.username);
+
+    const hashedPassword = input.password ? await bcrypt.hash(input.password, SALT_ROUNDS) : null;
+
     // `timezone` is resolved rather than passed through, for two reasons: the
     // column is NOT NULL, and `buildInsertQuery` inserts every key it is given —
     // so a `timezone: undefined` from a caller that omitted it would try to write
@@ -143,19 +195,87 @@ export class UserService {
     // values — `null` when the learner chose "Prefer not to answer" or the caller omitted them
     // — for the same `buildInsertQuery` reason as `timezone`: an `undefined` key would be
     // inserted too, and an explicit null says the same thing on purpose.
-    const demographics = validateDemographics({ gender: userData.gender, birthDate: userData.birthDate });
+    const demographics = validateDemographics({ gender: input.gender, birthDate: input.birthDate });
+    const now = new Date();
     const newUser = await this.userDAL.create({
-      ...userData,
+      email,
+      phone,
       password: hashedPassword,
-      timezone: resolveTimezone(userData.timezone),
+      username,
+      name,
+      emailVerifiedAt: email ? now : null,
+      phoneVerifiedAt: phone ? now : null,
+      timezone: resolveTimezone(input.timezone),
       gender: demographics.gender ?? null,
       birthDate: demographics.birthDate ?? null,
     });
-    
-    // Remove password from response for security
-    delete newUser.password;
-    
-    return newUser;
+
+    return this.toClientUser(newUser);
+  }
+
+  /**
+   * A row about to be sent to its owner: the password hash replaced by `hasPassword`
+   * (wire.ts → UserProfile.hasPassword). Rows from `findById` already carry `hasPassword`.
+   */
+  toClientUser(user: User): User {
+    if ('password' in user) {
+      user.hasPassword = !!user.password;
+      delete user.password;
+    }
+    return user;
+  }
+
+  /**
+   * Normalize and check a username, and confirm nobody else holds it. Returns the stored
+   * form. `forUserId` lets an account keep (re-save) its own name.
+   */
+  async assertUsernameAvailable(raw: string, forUserId?: string): Promise<string> {
+    if (typeof raw !== 'string') throw new ValidationError('Username is required');
+    const username = normalizeUsername(raw);
+    const problem = usernameProblem(username);
+    if (problem) throw new ValidationError(problem);
+    const holder = await this.userDAL.findByUsername(username);
+    if (holder && holder.id !== forUserId) throw new DuplicateError('That username is taken');
+    return username;
+  }
+
+  /**
+   * A free username derived from `seed` (a name or an email's local part), for prefilling
+   * the sign-up form. The same derivation as migration 188's backfill: lowercase, runs of
+   * other characters → "_", "u_" prefix when it does not start with a letter, "learner" when
+   * empty, cut to 20, lowest free numeric suffix on a clash.
+   */
+  async suggestUsername(seed: string | null | undefined): Promise<string> {
+    let base = (seed ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    if (!/^[a-z]/.test(base)) base = base === '' ? 'learner' : `u_${base}`;
+    base = base.slice(0, USERNAME_MAX_LENGTH).padEnd(3, '_');
+    let candidate = base;
+    // Bounded: a real collision run is a handful; the cap only guards a pathological table.
+    for (let n = 2; n < 10000; n++) {
+      if (!RESERVED_USERNAMES.includes(candidate) && !(await this.userDAL.findByUsername(candidate))) {
+        return candidate;
+      }
+      const suffix = String(n);
+      candidate = base.slice(0, USERNAME_MAX_LENGTH - suffix.length) + suffix;
+    }
+    throw new DALError('Could not find a free username', 'ERR_USERNAME_EXHAUSTED');
+  }
+
+  /**
+   * Change the account's username (Q21: any time, no cooldown, globally unique). The old
+   * name is free for anyone immediately.
+   */
+  async changeUsername(userId: string, raw: string): Promise<User> {
+    if (!userId) throw new ValidationError('User ID is required');
+    const username = await this.assertUsernameAvailable(raw, userId);
+    return this.toClientUser(await this.userDAL.update(userId, { username }));
+  }
+
+  /** Set or clear the optional display name (Q19, Q24). */
+  async changeName(userId: string, raw: string | null): Promise<User> {
+    if (!userId) throw new ValidationError('User ID is required');
+    const name = this.normalizeOptionalName(raw);
+    return this.toClientUser(await this.userDAL.update(userId, { name }));
   }
 
   /**
@@ -172,25 +292,27 @@ export class UserService {
     
     // Find user with password for authentication
     const user = await this.userDAL.findByEmailWithPassword(email);
-    if (!user) {
-      throw new ValidationError('Invalid email or password');
+
+    // An unknown email, and an account with no password, still pay for one bcrypt compare
+    // and get the same message as a wrong password, so neither the text nor the timing says
+    // whether the email is registered (docs/LOGIN_REWORK.md Q13 / Q17).
+    const hash = user?.password ?? (await dummyPasswordHash());
+    const isPasswordValid = await bcrypt.compare(password, hash);
+    if (!user || !user.password || !isPasswordValid) {
+      throw new ValidationError(WRONG_CREDENTIALS_MESSAGE);
     }
-    
-    // Verify password (business logic)
-    const isPasswordValid = await bcrypt.compare(password, user.password!);
-    if (!isPasswordValid) {
-      throw new ValidationError('Invalid email or password');
-    }
-    
-    
-    // Generate the short-lived access token (business logic). The matching
-    // refresh token is issued separately by the controller via issueRefreshToken.
+
+    return this.issueSession(user);
+  }
+
+  /**
+   * The access token + client-safe user for an account that has just proven who it is (a
+   * password, an email code, a Firebase-verified phone). The refresh token is issued by the
+   * controller (`issueRefreshToken`) because it rides a cookie.
+   */
+  issueSession(user: User): AuthResponse {
     const token = this.generateAccessToken(user);
-
-    // Remove password from response
-    delete user.password;
-
-    return { user, token };
+    return { user: this.toClientUser(user), token };
   }
 
   /**
@@ -198,8 +320,10 @@ export class UserService {
    * and refresh so both encode the same claims/lifetime.
    */
   private generateAccessToken(user: User): string {
+    // `userId` only (docs/LOGIN_REWORK.md § 4d): a phone account has no email, and no server
+    // code read the old `email` claim (authMiddleware's `req.user` is `{ userId }`).
     return jwt.sign(
-      { userId: user.id, email: user.email },
+      { userId: user.id },
       JWT_SECRET,
       { expiresIn: ACCESS_TOKEN_TTL }
     );
@@ -355,17 +479,15 @@ export class UserService {
     // Business rule: validate new password strength
     this.validatePasswordStrength(newPassword);
     
-    // Get user with password for verification
-    const user = await this.userDAL.findByEmailWithPassword(
-      (await this.userDAL.findById(userId))?.email || ''
-    );
-    
-    if (!user) {
-      throw new NotFoundError('User not found');
+    // The hash by id (an account with no email still has an id). A phone-only account has no
+    // password to change.
+    const passwordHash = await this.userDAL.findPasswordHashById(userId);
+    if (!passwordHash) {
+      throw new ValidationError('This account has no password');
     }
     
     // Verify current password (business logic)
-    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password!);
+    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, passwordHash);
     if (!isCurrentPasswordValid) {
       throw new ValidationError('Current password is incorrect');
     }
@@ -389,6 +511,42 @@ export class UserService {
   }
 
   /**
+   * Set a new password without the current one. ONLY for flows that proved the account
+   * another way first (SignInService.resetPassword: an emailed reset code). Requires an email
+   * on the account (chk_users_password_needs_email).
+   */
+  async setPassword(userId: string, newPassword: string): Promise<void> {
+    if (!userId) throw new ValidationError('User ID is required');
+    this.validatePasswordStrength(newPassword);
+    const hashed = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    const success = await this.userDAL.updatePassword(userId, hashed);
+    if (!success) throw new DALError('Failed to update password', 'ERR_PASSWORD_UPDATE_FAILED');
+  }
+
+  /**
+   * Whether `password` is this account's password (false when the account has none). For
+   * step-up re-authentication (SignInService.verifyStepUp, docs/LOGIN_REWORK.md Q24).
+   */
+  async checkPassword(userId: string, password: string): Promise<boolean> {
+    if (!userId || typeof password !== 'string' || !password) return false;
+    const hash = await this.userDAL.findPasswordHashById(userId);
+    // A compare against the dummy hash keeps the timing the same for a passwordless account.
+    const ok = await bcrypt.compare(password, hash ?? (await dummyPasswordHash()));
+    return !!hash && ok;
+  }
+
+  /**
+   * Delete an account with NO credential check. ONLY for SignInService.deleteAccountWithStepUp,
+   * which checked a step-up token first (the one path for a phone account, which has no
+   * password). CASCADE deletes the account's data.
+   */
+  async deleteUserUnchecked(userId: string): Promise<void> {
+    if (!userId) throw new ValidationError('User ID is required');
+    const success = await this.userDAL.deleteUser(userId);
+    if (!success) throw new DALError('Failed to delete user account', 'ERR_USER_DELETE_FAILED');
+  }
+
+  /**
    * Delete user account with password verification
    */
   async deleteUser(userId: string, password: string): Promise<void> {
@@ -400,17 +558,15 @@ export class UserService {
       throw new ValidationError('Password is required for account deletion');
     }
     
-    // Get user with password for verification
-    const user = await this.userDAL.findByEmailWithPassword(
-      (await this.userDAL.findById(userId))?.email || ''
-    );
-    
-    if (!user) {
-      throw new NotFoundError('User not found');
+    // The hash by id. A phone-only account has none: it deletes through the step-up path
+    // (SignInService, docs/LOGIN_REWORK.md Q24), not this one.
+    const passwordHash = await this.userDAL.findPasswordHashById(userId);
+    if (!passwordHash) {
+      throw new ValidationError('This account has no password');
     }
     
     // Verify password before deletion (security check)
-    const isPasswordValid = await bcrypt.compare(password, user.password!);
+    const isPasswordValid = await bcrypt.compare(password, passwordHash);
     if (!isPasswordValid) {
       throw new ValidationError('Password is incorrect');
     }
@@ -441,26 +597,14 @@ export class UserService {
   /**
    * Update user profile information
    */
-  async updateUserProfile(userId: string, updateData: { email?: string; name?: string; selectedLanguage?: Language; avatarIconId?: string | null }): Promise<User> {
+  async updateUserProfile(userId: string, updateData: { selectedLanguage?: Language; avatarIconId?: string | null }): Promise<User> {
+    // No `email` / `name` here any more (docs/LOGIN_REWORK.md § 4d, Q24): an email change must
+    // be verified (SignInService), and the name has its own `changeName`. This used to accept
+    // an unverified email change, though no route passed one.
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
-    
-    // Business validation
-    if (updateData.email) {
-      this.validateEmail(updateData.email);
-      
-      // Check if new email is already taken by another user
-      const existingUser = await this.userDAL.findByEmail(updateData.email);
-      if (existingUser && existingUser.id !== userId) {
-        throw new DuplicateError('Email already exists');
-      }
-    }
-    
-    if (updateData.name) {
-      this.validateName(updateData.name);
-    }
-    
+
     // Update user. The DAL's UPDATE ... RETURNING * includes the password hash, so
     // strip it before handing the row back to any caller / the HTTP response.
     const updatedUser = await this.userDAL.update(userId, updateData);
@@ -601,28 +745,9 @@ export class UserService {
   // Private validation methods (business logic)
 
   /**
-   * Validate user registration data
-   */
-  private validateUserData(userData: UserCreateData): void {
-    if (!userData.email) {
-      throw new ValidationError('Email is required');
-    }
-    if (!userData.name) {
-      throw new ValidationError('Name is required');
-    }
-    if (!userData.password) {
-      throw new ValidationError('Password is required');
-    }
-    
-    this.validateEmail(userData.email);
-    this.validateName(userData.name);
-    this.validatePasswordStrength(userData.password);
-  }
-
-  /**
    * Validate email format
    */
-  private validateEmail(email: string): void {
+  validateEmail(email: string): void {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       throw new ValidationError('Invalid email format');
@@ -634,28 +759,28 @@ export class UserService {
   }
 
   /**
-   * Validate name
+   * The optional display name (Q19): trimmed; empty → null. Letters in ANY script (a Chinese
+   * learner's name was rejected by the old A–Z-only rule), plus spaces, hyphens, apostrophes
+   * and periods; 1–100 characters.
    */
-  private validateName(name: string): void {
-    if (name.trim().length < 2) {
-      throw new ValidationError('Name must be at least 2 characters long');
-    }
-    
+  private normalizeOptionalName(raw: string | null | undefined): string | null {
+    if (raw === null || raw === undefined) return null;
+    if (typeof raw !== 'string') throw new ValidationError('Name must be text');
+    const name = raw.trim().replace(/\s+/g, ' ');
+    if (name === '') return null;
     if (name.length > 100) {
       throw new ValidationError('Name is too long (maximum 100 characters)');
     }
-    
-    // Business rule: no special characters in name
-    const nameRegex = /^[a-zA-Z\s\-'\.]+$/;
-    if (!nameRegex.test(name)) {
+    if (!/^[\p{L}\p{M}\s\-'.]+$/u.test(name)) {
       throw new ValidationError('Name can only contain letters, spaces, hyphens, apostrophes, and periods');
     }
+    return name;
   }
 
   /**
    * Validate password strength
    */
-  private validatePasswordStrength(password: string): void {
+  validatePasswordStrength(password: string): void {
     if (password.length < 8) {
       throw new ValidationError('Password must be at least 8 characters long');
     }

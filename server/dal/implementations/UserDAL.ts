@@ -48,10 +48,69 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     const normalizedEmail = email.toLowerCase();
 
     const result = await this.dbManager.executeQuery<User>(async (client) => {
-      return await client.query('SELECT id, email, name, "selectedLanguage", "createdAt" FROM Users WHERE email = $1', [normalizedEmail]);
+      return await client.query('SELECT id, email, name, username, "selectedLanguage", "createdAt" FROM Users WHERE email = $1', [normalizedEmail]);
     });
 
     return result.recordset[0] || null;
+  }
+
+  /**
+   * The account holding a friend code (migration 187). Id only: the caller
+   * (FriendsService.sendRequest) re-reads the target through `findById` like the
+   * by-UUID path, so the two paths cannot diverge. Served by `uq_users_friend_code`.
+   */
+  async findByFriendCode(code: string): Promise<{ id: string } | null> {
+    if (!code) {
+      throw new ValidationError('Friend code is required');
+    }
+    const result = await this.dbManager.executeQuery<{ id: string }>(async (client) => {
+      return await client.query('SELECT id FROM users WHERE "friendCode" = $1', [code]);
+    });
+    return result.recordset[0] || null;
+  }
+
+  /**
+   * The account holding this username (migration 188), id only, or null. `username` must
+   * already be normalized (wire.ts → normalizeUsername). Served by `uq_users_username`.
+   * Used by add-friend-by-username and the username-taken check.
+   */
+  async findByUsername(username: string): Promise<{ id: string } | null> {
+    if (!username) {
+      throw new ValidationError('Username is required');
+    }
+    const result = await this.dbManager.executeQuery<{ id: string }>(async (client) => {
+      return await client.query('SELECT id FROM users WHERE username = $1', [username]);
+    });
+    return result.recordset[0] || null;
+  }
+
+  /**
+   * The account holding this E.164 phone number (migration 188), id only, or null. Served by
+   * `uq_users_phone`. Used by phone sign-in to decide known account vs new sign-up.
+   */
+  async findByPhone(phone: string): Promise<{ id: string } | null> {
+    if (!phone) {
+      throw new ValidationError('Phone is required');
+    }
+    const result = await this.dbManager.executeQuery<{ id: string }>(async (client) => {
+      return await client.query('SELECT id FROM users WHERE phone = $1', [phone]);
+    });
+    return result.recordset[0] || null;
+  }
+
+  /**
+   * The password hash for an account, by id (null when it has none: a phone-only account).
+   * Replaces the old `findByEmailWithPassword(findById(id).email)` round-trip in
+   * changePassword / deleteUser, which cannot work for an account with no email.
+   */
+  async findPasswordHashById(id: string): Promise<string | null> {
+    if (!id) {
+      throw new ValidationError('User ID is required');
+    }
+    const result = await this.dbManager.executeQuery<{ password: string | null }>(async (client) => {
+      return await client.query('SELECT password FROM users WHERE id = $1', [id]);
+    });
+    return result.recordset[0]?.password ?? null;
   }
 
   /**
@@ -120,7 +179,9 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     // answer). The arena and the streak read the column in SQL and were unaffected,
     // which is why the bug was confined to Study Challenge.
     const result = await this.dbManager.executeQuery<User>(async (client) => {
-      return await client.query('SELECT id, email, name, "isPublic", "isValidator", "isFeatureTester", "isAdmin", "avatarIconId", "selectedLanguage", "readingGoal", "writingGoal", "showSegmentSpaces", "chineseFont", "gender", "birthDate", "arenaMessage", "timezone", "lastMinutePointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
+      // `username`, `phone`, the two verified-at stamps and the derived `hasPassword` were added
+      // with migration 188 (docs/LOGIN_REWORK.md § 4d); `password` itself never leaves this query.
+      return await client.query('SELECT id, email, name, username, phone, "emailVerifiedAt", "phoneVerifiedAt", (password IS NOT NULL) AS "hasPassword", "friendCode", "isValidator", "isFeatureTester", "isAdmin", "avatarIconId", "selectedLanguage", "readingGoal", "writingGoal", "showSegmentSpaces", "chineseFont", "gender", "birthDate", "arenaMessage", "timezone", "lastMinutePointIncrement", "createdAt" FROM Users WHERE id = $1', [id]);
     });
 
     // ⚠️ "gender" and "birthDate" (migration 164) are PRIVATE to the account, as are email and
@@ -136,20 +197,25 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
   protected validateCreateData(data: UserCreateData): void {
     super.validateCreateData(data);
     
-    if (!data.email) {
-      throw new ValidationError('Email is required');
+    // Structural rules only, mirroring migration 188's constraints (chk_users_has_channel,
+    // chk_users_password_needs_email, username NOT NULL). The business rules (password
+    // strength, username shape and uniqueness, the optional name) live in
+    // UserService.createUser. This used to require email, name AND password, which a phone
+    // account or a nameless sign-up cannot satisfy.
+    if (!data.email && !data.phone) {
+      throw new ValidationError('An email or a phone number is required');
     }
-    if (!data.name) {
-      throw new ValidationError('Name is required');
+    if (data.password && !data.email) {
+      throw new ValidationError('A password requires an email');
     }
-    if (!data.password) {
-      throw new ValidationError('Password is required');
+    if (!data.username) {
+      throw new ValidationError('Username is required');
     }
-    
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(data.email)) {
-      throw new ValidationError('Invalid email format');
+    if (data.email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(data.email)) {
+        throw new ValidationError('Invalid email format');
+      }
     }
   }
 
@@ -198,16 +264,18 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     placeholders: string;
     values: any[];
   } {
-    // Normalize email to lowercase before insertion
+    // Normalize email to lowercase before insertion (null for a phone-only account;
+    // migration 188's chk_users_email_lowercase enforces the same).
     const normalizedData = {
       ...data,
-      email: data.email.toLowerCase()
+      email: data.email ? data.email.toLowerCase() : null
     };
     
     const result = super.buildInsertQuery(normalizedData);
     
-    // Log creation without password for security
-    console.log(`Creating user: ${normalizedData.email}`);
+    // Log creation by username: no password, and no email or phone (contact details stay
+    // out of the logs).
+    console.log(`Creating user: ${normalizedData.username}`);
     
     return result;
   }
@@ -303,29 +371,29 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
   }
 
   /**
-   * Leaderboard roster: identity + isPublic for every user, no points.
+   * Leaderboard roster: public identity for every user, no points.
    *
    * Since migration 130 wallets are per-language, so ranking cannot be expressed as
    * an ORDER BY on this table any more. The caller joins
    * IUserLanguagesDAL.getTotalsForAllUsers() (one grouped query) and sorts on
-   * the summed wallet; `isPublic` lets it mask streak from non-public users at the
-   * response layer. Ordering here is stable-by-signup only, purely so the join
+   * the summed wallet. Ordering here is stable-by-signup only, purely so the join
    * output is deterministic before the caller re-sorts.
+   *
+   * Public identity only: `username`, never `email` (the board is served to every user,
+   * docs/LOGIN_REWORK.md Q20). `isPublic` is gone (Q7): every account's streak is shown.
    */
-  async getLeaderboardRoster(): Promise<Array<{ userId: string; email: string; name: string; isPublic: boolean; avatarIconId: string | null }>> {
+  async getLeaderboardRoster(): Promise<Array<{ userId: string; username: string; name: string | null; avatarIconId: string | null }>> {
     const result = await this.dbManager.executeQuery<{
       id: string;
-      email: string;
-      name: string;
-      ispublic: boolean;
+      username: string;
+      name: string | null;
       avatariconid: string | null;
     }>(async (client) => {
       return await client.query(`
         SELECT
           id,
-          email,
+          username,
           name,
-          "isPublic" as ispublic,
           "avatarIconId" as avatariconid
         FROM Users
         ORDER BY "createdAt" ASC
@@ -334,9 +402,8 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
 
     return result.recordset.map(row => ({
       userId: row.id,
-      email: row.email,
-      name: row.name,
-      isPublic: row.ispublic === true,
+      username: row.username,
+      name: row.name ?? null,
       avatarIconId: row.avatariconid ?? null
     }));
   }
@@ -349,7 +416,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
 
     const result = await this.dbManager.executeQuery<{
       id: string;
-      email: string;
+      username: string;
       name: string | null;
       avatariconid: string | null;
       selectedlanguage: string | null;
@@ -361,7 +428,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
       return await client.query(`
         SELECT
           id,
-          email,
+          username,
           name,
           "avatarIconId"     AS avatariconid,
           "selectedLanguage" AS selectedlanguage,
@@ -374,7 +441,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
 
     return result.recordset.map(row => ({
       userId: row.id,
-      email: row.email,
+      username: row.username,
       name: row.name ?? null,
       avatarIconId: row.avatariconid ?? null,
       selectedLanguage: row.selectedlanguage ?? null,
@@ -390,7 +457,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
 
     const result = await this.dbManager.executeQuery<{
       id: string;
-      email: string;
+      username: string;
       name: string | null;
       avatariconid: string | null;
       selectedlanguage: string | null;
@@ -405,7 +472,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
       return await client.query(`
         SELECT
           id,
-          email,
+          username,
           name,
           "avatarIconId"     AS avatariconid,
           "selectedLanguage" AS selectedlanguage,
@@ -421,7 +488,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
     if (!row) return null;
     return {
       userId: row.id,
-      email: row.email,
+      username: row.username,
       name: row.name ?? null,
       avatarIconId: row.avatariconid ?? null,
       selectedLanguage: row.selectedlanguage ?? null,

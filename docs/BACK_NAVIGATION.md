@@ -180,10 +180,9 @@ This is also the fallback source for Rule 1's first-entry case.
 |---|---|---|---|---|---|
 | Card detail (saved) | `VocabCardDetailPage.tsx` | `navigate(-1)` | ⚠️ no idx guard (its delete is guarded) | — | — |
 | Deck Tower | `DeckTowerPage.tsx` at `/` | tab root (Deck) | — | ✅ world restored on POP (`useRememberTowerWorld` stamps `towerWorld` into its entry); ⚠️ cards page not restored | — |
-| User profile | `UserProfilePage.tsx` | `navigate(-1)` | ⚠️ no idx guard | — | — |
 | Add Cards | `AddCardsPage.tsx` → `leave` | `state.exitTo` (td's `SORT_EXIT`, dashing back onto the tower — NodePage `exitDash`), else `navigate("/")` with `towerWorld: "core"`; set mode `exitToOrigin` (`-1`, else `?from=`, else `/`) | ✅ set mode (idx-guarded) | — | done popup (arrow-independent) ✅ |
 | flp (inside td, no route) | `FlashcardsLearnPage.tsx` → `handleBack` | `leaveSession` → `tower.onExit` (the camera climbs back out) | — | — | provisional sort offer (arrow-only) ✅ |
-| Friends sub-pages | `SentRequestsPage`, `IncomingRequestsPage`, `RemoveFriendsPage`, `ChallengesPage` | `navigateBackOr(navigate, "/")` (opened from the AccountSheet's Friends tab; `/friends` deleted 2026-11-06) | ✅ idx-guarded | ⚠️ the sheet is not reopened | — |
+| Friends sub-page | `ChallengesPage` (Send / Accept / Remove are in-tab bodies since 2026-11-13, no route) | `navigateBackOr(navigate, "/")` (opened from the AccountSheet's Friends tab; `/friends` deleted 2026-11-06) | ✅ idx-guarded | ⚠️ the sheet is not reopened | — |
 | Challenge history | `ChallengeHistoryPage.tsx` | `slideNavigate("/friends/challenges")` | ⚠️ forward slide on Back | — | — |
 | Challenge detail | `ChallengeDetailPage.tsx` | `slideNavigate(state.from ?? "/friends/challenges")` | ⚠️ forward slide on Back; ✅ Rule 6 origin | — | — |
 | Account security | `AccountSecurityPage.tsx` | `slideNavigate("/settings")` | ⚠️ forward slide on Back | — | — |
@@ -202,7 +201,7 @@ This is also the fallback source for Rule 1's first-entry case.
    - lets a following browser Back return to the page just left.
 
    *Guess at intent:* the parent should be "held beneath" like a forward drill-in. *Proposed:* switch to Rule 1 (`navigate(-1)` with fallback), keeping `ChallengeDetailPage`'s `state.from` as its fallback.
-2. **Two `navigate(-1)` arrows have no first-entry guard:** the saved-card cdp and `UserProfilePage`. Opened from a shared link or after a reload, the arrow leaves the app. `PageHeader`'s default `onBack` has the same problem. *Proposed:* the Rule 1 helper, `navigateBackOr` (the saved cdp's `handleDelete` already uses it).
+2. **A `navigate(-1)` arrow has no first-entry guard:** the saved-card cdp. Opened from a shared link or after a reload, the arrow leaves the app. `PageHeader`'s default `onBack` has the same problem. *Proposed:* the Rule 1 helper, `navigateBackOr` (the saved cdp's `handleDelete` already uses it).
 3. **td's cards page is not restored on Back.** Returning from a cdp remounts td on the platform line with the search, sort and filter reset. On iOS this is also the § 1.6 snapshot mismatch. *Proposed:* a per-entry snapshot (Rule 3) of the cards page's climb, search, sort and filter.
 4. **The Reader document has no guard for an inline edit.** `ReaderDocumentPage` → `handleBack` leaves mid-edit with nothing said. Add a Rule 4 confirm if an unsaved edit is worth protecting.
 

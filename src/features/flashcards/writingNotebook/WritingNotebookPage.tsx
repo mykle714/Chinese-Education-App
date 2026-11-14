@@ -26,7 +26,7 @@ import NotebookCellEditor from "./NotebookCellEditor";
 import NotebookWordPickerSheet from "./NotebookWordPickerSheet";
 import { NOTEBOOK_GLYPH } from "./notebookEntry";
 import { COLORS } from "../../../theme/colors";
-import { FONTS } from "../../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../../theme/fonts";
 import { LEADING } from "../../../theme/scale";
 
 /**
@@ -88,7 +88,7 @@ function NotebookCountBox({ count }: { count: number }) {
                 padding: `${OUTLINED_CHIP_PAD_Y_PX}px 8px`,
                 border: `1px solid ${COLORS.iconColor}`,
                 borderRadius: `${NOTEBOOK_COUNT_RADIUS_PX}px`,
-                fontFamily: FONTS.mono,
+                ...DATA_TYPE,
                 fontSize: OUTLINED_CHIP_TEXT_PX,
                 ...FIRE_COUNT_INK,
                 fontVariantNumeric: "tabular-nums",

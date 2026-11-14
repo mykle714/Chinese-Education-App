@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { Box } from "@mui/material";
 import { IsoPlatform, IsoScene, makeProjector, type WorldRect } from "../iso";
 import { HEAD_CENTRE, HEAD_RADIUS, REST_POSE, pawnFigure } from "../iso/pawnFigure";
@@ -8,10 +8,11 @@ import type { LaunchLook } from "./launchLook";
 import { CIRCLE_MOTION, circleCoverRadius, type ScreenPoint } from "../../../utils/pageTransition";
 
 /**
- * LaunchScreen — the full-screen cover td opens behind once per app launch
- * (docs/LAUNCH_SCREEN.md). A solid sky colour with a mini platform a fifth of the way up; a pawn
- * drops onto it from the top of the screen and the platform recoils from the landing. Once
- * td is ready a circle opens out of the pawn and reveals td underneath.
+ * LaunchScreen — the full-screen cover the app opens behind on every cold start, before auth
+ * resolves (docs/LAUNCH_SCREEN.md, docs/LOGIN_REWORK.md § 1). A solid sky colour with a mini
+ * platform a fifth of the way up; a pawn drops onto it from the top of the screen and the
+ * platform recoils from the landing. Once the page underneath is ready (td, `/login`, or a deep
+ * link's page) a circle opens out of the pawn and reveals it.
  *
  * ⚠️ PLACEHOLDER animation (owner, 2026-11-11): the pawn drop stands in for a real
  * logo / animation. Replace this component's scene; keep the timing contract (props below).
@@ -56,20 +57,20 @@ import { CIRCLE_MOTION, circleCoverRadius, type ScreenPoint } from "../../../uti
  *     exit is a plain fade.
  *
  * ── Layering ─────────────────────────────────────────────────────────────────
- * Rendered INSIDE td's screen, `position: absolute` over MobileTabScreen's ScreenRoot (the page's
- * stage is deliberately unpositioned, so that is its containing block), above td's header
- * layer (LAUNCH_Z). NOT portaled to <body> with `position: fixed`: on desktop the app is a
- * phone-shaped card (MobileDemoFrame), and a fixed cover would paint the whole browser window.
- * The footer is not covered but hidden while it is up (DeckTowerPage → `useHideFooter`), and
- * slides back in once it has gone. td is fully laid out underneath;
- * the page holds td's own events (the opening grow, cooldown drops, the banking run) until
- * `onDone` (DeckTowerPage → `launchUp`).
+ * Rendered by the app shell's BootCoverSlot (src/components/bootCover/BootCover.tsx), which
+ * fills the phone frame (MobileDemoFrame) or, in the plain shell, the window; `position:
+ * absolute` inside it. NOT portaled to <body> with `position: fixed`: on desktop the app is a
+ * phone-shaped card, and a fixed cover would paint the whole browser window. The slot hides
+ * the footer while it is up, and it slides back in once it has gone. The page underneath is
+ * fully laid out; td holds its own events (the opening grow, cooldown drops, the banking run)
+ * until `onDone` (src/hooks/useBootCover.ts → `useBootCover`).
  *
  * The circle is a hole cut in this cover with a radial-gradient MASK, not a clip on td: td is
  * live underneath and must not be touched. The radius is written straight to the DOM each
  * frame (no React state per frame); it runs after td is ready, when the main thread is quiet.
  *
- * Layer: feature page view (src/features/deckTower/launch). Rendered by DeckTowerPage.
+ * Layer: feature page view (src/features/deckTower/launch). Rendered by BootLaunchScreen.tsx
+ * (lazily loaded by App.tsx → `renderBootCover`).
  * Depends on: the iso framework (IsoScene, IsoPlatform, pawnFigure), launchLook.ts,
  * pageTransition.ts (CIRCLE_MOTION, circleCoverRadius).
  * Docs: docs/LAUNCH_SCREEN.md.
@@ -196,6 +197,88 @@ function LaunchPawnFigure() {
             <path className="launch-screen__pawn-body" d={fig.bodyPath} fill={palette.ink} />
             <circle className="launch-screen__pawn-head" cx={fig.head.cx} cy={fig.head.cy} r={fig.head.r} fill={palette.ink} />
         </g>
+    );
+}
+
+/** Clear space between the top of the scene box (just over the pawn's head) and the content above it. */
+const STILL_CONTENT_GAP_PX = 8;
+
+/**
+ * The launch scene at rest — the platform with the pawn standing on it, no motion — for the
+ * login screen, which continues the launch sky (docs/LOGIN_REWORK.md Q12). The same stills,
+ * the same SCENE_BOX and the SAME PLACEMENT as the cover (feet FEET_AT_SCREEN_Y down the box,
+ * pawn centred across), so when the circle opens the pawn and platform stay exactly where the
+ * drop left them. `children` (the login form) fill the region above the scene: from the top of
+ * the box down to the scene box's top edge, less STILL_CONTENT_GAP_PX.
+ *
+ * `platformCentreRef` gets a zero-size marker at the centre of the platform's floor (the pawn's
+ * feet): the login screen closes its exit circle onto it (src/pages/LoginPage.tsx).
+ *
+ * A full-box layer (`position: absolute; inset: 0`), so its parent must be positioned and fill
+ * the same box the cover fills (the phone frame / the window).
+ * Reached through BootLaunchScreen.tsx (`BootSceneStill`) → App.tsx → the boot-cover context
+ * (`useBootScene`), because a page may not import this feature.
+ */
+export function LaunchSceneStill({
+    look,
+    className,
+    children,
+    platformCentreRef,
+}: {
+    look: LaunchLook;
+    className?: string;
+    children?: ReactNode;
+    platformCentreRef?: Ref<HTMLDivElement>;
+}) {
+    const { world, wash } = look;
+    const layerSx = { position: "absolute", inset: 0 } as const;
+    const sceneStyle = { width: SCENE_BOX.width, height: SCENE_BOX.height, display: "block", overflow: "visible" } as const;
+    return (
+        <Box className={className ?? "launch-scene-still"} sx={{ position: "absolute", inset: 0 }}>
+            {/* Placed as LaunchScreen places `launch-screen__scene-box`. */}
+            <Box
+                className="launch-scene-still__scene-box"
+                sx={{
+                    position: "absolute",
+                    left: "50%",
+                    top: `${FEET_AT_SCREEN_Y * 100}%`,
+                    width: SCENE_BOX.width,
+                    height: SCENE_BOX.height,
+                    transform: `translate(${-SCENE_BOX.pawnX}px, ${-SCENE_BOX.pawnY}px)`,
+                }}
+            >
+                <Box className="launch-scene-still__platform" sx={layerSx}>
+                    <IsoScene proj={PROJ} viewBox={SCENE_BOX.viewBox} wash={wash} style={sceneStyle}>
+                        <IsoPlatform rect={PLATFORM} thickness={PLATFORM_THICKNESS} tone={world.platform} />
+                    </IsoScene>
+                </Box>
+                <Box className="launch-scene-still__pawn" sx={layerSx}>
+                    <IsoScene proj={PROJ} viewBox={SCENE_BOX.viewBox} wash={wash} style={sceneStyle}>
+                        <LaunchPawnFigure />
+                    </IsoScene>
+                </Box>
+            </Box>
+            {/* The floor's centre (the pawn's feet: the scene box is placed so they land here). */}
+            <Box
+                ref={platformCentreRef}
+                className="launch-scene-still__platform-centre"
+                aria-hidden
+                sx={{ position: "absolute", left: "50%", top: `${FEET_AT_SCREEN_Y * 100}%`, width: 0, height: 0, pointerEvents: "none" }}
+            />
+            <Box
+                className="launch-scene-still__content"
+                sx={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    // Up from the bottom: the share below the feet, plus the feet-to-box-top height.
+                    bottom: `calc(${(1 - FEET_AT_SCREEN_Y) * 100}% + ${SCENE_BOX.pawnY + STILL_CONTENT_GAP_PX}px)`,
+                }}
+            >
+                {children}
+            </Box>
+        </Box>
     );
 }
 

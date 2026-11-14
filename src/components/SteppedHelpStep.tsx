@@ -1,7 +1,7 @@
 import { alpha } from "@mui/material/styles";
 import { Box, Typography } from "@mui/material";
 import { COLORS } from "../theme/colors";
-import { FONTS } from "../theme/fonts";
+import { FONTS, DATA_TYPE } from "../theme/fonts";
 import { SIZE, WEIGHT } from "../theme/scale";
 import type { HelpStep } from "./steppedHelp";
 
@@ -61,7 +61,7 @@ function SteppedHelpStep({ step, position, total, shotUrl, title }: SteppedHelpS
                 ) : (
                     <Typography
                         className="stepped-help__shot-placeholder"
-                        sx={{ fontFamily: FONTS.mono, fontSize: SIZE.micro, letterSpacing: "0.06em", color: alpha(COLORS.onSurface, 0.34), lineHeight: 1.5, px: 2.5 }}
+                        sx={{ ...DATA_TYPE, fontSize: SIZE.micro, letterSpacing: "0.06em", color: alpha(COLORS.onSurface, 0.34), lineHeight: 1.5, px: 2.5 }}
                     >
                         screenshot · {step.shotDescription}
                     </Typography>

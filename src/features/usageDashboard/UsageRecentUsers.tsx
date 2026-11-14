@@ -1,7 +1,7 @@
 import { Box, Typography } from "@mui/material";
 import { Label } from "../../components/primitives";
 import { COLORS } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { LANGUAGE_NAMES, type Language } from "../../../server/contracts/wire";
 import { USAGE_RECENT_USERS_LIMIT, type UsageUserRow } from "../../api/usage";
@@ -61,7 +61,7 @@ function playLine(u: UsageUserRow): string {
 function Figure({ label, value }: { label: string; value: number }) {
     return (
         <Box className="usage-recent-users__figure" sx={{ minWidth: 0 }}>
-            <Typography className="usage-recent-users__figure-value" sx={{ fontFamily: FONTS.mono, fontSize: SIZE.body, color: value > 0 ? COLORS.onSurface : COLORS.textFaint, lineHeight: 1.2 }}>
+            <Typography className="usage-recent-users__figure-value" sx={{ ...DATA_TYPE, fontSize: SIZE.body, color: value > 0 ? COLORS.onSurface : COLORS.textFaint, lineHeight: 1.2 }}>
                 {value.toLocaleString()}
             </Typography>
             <Typography className="usage-recent-users__figure-label" noWrap sx={{ fontFamily: FONTS.sans, fontSize: SIZE.micro, color: COLORS.textFaint }}>
@@ -82,7 +82,7 @@ export default function UsageRecentUsers({ users, generatedAt }: UsageRecentUser
         <Box className="usage-recent-users">
             <Box className="usage-recent-users__header" sx={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "8px" }}>
                 <Label className="usage-recent-users__label">Recent learners</Label>
-                <Typography className="usage-recent-users__count" sx={{ fontFamily: FONTS.mono, fontSize: SIZE.micro, color: COLORS.textFaint }}>
+                <Typography className="usage-recent-users__count" sx={{ ...DATA_TYPE, fontSize: SIZE.micro, color: COLORS.textFaint }}>
                     {users.length >= USAGE_RECENT_USERS_LIMIT ? `latest ${USAGE_RECENT_USERS_LIMIT}` : users.length.toLocaleString()}
                 </Typography>
             </Box>
@@ -103,7 +103,7 @@ export default function UsageRecentUsers({ users, generatedAt }: UsageRecentUser
                                 <Typography className="usage-recent-users__name" noWrap sx={{ flex: 1, minWidth: 0, fontFamily: FONTS.sans, fontSize: SIZE.body, fontWeight: WEIGHT.semibold, color: COLORS.onSurface }}>
                                     {u.name}
                                 </Typography>
-                                <Typography className="usage-recent-users__last-seen" sx={{ fontFamily: FONTS.mono, fontSize: SIZE.micro, color: COLORS.textFaint, whiteSpace: "nowrap" }}>
+                                <Typography className="usage-recent-users__last-seen" sx={{ ...DATA_TYPE, fontSize: SIZE.micro, color: COLORS.textFaint, whiteSpace: "nowrap" }}>
                                     {u.lastSeenAt ? relativeTime(u.lastSeenAt, generatedAt) : "no session"}
                                 </Typography>
                             </Box>

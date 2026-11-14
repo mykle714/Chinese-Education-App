@@ -159,8 +159,7 @@ Consequences the design must carry:
 ### Where it lives in the app
 
 A new **Challenges page reached from the friends list** (`FriendsBody`, the AccountSheet's Friends tab since the `/friends` page was deleted 2026-11-06) — a NodePage under the friends
-drill-in ([UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md)), sibling to `/friends/sent`
-and `/friends/requests`, e.g. `/friends/challenges`. It is the single surface for the
+drill-in ([UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md)), `/friends/challenges`. It is the single surface for the
 whole lifecycle: invitations to answer, accepted challenges awaiting Friday, the test
 entry point, and finished results. No new home-hub row and no push infrastructure — the
 badge count rides along with the friends payload (design intent: a dot on the Friends entry point, which is now the AccountSheet's Friends tab — not built, see below),
@@ -263,8 +262,8 @@ opens the sheet that holds both, next to the words they are about.
 * **THE WHOLE ROW IS THE BUTTON, and it never opens a profile** (2026-08-17). The
   entire row — avatar, name, status line, pill and the padding between them — is ONE
   tap target that runs the row's lifecycle step: issue, accept, or open the challenge.
-  It does not navigate to `/users/:userId` the way a `FriendPersonRow` does everywhere
-  else in the app.
+  (The profile page that other `FriendPersonRow`s opened was deleted 2026-11-13; the
+  leaderboard's rows now expand in place.)
 
   This page exists to do one thing per friend, so its largest region must BE that thing.
   The row was previously a composition — a tappable person half that opened the profile,
@@ -281,13 +280,13 @@ opens the sheet that holds both, next to the words they are about.
     that quietly goes somewhere else is not.
   * **The row is keyboard-operable** — `role="button"`, `tabIndex={0}`, Enter/Space —
     because it replaced a real `<button>` and must not lose what that gave for free.
-  * Profiles stay reachable from the friends list (`FriendsBody`, the AccountSheet's
-    Friends tab since the `/friends` page was deleted 2026-11-06); the per-pair challenge
-    block lives on the profile.
+  * A friend's progress is shown by expanding their row on the friends leaderboard
+    (`FriendsBody`, the AccountSheet's Friends tab); the profile page was deleted
+    2026-11-13, and the per-pair challenge block has no UI for now (see below).
 
   The shared row therefore takes `onRowPress` (whole row, presentational actions) or
   `onPersonPress` (person half only, real action buttons) — one or the other, never
-  both (docs/FRIENDS_FEATURE.md, docs/USER_PROFILE_PAGE.md).
+  both (docs/FRIENDS_FEATURE.md).
 * **No lifetime W–L anywhere.** Deliberate: a running record makes a losing streak a
   reason to stop playing, and the crown already supplies the rivalry. The data is stored
   regardless, so a record can be added later if it is ever wanted.
@@ -365,10 +364,12 @@ friends yet.
   Monday**, so the weekly rhythm doubles as the cooldown and no separate rate limiter is
   needed. (Any Mastered writes made while reviewing the set persist — Q25.)
 * **"No challenges with this friend"** — a per-friend toggle, a durable opt-out
-  independent of the weekly cooldown. **It lives on the profile page**
-  ([USER_PROFILE_PAGE.md](./USER_PROFILE_PAGE.md)), shown only for friends because the
-  flags live on the friendship row. (It was designed as a control on the friend row; it
-  shipped without one and was unreachable until the profile page gave it a home.)
+  independent of the weekly cooldown. **⚠️ It has NO UI** since its only home, the
+  profile page's header toggle, was deleted 2026-11-13. The backend
+  (`StudyChallengeService.setChallengeBlock`) and the client function
+  (`src/api/studyChallenges.ts` → `setChallengeBlock`) remain; re-homing it before the
+  `studyChallenge` flag is turned back on is tracked in docs/DEFERRED_WORK.md. The flags
+  live on the friendship row, so any new home must be friends-only.
 
   **Each player owns their own flag; the effect is symmetric.** Either player may set a
   block independently, and **a challenge goes through only if neither has blocked**.

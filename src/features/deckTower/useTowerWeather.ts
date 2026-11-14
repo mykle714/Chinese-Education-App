@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../AuthContext";
 import { fetchWeather, fetchWeatherShared, type WeatherNow } from "../../api/weather";
-import { WEATHER_KINDS } from "../../../server/contracts/wire";
 import { useWeatherEffectsEnabled } from "../../hooks/useWeatherEffectsSetting";
-import { pinnedWeather, type WeatherOverride } from "./towerWeather";
+import { parseWeatherOverride, pinnedWeather, type WeatherOverride } from "./towerWeather";
 
 /**
  * useTowerWeather — the weather the Deck Tower's sky draws right now
@@ -22,8 +21,10 @@ import { pinnedWeather, type WeatherOverride } from "./towerWeather";
  *   - `settled`: false only while the setting is on and the FIRST answer (ok, not ok, or a
  *     network failure) has not come back — so a reader that must not act on "no weather
  *     yet" can wait (the aurora's clear-sky roll, towerAurora.ts). Off or pinned = settled.
- *   - Feature testers can pin a kind (WeatherToggle), stored per device like the
- *     time-of-day pin. A pin shows even with the setting off, so a tester can preview
+ *   - Feature testers can pin one WMO look (WeatherToggle → towerWeather.ts `WEATHER_PINS`),
+ *     stored per device like the time-of-day pin. `pinTaps` counts the tester's taps, so the
+ *     page can show a tapped pin INSTANTLY (sky colour snaps, clouds fill mid-sky) while
+ *     real weather keeps its slow fade-in. A pin shows even with the setting off, so a tester can preview
  *     every effect without granting location.
  *
  * Depends on: src/api/weather.ts (`fetchWeather`, `fetchWeatherShared`), src/hooks/useWeatherEffectsSetting.ts, towerWeather.ts.
@@ -37,8 +38,7 @@ const OVERRIDE_KEY = "deckTower.weatherOverride";
 
 function readOverride(): WeatherOverride {
     try {
-        const v = localStorage.getItem(OVERRIDE_KEY);
-        return v && (WEATHER_KINDS as readonly string[]).includes(v) ? (v as WeatherOverride) : "auto";
+        return parseWeatherOverride(localStorage.getItem(OVERRIDE_KEY));
     } catch {
         return "auto";
     }
@@ -49,6 +49,8 @@ export function useTowerWeather(allowOverride: boolean): {
     settled: boolean;
     override: WeatherOverride;
     setOverride: (v: WeatherOverride) => void;
+    /** Bumped on every tester pin tap (including Auto); 0 until the first. */
+    pinTaps: number;
 } {
     const { user } = useAuth();
     const userId = user?.id;
@@ -57,6 +59,7 @@ export function useTowerWeather(allowOverride: boolean): {
     // Whether the current load cycle has had its first answer (see `settled` in the header).
     const [answered, setAnswered] = useState(false);
     const [override, setOverrideState] = useState<WeatherOverride>(readOverride);
+    const [pinTaps, setPinTaps] = useState(0);
 
     // When the last fetch was made, read by the visibility listener without re-subscribing.
     const fetchedAt = useRef(0);
@@ -111,8 +114,9 @@ export function useTowerWeather(allowOverride: boolean): {
             // Storage unavailable — the pin just won't persist past this session.
         }
         setOverrideState(v);
+        setPinTaps((n) => n + 1);
     }, []);
 
     const pinned = allowOverride && override !== "auto" ? pinnedWeather(override) : null;
-    return { weather: pinned ?? real, settled: pinned !== null || answered, override, setOverride };
+    return { weather: pinned ?? real, settled: pinned !== null || answered, override, setOverride, pinTaps };
 }

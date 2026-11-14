@@ -1,7 +1,7 @@
 import { type ReactNode } from "react";
 import { Box } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
-import { styled } from "@mui/material/styles";
+import { styled, type SxProps, type Theme } from "@mui/material/styles";
 import CardShell, { CARD_TITLE_SX } from "./CardShell";
 import { COLORS, RAMP, type RampHue } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
@@ -46,7 +46,7 @@ import { FONTS } from "../../theme/fonts";
  * It is also the one exception to the app-wide button/card outline rule
  * (CLAUDE.md § "Buttons & cards").
  *
- * Used by: GamesPage, FriendsBody. (MenuPage, the hp, was deleted 2026-11-06.)
+ * Used by: GamesPage, FriendsBody (+ FriendActionTiles, its toggle tiles). (MenuPage, the hp, was deleted 2026-11-06.)
  */
 
 /**
@@ -147,7 +147,7 @@ export interface BentoTileProps {
      *   `"default"` — a fact about the destination ("14 decks", "2 modes"). Translucent
      *                 white, so it reads as a quiet note on the tile's own pastel.
      *   `"alert"`   — a count of things WAITING FOR THE USER (friend requests, pending
-     *                 challenges). The app's danger pink on white, because an unread
+     *                 challenges). A classic notification badge — `COLORS.notificationRed` under white, floating over the tile's corner — because an unread
      *                 count that blends into its tile is a notification nobody sees.
      *
      * The distinction is deliberate and worth keeping: if every pin were alert-coloured
@@ -187,6 +187,20 @@ export interface BentoTileProps {
      * tiles need exactly this, to confirm before clobbering a saved board.
      */
     onClick?: (e: React.MouseEvent) => void;
+    /**
+     * Set for a tile that is a TOGGLE rather than a destination — the Friends tab's
+     * action tiles (features/friends/FriendActionTiles.tsx). Drives `aria-pressed`;
+     * the look of "selected" is the host's (it passes an ink ring in `sx`).
+     * Leave undefined on every navigating tile.
+     */
+    pressed?: boolean;
+    /**
+     * Extra styles merged AFTER the tile's own, so a host can replace the resting drop
+     * shadow or add a selection ring (FriendActionTiles). Not for re-skinning the
+     * face: the face is the family's, and changing it per call site is the drift
+     * `CardShell` exists to stop.
+     */
+    sx?: SxProps<Theme>;
     className?: string;
 }
 
@@ -207,6 +221,8 @@ export const BentoTile: React.FC<BentoTileProps> = ({
     to,
     state,
     onClick,
+    pressed,
+    sx,
     className,
 }) => {
     const v = TILE_VARIANTS[variant];
@@ -221,7 +237,8 @@ export const BentoTile: React.FC<BentoTileProps> = ({
             ghost={icon ? { name: icon, size: v.ghost, top: v.ghostTop, className: "bento-tile__ghost" } : undefined}
             pin={pin ? { node: pin, tone: pinTone, bare: pinBare, side: pinSide } : undefined}
             pinClassBlock="bento-tile"
-            sx={{
+            aria-pressed={pressed}
+            sx={[{
                 // `1 / -1` rather than `span 2`: a hero is "the full width of whatever
                 // grid it is in", and spelling it as a span silently means "two thirds"
                 // the moment it lands in a 3-column Bento.
@@ -231,7 +248,7 @@ export const BentoTile: React.FC<BentoTileProps> = ({
                 // free for the ghost glyph to bleed into.
                 justifyContent: "flex-end",
                 cursor: to || onClick ? "pointer" : "default",
-            }}
+            }, ...(Array.isArray(sx) ? sx : [sx])]}
         >
             <Box
                 className="bento-tile__title"

@@ -171,9 +171,9 @@ stored `users.timezone`.
   all of a user's languages).
 - **Refresh path for `users.timezone`** — four overlapping triggers, so an account is
   never stranded on the column default (`NOT NULL DEFAULT 'UTC'`):
-  1. **account creation** — `POST /api/auth/register` carries `tz`
-     (`UserController.register` → `UserService.createUser`), so a row is never *born*
-     on the default;
+  1. **account creation** — `POST /api/auth/signUp` carries `tz`
+     (`SignInController.signUp` → `SignInService.completeSignUp` → `UserService.createUser`),
+     so a row is never *born* on the default;
   2. **login and session restore** — `POST /api/auth/onLogin`
      (`authSync.notifyLogin` → `UserController.onLogin` → `UserService.refreshUserContext`);
   3. **every access-token rotation** — `POST /api/auth/refresh` carries `tz`

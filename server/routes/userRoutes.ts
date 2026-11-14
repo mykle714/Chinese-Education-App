@@ -21,8 +21,8 @@ const router = Router();
 // client ever called it. Anything that needs a list of users should add a narrow, purpose-built
 // read, never re-expose the whole row.
 
-// Create new user (admin only)
-router.post('/api/users', authenticateToken, handle(userController.createUser, userController));
+// POST /api/users ("create new user, admin only") was deleted 2026-11-14: it had no admin check,
+// no client called it, and it created unverified accounts (docs/LOGIN_REWORK.md Q14).
 
 // Update user preferred language
 router.put('/api/users/language', authenticateToken, handle(userController.updateLanguage, userController));

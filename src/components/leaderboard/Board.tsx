@@ -2,7 +2,7 @@ import { Box, Typography } from "@mui/material";
 import { alpha, type SxProps, type Theme } from "@mui/material/styles";
 import Icon from "../Icon";
 import { COLORS, RAMP } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../theme/fonts";
 
 /**
  * THE BOARD — the shelf system's ranked-table primitive (docs/SHELF_REDESIGN.md § A7,
@@ -190,7 +190,7 @@ export const BoardRow: React.FC<BoardRowProps> = ({
         <Typography
             className="board__rank"
             sx={{
-                fontFamily: FONTS.mono,
+                ...DATA_TYPE,
                 fontSize: 14,
                 width: 21.5,
                 flexShrink: 0,
@@ -225,7 +225,7 @@ export const BoardRow: React.FC<BoardRowProps> = ({
                     sx={{
                         ...(sublabelVariant === "prose"
                             ? { fontFamily: FONTS.sans, fontSize: 14.5, color: COLORS.textSecondary }
-                            : { fontFamily: FONTS.mono, fontSize: 12, color: COLORS.textFaint }),
+                            : { ...DATA_TYPE, fontSize: 12, color: COLORS.textFaint }),
                         marginTop: "1px",
                         // One line, always. The board's whole legibility rests on every row
                         // being the same height, and this slot now carries text the user
@@ -265,7 +265,7 @@ export const BoardRow: React.FC<BoardRowProps> = ({
                     alignItems: "center",
                     justifyContent: "flex-end",
                     gap: "3px",
-                    fontFamily: FONTS.mono,
+                    ...DATA_TYPE,
                     fontSize: 14.5,
                     // The artboard fixes this at 44px, which is right for a figure that
                     // stays small (arena minutes reset weekly) and clips one that does not

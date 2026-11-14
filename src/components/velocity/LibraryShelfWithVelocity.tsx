@@ -2,7 +2,6 @@ import { useRef } from "react";
 import { Box } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
 import DeckBuckets from "../DeckBuckets";
-import { COLORS } from "../../theme/colors";
 import VelocityStatCard from "./VelocityStatCard";
 
 /**
@@ -17,8 +16,10 @@ import VelocityStatCard from "./VelocityStatCard";
  * under some other row, or render it without its shelf, and the alignment cannot break
  * in one host while working in the other.
  *
- * Section headers ("Your library") stay with the host. Each host already has its own
- * header style, and the profile panel's title is not a shelf header.
+ * Titles stay outside this component: `LibraryShelfPanel` owns the optional header
+ * slot (a friend's flag + language name) and corner figure. The arrows measure the
+ * spines' horizontal centres (`VelocityArrows` → `useSpineCenters`), so they stay
+ * aligned however the spines are sized or inset.
  *
  * ── LOADING ───────────────────────────────────────────────────────────────────
  * The two halves load independently on the Account page (`useCategoryCounts`,
@@ -27,17 +28,21 @@ import VelocityStatCard from "./VelocityStatCard";
  * below shifts when it fills. The arrows wait for BOTH halves: they need the spines to
  * measure.
  *
- * Hosts: `src/pages/AccountSheet.tsx` (the signed-in user, with the shelf's page
- * gutter); `src/features/profile/ProfileStatsCard.tsx` (one per language, inside a
- * panel that already pads itself, so `gutter={false}` and `cardSx={{ mx: 0 }}`).
+ * Host: `LibraryShelfPanel` (passes `gutter={false}` and `cardSx={{ mx: 0 }}` because
+ * its root already carries the page margin; nothing is boxed since 2026-11-14). The
+ * panel is in turn hosted by
+ * `src/pages/account/AccountPane.tsx` (the signed-in user) and
+ * `src/features/friends/FriendExpandedDetail.tsx` (a friend's expanded leaderboard row). The `gutter={true}`
+ * default currently has no caller — it was the Account page's unboxed shelf until
+ * 2026-11-13.
  *
- * Referenced by: docs/VELOCITY.md § 4; docs/USER_PROFILE_PAGE.md.
+ * Referenced by: docs/VELOCITY.md § 4; docs/FRIENDS_FEATURE.md § "Expand in place".
  */
 
 /**
  * Reserved height of the shelf slot while the counts load, in px: the tallest spine
- * (140) plus the row's 9px top margin. The row has no board; the divider under it is
- * outside this slot.
+ * (140) plus the row's 9px top margin. The row has no board, and nothing closes it off
+ * (the hairline dividers were dropped 2026-11-13).
  *
  * Applied ONLY while loading. Once the spines are in, the row sizes to its tallest
  * spine. A permanent minimum would leave a gap between the spines and the Velocity card
@@ -47,40 +52,26 @@ const SHELF_RESERVE = 149;
 
 /**
  * Reserved height of the velocity slot while velocity loads, in px. The 6px top margin,
- * the arrows (-6 + 44 + 6), the 18px "Velocity" heading, the 38px figure, and the
- * closing divider (12 + 1). The card has no padding or border (see
+ * the arrows (-6 + 44 + 6), the 18px "Velocity" heading and the 38px figure. (The
+ * 12px gap above the slot is its margin, outside this reserve; the closing divider's
+ * 12 + 1 left with the dividers on 2026-11-13.) The card has no padding or border (see
  * `FRAMELESS_CARD_SX`). This is approximate: the heading's height depends on the ⓘ
  * icon. It only has to be close enough that the goals below
  * barely move.
  */
-const VELOCITY_RESERVE = 128;
-
-/** Space between a divider and the content it closes off, in px. */
-const DIVIDER_GAP = 12;
+const VELOCITY_RESERVE = 115;
 
 /**
- * The app's normal section divider: a 1px `--line` hairline (`COLORS.rowBorder`, the
- * same rule `SectionRule` draws), with no shadow and no overhang. Two of them frame the
- * Velocity block, one under the spines and one under the figure. They replaced the
- * wooden shelf boards (user, 2026-10-10: too heavy around the velocity figure). Inset by
- * the shelf's 22px gutter, or by nothing when the host already pads itself.
+ * Space between the spines and the velocity block, in px. It used to be the gap above a
+ * 1px hairline divider; the two dividers that framed the velocity block were dropped
+ * 2026-11-13 (user), and this gap keeps the arrows from crowding the spines' feet.
  */
-const SectionDivider: React.FC<{ gutter: boolean; className: string }> = ({ gutter, className }) => (
-    <Box
-        className={className}
-        sx={{
-            mt: `${DIVIDER_GAP}px`,
-            mx: gutter ? "22px" : 0,
-            height: "1px",
-            backgroundColor: COLORS.rowBorder,
-        }}
-    />
-);
+const SHELF_TO_VELOCITY_GAP = 12;
 
 /**
  * Strips `SectionCard`'s shell (white fill, hairline, 14/16 padding) off the velocity
  * card, so the figure stands directly on the page under the shelf (user, 2026-10-10).
- * The arrows then read as hanging from the divider rather than sitting in a box.
+ * The arrows then read as hanging from the spines rather than sitting in a box.
  * `StatCard` is still used for its overline and figure typography, so the 38px figure
  * keeps one definition. The horizontal margin stays, so a host's `cardSx` can still
  * zero it.
@@ -96,6 +87,7 @@ const FRAMELESS_CARD_SX = {
 
 export interface LibraryShelfVelocity {
     velocity: number;
+    /** The window `velocity` counts over, in days — server-sent; shown in the ⓘ. */
     windowDays: number;
     boundaryCounts?: number[];
 }
@@ -105,7 +97,7 @@ export interface LibraryShelfWithVelocityProps {
     counts: Record<string, number> | null;
     /** The velocity figure and its boundary split. `null` while loading. */
     velocity: LibraryShelfVelocity | null;
-    /** Keep the shelf's 22px page gutter (default); see `DeckBuckets`. */
+    /** Keep the spine row's 22px page gutter (default); see `DeckBuckets`. */
     gutter?: boolean;
     /** Placement overrides for the velocity card's shell. */
     cardSx?: SxProps<Theme>;
@@ -128,26 +120,22 @@ const LibraryShelfWithVelocity: React.FC<LibraryShelfWithVelocityProps> = ({
             <Box className="library-shelf-velocity__shelf" ref={shelfRef} sx={{ minHeight: counts ? undefined : SHELF_RESERVE }}>
                 {counts && <DeckBuckets counts={counts} gutter={gutter} />}
             </Box>
-            <SectionDivider gutter={gutter} className="library-shelf-velocity__divider library-shelf-velocity__divider--top" />
-            <Box className="library-shelf-velocity__velocity" sx={{ minHeight: VELOCITY_RESERVE }}>
+            <Box
+                className="library-shelf-velocity__velocity"
+                sx={{ mt: `${SHELF_TO_VELOCITY_GAP}px`, minHeight: VELOCITY_RESERVE }}
+            >
                 {velocity && (
-                    <>
-                        <VelocityStatCard
-                            className="library-shelf-velocity__card"
-                            velocity={velocity.velocity}
-                            windowDays={velocity.windowDays}
-                            boundaryCounts={velocity.boundaryCounts}
-                            spineRowRef={shelfRef}
-                            spinesReady={counts !== null}
-                            // 6px top margin is the artboard's `.card` margin: the arrows
-                            // sit close under the divider they hang from.
-                            sx={[FRAMELESS_CARD_SX, ...(Array.isArray(cardSx) ? cardSx : [cardSx])]}
-                        />
-                        <SectionDivider
-                            gutter={gutter}
-                            className="library-shelf-velocity__divider library-shelf-velocity__divider--bottom"
-                        />
-                    </>
+                    <VelocityStatCard
+                        className="library-shelf-velocity__card"
+                        velocity={velocity.velocity}
+                        windowDays={velocity.windowDays}
+                        boundaryCounts={velocity.boundaryCounts}
+                        spineRowRef={shelfRef}
+                        spinesReady={counts !== null}
+                        // 6px top margin is the artboard's `.card` margin: the arrows
+                        // sit close under the spines they hang from.
+                        sx={[FRAMELESS_CARD_SX, ...(Array.isArray(cardSx) ? cardSx : [cardSx])]}
+                    />
                 )}
             </Box>
         </Box>

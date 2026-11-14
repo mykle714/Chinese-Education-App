@@ -1,20 +1,19 @@
-# User Profile Page
+# User Profile (endpoint)
 
-The app's only screen for looking at somebody who is **not you**: `/users/:userId`.
+`GET /api/users/:userId/profile` — one account's identity and study stats, as seen by
+the signed-in viewer. **There is no profile page any more:** `/users/:userId`
+(`UserProfilePage`) was deleted 2026-11-13. The endpoint's one client caller is a friend's
+**expanded leaderboard row** on the AccountSheet's Friends tab
+(`src/features/friends/FriendExpandedDetail.tsx` — docs/FRIENDS_FEATURE.md § "Expand in
+place"), which shows the email + "studying / friends since" line and the active
+language's progress panel (spines with the Velocity card under them, unboxed).
 
-Reachable for **any** account — friend, stranger, pending request, or yourself — which
-is what makes its Add-friend button meaningful. It is a Node drill-in
-(docs/UX_AND_NAVIGATION.md), reached by tapping the person half of a
-`FriendPersonRow` on the friends list, the leaderboard, or the sent/incoming request
-screens.
-
-⚠️ **NOT from the challenges page** (changed 2026-08-17). That page binds the same tap
-target to the challenge action instead — issue or accept — because the whole page is
-one action per friend and a large tap area that navigated elsewhere was a trap. The
-per-pair challenge block still lives here; reach it via the friends list (the AccountSheet's Friends tab). The row prop is
-therefore `onPersonPress`, not `onOpenProfile`: the row does not assume the tap means
-"profile" any more — and the challenges page uses `onRowPress` instead, which makes the
-whole row one button for the challenge action (docs/FRIENDS_FEATURE.md).
+⚠️ **The response carries more than that caller reads.** `relationship`, `requestId`,
+`challengeBlock`, `identity.readingGoal` / `writingGoal` / `createdAt`,
+`stats.activeWorlds` and `stats.languages[].isSelected` drove the deleted page (its friend
+action, block toggle, goal badges and "joined" line) and have **no client reader** now.
+They are still computed and sent; trimming them is a contract change on both halves
+(`server/types/userProfile.ts` ⇄ `src/api/userProfile.ts`).
 
 **It introduces no storage.** There is no `profiles` table and no new column anywhere:
 a profile is a *composition* of five features that each already own their data.
@@ -59,8 +58,8 @@ answer, so the endpoint cannot be used to enumerate which UUIDs are real account
 ## Relationship is a server-owned enum
 
 `ProfileRelationship` is one closed enum (`self` | `friends` | `request_sent` |
-`request_received` | `none`), so the header's action row draws exactly one FRIEND action
-and never has to prioritise competing booleans.
+`request_received` | `none`), so a client draws exactly one FRIEND action and never has to
+prioritise competing booleans.
 
 | Relationship | Friend action | Addresses |
 |---|---|---|
@@ -70,189 +69,92 @@ and never has to prioritise competing booleans.
 | `request_received` | **Accept** (green) | `requestId` |
 | `friends` | **Remove** (red) | the user |
 
-After **any** of them — and after the challenge-block toggle — the page **re-fetches** rather than patching its own state. That
+The deleted page **re-fetched** after any of them rather than patching its own state. That
 costs one round trip and buys correctness: a friend request can cross with one already
 in flight from the other side (the server auto-accepts crossing requests — see
 docs/FRIENDS_FEATURE.md), so a client that optimistically drew "Request sent" would be
 wrong in exactly the case that matters.
 
-Code: `src/features/profile/UserProfilePage.tsx` → `renderFriendAction`, `renderBlockToggle`, `runAction`.
+This drove the deleted page's single friend action; nothing on the client reads it now
+(see the ⚠️ at the top).
 
-## Every relationship control lives in the top bar
+## The challenge-block toggle (no UI)
 
-Add friend / Accept / Revoke / Remove **and** the challenge block are `HeaderIconButton`s
-(the shared header icon primitive, `src/components/PageHeader.tsx`, so they size and space
-like every other header action; raw MUI `IconButton`s until 2026-11-05) in the page's
-top bar (`NodePage`'s `headerExtraActions` slot — the same slot the card
-detail and collection pages put their per-subject actions in), not in the page body.
+The per-pair Study Challenge opt-out's only UI was a header toggle on the deleted profile
+page. It has **no caller** now: the backend (`PUT /api/studyChallenges/blocks/:friendUserId`
+→ `StudyChallengeService.setChallengeBlock`) and the client function
+(`src/api/studyChallenges.ts` → `setChallengeBlock`) remain. The `studyChallenge` flag is
+OFF; giving the toggle a new home before turning it on is tracked in
+docs/DEFERRED_WORK.md.
 
-Two reasons. They are all answers to one question — *what is this person to me* — so
-splitting them between a card and a toggle further down reads as a page **setting**
-rather than as part of the relationship. And the bar is **pinned**, so the controls stay
-reachable however far the designs grid has been scrolled.
+## Stats: one panel, the active language only
 
-The identity card below is therefore identity only: avatar, name, email, and the
-"studying / friends since" line.
+The account gets **exactly one progress panel: its selected (active) language**, with
+that language's velocity, net wallet balance and four utcm band counts. The panel is
+drawn whatever its balance, including zero: the expanded row says they are studying it,
+so leaving the panel out would contradict that line.
 
-The block is a **toggle, not a command**, so it renders its own state the way a favourite
-star does — filled `do_not_disturb_on` in red when blocked, outlined `block` in muted grey
-when not (`HeaderIconButton`'s `fill`). The fill change matters: colour alone would not survive a colourblind viewer.
-`aria-pressed` (`HeaderIconButton`'s `pressed`) carries the same fact to assistive tech, which no icon can, and the
-tooltip (`HeaderIconButton`'s `title`) carries the symmetry wording an icon has no room for.
+> **History.** Until 2026-11-13 the profile stacked one panel per language with a
+> non-zero wallet (selected first, the rest by `netMinutes` descending). It was cut to
+> the active language alone because a stale panel for a paused language competed with
+> the one the learner is working on now. The wire shape was **kept**:
+> `stats.languages` is still an array (now always length 1) and `isSelected` is still
+> sent (always `true`), so the client's map and the contract did not change. If the
+> multi-panel view comes back, only `UserProfileService.getProfile`'s `panelLanguages`
+> needs to change.
 
-Code: `src/features/profile/UserProfilePage.tsx` → `renderFriendAction`,
-`renderBlockToggle`; `src/components/PageHeader.tsx` → `HeaderIconButton`. A disabled
-button dims to the header's shared 0.4 opacity (it used to turn `COLORS.rowBorder`).
+The friends leaderboard follows the same rule: each row is scored in that person's own
+active language ([FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md)).
 
-## The challenge-block toggle
+`velocityWindowDays` sits outside the array because it is a constant.
+`velocityBoundaryCounts` is **inside** the language's entry: it is that language's
+`velocity` broken out per band boundary, and it sums to it.
 
-The per-pair Study Challenge opt-out finally has a UI. Before this page it was a fully
-built backend with a client API function and **zero callers** — the feature was
-unreachable.
-
-* Rendered **only for friends**. The flags live *on* the friendship row, so a non-friend
-  has neither a block to show nor anywhere to store one; the server sends
-  `challengeBlock: null` and the client draws nothing rather than an unset toggle it
-  could not honour.
-* The tooltip states the **symmetry** plainly — "in both directions" — because setting it
-  stops the viewer's own outgoing challenges too, and a control that silently did that
-  would be a trap.
-* The copy deliberately does **not** mention that the block is never disclosed to the
-  other person. That is a promise made to *them*, not to the viewer.
-
-Code: `PUT /api/studyChallenges/blocks/:friendUserId` →
-`StudyChallengeService.setChallengeBlock`; client `src/api/studyChallenges.ts` →
-`setChallengeBlock`.
-
-## Stats: one panel per language
-
-The account gets **one progress panel per language it is learning**, each with that
-language's velocity, net wallet balance and four utcm band counts.
-
-**Order and membership are decided server-side** and the client renders `stats.languages`
-as received, never re-sorting it:
-
-1. The account's **selected** language leads — whatever its balance, including zero.
-   The header says they are studying it, so a profile that then showed no panel for it
-   would contradict itself on the same screen.
-
-   > **The panels themselves no longer mark which language is selected.** A
-   > "Currently studying" chip used to sit beside the panel's language badge, on the
-   > argument that position alone cannot distinguish "first" from "current"; it was
-   > dropped in the 2026-09-19 panel-heading change. The fact is still on screen —
-   > the identity card at the top says "Studying 🇨🇳 CN" — but it is now one
-   > cross-reference away rather than stated on the panel. `isSelected` is still sent
-   > by the server and still lands on the panel as an `is-selected` class, so a visual
-   > treatment can be restored without a contract change; nothing styles it today.
-2. Every other language follows by **`netMinutes` descending**. Note this means the top
-   panel is **not** necessarily the largest one — an account newly switched to Spanish
-   shows Spanish first with a Chinese wallet ten times its size beneath it.
-3. Languages with a **zero balance**, other than the selected one, are **dropped
-   entirely**. A `user_languages` row is created the moment somebody so much as switches
-   languages to look around, so an untouched row is a language they are *not* learning,
-   and an empty panel for it would misreport a focused learner as a dabbler.
-
-The **goal badges sit above the panels**, not inside each one: reading/writing goals are
-account-wide opt-ins (`users.readingGoal` / `writingGoal`), and repeating them per panel
-would imply a learner could pursue writing in one language and not another.
-`velocityWindowDays` sits outside the array for the same reason — it is a constant.
-`velocityBoundaryCounts`, by contrast, is **inside** each language's entry: it is that
-language's `velocity` broken out per band boundary, and it sums to it.
-
-**Card designs stay single-language.** They remain in the selected language alone, because
-that list is a keyset-paginated scrolling feed and interleaving languages inside one page
-would give the cursor two orderings to satisfy.
+**Card designs are in the selected language too** (the designs endpoint below).
 
 ### Cost
 
-`getNetPointsForUsers` doubles as the "which languages does this account have" read — a
-`user_languages` row *is* the record of having studied one — so the wallet is fetched
-**before** the band counts rather than beside them, one extra round trip. The band counts
-then run in parallel, one per panel, bounded by the languages the account has actually
-touched rather than by the number the app supports.
+One band-count read (`OnDeckVocabService.getCategoryCounts`) for the selected language.
+`getNetPointsForUsers` is still read for that language's wallet figure; it is issued in
+parallel with the friendship and velocity reads.
 
-### The panel heading: flag over name
+Code: `server/services/UserProfileService.ts` → `getProfile` (`panelLanguages`).
 
-The panel is titled by a **40px flag emoji, centred, with the language's display name
-under it** (`LANGUAGE_NAMES` — "Mandarin", not the "CN" region code). This is
-deliberately *not* the inline `🇨🇳 CN` badge the friends leaderboard and this page's
-own identity line use: those annotate a line of running text, whereas here a language
-labels a whole BLOCK, and at 40px it is legible as the panel's identity from across
-the card — which is what lets two stacked panels tell themselves apart at a glance.
+### How the expanded row presents it
 
-The name under the flag is **load-bearing, not decoration**. `LANGUAGE_FLAGS`
-(`server/contracts/wire.ts`) warns that Windows does not render regional-indicator
-pairs as flags — it shows the bare letters — so a flag must never be the only carrier
-of meaning. The flag is therefore `aria-hidden` and the name is the accessible label;
-reading both aloud would give "flag of China, Mandarin", a duplicate rather than a
-clarification.
+The client side — flag-over-name title (the name is load-bearing: Windows draws flags as
+letters), the flat `FireCount` minutes flame pinned top-right, and the shared
+`LibraryShelfPanel` (the Account tab's own shelf, spines with the Velocity card under them, unboxed) — lives in
+`src/features/friends/FriendExpandedDetail.tsx` and is described in
+docs/FRIENDS_FEATURE.md § "Expand in place". `FireCount` (`src/minutePoints/FireCount.tsx`)
+exists because `MinutePointsFireBadge` is hard-wired to the signed-in viewer's own live
+balance and could not show somebody else's.
 
-Code: `src/features/profile/ProfileStatsCard.tsx` → `LanguagePanel`;
-`src/features/profile/UserProfilePage.tsx` → `languageDisplay` (the one lookup behind
-both the panel title and the identity line's inline badge, so the two cannot drift).
+### The band counts are a shelf, unboxed
 
-### The three figures, and where each sits
-
-A panel now reads top to bottom as **identity → state → rate**, with the wallet parked
-out of that flow:
-
-| Figure | Treatment | Position |
-|---|---|---|
-| Language | 40px flag over its name (above) | centred, top |
-| Banked minutes | `FireCount` — the app's flame readout | **absolutely** pinned top-right |
-| Band counts + Velocity | `LibraryShelfWithVelocity` — the Account page's own shelf + card, boundary arrows included | middle; the card sits below the shelf |
-
-**Velocity is below the shelf** because that is the Account page's order, and the order
-carries an argument: the library is the *state* and velocity is its *rate of change*, so
-the reader meets the thing before the thing's derivative. Both pages now render the
-literal same component (`src/components/velocity/LibraryShelfWithVelocity.tsx`), ⓘ
-included — velocity is uninterpretable without the definition of a level-up, and two
-pages each writing that sentence out is two sentences that will drift. That includes
-the band-boundary breakdown, drawn as U-arrows between neighbouring band spines
-([VELOCITY.md § 2b, § 4](./VELOCITY.md)): each panel gets its OWN language's split,
-carried per language as `velocityBoundaryCounts`. The arrows follow the panel's narrowed
-spines, because they are placed from measured spine centres.
-
-**The minutes flame is absolutely positioned, and that is not decoration.** The title
-block is centred; a figure sharing its row would push the flag off-centre by half the
-figure's width, and by a *different* amount per panel, since "2w 3d" and "41m" are not
-the same length. Out of flow, every panel's flag lands on the same axis whatever the
-balance reads.
-
-**It is a flat flame, with no fill level.** `FireCount` draws the seconds gauge only when
-given a `fillPct`; this caller passes none. A part-full gauge here would invite the
-reader to watch a level that belongs to somebody else and cannot move on this screen —
-the same argument that gives the header badge its off-study mode.
-
-> ⚠️ **`MinutePointsFireBadge` could not be reused directly.** It calls
-> `useMinutePoints()` internally, so it is hard-wired to the signed-in *viewer* and
-> their *selected* language — dropping it on a profile would have shown the viewer's own
-> live count under somebody else's name, in the wrong language. The visual was therefore
-> extracted into `src/minutePoints/FireCount.tsx` (presentational, takes the number as a
-> prop) and the badge rebuilt on top of it, keeping its hooks, eligibility branch, tick
-> and pulse.
-
-Code: `src/features/profile/ProfileStatsCard.tsx` → `LanguagePanel`;
-`src/components/velocity/LibraryShelfWithVelocity.tsx`; `src/minutePoints/FireCount.tsx`;
-`src/minutePoints/MinutePointsFireBadge.tsx`.
-
-### The band counts are a shelf, inside a card
-
-The four band counts are the same `DeckBuckets` shelf the Account page draws, so a
-profile and your own account present progress identically. The panel is a **padded
-card**, though, and the Account page is a page with no padding of its own — so this
-host passes `gutter={false}` to suppress `Shelf`'s own 22px page gutter (which would
-otherwise indent the spines past the panel's "Progress" heading), and `DeckBuckets`
+The four band counts are the same `DeckBuckets` shelf the Account tab draws, inside the
+same `LibraryShelfPanel`, so a friend's row and your own account present progress
+identically. Nothing is boxed (user, 2026-11-14 — the spines followed the Velocity card
+out of the old `SectionCard`): the panel root carries the page margin (`PANEL_MARGIN`, or
+`m: 0` inside the friend row's padding), so `LibraryShelfPanel` passes `gutter={false}` to
+suppress `Shelf`'s own 22px page gutter (which would otherwise indent the spines a second
+time, out of the Velocity card's column), and `DeckBuckets`
 sizes all four spines against the panel in CSS (`cqw`) so they always fit one line. Without that the
 fourth band wraps below the shelf's board. See docs/SHELF_REDESIGN.md § "5 · Account"
 for why the gutter is opt-in rather than always-off.
 
 Code: `server/services/UserProfileService.ts` → `getProfile`;
 `server/types/userProfile.ts` → `ProfileLanguageStats`, `ProfileStats`;
-`src/features/profile/ProfileStatsCard.tsx` → `LanguagePanel`;
+`src/features/friends/FriendExpandedDetail.tsx`;
+`src/components/velocity/LibraryShelfPanel.tsx`;
 `src/components/DeckBuckets.tsx` → `fittedSpineWidth`, `BucketsContainer`.
 
 ## Card designs
+
+⚠️ **No reachable UI.** The grid (`src/features/profile/ProfileDesignGrid.tsx`) was rendered
+only by the deleted profile page (and only with the `community` flag on, which it is not),
+so it is dead code pending a decision to delete or re-home it. The endpoint is gated
+by the `community` flag in `userRoutes.ts`.
 
 A wrapping grid of the account's **advanced** icon layouts, infinitely scrolled. Tiles
 are the same `CommunityDesignCard` the Community page draws, with the same zoom, upvote
@@ -306,7 +208,7 @@ to the profiled person's languages, so there is nothing for a client to supply.
 | Controller | `server/controllers/UserProfileController.ts`, routes in `server/routes/userRoutes.ts` |
 | Service | `server/services/UserProfileService.ts` — owns no storage; composes six dependencies |
 | DAL | `IUserDAL.findPublicProfileById`, `ICommunityLayoutDAL.getDesignsByOwner` |
-| Pages | `src/features/profile/` — `UserProfilePage`, `ProfileStatsCard`, `ProfileDesignGrid`, `profileStyles` |
+| Client | `src/features/friends/FriendExpandedDetail.tsx` (the profile endpoint's one caller); `src/features/profile/ProfileDesignGrid.tsx` + `profileStyles.ts` (unreachable — see Card designs) |
 
 `UserProfileService` reads band counts through `OnDeckVocabService.getCategoryCounts`
 rather than issuing its own query. That method is already the one definition of "a sorted

@@ -15,8 +15,13 @@ This is the backend API server for the vocabulary application, providing endpoin
 ## API Endpoints
 
 ### Authentication
-- `POST /api/auth/register` - Register a new user
-- `POST /api/auth/login` - Login a user
+- `POST /api/auth/login` - Sign in with email + password
+- `POST /api/auth/email/sendCode`, `/email/verifyCode`, `/password/reset`, `/phone/verify`,
+  `/signUp`, `GET /api/auth/usernameAvailable`, `GET /api/auth/methods` - identifier-first
+  sign-in and verify-first sign-up (docs/LOGIN_REWORK.md § 4; `SignInController`)
+- `POST /api/auth/stepUp/*`, `/email/startChange`, `/email/confirmChange`, `/phone/change`,
+  `PUT /api/users/username`, `PUT /api/users/name`, `DELETE /api/auth/deleteAccount` -
+  account channels and step-up re-auth
 - `POST /api/auth/logout` - Logout a user
 - `GET /api/auth/me` - Get current authenticated user
 - `POST /api/auth/changePassword` - Change user password

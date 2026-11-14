@@ -53,19 +53,29 @@ a plain day ↔ night blend. Their weather is a later design.
 
 Code: `weatherSky.ts` → `SKY_BY_KIND`, `skyKindOf`. Keyed on `WeatherNow.wmoCode` (WMO), which
 is finer than `WeatherNow.kind` (no partly cloudy or freezing kinds); an unknown code falls
-back to `kind`. Noon hex = L 0.77 (the original `bluMk`'s lightness) at max chroma; night =
-the §1 recipe.
+back to `kind`. Noon hex = L 0.77 (the original `bluMk`'s lightness) at max chroma, except
+overcast; night = the §1 recipe, its chroma scaled by the day sky's (`timeOfDay.ts` →
+`SATURATED_DAY_CHROMA`: every saturated sky gets night's full 0.08, overcast's grey gets a
+grey night).
 
 | Sky kind | WMO codes | Hue | Noon | Night | Tester pin |
 |---|---|---|---|---|---|
 | Clear | 0, 1 | 239° | `#59BFFF` (`bluMk`) | `#113A5F` | Clear |
-| Partly cloudy | 2 | 246° | `#6CBBFF` | `#173960` | — (real data only) |
-| Snow | 71, 73, 75, 77, 85, 86 | 252° | `#79B9FF` | `#1C3861` | Snow |
-| Cloudy | 3 | 254° | `#7DB8FF` | `#1E3761` | Cloudy |
-| Rain (incl. drizzle) | 51, 53, 55, 61, 63, 65, 80, 81, 82 | 260° | `#88B5FF` | `#223661` | Drizzle, Rain |
-| Sleet | 56, 57, 66, 67 | 263° | `#8DB4FF` | `#243661` | — (real data only) |
-| Storm | 95, 96, 99 | 267° | `#93B2FF` | `#263561` | Storm |
+| Snow | 71, 73, 75, 77, 85, 86 | 252° | `#79B9FF` | `#1C3861` | Snow → any |
+| Partly cloudy | 2 | 254° | `#7DB8FF` (`PARTLY_CLOUDY_SKY`) | `#1D3761` | Cloudy → Partly |
+| Rain (incl. drizzle) | 51, 53, 55, 61, 63, 65, 80, 81, 82 | 260° | `#88B5FF` | `#223661` | Drizzle / Rain → non-freezing variants |
+| Sleet | 56, 57, 66, 67 | 263° | `#8DB4FF` | `#243661` | Drizzle / Rain → Freezing variants |
+| Storm | 95, 96, 99 | 267° | `#93B2FF` | `#263561` | Storm → any |
 | Fog | 45, 48 | 274° (lavender) | `#9DAEFF` | `#2A3461` | Fog |
+| **Overcast** | 3 | 254°, L **0.82**, chroma **0.04** | `#B3C6DE` (`OVERCAST_SKY`) | `#2F3847` | Cloudy → Overcast |
+
+**Overcast is the one grey (2026-11-13).** It keeps the cloudy family's hue (254°), is
+lifted to L 0.82 (a real overcast sky is a bright pale sheet) and drops to chroma 0.04 (both
+tuned by the owner the same day: "slightly bluer and lighter"), derived in code from `PARTLY_CLOUDY_SKY` (`weatherSky.ts` →
+`OVERCAST_SKY`) rather than picked, and flies **no clouds** (`towerWeather.ts` →
+`weatherCloudCount`): an overcast sky is one unbroken sheet. Partly cloudy took over the look
+overcast had before (`#7DB8FF`, 4 clouds); its old 246° `#6CBBFF` is retired. At night overcast
+turns into its own darker grey (`#2F3847`) instead of night blue.
 
 Chosen 2026-11-04 over two alternatives shown side by side: a hue spread to 302° (wet
 weather turned purple) and a hue + lightness version (overcast paler, storms deeper). These

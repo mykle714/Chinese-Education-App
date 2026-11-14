@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sunDay } from "../../../timeOfDay/sunTimes";
 import { phaseSky, timeOfDayAt, towerLight } from "../timeOfDay";
-import { NO_WASH } from "../iso";
+import { NO_WASH, hexToOklch } from "../iso";
 import { TZ_COORDINATES } from "../../../timeOfDay/tzCoordinates";
 
 const CHICAGO = { lat: 41.9, lon: -87.6 };
@@ -87,6 +87,15 @@ describe("skies and light", () => {
         expect(phaseSky(blue, "day")).toBe("#59BFFF");
         const lum = (hex: string) => parseInt(hex.slice(1, 3), 16) + parseInt(hex.slice(3, 5), 16) + parseInt(hex.slice(5, 7), 16);
         expect(lum(phaseSky(blue, "night"))).toBeLessThan(lum(phaseSky(blue, "day")));
+    });
+
+    it("keeps a grey day grey at night, and a saturated day at full night chroma", () => {
+        const chroma = (hex: string) => hexToOklch(hex)[1];
+        const blueNight = phaseSky({ sky: "#59BFFF" }, "night");
+        const greyNight = phaseSky({ sky: "#B3C6DE" }, "night"); // overcast (weatherSky.ts)
+        expect(chroma(blueNight)).toBeCloseTo(0.08, 2);
+        expect(chroma(greyNight)).toBeLessThan(0.04);
+        expect(greyNight).not.toBe(blueNight);
     });
 
     it("leaves colours untouched at plain day", () => {

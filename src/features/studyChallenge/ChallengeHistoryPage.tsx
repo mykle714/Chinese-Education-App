@@ -1,3 +1,4 @@
+import { displayName } from "../../utils/displayName";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Box, Button, ButtonBase, MenuItem, Select, Typography } from "@mui/material";
 import NodePage from "../../components/NodePage";
@@ -8,7 +9,7 @@ import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { COLORS } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { challengeErrorMessage, roundsTotal } from "./challengeLabels";
 import { challengeMessageSx, challengeMutedSx } from "./challengeStyles";
@@ -87,7 +88,7 @@ function ChallengeHistoryPage() {
         const friendMap = new Map<string, string>();
         const gameSet = new Set<string>();
         for (const entry of entries) {
-            friendMap.set(entry.opponent.userId, entry.opponent.name || entry.opponent.email);
+            friendMap.set(entry.opponent.userId, displayName(entry.opponent));
             for (const round of Object.values(entry.rounds)) gameSet.add(round.gameId);
         }
         return { friends: [...friendMap.entries()], games: [...gameSet].sort() };
@@ -209,7 +210,7 @@ function ChallengeHistoryPage() {
                                 >
                                     <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 1.25 }}>
                                         <Typography sx={{ fontFamily: FONTS.sans, fontSize: SIZE.body, fontWeight: WEIGHT.semibold, color: COLORS.onSurface }}>
-                                            vs {entry.opponent.name || entry.opponent.email}
+                                            vs {displayName(entry.opponent)}
                                         </Typography>
                                         <Typography
                                             className="challenge-history-page__outcome"
@@ -219,7 +220,7 @@ function ChallengeHistoryPage() {
                                         </Typography>
                                     </Box>
 
-                                    <Typography sx={{ fontFamily: FONTS.mono, fontSize: SIZE.micro, color: COLORS.textFaint, mt: 0.6 }}>
+                                    <Typography sx={{ ...DATA_TYPE, fontSize: SIZE.micro, color: COLORS.textFaint, mt: 0.6 }}>
                                         {/* Both totals, which is what the log is for. A
                                             no-contest may legitimately show one side at 0 —
                                             a player who never played still has a real record
@@ -248,7 +249,7 @@ function ChallengeHistoryPage() {
                                                 sx={{ display: "flex", alignItems: "center", gap: "7px", fontFamily: FONTS.cjk, fontSize: SIZE.caption, color: COLORS.textSecondary, lineHeight: 1.5 }}
                                             >
                                                 {wordIndex > 0 && (
-                                                    <Box component="span" sx={{ fontFamily: FONTS.mono, color: COLORS.textFaint }}>·</Box>
+                                                    <Box component="span" sx={{ ...DATA_TYPE, color: COLORS.textFaint }}>·</Box>
                                                 )}
                                                 {word.word1}
                                             </Box>

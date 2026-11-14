@@ -17,7 +17,7 @@ export const setFetchInterceptorHandlers = (
 
 /**
  * Endpoints that must NOT trigger an auto-refresh on 401:
- *   - login / register / logout: a 401 here is a real credential failure, not an
+ *   - login / the sign-in code endpoints / logout: a 401 here is a real credential failure, not an
  *     expired session.
  *   - refresh: refreshing in response to a failed refresh would recurse.
  * Note /api/auth/me is intentionally NOT excluded — a 401 there (expired access
@@ -25,9 +25,15 @@ export const setFetchInterceptorHandlers = (
  */
 const NO_REFRESH_PATHS = [
   '/api/auth/login',
-  '/api/auth/register',
   '/api/auth/logout',
   '/api/auth/refresh',
+  // The anonymous sign-in endpoints (docs/LOGIN_REWORK.md § 4): nobody is signed in yet, so a
+  // 401 can never mean "your session expired". (`/api/auth/register` was removed 2026-11-14.)
+  '/api/auth/email/sendCode',
+  '/api/auth/email/verifyCode',
+  '/api/auth/password/reset',
+  '/api/auth/phone/verify',
+  '/api/auth/signUp',
 ];
 
 /**

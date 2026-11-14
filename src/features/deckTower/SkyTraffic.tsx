@@ -51,6 +51,8 @@ interface SkyTrafficSourceProps {
     maxGusts: number;
     /** Feature testing: each change spawns one red balloon now (useCloudDrifts → `balloonRequest`). */
     balloonRequest: number;
+    /** Feature testing: each change fills the sky with clouds now (useCloudDrifts → `fillRequest`). */
+    cloudFillRequest: number;
 }
 
 /** Runs the schedulers and publishes their travellers; draws nothing. */
@@ -64,8 +66,9 @@ export const SkyTrafficSource = memo(function SkyTrafficSource({
     maxClouds,
     maxGusts,
     balloonRequest,
+    cloudFillRequest,
 }: SkyTrafficSourceProps) {
-    const drifts = useCloudDrifts({ proj, active: cloudsActive, sky: cloudSky, maxInSky: maxClouds, balloonRequest });
+    const drifts = useCloudDrifts({ proj, active: cloudsActive, sky: cloudSky, maxInSky: maxClouds, balloonRequest, fillRequest: cloudFillRequest });
     const gusts = useWindGusts({ proj, active: windActive, sky: windSky, maxGusts });
     // A layout effect, so a crossing that starts is drawn in the same frame it is scheduled.
     useLayoutEffect(() => {

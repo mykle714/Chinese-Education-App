@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Box, Typography } from "@mui/material";
 import { COLORS, RAMP, type RampHue } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../theme/fonts";
 import { SIZE } from "../../theme/scale";
 
 /**
@@ -60,7 +60,7 @@ export default function UsageDailyChart({ points, unit, hue }: UsageDailyChartPr
                 <Typography className="usage-daily-chart__readout-date" sx={{ fontFamily: FONTS.label, fontSize: SIZE.caption, color: COLORS.textSecondary }}>
                     {shortDate(active.date)}
                 </Typography>
-                <Typography className="usage-daily-chart__readout-value" sx={{ fontFamily: FONTS.mono, fontSize: SIZE.body, color: COLORS.onSurface }}>
+                <Typography className="usage-daily-chart__readout-value" sx={{ ...DATA_TYPE, fontSize: SIZE.body, color: COLORS.onSurface }}>
                     {active.value.toLocaleString()} {unit}
                 </Typography>
             </Box>
@@ -94,14 +94,14 @@ export default function UsageDailyChart({ points, unit, hue }: UsageDailyChartPr
                         );
                     })}
                 </svg>
-                <Typography className="usage-daily-chart__max" sx={{ position: "absolute", top: 4, left: 8, fontFamily: FONTS.mono, fontSize: SIZE.micro, color: COLORS.textFaint, pointerEvents: "none" }}>
+                <Typography className="usage-daily-chart__max" sx={{ position: "absolute", top: 4, left: 8, ...DATA_TYPE, fontSize: SIZE.micro, color: COLORS.textFaint, pointerEvents: "none" }}>
                     peak {max.toLocaleString()}
                 </Typography>
             </Box>
 
             <Box className="usage-daily-chart__axis" sx={{ display: "flex", justifyContent: "space-between", mt: "4px" }}>
                 {[points[0].date, points[points.length - 1].date].map((d, i) => (
-                    <Typography key={i} className="usage-daily-chart__axis-label" sx={{ fontFamily: FONTS.mono, fontSize: SIZE.micro, color: COLORS.textFaint }}>
+                    <Typography key={i} className="usage-daily-chart__axis-label" sx={{ ...DATA_TYPE, fontSize: SIZE.micro, color: COLORS.textFaint }}>
                         {shortDate(d)}
                     </Typography>
                 ))}

@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import { CATEGORY_BOUNDARIES } from "../../../server/contracts/mastery";
 import { BAND_SPINE_CLASS } from "../DeckBuckets";
@@ -7,7 +7,7 @@ import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 
 /**
- * `VelocityArrows` — the velocity breakdown drawn as hand-marked U-arrows that hang
+ * `VelocityArrows` — the velocity breakdown drawn as U-arrows that hang
  * under the library shelf, one per adjacent band boundary: each leaves one spine, dips,
  * and climbs into the next spine with an arrowhead, carrying `+N` (the cards that
  * crossed that boundary in the window) in the cup of the U.
@@ -33,24 +33,25 @@ import { FONTS } from "../../theme/fonts";
  * The chord (tail → tip) fixes the radius: R = chord / (2·sin(sweep/2)). At the
  * design's 84px spine spacing that gives R ≈ 33.5, with the lowest point ~22px under the
  * top line (y ≈ 31). The tip's tangent leans (90° − sweep/2) = 20° outward from vertical.
- * The arrowhead is the artboard's two 12px wings at ±34° off that tangent. They are
+ * The arrowhead is two 12px wings at ±45° (the artboard's ±34°, widened 2026-11-13)
+ * about an axis tilted a further 10° clockwise off that tangent (`headTiltDegrees`). They are
  * computed from the tangent, so they follow any sweep.
  *
  * Wider spacing gives a wider, deeper U. The SVG grows its height to fit the deepest
  * arrow (`svgHeight`). Narrower spacing (the profile panel) scales the insets and
  * wings by k = spacing / 84, and the arc shrinks with its chord.
  *
- * ── THE MARKER TEXTURE ───────────────────────────────────────────────────────────
- * An `feTurbulence` → `feDisplacementMap` filter roughens the strokes into a felt-tip
- * line, as in the artboard. The `+N` pills sit OUTSIDE the filtered layer so the
- * figures stay crisp. The filter id is per instance (`useId`) because the profile page
- * renders one card per language, and duplicate ids would resolve to whichever filter
- * the document finds first.
+ * ── THE STROKES ──────────────────────────────────────────────────────────────────
+ * Plain vector strokes with ROUND caps and joins, so every arc end and arrowhead wing
+ * finishes in a rounded end. The artboard's felt-tip texture (an `feTurbulence` →
+ * `feDisplacementMap` filter with a per-instance `useId` filter id) was dropped
+ * 2026-11-13 (user): the arrows now read as clean shapes.
  *
  * The STROKES are ink (`COLORS.onSurface`). Each `+N` is an ink figure on a
  * highlighter PILL in its arrow's DESTINATION band, Mid tier (`getBandMid`): U→T sits on
  * Target's hue, T→C on Comfortable's, C→M on Mastered's. That is the band the cards
- * arrived in, the same four hues as the spines above. A pill rather than coloured text
+ * arrived in, the same four hues as the spines above. (A source→destination gradient
+ * was tried 2026-11-13 and reverted the same day — it read as tacky.) A pill rather than coloured text
  * because in v2 hue never carries text (theme/colors.ts). This is the same treatment the
  * old equation used (`mark{background:…;border-radius:999px}` in the design).
  *
@@ -78,7 +79,16 @@ const ARROW = {
     sweepDegrees: 140,
     /** Arrowhead wing length and its angle either side of the reversed tangent. */
     wingLength: 12,
-    wingDegrees: 34,
+    // Widened from the artboard's 34° (user, 2026-11-13): a 90° head reads as an
+    // arrowhead at a glance; 68° read as a narrow dart on a 12px wing.
+    wingDegrees: 45,
+    /**
+     * Extra CLOCKWISE rotation of the whole arrowhead off the arc's tip tangent
+     * (user, 2026-11-13). The tangent leans 20° right of vertical; this tilts the head
+     * a further 10°, so it points ~30° right — more into the destination spine. Only
+     * the head turns; the arc is unchanged.
+     */
+    headTiltDegrees: 10,
     strokeWidth: 6,
     /** Room kept under the lowest point for the stroke and the pill's lower half. */
     belowFloor: 8.6,
@@ -176,7 +186,11 @@ function arrowBetween(cL: number, cR: number): ArrowGeometry {
 
     // Travel direction at the tip, for a symmetric arc: up, leaning outward by
     // (90° − half-sweep). The wings are the reversed tangent rotated ±wingDegrees.
-    const back = Math.atan2(Math.sin(HALF_SWEEP), -Math.cos(HALF_SWEEP)); // reversed tangent
+    // `headTiltDegrees` then turns the whole head clockwise: in screen coordinates (y
+    // down) a positive angle step is clockwise, so it is simply added.
+    const back =
+        Math.atan2(Math.sin(HALF_SWEEP), -Math.cos(HALF_SWEEP)) + // reversed tangent
+        ARROW.headTiltDegrees * DEG;
     const wing = (sign: 1 | -1) => {
         const angle = back + sign * ARROW.wingDegrees * DEG;
         const length = ARROW.wingLength * k;
@@ -211,9 +225,6 @@ export interface VelocityArrowsProps {
 const VelocityArrows: React.FC<VelocityArrowsProps> = ({ boundaryCounts, spineRowRef, spinesReady }) => {
     const svgRef = useRef<SVGSVGElement | null>(null);
     const centers = useSpineCenters(svgRef, spineRowRef, spinesReady);
-    // `useId` returns ids with characters ("«r0»", ":r0:") that are not safe inside
-    // `url(#…)`, so strip it down to word characters.
-    const filterId = `velocity-marker-${useId().replace(/\W/g, "")}`;
 
     // One spine per band, so a boundary's arrow needs the centres at i and i+1. Draw
     // nothing until both the centres and the counts match the contract. A partial set
@@ -245,16 +256,10 @@ const VelocityArrows: React.FC<VelocityArrowsProps> = ({ boundaryCounts, spineRo
                 ).join(", ")}
                 style={{ display: "block", overflow: "visible" }}
             >
-                <defs>
-                    {/* The felt-tip texture. Values are from the artboard. */}
-                    <filter id={filterId} x="-5%" y="-20%" width="110%" height="140%">
-                        <feTurbulence type="fractalNoise" baseFrequency="0.09" numOctaves={2} seed={4} />
-                        <feDisplacementMap in="SourceGraphic" scale={2.2} />
-                    </filter>
-                </defs>
+                {/* Clean vector strokes with round caps and joins — no marker texture
+                    (see "THE STROKES" in the header). */}
                 <g
                     className="velocity-arrows__strokes"
-                    filter={`url(#${filterId})`}
                     fill="none"
                     stroke={COLORS.onSurface}
                     strokeWidth={ARROW.strokeWidth}

@@ -3,7 +3,7 @@ import { Box } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
 import { Label } from "../../components/primitives";
 import { COLORS, RAMP } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
+import { DATA_TYPE } from "../../theme/fonts";
 import { SIZE, TRACKING } from "../../theme/scale";
 import { ON_ACCENT_INK, ON_ACCENT_LINE, useGameSurfaceHue } from "./gameSurface";
 import TimerEyeToggle from "./TimerEyeToggle";
@@ -391,7 +391,7 @@ export const GameTimer: React.FC<GameTimerProps> = ({
                 // timers by name) at `SIZE.bodyLg` — the play panel's one text size —
                 // normal case, normal tracking, `Label`'s 1.2 line height. Only the
                 // COLOUR stays per game (`valueColor`, and the hue tint behind it).
-                fontFamily: FONTS.mono,
+                ...DATA_TYPE,
                 fontSize: SIZE.bodyLg,
                 letterSpacing: TRACKING.normal,
                 fontVariantNumeric: "tabular-nums",

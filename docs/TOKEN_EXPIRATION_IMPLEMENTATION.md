@@ -7,10 +7,13 @@ the background (reactively, on the first 401) and only redirects to `/login` whe
 the refresh itself fails. This replaces the old single 24h JWT that bounced the
 user to login the moment it lapsed.
 
+→ Login rework (boot cover before auth, redirect fixes, phone signup, email/phone
+verification): [LOGIN_REWORK.md](./LOGIN_REWORK.md) — **DESIGN/DRAFT**.
+
 | Token | Lifetime | Form | Transport | Revocable? |
 |---|---|---|---|---|
 | **Access** | 15 min | stateless JWT (`userId`, `email`) | httpOnly cookie `token` (path `/`) + `Authorization: Bearer` header | No (short by design) |
-| **Refresh** | 30 days | opaque 256-bit random string | httpOnly cookie `refreshToken` (path `/api/auth`) | **Yes** — stateful, rotated |
+| **Refresh** | 180 days, sliding (each rotation re-issues the full lifetime; raised from 30 days 2026-11-13) | opaque 256-bit random string | httpOnly cookie `refreshToken` (path `/api/auth`) | **Yes** — stateful, rotated |
 
 Only the **hash** of each refresh token is stored server-side, and every refresh
 **rotates** the token with **reuse detection** (theft defense).
@@ -26,7 +29,7 @@ rotation → forms a per-login "family" chain), `"userAgent"`. Unique index on
 `"tokenHash"`, index on `"userId"`.
 
 ### Token logic — `server/services/UserService.ts`
-- `ACCESS_TOKEN_TTL = '15m'`, `REFRESH_TOKEN_TTL_MS = 30d` (lines ~16-19).
+- `ACCESS_TOKEN_TTL = '15m'`, `REFRESH_TOKEN_TTL_MS` = 180 days (the refresh cookie's `maxAge` is derived from the token's `expiresAt` in `server/controllers/UserController.ts`).
 - `generateAccessToken(user)` (~112-118) — signs the 15m access JWT (shared by
   login + refresh).
 - `hashRefreshToken(raw)` (~121-123) — SHA-256 hex.
@@ -181,8 +184,11 @@ retry uses a `_retried` flag.
 - `logout` delegates to `endServerSession()` (no duplicated logout fetch).
 
 ### `src/pages/LoginPage.tsx`
-Renders `null` while `isLoading`, then `<Navigate to="/" replace />` when
-`isAuthenticated`. The form must never sit on top of a live session — that state is
+Renders `null` while `isLoading`, then `<Navigate to={postLoginPath(location.state)} replace />`
+when `isAuthenticated`. That one redirect serves both a successful submit (`AuthContext.login`
+sets the user and no longer navigates itself) and landing on a live session. `postLoginPath`
+(`src/utils/loginRedirect.ts`) returns the cold-start deep link `ProtectedRoute` recorded, else
+`/`. Every path INTO `/login` uses `replace` ([LOGIN_REWORK.md](./LOGIN_REWORK.md) § 2). The form must never sit on top of a live session — that state is
 reachable whenever a silent refresh restores a session after something bounced the
 user to `/login`, and it used to be a dead end escapable only by hand-editing
 `/login` out of the URL. Consequence: signing in as a different account requires
@@ -240,8 +246,10 @@ generation, so a `let installed = false` guard silently fails to guard.
   XSS payload could read off disk — is purged on load). Reloads/new tabs
   re-establish the session via the httpOnly refresh cookie; concurrent per-tab
   refreshes are covered by the 20s rotation-race grace window.
-- Login/register are rate-limited (20/15min/IP) against bcrypt brute force;
-  refresh at 120/15min/IP. `server/middleware/rateLimits.ts`.
+- Login and the anonymous sign-in endpoints (email codes, phone, sign-up, reset) are
+  rate-limited (20/15min/IP, `authLimiter`) against brute force; the username check at
+  300/15min/IP; refresh at 120/15min/IP. `server/middleware/rateLimits.ts`. The per-ADDRESS
+  email-code limits live in `SignInService` ([LOGIN_REWORK.md](./LOGIN_REWORK.md) § 4b).
 - Short 15m access window limits the blast radius of a leaked access token.
 
 ## Manual testing

@@ -100,25 +100,16 @@ export class UserProfileService {
       this.userLanguagesDAL.getNetPointsForUsers([targetId]),
     ]);
 
-    // Which languages get a panel. `getNetPointsForUsers` doubles as the "which
-    // languages does this account have" read — a `user_languages` row IS the record of
-    // having studied one — which is why the wallet is fetched before the band counts
-    // rather than beside them. That costs one extra round trip; the alternative is
-    // counting bands for every language in the app and throwing most of it away.
+    // Which languages get a panel: ONLY the account's selected (active) language. A
+    // profile used to stack one panel per language with a non-zero wallet, but the
+    // page reads as "what is this person studying now", and a stale second panel for a
+    // language they paused competed with the one they are actually working on. The
+    // array shape is kept so the wire contract (`ProfileStats.languages`) and the
+    // client's map are unchanged; it now always has exactly one element.
+    // Docs: docs/USER_PROFILE_PAGE.md § Stats.
     const walletByLanguage = netPoints.get(targetId) ?? new Map<string, number>();
-    const panelLanguages = [
-      // The selected language ALWAYS leads, even at a zero balance: the header says
-      // they are studying it, and a profile that then showed no panel for it would
-      // contradict itself on the same screen.
-      language,
-      ...[...walletByLanguage.entries()]
-        .filter(([lang, minutes]) => lang !== language && minutes > 0)
-        .sort((a, b) => b[1] - a[1])
-        .map(([lang]) => lang),
-    ];
+    const panelLanguages = [language];
 
-    // One band-count read per panel, in parallel. Bounded by the number of languages
-    // the ACCOUNT has actually touched, not by the number the app supports.
     const bandCountsPerLanguage = await Promise.all(
       panelLanguages.map((lang) => this.onDeckVocabService.getCategoryCounts(targetId, lang, BANDS)),
     );
@@ -170,7 +161,7 @@ export class UserProfileService {
       identity: {
         userId: identity.userId,
         name: identity.name,
-        email: identity.email,
+        username: identity.username,
         avatarIconId: identity.avatarIconId,
         language,
         readingGoal: identity.readingGoal,

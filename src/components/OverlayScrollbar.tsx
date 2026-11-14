@@ -25,7 +25,8 @@ import { COLORS } from "../theme";
  * DOM in the scroll handler, so scrolling never re-renders React.
  *
  * Used by: src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx (eip tab
- * panes). Docs: docs/EIP_SHEET_GESTURES.md § Pane scrollbar.
+ * panes) and src/pages/AccountSheet.tsx (the Account / Friends / Settings panes).
+ * Docs: docs/EIP_SHEET_GESTURES.md § Pane scrollbar.
  */
 
 /** Spread into a scroller's `sx` to hide its native scrollbar (it must keep scrolling). */

@@ -9,6 +9,15 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
   // User-specific query operations
   findByEmail(email: string): Promise<User | null>;
   findByEmailWithPassword(email: string): Promise<User | null>;
+  /** Migration 188. `username` normalized (wire.ts → normalizeUsername). */
+  findByUsername(username: string): Promise<{ id: string } | null>;
+  /** Migration 188. `phone` in E.164. */
+  findByPhone(phone: string): Promise<{ id: string } | null>;
+  /** The bcrypt hash, or null for an account with no password (phone-only). */
+  findPasswordHashById(id: string): Promise<string | null>;
+  /** The account holding this friend code (migration 187), or null. `code` must already be
+   *  normalised (wire.ts → normalizeFriendCode): uppercase, no hyphen. */
+  findByFriendCode(code: string): Promise<{ id: string } | null>;
 
   // Password management
   updatePassword(id: string, hashedPassword: string): Promise<boolean>;
@@ -53,9 +62,9 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
   // Streak-break / inactivity penalties remain the exclusive province of the SQL
   // cron (database/cron/expire-stale-streaks.sql), never application code.
 
-  // Leaderboard roster. Returns identity + isPublic only; the caller joins the
+  // Leaderboard roster. Returns public identity only (username, never email); the caller joins the
   // per-language totals from IUserLanguagesDAL.getTotalsForAllUsers().
-  getLeaderboardRoster(): Promise<Array<{ userId: string; email: string; name: string; isPublic: boolean; avatarIconId: string | null }>>;
+  getLeaderboardRoster(): Promise<Array<{ userId: string; username: string; name: string | null; avatarIconId: string | null }>>;
 
   /**
    * Identity + the two things a per-user SCORE depends on — which language the
@@ -94,7 +103,8 @@ export interface UserPublicProfile extends UserScoringProfile {
 /** What {@link IUserDAL.findScoringProfilesByIds} returns for one account. */
 export interface UserScoringProfile {
   userId: string;
-  email: string;
+  /** The public handle (migration 188); these rows are shown to other users, so no email. */
+  username: string;
   name: string | null;
   avatarIconId: string | null;
   /** Null when the account never picked one; callers default it. */

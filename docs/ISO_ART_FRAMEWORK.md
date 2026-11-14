@@ -1179,8 +1179,9 @@ place of a cloud. Code: `iso/IsoBalloon.tsx`; planned by `useCloudDrifts.ts` →
   from `FORCED_BALLOON_ID_BASE` so they never share a key with a slot drift. It flies in
   `sky.visibleBalloonBand`, which the Deck Tower brings down beside the tower when the tower
   on screen is shorter than the real band (`DeckTowerPage.tsx` → `visibleBalloonBand`), so a
-  tap always shows one. Under reduced motion it parks partway across for `FORCED_PARKED_MS`
-  (15 s). Driven by `BalloonSpawnChip` (DECK_TOWER.md § Feature-tester rows).
+  tap always shows one. It always STARTS partway across (`PARKED_AT`), so it is on screen the
+  moment the chip is tapped (fading in over `cloudDriftMotion.ts` → `FADE_MS`), then flies on;
+  under reduced motion it stays parked there for `FORCED_PARKED_MS` (15 s). Driven by `BalloonSpawnChip` (DECK_TOWER.md § Feature-tester rows).
 
 ### IsoFog
 

@@ -85,10 +85,17 @@ import { StudyChallengeService } from '../services/StudyChallengeService.js';
 import { UserProfileService } from '../services/UserProfileService.js';
 import { UserProfileController } from '../controllers/UserProfileController.js';
 import { StudyChallengeController } from '../controllers/StudyChallengeController.js';
+import { EmailCodeDAL } from './implementations/EmailCodeDAL.js';
+import { SignInService } from '../services/auth/SignInService.js';
+import { createEmailSender } from '../services/auth/EmailSender.js';
+import { createPhoneVerifier } from '../services/auth/DevConsolePhoneVerifier.js';
+import { SignInController } from '../controllers/SignInController.js';
 
 // DAL instances
 const userDAL = new UserDAL();
 const refreshTokenDAL = new RefreshTokenDAL();
+// Emailed verification codes (migration 188, docs/LOGIN_REWORK.md § 4b).
+const emailCodeDAL = new EmailCodeDAL();
 const vocabEntryDAL = new VocabEntryDAL();
 const userMinutePointsDAL = new UserMinutePointsDAL();
 // Per-(user, language) wallet + streak state, plus the monotonic gross counter
@@ -141,6 +148,18 @@ const studyChallengeDAL = new StudyChallengeDAL();
 
 // Service instances (with DI)
 const userService = new UserService(userDAL, refreshTokenDAL);
+// Identifier-first sign-in, sign-up, step-up and channel changes (docs/LOGIN_REWORK.md § 4).
+// Email goes through Resend when RESEND_API_KEY is set (a console transport on dev); phone
+// goes through Firebase when FIREBASE_PROJECT_ID is set (a console stand-in on dev,
+// DevConsolePhoneVerifier).
+const signInService = new SignInService(
+  userService,
+  userDAL,
+  emailCodeDAL,
+  createEmailSender(),
+  createPhoneVerifier(),
+);
+const signInController = new SignInController(signInService, userService);
 const dictionaryService = new DictionaryService(dictionaryDAL);
 const vocabEntryService = new VocabEntryService(vocabEntryDAL, userDAL, dictionaryService);
 // The single owner of "a learner reviewed a card" — cooldown gate, typed mark
@@ -299,6 +318,8 @@ export {
   validationService,
   starterPacksService,
   userController,
+  signInController,
+  signInService,
   vocabEntryController,
   onDeckVocabController,
   userMinutePointsController,

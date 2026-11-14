@@ -22,7 +22,7 @@ import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import { Box, CircularProgress } from "@mui/material";
 import { Block } from "@mui/icons-material";
 import ResultStamp from "./ResultStamp";
-import { COLORS, FONTS } from "../../theme";
+import { COLORS, DATA_TYPE } from "../../theme";
 import HanziGuide from "./HanziGuide";
 import WritingCanvas, { type StrokeVerdict } from "./WritingCanvas";
 import { loadGlyph, type GlyphData } from "./GlyphSvg";
@@ -265,7 +265,7 @@ function StageClock({ remainingMs, totalMs }: { remainingMs: number; totalMs: nu
       </Box>
       <Box
         className="writing-stage__clock-label"
-        sx={{ position: "absolute", top: 12, left: 10, fontFamily: FONTS.mono, fontSize: 18, color: COLORS.textSecondary }}
+        sx={{ position: "absolute", top: 12, left: 10, ...DATA_TYPE, fontSize: 18, color: COLORS.textSecondary }}
       >
         {(remainingMs / 1000).toFixed(1)}s
       </Box>

@@ -81,6 +81,7 @@ import {
     type WorldLightning,
 } from "./towerLightning";
 import { weatherDaySky, worldsUnderWeather } from "./weatherSky";
+import { useJustChanged } from "./useJustChanged";
 import { TOWER_TYPE_SX } from "./towerType";
 import TimeOfDayToggle from "./TimeOfDayToggle";
 import AuroraToggle from "./AuroraToggle";
@@ -102,9 +103,7 @@ import type { GameExit } from "../../games/runtime/gameExit";
 import { useBlockEdgeSwipe } from "../../hooks/useBlockEdgeSwipe";
 import { useClaimStudySurface } from "../../minutePoints/studySurface";
 import TowerCardsPage from "./TowerCardsPage";
-import LaunchScreen from "./launch/LaunchScreen";
-import { launchLook } from "./launch/launchLook";
-import { launchDueOnMount, markLaunchTaken } from "./launch/launchDue";
+import { useBootCover, useHoldBootCover } from "../../hooks/useBootCover";
 import { TOWER_SCENE_CLASS, TOWER_SECTION_CLASS, heightAbovePlatform, platformScrollTop, towerSceneOf, useTowerCardsScroll } from "./towerScroll";
 import { withLens } from "../flashcards/collectionRef";
 import type { VocabEntry } from "../../types";
@@ -266,7 +265,7 @@ const DRAG_SNAP_BACK = "translate 220ms ease-out";
  * The tower's cloud band: cloud BASES sit at the height of these cards on the tower
  * (card k's underside is (k − 1) · CARD_THICKNESS above the floor), and the clouds
  * drift slowly past the tower's four sides (useCloudDrifts). Clouds are WEATHER, not
- * altitude: they fly only under the `cloudy` kind (towerWeather.ts → `weatherCloudCount`,
+ * altitude: they fly only under partly cloudy (towerWeather.ts → `weatherCloudCount`,
  * which also sets how many), in every world, whatever the card count. On a deck that stops
  * inside the band, its top is lowered to SKY_CEILING_ABOVE_TOP over the settled tower's
  * top, so the clouds drift by the tower rather than empty sky; on a deck under `from` the
@@ -594,6 +593,15 @@ const DeckTowerPage: React.FC = () => {
     // docs/TOWER_WEATHER_SKY.md); reading and writing keep their fixed skies.
     const towerWeather = useTowerWeather(testingFeatures);
     const weather = towerWeather.weather;
+    // Every feature-tester toggle shows at once (docs/DECK_TOWER.md § "Feature-tester rows" →
+    // "Instant"). The sky's colour is the one thing that would otherwise ease (SKY_FADE_MS),
+    // so for the render carrying a weather pin tap or a time-of-day pin change, SpaceBackdrop
+    // snaps (`snapSky`); the next render is back to the ordinary fade for real changes.
+    // Clouds get the weather tap count itself (`cloudFillRequest`).
+    // Two separate calls: `a || b` would skip the second hook whenever the first is true.
+    const weatherPinTapped = useJustChanged(towerWeather.pinTaps);
+    const timeOfDayPinChanged = useJustChanged(timeOfDay.override);
+    const testerSkyTap = weatherPinTapped || timeOfDayPinChanged;
     // ── Aurora (docs/DECK_TOWER.md § "Time of day" → "Aurora") ────────────────────
     // Reading only: a 1% roll on this visit's first clear night, kept until the page is left
     // (towerAurora.ts). Its strength rides the pan's palette into SpaceBackdrop; while it
@@ -1019,29 +1027,21 @@ const DeckTowerPage: React.FC = () => {
     // browser's clamp of it) is not the learner moving, so it must not overwrite `climb`.
     const placedScrollTop = useRef<number | null>(null);
 
-    // ── The launch screen (docs/LAUNCH_SCREEN.md) ─────────────────────────────────
-    // Once per app launch td opens behind a full-screen cover (launch/LaunchScreen.tsx): the
-    // nearest phase's sky colour with a pawn dropping onto a mini platform. It opens with a
-    // circle once td is ready (`launchReady`: the weather has settled and the shown world's
-    // deck count is in), after one full drop, and at most MAX_WAIT_MS after mount. While it is
-    // up td's own events WAIT (the opening grow, cooldown drops, the banking run), so they play
-    // once the learner can see them, and the scroller is locked.
-    const [launchOnMount] = useState(launchDueOnMount);
-    useEffect(() => {
-        if (launchOnMount) markLaunchTaken();
-    }, [launchOnMount]);
-    const [launchUp, setLaunchUp] = useState(launchOnMount);
-    // True until the circle starts to open: while td is fully hidden its sky takes every
-    // change at once (SpaceBackdrop `snapSky`), so the circle opens onto the true time of day
-    // and the real weather if it has arrived, else clear. Changes after that fade as usual.
-    const [launchCovering, setLaunchCovering] = useState(launchOnMount);
-    // The cover's own look, fixed at mount (always day, clear weather).
-    const [launchCover] = useState(launchLook);
+    // ── The launch screen (docs/LAUNCH_SCREEN.md, docs/LOGIN_REWORK.md § 1) ─────────
+    // The app-opening cover is the APP SHELL's now (src/hooks/useBootCover.ts): it plays on
+    // every cold start before auth resolves, and td is simply the page it may open onto. td
+    // HOLDS it closed until it is ready (`launchReady`: the weather has settled and the shown
+    // world's deck count is in), so the circle never reveals the sky jumping colour. While it
+    // is up td's own events WAIT (the opening grow, cooldown drops, the banking run), so they
+    // play once the learner can see them, and the scroller is locked. A td mounted later
+    // (navigation, not the launch) sees it already gone.
     const launchReady = towerWeather.settled && readyCounts[worldId].loaded;
-    const openLaunch = useCallback(() => setLaunchCovering(false), []);
-    const endLaunch = useCallback(() => setLaunchUp(false), []);
-    // The footer slides away while a session is up, and stays away under the launch screen
-    // (which covers td's screen but not the footer), sliding in once the cover has opened.
+    useHoldBootCover(!launchReady);
+    const { up: launchUp, covering: launchCovering } = useBootCover();
+    // `launchCovering` is true until the circle starts to open: while td is fully hidden its
+    // sky takes every change at once (SpaceBackdrop `snapSky`), so the circle opens onto the
+    // true time of day and the real weather if it has arrived, else clear.
+    // The footer slides away while a session is up. Under the cover the cover's slot hides it.
     useHideFooter(study.active || launchUp);
     // ── The cards page under the platform (§ "The cards page") ────────────────────
     // Its root (the header hand-off measures its top; a world swipe slides it with the
@@ -1628,8 +1628,9 @@ const DeckTowerPage: React.FC = () => {
                         altitudeY={studyAltitudeY}
                         // Mid-pan the sky follows the blend at once; any other change of colour
                         // (the weather, the clock) fades (SKY_FADE_MS). Under the closed launch
-                        // screen it also follows at once, so the circle opens onto the truth.
-                        snapSky={pan.busy || launchCovering}
+                        // screen it also follows at once, so the circle opens onto the truth; and
+                        // on a tester's weather / time-of-day tap, so the tester sees it now.
+                        snapSky={pan.busy || launchCovering || testerSkyTap}
                         scrollerBottomInset={footerSpacerPx}
                     />
 
@@ -1702,6 +1703,7 @@ const DeckTowerPage: React.FC = () => {
                             maxClouds={Math.max(1, cloudsInSky)}
                             maxGusts={WIND_GUSTS_MAX}
                             balloonRequest={balloonRequest}
+                            cloudFillRequest={towerWeather.pinTaps}
                         />
                         {/* The TOWER SECTION: the scene and the band under the footer slab. At least
                             a screen tall, the scene pinned to its bottom (`marginTop: auto`), so a
@@ -1967,8 +1969,6 @@ const DeckTowerPage: React.FC = () => {
                     {pan.busy && pan.direction !== 0 && (
                         <SpeedLines direction={pan.direction} strength={pan.speed} bottom={0} color={light.wash(ISO.wind)} />
                     )}
-                    {/* THE LAUNCH SCREEN (docs/LAUNCH_SCREEN.md): over all of td's screen. */}
-                    {launchUp && <LaunchScreen look={launchCover} ready={launchReady} onOpen={openLaunch} onDone={endLaunch} />}
 
                 </Box>
                 {focusLevers.core.dialog}

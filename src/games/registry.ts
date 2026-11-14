@@ -65,8 +65,7 @@ const ALL_GAMES: GameDef[] = [
         route: "/games/bubble-match",
         // Always shown in the hub. The game page itself handles the
         // unauthenticated case ("Sign in to play") and the not-enough-cards case
-        // (shortfall message), so we don't gate it out of the menu with
-        // requiresAuth — that just made the row invisible while debugging.
+        // (shortfall message).
         Component: lazy(() => import("./bubble-match/BubbleMatchPage")),
         hue: BUBBLE_MATCH_HUE,
         markType: BUBBLE_MATCH_MARK_TYPE,
@@ -236,14 +235,12 @@ export const GAME_ROUTES: string[] = ROUTED_GAMES.map((g) => g.route);
 
 /** The slice of the signed-in user `isGameAvailable` reads. */
 interface GameViewer {
-    isPublic?: boolean;
     selectedLanguage?: Language;
 }
 
 /**
  * Whether `game` may be shown to this viewer at all — the gating EVERY launch surface
  * applies (the Games hub's `visibleGames`, the flp break picker's `flpBreakCandidates`):
- *   - `requiresAuth` hides a game from signed-out and public/demo accounts;
  *   - `languages` HIDES a game from learners of any other language, rather than
  *     showing it and blocking on entry (a visible row that dead-ends reads as a bug).
  * Surface-specific gates (the hub shows ROUTED games only) are layered on top by the
@@ -251,8 +248,7 @@ interface GameViewer {
  *
  * Docs: docs/GAMES_FEATURE.md § "Games hub".
  */
-export function isGameAvailable(game: GameDef, viewer: GameViewer | null | undefined, isAuthenticated: boolean): boolean {
-    if (game.requiresAuth && (!isAuthenticated || viewer?.isPublic)) return false;
+export function isGameAvailable(game: GameDef, viewer: GameViewer | null | undefined): boolean {
     if (game.languages && viewer?.selectedLanguage && !game.languages.includes(viewer.selectedLanguage)) return false;
     return true;
 }

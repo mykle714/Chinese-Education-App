@@ -4,6 +4,7 @@ import { useLocation } from "react-router-dom";
 import MobileDemoFrame from "./MobileDemoFrame";
 import { routeShell } from "../routes/routeMeta";
 import { clearSkipNextEnter } from "../hooks/usePageSlide";
+import { BootCoverSlot } from "./bootCover/BootCover";
 
 interface LayoutProps {
     children: ReactNode;
@@ -43,7 +44,13 @@ function Layout({ children }: LayoutProps) {
     const isMobileDemoPage = routeShell(location.pathname) === "frame";
 
     if (isMobileDemoPage) {
-        return <MobileDemoFrame>{children}</MobileDemoFrame>;
+        return (
+            <MobileDemoFrame>
+                {children}
+                {/* The app-opening cover (docs/LOGIN_REWORK.md § 1), filling the phone frame. */}
+                <BootCoverSlot placement="frame" />
+            </MobileDemoFrame>
+        );
     }
 
     return (
@@ -61,6 +68,8 @@ function Layout({ children }: LayoutProps) {
             }}
         >
             {children}
+            {/* The app-opening cover on a plain-shell launch, filling the window. */}
+            <BootCoverSlot placement="window" />
         </Box>
     );
 }

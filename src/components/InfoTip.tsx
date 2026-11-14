@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Box, ClickAwayListener, IconButton, Tooltip } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { COLORS } from "../theme/colors";
@@ -19,8 +19,12 @@ import { SIZE } from "../theme/scale";
  * needs a paragraph, it belongs in a page or a dialog, not here.
  */
 interface InfoTipProps {
-    /** The explanation shown when tapped. Keep it to a sentence or so. */
-    text: string;
+    /**
+     * The explanation shown when tapped. Keep it to a sentence or so. A node rather
+     * than a string so a caller can emphasise a phrase (VelocityStatCard bolds its
+     * time window).
+     */
+    text: ReactNode;
     /** Screen-reader name for the button. Defaults to a generic label. */
     ariaLabel?: string;
     className?: string;

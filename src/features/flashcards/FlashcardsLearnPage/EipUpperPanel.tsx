@@ -214,8 +214,8 @@ const EipUpperPanel = forwardRef<SheetTelescopeHandle, EipUpperPanelProps>(funct
                 sx={{ flexShrink: 0, display: "flex", flexDirection: "column", padding: `0 ${PANEL_GUTTER}px` }}
             >
                 {/* TITLE — a real leaf PageHeader (see the header comment). It brings its own
-                    18px side padding, so it cancels the content's gutter, and its own 8px
-                    bottom padding, which `extra` measures as part of the row it adds. Its
+                    18px side padding, so it cancels the content's gutter, and its own bottom
+                    padding (PageHeader's shared `HEADER_PAD_BOTTOM_PX`, 14px), which `extra` measures as part of the row it adds. Its
                     chevron is hidden, not removed: it holds the title on the page's column,
                     and the pinned caret draws over it. */}
                 <Box

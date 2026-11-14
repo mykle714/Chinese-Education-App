@@ -92,7 +92,7 @@ only thing that decides its colour:
 | Tone | Looks like | For |
 |---|---|---|
 | `"default"` | translucent white on the tile's own pastel | a fact about the destination — "14 decks", "2 modes" |
-| `"alert"` | `COLORS.dangerInk` on white, min-width 20 | a count of things **waiting for the user** — friend requests, pending challenges |
+| `"alert"` | white on `COLORS.notificationRed` (#FF3B30, outside the ramp), min-width 20, floating over the tile's corner (`CARD_SHELL.alertPinOffset`, so the shell stops clipping and the ghost glyph clips in its own layer) — since 2026-11-13; it was `dangerInk`, which the v2 palette turned black | a count of things **waiting for the user** — friend requests, pending challenges |
 
 Keep the distinction. If every pin were alert-coloured the hub would shout; if none were,
 the Friends hub's challenge count — which is the *entire* discovery mechanism for
@@ -109,6 +109,12 @@ the same trophy pill the `GameCard`s (Bubble Match, Word Search) wear rather tha
 `"right"`), putting the pill in the tile's top-LEFT corner, clear of the ghost glyph that
 bleeds off the top-right. Code: `src/components/bento/Bento.tsx` →
 `BentoTile`; `src/games/GamesPage.tsx`.
+
+**`pressed` + `sx`** — for a tile that is a TOGGLE rather than a destination: the Friends
+tab's Send / Accept / Remove tiles (`src/features/friends/FriendActionTiles.tsx`). `pressed`
+drives `aria-pressed`; `sx` is merged after the tile's own styles so the host can add the
+selected tile's ink-ring outline. Not for re-skinning the face. Code: `src/components/bento/Bento.tsx` →
+`BentoTileProps.pressed`, `BentoTileProps.sx`.
 
 ### Colour: tiles take a hue KEY, not a colour
 

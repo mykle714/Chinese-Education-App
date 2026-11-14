@@ -20,7 +20,11 @@ import type { CloudDrift } from "./useCloudDrifts";
  * Depended on by: IsoCloud.tsx, IsoCloudShadow.tsx.
  */
 
-/** A drift fades in over this long — a safety net only: every moving cloud starts off screen. */
+/**
+ * A drift fades in over this long. For a natural cloud it is a safety net (it starts off
+ * screen); it is what you SEE for the tester's mid-sky starts (a weather pin's cloud fill,
+ * the balloon chip), so they appear at once without popping in.
+ */
 const FADE_MS = 1600;
 
 /**

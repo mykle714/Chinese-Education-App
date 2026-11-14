@@ -316,7 +316,8 @@ def gamut_map(L, C, H):              # returns (hex, chroma actually used)
 
 > ⚠️ **The mono half of this decision was revisited on 2026-09-04.** JetBrains Mono is
 > gone: overlines moved to `FONTS.label` (**Public Sans**) and data to `FONTS.mono`
-> (**Azeret Mono**). See [INFO_TYPE_LAB.md](./INFO_TYPE_LAB.md). D1's Instrument
+> (**Azeret Mono**) — and on 2026-11-13 the mono face went entirely: data is now
+> `DATA_TYPE` (Instrument Sans with tabular figures, `src/theme/fonts.ts`). See [INFO_TYPE_LAB.md](./INFO_TYPE_LAB.md). D1's Instrument
 > Sans / Instrument Serif choices are unchanged.
 
 **Type.** Design wants Instrument Sans (UI), Instrument Serif (display), JetBrains
@@ -866,13 +867,26 @@ Its first host, entry 2's Decks shelf, was deleted with the fdp on 2026-11-04.
 | `Spine` | `.sp` and all its modifiers | The set-of-cards atom. |
 | `spineHeight(count)` | — | The count→height band function. |
 
-The five spine variants — `base` 74×116, `tall` 140, `short` 96,
+The five spine variants — `base` 74×116, `tall` 140, `short` 52 (the design's 96; 64 from 2026-11-13, so a small band reads compact; 52 since 2026-11-14, once every band label fit one line — one name line plus the foot row plus ~4px of air. A two-line label would overflow it),
 `uni` 126, `vol` 86×134 — exist, as are the three slots (`pin`, `caption`,
 `glyph`) and `vol`'s own (`meta`, `ownerGlyph`). The sheet's 74px squat is the
 `height` prop rather than a seventh variant.
 
 ### Decisions taken while building
 
+- **The spine is a rounded bar, not a book (user, 2026-11-13).** The design's `.sp`
+  draws a book seen edge-on: `11px 11px 4px 4px` corners and a dark strap down the left
+  edge (`.sp::after`). Both are gone: the radius is `SPINE_SIZES.cornerRadius` (11px) on
+  all four corners and there is no `::after`. The inset white highlight down the right
+  face (`SHADOW.spine`) stays — it was briefly removed the same day and restored.
+  The spine's one host is `LibraryShelfPanel`
+  (`src/components/velocity/LibraryShelfPanel.tsx`), where the band row reads as a bar
+  chart. The choice was made while the spines sat in a white `SectionCard` box, where the
+  book cues read as noise; the box was dropped 2026-11-14 (user) and the bar stayed. The sideways shadow
+  offset stays (shadows.ts rule 2's one exception).
+  Code: `src/components/shelf/Spine.tsx` → `SpineRoot`;
+  `src/components/shelf/spineGeometry.ts` → `SPINE_SIZES.cornerRadius`;
+  `src/theme/shadows.ts` → `SHADOW.spine`.
 - **The "make a new one" spine (`.sp.add`) was its own component (`AddSpine`), not a
   `Spine` variant** — it shared only the box. Its one host (the fdp's "+ new deck") went
   with Decks on 2026-11-04 and the component was deleted.
@@ -947,7 +961,18 @@ two hundredths of a pixel and wrapped to "Unfamilia / r". The `.nm` tracking is
 therefore `-0.01em` rather than the design's `-0.005em`: 0.5% of tracking is
 invisible, a ten-letter word broken after its ninth letter is not.
 
-`Comfortable` (70px) can never fit, so it has to break, and:
+`Comfortable` (70px) does not fit a 74px spine at the design's 11.5px. **Since
+2026-11-14 it is set FIT-TO-LINE:** DeckBuckets passes `Spine`'s `nameFitWidth` for that
+band only (`NAME_FIT_WIDTHS`, 72 = 70 measured + 2 cushion). The name's RIGHT inset is
+pulled in from `padX` 9 to `SPINE_SIZES.namePadRightCompact` 2 (a 63px line at 74px
+instead of 56), and its font is `min(11.5px, line × 11.5 / 72)` in CSS — the largest size
+that fits. The band spines may also grow past 74 up to 86px (`WIDE_SPINE_CAP`) while
+their interior stays at the 74px scale (`Spine`'s `interiorWidth`), so the extra width is
+label room: ≈ 10px at 74, ≈ 11.1px at 81 (a 390px phone), the full 11.5px from ≈ 83.
+(2026-11-13 → 11-14 it was a fixed 10px `nameFontSizeCompact`; before that it wrapped.)
+The left inset is unchanged so every name starts at the same x, and the foot row stays
+level with its neighbours. The other three band names keep 11.5px. The break machinery
+below stays as the fallback if it ever wraps:
 
 - `overflow-wrap: anywhere` — the design's value — creates a soft-wrap opportunity at
   EVERY character, so the line-breaker always fills to the last one that fits and
@@ -1795,7 +1820,7 @@ Bento strip — it is the single largest piece of hub work, and it is why D8
 > **Since 2026-10-31** this body is the sheet's Account tab (`src/pages/account/AccountPane.tsx`),
 > beside Friends and Settings tabs.
 > The artboard notes below still describe the body's contents.
-> **Off-artboard addition (2026-10-10):** a `StatCard` minute bank (`BankBanner`) sits
+> **Off-artboard addition (2026-10-10):** a minute bank (`BankBanner`, a two-column `SectionCard`) sits
 > directly under the profile row. See [DAILY_MINUTE_BANKING.md](./DAILY_MINUTE_BANKING.md) § 6.
 
 **Status: DONE (2026-08-23).** Typecheck, lint, `vite build` and the unit suite all
@@ -1811,7 +1836,7 @@ the artboard's order:
 | `.shelfhd` "Your library" + total | `SectionHeader` with two `Label`s | absent |
 | `.shelf` | `DeckBuckets` (unchanged) | already converted with A3 |
 | `.card` Velocity | `StatCard`, centred | bespoke `VelocityCard` on the `sectionCard` fill |
-| `.shelfhd` "Goals" | `SectionHeader` | a bold sentence-case `Typography` + a 5-line paragraph |
+| `.shelfhd` "Goals" | `SectionRule` (since 2026-11-14; was `SectionHeader`, which is only for an overline WITH an action — Goals has none) | a bold sentence-case `Typography` + a 5-line paragraph |
 | two goal rows | `Row` + MUI `Switch` | `FormGroup` of `Checkbox` / `FormControlLabel` |
 | `.btn3` Log Out | outlined MUI `Button` (theme-skinned) | same, but `size="small"`, which overrode `.btn3`'s 13px padding |
 
@@ -1860,7 +1885,8 @@ leaving it would have put the spines 22px left of the header above them.
 - **The goals paragraph is gone**, replaced by a one-line `subtitle` per row ("Adds a
   reading bar to every card"). Same fact, said once per control instead of once per
   section — the artboard's own change, and it is why the rows have room for a hue and a
-  glyph (`menu_book`/`red`, `edit`/`org`).
+  glyph (`menu_book`/`red`, `edit`/`org`). The subtitles were later dropped too
+  (2026-11-14): the rows are title-only.
 - **Velocity's window sentence is printed again.** It was a caption, then moved into
   the ⓘ, and the artboard draws it as visible body copy under the figure. The ⓘ was
   **kept** rather than deleted, and re-pointed: it now defines what a level-up *is*
@@ -2264,10 +2290,12 @@ fill replaces it. The border stays at 1px transparent so the row keeps its exact
 so at ~1.15:1 it was barely a shape on white (D2). It matters more now than it did — the
 viewer's own row is filled with the same org pastel that rank 1's chip wears, so a rank-1
 viewer would have watched their chip dissolve into their row.
+*(Superseded 2026-11-13: the viewer's row is no longer filled, and the rank is now the
+row's full-height left section with no ring — docs/FRIENDS_FEATURE.md § 1a.)*
 
-**Code:** `src/features/friends/FriendsPage.tsx` → `RankBadge`, `VelocityStat`, `slideTo`;
+**Code:** `src/features/friends/FriendsBody.tsx` (was `FriendsPage.tsx`) → `rankFill`, `RankNumeral` (was `RankBadge`), `VelocityStat`, `slideTo`;
 `src/features/friends/FriendPersonRow.tsx`; `src/features/friends/friendStyles.ts`;
-`src/features/friends/SentRequestsPage.tsx`;
+`src/features/friends/SentRequestsBody.tsx` (was `SentRequestsPage.tsx`);
 `src/components/bento/Bento.tsx` → `TILE_VARIANTS`, `BentoTile`;
 `src/components/primitives/SectionCard.tsx`; `src/components/primitives/StatCard.tsx`;
 `src/components/primitives/Label.tsx` → `SectionHeader`.

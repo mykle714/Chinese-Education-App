@@ -1,3 +1,4 @@
+import { displayName } from "../utils/displayName";
 import { Box, Typography } from "@mui/material";
 import DelayedCircularProgress from "./DelayedCircularProgress";
 import { Board, BoardRow } from "./leaderboard/Board";
@@ -26,16 +27,14 @@ import { SIZE } from "../theme/scale";
 
 /** The four per-user stats, as one mono sub-line. */
 function statLine(entry: {
-    currentStreak: number | null;
+    currentStreak: number;
     weeklyAchievements: number;
     todaysMinutes: number;
     yesterdaysMinutes: number;
 }): string {
-    // `currentStreak` is null when the user is not public — their streak is hidden from
-    // other viewers, so the fact is OMITTED rather than rendered as a zero, which would
-    // be a claim about their behaviour rather than an absence of one.
+    // Every account's streak is shown (`isPublic` was removed, docs/LOGIN_REWORK.md Q7).
     const parts = [
-        entry.currentStreak !== null ? `${entry.currentStreak} streak` : null,
+        `${entry.currentStreak} streak`,
         `${entry.weeklyAchievements} weekly`,
         `${entry.todaysMinutes} today`,
         `${entry.yesterdaysMinutes} yest`,
@@ -100,9 +99,9 @@ function LeaderboardPlaceholder() {
                         key={entry.userId}
                         className={`leaderboard__row${entry.isCurrentUser ? " leaderboard__row--you" : ""}`}
                         rank={entry.rank}
-                        // Name is optional on the account, so the email is the fallback
-                        // label — never render a blank row.
-                        name={entry.name || entry.email}
+                        // Name is optional on the account, so the username is the
+                        // fallback label — never a blank row, never an email (Q20).
+                        name={displayName(entry)}
                         sublabel={statLine(entry)}
                         meter={topScore > 0 ? entry.accumulativeMinutePoints / topScore : 0}
                         score={entry.accumulativeMinutePoints.toLocaleString()}

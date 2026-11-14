@@ -5,7 +5,7 @@ import { challengeLaunchFor } from "../../games/runtime/challengeLaunch";
 import type { ChallengeSummary } from "../../api/studyChallenges";
 import type { ChallengeRound } from "../../types";
 import { COLORS } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../theme/fonts";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 import { SHADOW } from "../../theme/shadows";
 import { deadlineLabel } from "./challengeLabels";
@@ -120,7 +120,7 @@ function ChallengeTestCard({ challenge, side, rounds, heading: headingOverride, 
                         dates is the one that reads as the deadline. The close time
                         appears the moment there is something to be late for. */}
                     {showDeadline && sequence.length > 0 && (
-                        <Typography sx={{ fontFamily: FONTS.mono, fontSize: SIZE.micro, color: COLORS.textSecondary }}>
+                        <Typography sx={{ ...DATA_TYPE, fontSize: SIZE.micro, color: COLORS.textSecondary }}>
                             closes {deadlineLabel(challenge.deadlines.testClosesAt)}
                         </Typography>
                     )}
@@ -199,7 +199,7 @@ function ChallengeTestCard({ challenge, side, rounds, heading: headingOverride, 
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
-                                fontFamily: FONTS.mono,
+                                ...DATA_TYPE,
                                 fontSize: SIZE.micro,
                                 fontWeight: WEIGHT.bold,
                                 letterSpacing: "0.04em",
@@ -289,7 +289,7 @@ function ChallengeTestCard({ challenge, side, rounds, heading: headingOverride, 
                                 className="challenge-test-card__score"
                                 sx={{
                                     flexShrink: 0,
-                                    fontFamily: FONTS.mono,
+                                    ...DATA_TYPE,
                                     fontSize: SIZE.body,
                                     fontWeight: WEIGHT.bold,
                                     letterSpacing: "-0.01em",

@@ -25,8 +25,8 @@ Two surfaces that tell one story: **a day's minutes are banked into a running to
    avatar's glow then settles, and finally the flame relights while the count climbs from
    0 to today's minutes.
 2. **The bank banner (AccountSheet).** A banner directly under the profile row showing
-   the **banked** total — NET through the end of yesterday — with a small `+🔥 N` chip in
-   its corner for today's not-yet-banked minutes. The real balance is banked + today;
+   the **banked** total — NET through the end of yesterday — with a "Today's minutes"
+   column down its right side for today's not-yet-banked minutes. The real balance is banked + today;
    tomorrow's first td visit animates today's chip into the bank.
 
 Everything about the animation's magnitude — how far the flame swells, how long the drain
@@ -158,33 +158,57 @@ Sits **directly under the profile row** (Q4 answered), tying it to the avatar th
 flew into.
 
 ```
-┌─────────────────────────────────────────┐
-│ BANKED                          +🔥 12  │  ← corner chip: today's minutes (unbanked)
-│ 🔥 1,284                                │  ← NET through end of yesterday
-└─────────────────────────────────────────┘
+┌────────────────────────────┬────────────┐
+│    Accumulated minutes     │  TODAY'S   │  ← today column: today's minutes (unbanked)
+│                            │  MINUTES   │
+│        🔥 21h 24m          │+(🔥 1h 26) │  ← big figure: NET through end of yesterday
+│                            │            │
+└────────────────────────────┴────────────┘
 ```
 
+- **Both figures read as durations** ("1h 26m"), not raw counts — `minutesAsDurationParts` /
+  `formatMinutesAsDuration` in `src/utils/formatDuration.ts`, on the full y-w-d-h-m ladder
+  (flat 365-day year, no month — its suffix would clash with minutes). The big figure sets
+  its unit letters at 20px in `COLORS.textSecondary` against 38px digits, which keeps a long
+  balance inside the accumulated column at phone width. The pill figure uses the same split
+  at 15px digits / 11px units in its own `fireActive` ink, but **drops the trailing "m"**
+  (`DurationFigure`'s `hideMinuteUnit`, `src/minutePoints/BankBanner.tsx`) — the "Today's
+  minutes" label already names the unit; larger units (`h`, `d`, …) keep their letters. The main figure's flame sits in the flow, so the
+  **flame + duration are centered together** as one unit.
 - **Main figure = banked** = `max(0, totalMinutePoints − todayMinutes)`. Clamped because
   the template-author `−N` dev tool debits NET without lowering today's `minutesEarned`,
   so in principle NET < today; nothing a learner can do produces that.
-- **Corner chip = `+🔥 today`**, `todayMinutes` from the same summary. **Not rendered** while
-  `todayMinutes` is 0 (Q11b); it appears with the first minute of the day.
+- **Structure: a two-column grid on `SectionCard`** (`gridTemplateColumns: "1fr auto"`,
+  padding 0, `overflow: hidden` so the today column's tint clips to the card's rounded
+  corners). Each column pads itself; DOM order is reading order. Not built on `StatCard`:
+  that is one centered figure under a mono overline, and this card is two columns with a
+  header-style title — the old StatCard build needed the today column smuggled through its
+  `lead` slot, a hand-computed padding reserve and seven overridden label styles.
+- **Accumulated column (`1fr`)**: the title "Accumulated minutes" as a **header** (an `h3`:
+  sans, sentence case, `SIZE.subtitle` 18px, `WEIGHT.semibold`, `COLORS.onSurface`) over the
+  big figure (StatCard's numeral recipe: 38px / 600 / −0.035em), both centered in the
+  column. With today at 0 there is no today column and this one spans the card. **No caption.**
+- **Today column (`auto`, sized by its content)** — the card's full-height right side:
+  `orgTint` ground, one `rowBorder` hairline on its inner edge. It holds, centered, a
+  "Today's / minutes" `Label` overline (two lines so the column stays narrow; `textSecondary`
+  ink, since Label's default `textFaint` washes out on `orgTint`) over a `+` sign and an
+  **`org` pill** with a 19px flame and the today figure in `fireActive` ink —
+  `todayMinutes` from the same summary. **Not rendered** while `todayMinutes` is 0 (Q11b);
+  it appears with the first minute of the day.
 - Both figures come from one `fetchLanguageSummary` call made when the banner mounts. The
   sheet is mounted only while open, so every open is fresh, like its library counts and
   velocity. It does **not** call `useMinutePoints` (that would add a second accrual tick).
   The figures are a snapshot. The sheet opens only from td's avatar, which does not accrue, so
   they cannot go stale while it is open.
 - The banked figure only moves at the 04:00 rollover (or on a penalty).
-- Caption: "Minutes banked through yesterday. Today's join at 4 AM." The chip sits on
-  `COLORS.orgTint` with `fireActive` ink.
 
 Constraints:
 
-- Built from shelf-system primitives like the rest of the sheet — the closest existing
-  shape is the `StatCard` that `VelocityStatCard` uses — carrying its own page gutter, since
+- Built from shelf-system primitives like the rest of the sheet — `SectionCard` (the
+  shell under `StatCard`) plus `Label` — carrying `SectionCard`'s own page gutter, since
   the sheet body has no side padding (see `AccountSheet`'s header comment).
 - Language-scoped to `user.selectedLanguage`, like every minute figure since migration 130.
-- Flame glyph via `FireCount`, `COLORS.fireActive` — the one place the app's flame orange
+- Flame glyph via `Icon name="local_fire_department"`, `COLORS.fireActive` — the one place the app's flame orange
   is allowed. No new hex.
 - Outline rule (CLAUDE.md "Buttons & cards") applies only if it is tappable.
 
@@ -234,7 +258,7 @@ Answered 2026-10-10:
 | Q1 | Where is "already seen today" recorded? | **Server-side, once per user across devices.** |
 | Q2 | Already earned today before reaching Home — drain to today's count or to 0? | **Revised 2026-10-10: always drain to 0, then count up to today's minutes** as a separate final beat (§ 3 phase 4). The first answer was "today's count". |
 | Q4 | Banner placement in AccountSheet? | **Directly under the profile row.** |
-| Q5 | Banner content? | **NET through yesterday** as the main figure, plus a small `+🔥 N` corner chip for today's minutes; the real total is the sum. |
+| Q5 | Banner content? | **NET through yesterday** as the main figure, plus today's minutes beside it (originally a small `+🔥 N` chip; since 2026-11-14 the "Today's minutes" right-side column, § 6); the real total is the sum. |
 | Q3 | Does a language switch replay it for the other language the same day? | **Yes** — one run per (user, language, streak day). |
 | Q10 | Seen-today column shape? | **`user_languages."lastBankingShownDate" DATE NULL`** (per language). |
 | Q6 | Does anything count up as embers land? | **No — only the avatar glow grows.** |

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Projector, WorldRect } from "./geometry";
 
 /**
@@ -164,8 +164,14 @@ export function prefersReducedMotion(): boolean {
  * Keeps `slots` independent travellers looping wait → cross → wait on their own
  * timeouts, so the sky holds 0..slots of them at irregular intervals. A slot's first
  * crossing waits `firstWaitMs(slot)` (stagger by slot), later ones `waitMs()`.
- * `plan(id, first)` builds one crossing; `first` is true for each slot's opening one
+ * `plan(id, first, instant)` builds one crossing; `first` is true for each slot's opening one
  * (a caller may treat those specially; useCloudDrifts ignores it).
+ *
+ * INSTANT START (`instantKey`): each CHANGE of this number restarts the slots with no
+ * stagger — every slot's opening crossing starts now, and `plan` gets `instant` true for
+ * it so the caller can place it already partway across (useCloudDrifts parks it mid-sky).
+ * Used by the Deck Tower's weather tester pins, so a tap shows the new sky at once
+ * (docs/DECK_TOWER.md § "Weather" → "Tester toggle"). The initial value is not a change.
  *
  * React state changes only when a crossing starts or ends. Per-frame motion is the
  * object's own rAF loop. Turning `active` false clears the sky.
@@ -176,14 +182,22 @@ export function prefersReducedMotion(): boolean {
 export function useSkyTraffic<T extends { id: number; durationMs: number }>(opts: {
     active: boolean;
     slots: number;
-    plan: (id: number, first: boolean) => T;
+    plan: (id: number, first: boolean, instant: boolean) => T;
     firstWaitMs: (slot: number) => number;
     waitMs: () => number;
+    /** Each change restarts the slots with an instant, un-staggered start (see the header). */
+    instantKey?: number;
 }): T[] {
-    const { active, slots, plan, firstWaitMs, waitMs } = opts;
+    const { active, slots, plan, firstWaitMs, waitMs, instantKey = 0 } = opts;
     const [travellers, setTravellers] = useState<T[]>([]);
+    // The instantKey the last (re)start served, so only a NEW key starts instantly. Consumed
+    // even while inactive: a request made with nothing to show must not fire much later,
+    // when the sky next turns on by itself.
+    const servedInstantKey = useRef(instantKey);
 
     useEffect(() => {
+        const instant = instantKey !== servedInstantKey.current;
+        servedInstantKey.current = instantKey;
         if (!active) return;
         // Every pending timeout, so the cleanup can cancel all of them — a slot always has
         // exactly one pending (its next spawn, or the end of its current crossing).
@@ -198,19 +212,19 @@ export function useSkyTraffic<T extends { id: number; durationMs: number }>(opts
         let nextId = 1;
 
         const cross = (first: boolean) => {
-            const traveller = plan(nextId++, first);
+            const traveller = plan(nextId++, first, first && instant);
             setTravellers((list) => [...list, traveller]);
             after(traveller.durationMs, () => {
                 setTravellers((list) => list.filter((other) => other.id !== traveller.id));
                 after(waitMs(), () => cross(false));
             });
         };
-        for (let slot = 0; slot < slots; slot++) after(firstWaitMs(slot), () => cross(true));
+        for (let slot = 0; slot < slots; slot++) after(instant ? 0 : firstWaitMs(slot), () => cross(true));
         return () => {
             timers.forEach(clearTimeout);
             setTravellers([]);
         };
-    }, [active, slots, plan, firstWaitMs, waitMs]);
+    }, [active, slots, plan, firstWaitMs, waitMs, instantKey]);
 
     return travellers;
 }

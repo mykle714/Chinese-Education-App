@@ -65,9 +65,8 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   "/community": lazy(() => import("../features/community/CommunityPage")),
   "/arena": lazy(() => import("../features/arena/ArenaPage")),
   "/lessons": lazy(() => import("../features/lessons/LessonsPage")),
-  "/friends/requests": lazy(() => import("../features/friends/IncomingRequestsPage")),
-  "/friends/sent": lazy(() => import("../features/friends/SentRequestsPage")),
-  "/friends/remove": lazy(() => import("../features/friends/RemoveFriendsPage")),
+  // No /friends/sent|requests|remove: since 2026-11-13 they are bodies the AccountSheet's
+  // Friends tab slides in under its latching keys (docs/FRIENDS_FEATURE.md § "The action keys").
   // Study Challenge (docs/STUDY_CHALLENGE.md § 1) — a fourth screen under the friends
   // drill-in. STATIC PATHS FIRST: "history", "new" and "review" would all be legal
   // values for the `:challengeId` segment below. React Router ranks a static segment
@@ -76,7 +75,6 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   "/friends/challenges": lazy(() => import("../features/studyChallenge/ChallengesPage")),
   "/friends/challenges/history": lazy(() => import("../features/studyChallenge/ChallengeHistoryPage")),
   "/friends/challenges/:challengeId": lazy(() => import("../features/studyChallenge/ChallengeDetailPage")),
-  "/users/:userId": lazy(() => import("../features/profile/UserProfilePage")),
   "/dictionary": lazy(() => import("../features/dictionary/DictionaryPage")),
   "/reader": lazy(() => import("../features/reader/ReaderPage")),
   "/flashcards/writing/notebook": lazy(() => import("../features/flashcards/writingNotebook/WritingNotebookPage")),
@@ -88,7 +86,7 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   "/settings/account": lazy(() => import("../pages/AccountSecurityPage")),
   "/font-lab": lazy(() => import("../pages/fontLab/FontLabPage")),
   "/login": lazy(() => import("../pages/LoginPage")),
-  "/register": lazy(() => import("../pages/RegisterPage")),
+  "/register": lazy(() => import("../pages/RegisterRedirect")),
   "*": lazy(() => import("../pages/NotFoundPage")),
 };
 

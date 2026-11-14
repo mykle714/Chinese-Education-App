@@ -13,7 +13,9 @@ import { planSidePath, prefersReducedMotion, rand, useAltitudeWander, useSkyTraf
  * in the sky together sit at close heights rather than at very different ones that
  * perspective then stacks into the same patch of screen.
  *
- * Every cloud ENTERS from off screen — none appears mid-sky when the clouds switch on.
+ * Every cloud ENTERS from off screen — none appears mid-sky when the clouds switch on —
+ * EXCEPT on a `fillRequest` (a weather tester pin tap): then every slot's opening cloud
+ * starts at once, already partway across (`PARKED_AT`), so the tap shows a full sky now.
  * Clouds are cloudy weather (towerWeather.ts → `weatherCloudCount`), the commonest kind, so
  * they arrive quietly: the slots' first drifts are staggered like any later one
  * (`firstWaitMs`), and the band fills over a minute or so rather than all at once.
@@ -27,7 +29,7 @@ import { planSidePath, prefersReducedMotion, rand, useAltitudeWander, useSkyTraf
  * A feature tester can also spawn a balloon on demand (`balloonRequest`, the Deck Tower's
  * BalloonSpawnChip): it flies outside the slots and whatever the weather, in
  * `sky.visibleBalloonBand`, so it is on screen even over a tower too short to reach the
- * real band.
+ * real band, and it starts partway across, so it is on screen at once.
  *
  * Under prefers-reduced-motion the clouds still show — a still cloud reads as a cloud —
  * but nothing is scheduled: one cloud per slot, parked partway across (`PARKED_AT`),
@@ -224,13 +226,24 @@ export function useCloudDrifts(opts: {
      * and whatever `active` says (DeckTowerPage → BalloonSpawnChip). 0 / unchanged: none.
      */
     balloonRequest?: number;
+    /**
+     * Feature testing: each CHANGE of this number fills the sky now — every slot's opening
+     * cloud starts at once, mid-sky (useSkyTraffic → `instantKey`) — instead of the clouds
+     * drifting in one by one (DeckTowerPage → the weather tester pins). 0 / unchanged: none.
+     */
+    fillRequest?: number;
 }): CloudDrift[] {
-    const { proj, active, sky, maxInSky = 3, balloonRequest = 0 } = opts;
+    const { proj, active, sky, maxInSky = 3, balloonRequest = 0, fillRequest = 0 } = opts;
     const reduced = prefersReducedMotion();
     const altitude = useAltitudeWander(ALTITUDE_WANDER);
-    // Moving clouds always start off screen (`parked` false), whatever useSkyTraffic's `first` says.
-    const plan = useCallback((id: number) => planDrift(id, false, proj, sky, altitude), [proj, sky, altitude]);
-    const drifting = useSkyTraffic({ active: active && !reduced, slots: maxInSky, plan, firstWaitMs, waitMs });
+    // Moving clouds start off screen, whatever useSkyTraffic's `first` says — unless this is
+    // an instant fill's opening crossing, which starts partway across (`parked` startT) and
+    // drifts on from there.
+    const plan = useCallback(
+        (id: number, _first: boolean, instant: boolean) => planDrift(id, instant, proj, sky, altitude),
+        [proj, sky, altitude]
+    );
+    const drifting = useSkyTraffic({ active: active && !reduced, slots: maxInSky, plan, firstWaitMs, waitMs, instantKey: fillRequest });
     // Reduced motion: one parked cloud per slot, planned once per activation.
     const parked = useMemo(
         () => (active && reduced ? Array.from({ length: maxInSky }, (_, i) => planDrift(i + 1, true, proj, sky, altitude)) : []),
@@ -242,9 +255,9 @@ export function useCloudDrifts(opts: {
 }
 
 /**
- * The tester-spawned balloons: one per change of `request`, each removed when its crossing
- * ends (or after FORCED_PARKED_MS when parked under reduced motion — a still balloon starting
- * off screen would never be seen, so it parks partway across like a reduced-motion cloud).
+ * The tester-spawned balloons: one per change of `request`, each starting partway across
+ * (on screen at once) and removed when its crossing ends (or after FORCED_PARKED_MS under
+ * reduced motion, where it stays still).
  */
 function useForcedBalloons(request: number, reduced: boolean, proj: Projector, sky: CloudSky, altitude: AltitudeWander): CloudDrift[] {
     const [balloons, setBalloons] = useState<CloudDrift[]>([]);
@@ -257,7 +270,10 @@ function useForcedBalloons(request: number, reduced: boolean, proj: Projector, s
     useEffect(() => {
         if (request === served.current) return;
         served.current = request;
-        const drift = planDrift(nextId.current++, reduced, proj, sky, altitude, true);
+        // Always parked partway across (2026-11-13: every tester control is instant), so the
+        // balloon is on screen the moment the chip is tapped instead of drifting in from off
+        // screen; with motion it then flies on from there.
+        const drift = planDrift(nextId.current++, true, proj, sky, altitude, true);
         setBalloons((list) => [...list, drift]);
         const t = setTimeout(() => {
             timers.current.delete(t);

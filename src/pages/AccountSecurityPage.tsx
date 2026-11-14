@@ -19,15 +19,21 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import { useSlideNavigate } from "../hooks/useSlideNavigate";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
+import AccountIdentitySection from "./account/AccountIdentitySection";
+import StepUpPanel from "./account/StepUpPanel";
 
 /**
  * Settings · account & security (`/settings/account`) — artboard 11b of the shelf
  * redesign (docs/SHELF_REDESIGN.md entry 11b).
  *
  * The WRITE-heavy half of settings, split off `/settings` so the read-heavy half
- * (theme, language, narration, display) is a page you can skim. Holds exactly two
- * sections: the three-field password form, and the red-boxed danger zone with its
- * password-confirmed delete dialog.
+ * (theme, language, narration, display) is a page you can skim. Holds three sections:
+ *   - "Your account" (AccountIdentitySection): username, name, email, phone, the last two
+ *     changed through step-up re-auth (docs/LOGIN_REWORK.md Q24);
+ *   - the three-field password form — only for an account that HAS a password (a phone
+ *     account never does, Q3);
+ *   - the red-boxed danger zone, whose delete dialog confirms with the password, or with
+ *     "confirm it's you" (StepUpPanel) for an account without one.
  *
  * Reached only from the chevron row at the foot of `SettingsPage`. It is a LEAF page
  * like its parent — down arrow, no footer — declared as such in
@@ -54,7 +60,10 @@ const revealAdornment = (shown: boolean, onToggle: () => void, label: string) =>
 function AccountSecurityPage() {
     usePageTitle("Account & security");
     const slideNavigate = useSlideNavigate();
-    const { changePassword, deleteAccount } = useAuth();
+    const { user, changePassword, deleteAccount } = useAuth();
+    // A phone-only account has no password (docs/LOGIN_REWORK.md Q3): no password form, and
+    // the delete dialog confirms through step-up instead.
+    const hasPassword = !!user?.hasPassword;
 
     // Password change form state
     const [currentPassword, setCurrentPassword] = useState("");
@@ -131,7 +140,7 @@ function AccountSecurityPage() {
         }
         setIsDeleting(true);
         try {
-            await deleteAccount(deletePassword);
+            await deleteAccount({ password: deletePassword });
             // Navigation to login is handled in the deleteAccount function
         } catch (err: unknown) {
             setDeleteError(err instanceof Error ? err.message : "Failed to delete account");
@@ -146,7 +155,11 @@ function AccountSecurityPage() {
             className="account-security-page"
         >
             <Box className="account-security-page__scroll" sx={{ flex: 1, overflowY: "auto" }}>
-                {/* ── Change password ────────────────────────────────────────────── */}
+                {/* ── Your account (username, name, email, phone) ─────────────────── */}
+                <AccountIdentitySection />
+
+                {/* ── Change password (accounts that have one) ───────────────────── */}
+                {hasPassword && (
                 <SettingsSection className="account-security-page__password-section" icon="lock" title="Change Password">
                     {passwordSuccess && (
                         <Alert className="account-security-page__password-success-alert" severity="success" sx={{ mt: 1.5 }}>
@@ -230,6 +243,7 @@ function AccountSecurityPage() {
                         </Button>
                     </Box>
                 </SettingsSection>
+                )}
 
                 {/* ── Danger zone ────────────────────────────────────────────────── */}
                 <SettingsSection
@@ -308,6 +322,24 @@ function AccountSecurityPage() {
                         </Alert>
                     )}
 
+                    {!hasPassword ? (
+                        // No password to type: confirm it's you, then delete with the step-up token.
+                        <Box className="account-security-page__dialog-step-up" sx={{ mt: 2 }}>
+                            <StepUpPanel
+                                onCancel={handleCloseDeleteDialog}
+                                onConfirmed={async (stepUpToken) => {
+                                    setIsDeleting(true);
+                                    try {
+                                        await deleteAccount({ stepUpToken });
+                                    } catch (err: unknown) {
+                                        setDeleteError(err instanceof Error ? err.message : "Failed to delete account");
+                                        setIsDeleting(false);
+                                    }
+                                }}
+                            />
+                        </Box>
+                    ) : (
+                    <>
                     <TextField
                         className="account-security-page__dialog-password-field"
                         autoFocus
@@ -347,6 +379,8 @@ function AccountSecurityPage() {
                             {isDeleting ? "Deleting..." : "Delete"}
                         </Button>
                     </Box>
+                    </>
+                    )}
                 </DialogContent>
             </Dialog>
         </LeafPage>

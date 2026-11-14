@@ -8,6 +8,7 @@ import { IUserLanguagesDAL } from '../dal/interfaces/IUserLanguagesDAL.js';
 import { ValidationError, NotFoundError, DuplicateError } from '../types/dal.js';
 import { VELOCITY_WINDOW_DAYS } from '../types/velocity.js';
 import { activeWorlds } from '../utils/masteryCompute.js';
+import { normalizeFriendCode, normalizeUsername, usernameProblem } from '../contracts/wire.js';
 import type {
   FriendSummary,
   FriendRequestSummary,
@@ -41,8 +42,8 @@ export interface UnfriendChallengeResolver {
  * writes no SQL and touches no Express types (docs/BACKEND_LAYERING.md §2).
  *
  * The rules, in one place:
- *   • You send a request BY USER ID — the app has no username, so the id pasted
- *     from a friend's Friends screen is the handle.
+ *   • You send a request by FRIEND CODE or USERNAME (a legacy UUID still works); the
+ *     server resolves which (resolveTarget, docs/LOGIN_REWORK.md Q20).
  *   • Crossing requests auto-accept. If B requests A while A's request to B is
  *     still pending, the honest outcome is "you are now friends", not a second
  *     pending row (which the pair index forbids anyway) and not an error the user
@@ -131,7 +132,7 @@ export class FriendsService {
       return {
         userId: profile.userId,
         name: profile.name,
-        email: profile.email,
+        username: profile.username,
         avatarIconId: profile.avatarIconId,
         language,
         velocity,
@@ -148,7 +149,7 @@ export class FriendsService {
     entries.sort((a, b) => {
       if (b.velocity !== a.velocity) return b.velocity - a.velocity;
       if (b.netMinutes !== a.netMinutes) return b.netMinutes - a.netMinutes;
-      return (a.name || a.email).localeCompare(b.name || b.email);
+      return (a.name || a.username).localeCompare(b.name || b.username);
     });
     entries.forEach((entry, index) => { entry.rank = index + 1; });
 
@@ -166,23 +167,61 @@ export class FriendsService {
   }
 
   /**
-   * Send a friend request to `targetUserId`.
+   * What the requester typed → the target's `users.id`. Three handles, tried in this order:
+   *   1. a full UUID (the pre-code handle; what a client built before migration 187 sends);
+   *   2. "@name" — a USERNAME, explicitly (migration 188, docs/LOGIN_REWORK.md Q20);
+   *   3. a FRIEND CODE (migration 187) when it has the code's shape AND someone holds it,
+   *      otherwise a USERNAME. An 8-letter username can look like a code ("abcdefgh"), so the
+   *      code is tried first and the username is the fallback, never the reverse.
+   * Validation happens before any query, so junk never reaches the DB. Throws NotFoundError
+   * when nothing matches — the same error for every handle kind.
+   */
+  private async resolveTarget(handle: unknown): Promise<string> {
+    if (typeof handle !== 'string' || !handle.trim()) throw new ValidationError('Enter a friend code or a username');
+    const trimmed = handle.trim();
+    if (UUID_RE.test(trimmed)) return trimmed.toLowerCase();
+
+    const asUsername = async (): Promise<string | null> => {
+      const username = normalizeUsername(trimmed);
+      if (usernameProblem(username)) return null;
+      return (await this.userDAL.findByUsername(username))?.id ?? null;
+    };
+
+    if (trimmed.startsWith('@')) {
+      const id = await asUsername();
+      if (!id) throw new NotFoundError('No account with that username');
+      return id.toLowerCase();
+    }
+    const code = normalizeFriendCode(trimmed);
+    // Neither a code's shape nor a username's: reject before any query.
+    if (!code && usernameProblem(normalizeUsername(trimmed))) {
+      throw new ValidationError('Enter a friend code like K7QM-3XRA, or a username');
+    }
+    if (code) {
+      const owner = await this.userDAL.findByFriendCode(code);
+      if (owner) return owner.id.toLowerCase();
+    }
+    const id = await asUsername();
+    if (id) return id.toLowerCase();
+    throw new NotFoundError('No account with that friend code or username');
+  }
+
+  /**
+   * Send a friend request to the account behind `targetHandle` (a friend code, a username, or
+   * a legacy UUID — resolveTarget).
    *
    * Returns `auto-accepted` (with the new friend) when the target had already
    * requested the caller — see the crossing-requests rule above.
    */
-  async sendRequest(userId: string, targetUserId: unknown): Promise<SendFriendRequestResponse> {
-    if (typeof targetUserId !== 'string' || !UUID_RE.test(targetUserId.trim())) {
-      throw new ValidationError('Enter a valid user ID');
-    }
-    const targetId = targetUserId.trim().toLowerCase();
+  async sendRequest(userId: string, targetHandle: unknown): Promise<SendFriendRequestResponse> {
+    const targetId = await this.resolveTarget(targetHandle);
 
     if (targetId === userId.toLowerCase()) {
       throw new ValidationError('You cannot send a friend request to yourself');
     }
 
     const target = await this.userDAL.findById(targetId);
-    if (!target) throw new NotFoundError('No account with that user ID');
+    if (!target) throw new NotFoundError('No account with that friend code or username');
 
     // One probe covers all three "already connected" cases, in either direction.
     const existing = await this.friendshipDAL.findBetween(userId, targetId);
@@ -199,7 +238,7 @@ export class FriendsService {
           friend: {
             userId: target.id,
             name: target.name ?? null,
-            email: target.email,
+            username: target.username,
             avatarIconId: target.avatarIconId ?? null,
             friendsSince: accepted?.respondedAt ?? null,
           },
@@ -216,7 +255,7 @@ export class FriendsService {
         direction: 'outgoing',
         userId: target.id,
         name: target.name ?? null,
-        email: target.email,
+        username: target.username,
         avatarIconId: target.avatarIconId ?? null,
         requestedAt: created.createdAt,
       },
@@ -244,7 +283,7 @@ export class FriendsService {
     return {
       userId: accepted.requesterId,
       name: other?.name ?? null,
-      email: other?.email ?? '',
+      username: other?.username ?? '',
       avatarIconId: other?.avatarIconId ?? null,
       friendsSince: accepted.respondedAt,
     };

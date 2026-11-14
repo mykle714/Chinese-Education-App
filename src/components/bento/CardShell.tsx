@@ -2,7 +2,7 @@ import { type ReactNode } from "react";
 import { Box, type BoxProps } from "@mui/material";
 import Icon from "../Icon";
 import { COLORS } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../theme/fonts";
 import { SHADOW } from "../../theme/shadows";
 
 /**
@@ -31,6 +31,9 @@ export const CARD_SHELL = {
     /** Pin inset from the top and side edges. */
     pinTop: 12,
     pinSide: 13,
+    /** An ALERT pin's offset: negative, so the badge floats over the tile's corner the way
+     *  a classic app-icon notification badge does (2026-11-13). */
+    alertPinOffset: -7,
 } as const;
 
 /** Title type shared by the family's default-size members (BentoTile `base`/`low`
@@ -97,7 +100,11 @@ export const CardShell: React.FC<CardShellProps> = ({
                     color: "inherit",
                     borderRadius: `${CARD_SHELL.radius}px`,
                     padding: `${CARD_SHELL.padding}px`,
-                    overflow: "hidden",
+                    // Clips stray content to the rounded box — EXCEPT under an alert pin,
+                    // which floats over the corner and would be cut off. The ghost glyph,
+                    // the one thing that deliberately bleeds, clips in its own layer below
+                    // either way, so lifting this does not let it escape.
+                    overflow: alertPin ? "visible" : "hidden",
                     display: "flex",
                     flexDirection: "column",
                     background,
@@ -107,13 +114,21 @@ export const CardShell: React.FC<CardShellProps> = ({
             ]}
         >
             {ghost && (
-                <Icon
-                    name={ghost.name}
-                    size={ghost.size}
-                    color={COLORS.onSurface}
-                    className={ghost.className}
-                    sx={{ position: "absolute", top: ghost.top, right: CARD_SHELL.ghostRight, opacity: CARD_SHELL.ghostOpacity, pointerEvents: "none" }}
-                />
+                // Clip layer: the ghost bleeds off the top-right and must be cut at the
+                // tile's rounded edge even when the shell itself does not clip (alert pin).
+                <Box
+                    className="card-shell__ghost-clip"
+                    aria-hidden
+                    sx={{ position: "absolute", inset: 0, borderRadius: "inherit", overflow: "hidden", pointerEvents: "none" }}
+                >
+                    <Icon
+                        name={ghost.name}
+                        size={ghost.size}
+                        color={COLORS.onSurface}
+                        className={ghost.className}
+                        sx={{ position: "absolute", top: ghost.top, right: CARD_SHELL.ghostRight, opacity: CARD_SHELL.ghostOpacity }}
+                    />
+                </Box>
             )}
             {pin && (
                 <Box
@@ -122,18 +137,22 @@ export const CardShell: React.FC<CardShellProps> = ({
                         ? { position: "absolute", top: CARD_SHELL.pinTop, [side]: CARD_SHELL.pinSide, zIndex: 1, display: "flex" }
                         : {
                             position: "absolute",
-                            top: CARD_SHELL.pinTop,
-                            [side]: CARD_SHELL.pinSide,
+                            top: alertPin ? CARD_SHELL.alertPinOffset : CARD_SHELL.pinTop,
+                            [side]: alertPin ? CARD_SHELL.alertPinOffset : CARD_SHELL.pinSide,
                             zIndex: 1,
-                            fontFamily: FONTS.mono,
+                            ...DATA_TYPE,
                             fontSize: 10,
                             // An alert pin is a solid chip and needs a proper minimum size:
                             // a one-digit count in a pill sized by its padding renders as an
                             // oval, not the circle a notification badge is read as.
+                            // The classic notification badge: `COLORS.notificationRed` under
+                            // white, floating over the corner (offset above). It was
+                            // `dangerInk`, which the v2 palette turned black.
                             ...(alertPin
                                 ? {
                                     color: COLORS.white,
-                                    background: COLORS.dangerInk,
+                                    background: COLORS.notificationRed,
+                                    boxShadow: SHADOW.rest,
                                     fontWeight: 600,
                                     minWidth: 20,
                                     textAlign: "center",

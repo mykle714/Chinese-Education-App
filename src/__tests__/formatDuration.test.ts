@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCooldownRemaining, formatMinutesAsDuration } from "../utils/formatDuration";
+import { formatCooldownRemaining, formatMinutesAsDuration, minutesAsDurationParts } from "../utils/formatDuration";
 
 /**
  * Tests for the shared minute-points duration formatter (src/utils/formatDuration.ts).
@@ -37,6 +37,28 @@ describe("formatMinutesAsDuration", () => {
             .toBe("7w 1d 2h 3m");
         // Under a week, the week unit is absent rather than printed as 0w.
         expect(formatMinutesAsDuration(1440, { weeks: true })).toBe("1d 0h 0m");
+    });
+
+    it("breaks out flat 365-day years when asked", () => {
+        const YEAR = 365 * 1440;
+        // Full y-w-d-h-m ladder (the Collected-minutes card): 1y 3w 2d 4h 5m.
+        expect(formatMinutesAsDuration(YEAR + 3 * 10080 + 2 * 1440 + 4 * 60 + 5, { weeks: true, years: true }))
+            .toBe("1y 3w 2d 4h 5m");
+        // Middle zeros are kept below a year, including the zero week.
+        expect(formatMinutesAsDuration(YEAR + 5, { weeks: true, years: true })).toBe("1y 0w 0d 0h 5m");
+        // Years without weeks: a disabled unit never prints, not even as a middle zero.
+        expect(formatMinutesAsDuration(YEAR + 3 * 1440, { years: true })).toBe("1y 3d 0h 0m");
+        // Under a year the year unit is absent; years off leaves days uncollapsed.
+        expect(formatMinutesAsDuration(86, { weeks: true, years: true })).toBe("1h 26m");
+        expect(formatMinutesAsDuration(YEAR)).toBe("365d 0h 0m");
+    });
+
+    it("exposes the same breakdown as structured parts", () => {
+        expect(minutesAsDurationParts(86)).toEqual([
+            { value: 1, unit: "h" },
+            { value: 26, unit: "m" },
+        ]);
+        expect(minutesAsDurationParts(-1)).toEqual([{ value: 0, unit: "m" }]);
     });
 
     it("renders a nonsense balance as 0m rather than NaN", () => {

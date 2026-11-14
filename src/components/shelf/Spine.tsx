@@ -1,9 +1,9 @@
 import { type ReactNode } from "react";
 import { Box } from "@mui/material";
-import { alpha, styled } from "@mui/material/styles";
+import { styled } from "@mui/material/styles";
 import Icon from "../Icon";
 import { COLORS } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../theme/fonts";
 import { SPINE_SIZES, SPINE_VARIANTS, spineScale, type SpineVariant } from "./spineGeometry";
 import { SHADOW } from "../../theme/shadows";
 
@@ -12,10 +12,13 @@ import { SHADOW } from "../../theme/shadows";
  * (docs/SHELF_REDESIGN.md § A3). It replaces `DeckTile` outright (decision D9);
  * there is no coexistence period and no second "set of cards" visual.
  *
- * A spine is a book seen edge-on: a mid-tier body, a highlight down its right side, a
- * dark strap down its left (`.sp::after` — that strap is what sells "book"; without
- * it the shape reads as a rounded rectangle), a title at the top and an optional
- * mono count at the foot. Its HEIGHT carries how big the set is, in three bands —
+ * A spine is a ROUNDED BAR: a mid-tier body with the same 11px radius on all four
+ * corners, a soft drop shadow, a white highlight down its right side, a title at the top
+ * and an optional mono count at the foot. (Until 2026-11-13 it was drawn as a book seen
+ * edge-on — 11/11/4/4 corners and a dark strap down its left edge (`.sp::after`). The
+ * user chose the bar: inside the then-boxed `LibraryShelfPanel` the book cues read as
+ * noise next to the white card, and the band row reads as a bar chart. The box went on
+ * 2026-11-14; the bar stayed. The right-edge highlight was kept.) Its HEIGHT carries how big the set is, in three bands —
  * see `spineHeight` in ./spineGeometry.
  *
  * Purely presentational. It knows a label, a colour, an optional count and some
@@ -32,6 +35,20 @@ import { SHADOW } from "../../theme/shadows";
 export interface SpineProps {
     /** The set's name — `.nm`, at the top of the spine. */
     label: string;
+    /**
+     * FIT-TO-LINE name, for a caller that knows its label may be too wide to sit on one
+     * line at `nameFontSize`: the label's measured width in px at `nameFontSize`
+     * (natural scale), plus whatever cushion the caller wants. When set, the name:
+     *   1. gets a line widened to the RIGHT — `namePadRightCompact` (2) instead of
+     *      `padX` (9); the left inset and the foot row are unchanged, so the name starts
+     *      where its neighbours' do; and
+     *   2. is set at the LARGEST size that fits that line, capped at `nameFontSize` —
+     *      `min(nameFontSize, line × nameFontSize / nameFitWidth)`, in CSS, so it tracks
+     *      a container-sized spine without measuring anything in JS.
+     * DeckBuckets passes it for "Comfortable" only (user, 2026-11-13: the names that fit
+     * keep the design's size; 2026-11-14: as large as the widened spine allows).
+     */
+    nameFitWidth?: number;
     /**
      * The set's size, rendered as the mono `.k` numeral at the foot.
      *
@@ -64,6 +81,14 @@ export interface SpineProps {
      * the ⚠️ on `SPINE_SIZES`; the container must be an ANCESTOR.)
      */
     width?: number | string;
+    /**
+     * The width interior sizes (padding, type, glyph) are scaled against, when it
+     * differs from `width`. Defaults to `width`. A row that lets its spines grow WIDER
+     * than the natural size but wants the extra width spent on label room rather than
+     * bigger type passes `min(<natural>px, …)` here (DeckBuckets, 2026-11-14). Same
+     * number-or-CSS-length forms as `width`.
+     */
+    interiorWidth?: number | string;
     height?: number;
     /** `.pin` — a mono badge on a translucent white chip, top-right. */
     pin?: ReactNode;
@@ -99,11 +124,13 @@ const SpineRoot = styled(Box, {
     shouldForwardProp: (prop) => prop !== "color" && prop !== "tappable",
 })<{ color: string; tappable: boolean }>(({ color, tappable }) => ({
     position: "relative",
-    borderRadius: "11px 11px 4px 4px",
+    // One radius on all four corners: the bar is a plain rounded rectangle, not a book
+    // standing on its foot (see the component doc for the 2026-11-13 change).
+    borderRadius: SPINE_SIZES.cornerRadius,
     background: color,
-    // Two shadows in one: an outer drop shadow that lifts the spine off the board,
-    // and a wide INSET white highlight on the right edge that rounds the body so it
-    // reads as a cylinder rather than a flat swatch.
+    // Two shadows in one: an outer drop shadow that lifts the spine off the row, and a
+    // wide INSET white highlight on the right edge that gives the bar a soft roundness
+    // rather than a flat swatch.
     boxShadow: SHADOW.spine,
     display: "flex",
     flexDirection: "column",
@@ -120,24 +147,16 @@ const SpineRoot = styled(Box, {
     animation: "cardPopIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) backwards",
     transition: "transform 0.12s ease-out",
     ...(tappable && { "&:active": { transform: "scale(0.96)" } }),
-    // `.sp::after` — the dark strap down the left edge.
-    "&::after": {
-        content: '""',
-        position: "absolute",
-        left: 0,
-        top: 0,
-        bottom: 0,
-        width: SPINE_SIZES.strapWidth,
-        background: alpha(COLORS.onSurface, 0.09),
-    },
 }));
 
 const Spine: React.FC<SpineProps> = ({
     label,
+    nameFitWidth,
     count,
     variant = "base",
     color,
     width,
+    interiorWidth,
     height,
     pin,
     caption,
@@ -150,19 +169,33 @@ const Spine: React.FC<SpineProps> = ({
 }) => {
     const spec = SPINE_VARIANTS[variant];
     const renderedWidth = width ?? spec.width;
+    // What the interior scales against: usually the rendered width, but a caller may
+    // decouple the two (`interiorWidth`) so a widened spine keeps its type size.
+    const scaleWidth = interiorWidth ?? renderedWidth;
     // Interior sizes are authored at the VARIANT'S natural width, not a global one.
     // A numeric width scales them by plain arithmetic; a CSS-length width scales them
     // in CSS (`calc(<width> * ratio)`), so they track a container-sized spine without
     // the component ever knowing its pixel width.
     const px = (n: number): number | string =>
-        typeof renderedWidth === "number"
-            ? n * spineScale(renderedWidth, spec.width)
-            : `calc(${renderedWidth} * ${n / spec.width})`;
+        typeof scaleWidth === "number"
+            ? n * spineScale(scaleWidth, spec.width)
+            : `calc(${scaleWidth} * ${n / spec.width})`;
     // `px()` for use inside a shorthand string, where a bare number needs its unit.
     const len = (n: number) => {
         const value = px(n);
         return typeof value === "number" ? `${value}px` : value;
     };
+    const fitsName = nameFitWidth !== undefined;
+    // The fit-to-line name's font size (see `nameFitWidth`). Its line is the spine's
+    // full rendered width minus the left `padX` and the narrowed right inset; the font
+    // is that line scaled by nameFontSize / nameFitWidth, never above nameFontSize.
+    const nameFontSize = fitsName
+        ? `min(${len(SPINE_SIZES.nameFontSize)}, calc((${
+              typeof renderedWidth === "number" ? `${renderedWidth}px` : renderedWidth
+          } - ${len(SPINE_SIZES.padX + SPINE_SIZES.namePadRightCompact)}) * ${
+              SPINE_SIZES.nameFontSize / nameFitWidth
+          }))`
+        : px(SPINE_SIZES.nameFontSize);
     const isVol = variant === "vol";
 
     return (
@@ -240,7 +273,7 @@ const Spine: React.FC<SpineProps> = ({
                                 left: px(SPINE_SIZES.volMetaInset),
                                 right: px(SPINE_SIZES.volMetaInset),
                                 bottom: px(SPINE_SIZES.volMetaInset),
-                                fontFamily: FONTS.mono,
+                                ...DATA_TYPE,
                                 fontSize: px(SPINE_SIZES.volMetaFontSize),
                                 lineHeight: SPINE_SIZES.volMetaLineHeight,
                                 color: COLORS.iconColor,
@@ -260,7 +293,14 @@ const Spine: React.FC<SpineProps> = ({
                         className="shelf-spine__name"
                         sx={{
                             fontFamily: FONTS.sans,
-                            fontSize: px(SPINE_SIZES.nameFontSize),
+                            fontSize: nameFontSize,
+                            // A fit-to-line name pulls out into the spine's RIGHT padding
+                            // (padX → namePadRightCompact) so its line is wider. The left
+                            // edge stays on the shared inset, and the root's padding — so
+                            // the foot row — is untouched.
+                            ...(fitsName && {
+                                mr: `calc(-1 * ${len(SPINE_SIZES.padX - SPINE_SIZES.namePadRightCompact)})`,
+                            }),
                             fontWeight: 700,
                             // The design says -0.005em. Tightened to -0.01em because at
                             // the design's value "Unfamiliar" measures 56.02px into the
@@ -272,8 +312,9 @@ const Spine: React.FC<SpineProps> = ({
                             color: COLORS.onSurface,
                             position: "relative",
                             zIndex: 1,
-                            // A set's name is often ONE word wider than the spine's 56px
-                            // of content ("Unfamiliar", "Comfortable"), so it has to
+                            // A set's name can be ONE word wider than the spine's 56px of
+                            // content ("Comfortable" at 11.5px — DeckBuckets passes
+                            // `nameFitWidth` for it), so a label still has to be able to
                             // break inside the word. The design's `overflow-wrap:
                             // anywhere` alone breaks at whatever character runs out of
                             // room — "Unfamilia / r" — so `hyphens: auto` goes first: the
@@ -310,7 +351,7 @@ const Spine: React.FC<SpineProps> = ({
                             <Box
                                 className="shelf-spine__count"
                                 sx={{
-                                    fontFamily: FONTS.mono,
+                                    ...DATA_TYPE,
                                     fontSize: px(SPINE_SIZES.countFontSize),
                                     color: COLORS.iconColor,
                                     minWidth: 0,
@@ -341,7 +382,7 @@ const Spine: React.FC<SpineProps> = ({
                         position: "absolute",
                         right: px(SPINE_SIZES.pinInset),
                         top: px(SPINE_SIZES.pinInset),
-                        fontFamily: FONTS.mono,
+                        ...DATA_TYPE,
                         fontSize: px(SPINE_SIZES.pinFontSize),
                         color: COLORS.onSurface,
                         background: COLORS.frost,
@@ -362,7 +403,7 @@ const Spine: React.FC<SpineProps> = ({
                         left: px(SPINE_SIZES.captionInset),
                         right: px(SPINE_SIZES.captionInset),
                         bottom: px(SPINE_SIZES.captionInset),
-                        fontFamily: FONTS.mono,
+                        ...DATA_TYPE,
                         fontSize: px(SPINE_SIZES.captionFontSize),
                         color: COLORS.textSecondary,
                         zIndex: 1,

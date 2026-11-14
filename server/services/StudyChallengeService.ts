@@ -90,8 +90,8 @@ function completedRounds(
 export interface ChallengeUserLookup {
   findById(id: string): Promise<{
     id: string;
-    name?: string;
-    email?: string;
+    name?: string | null;
+    username?: string;
     timezone?: string;
     selectedLanguage?: string;
     avatarIconId?: string | null;
@@ -269,7 +269,7 @@ export class StudyChallengeService {
       const opponent: ChallengeOpponent = {
         userId: friend.userId,
         name: friend.name,
-        email: friend.email,
+        username: friend.username,
         avatarIconId: friend.avatarIconId,
       };
 
@@ -1702,7 +1702,7 @@ export class StudyChallengeService {
     return {
       userId,
       name: user?.name ?? null,
-      email: user?.email ?? '',
+      username: user?.username ?? '',
       avatarIconId: user?.avatarIconId ?? null,
     };
   }

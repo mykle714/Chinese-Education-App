@@ -5,7 +5,7 @@ import { CJK_FONT_CATALOG, loadCandidate, measureHanAdvance, type CjkFontOption 
 import { cjkFontStack } from "../../theme/cjkFontOptions";
 import { readPinned, writePinned } from "./pinned";
 import { COLORS } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../theme/fonts";
 import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
 
 /**
@@ -288,7 +288,7 @@ const CjkLab: React.FC<{ tabs: React.ReactNode }> = ({ tabs }) => {
                     )}
                     <Typography
                         className="font-lab__picker-count"
-                        sx={{ fontFamily: FONTS.mono, fontSize: SIZE.micro, color: COLORS.textFaint }}
+                        sx={{ ...DATA_TYPE, fontSize: SIZE.micro, color: COLORS.textFaint }}
                     >
                         {selectedIds.length} column{selectedIds.length === 1 ? "" : "s"}
                     </Typography>
@@ -328,7 +328,7 @@ const CjkLab: React.FC<{ tabs: React.ReactNode }> = ({ tabs }) => {
                                 <Cell label className="font-lab__row-label">
                                     <Typography
                                         sx={{
-                                            fontFamily: FONTS.mono,
+                                            ...DATA_TYPE,
                                             fontSize: SIZE.micro,
                                             letterSpacing: TRACKING.caps,
                                             textTransform: "uppercase",
@@ -511,7 +511,7 @@ const Tag: React.FC<{ children: React.ReactNode; tone?: string }> = ({ children,
         component="span"
         className="font-lab__tag"
         sx={{
-            fontFamily: FONTS.mono,
+            ...DATA_TYPE,
             fontSize: SIZE.micro,
             letterSpacing: TRACKING.wide,
             color: COLORS.iconColor,

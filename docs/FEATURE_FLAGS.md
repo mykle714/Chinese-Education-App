@@ -64,7 +64,6 @@ Referenced by: `server/contracts/featureFlags.ts` (the file's own header points 
 | **Leak** | `server/controllers/OnDeckVocabController.ts` → `resolveChallengeRound` returns `null` early. One guard covers **both** callers (`gamePool` and `wordSearchGrid`), since the challenge board is the only thing either does differently. Deliberately a silent fall-through to an ordinary pool rather than the 400/404 an unplayable challenge gets — a bookmarked `?challengeId=` URL should still yield a casual board |
 | Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes the three `/friends/challenges*` paths |
 | Entry points | `src/features/friends/FriendsBody.tsx` — the Challenges `BentoTile` **and** its `fetchChallengeBadge` call (skipped, not caught: the endpoint is unmounted, so the request would 404 to learn `0`) |
-| | `src/features/profile/UserProfilePage.tsx` → `renderBlockToggle` returns `null` |
 
 **NOT gated:** the hourly `database/cron/expire-study-challenges.sql` pass keeps running, so
 a challenge that was already live still resolves or expires on schedule instead of hanging
@@ -80,7 +79,7 @@ Gates **sharing**, not **authoring**.
 | **Leak** | `server/routes/userRoutes.ts` → `GET /api/users/:userId/designs` is registered inside an `isFeatureEnabled('community')` block. It serves the same designs from **outside** `communityRoutes.ts`, so not mounting that router would otherwise leave it live |
 | Routes | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` removes `/community` |
 | Entry points | `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` — the Community row of the footer's Menu popover, the **only** navigational entry |
-| | `src/features/profile/UserProfilePage.tsx` → `ProfileDesignGrid` (another account's designs, with its own vote flow) |
+| | `src/features/profile/ProfileDesignGrid.tsx` (another account's designs, with its own vote flow) — **unreachable** since its only host, the profile page, was deleted 2026-11-13 |
 | | `src/data/tips.ts` — the Community tip (`feature: "community"`), which would otherwise point at a 404 |
 
 **NOT gated:** designing your own cards. The card icon editor, `CardIconLayer`,

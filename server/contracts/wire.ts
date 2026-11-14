@@ -754,6 +754,43 @@ export const FLASHCARD_CATEGORIES: readonly FlashcardCategory[] = [
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Usernames (migration 188, docs/LOGIN_REWORK.md Q21): 3–20 characters of a–z, 0–9 and `_`,
+ * starting with a letter, stored lowercase, unique across all users, changeable at any time.
+ * The SAME shape is the `chk_users_username_shape` CHECK in migration 188; change both.
+ */
+export const USERNAME_PATTERN = /^[a-z][a-z0-9_]{2,19}$/;
+export const USERNAME_MIN_LENGTH = 3;
+export const USERNAME_MAX_LENGTH = 20;
+
+/**
+ * Handles nobody may take. Migration 188's backfill skips the same list (keep the two in
+ * step); a stored name that matches a later addition here is left alone.
+ */
+export const RESERVED_USERNAMES: readonly string[] = [
+  'admin', 'administrator', 'support', 'help', 'root', 'system', 'moderator', 'mod', 'staff',
+  'official', 'api', 'null', 'undefined', 'me', 'you', 'everyone',
+];
+
+/** What a user typed → the stored form: trimmed, a leading "@" dropped, lowercased. */
+export function normalizeUsername(raw: string): string {
+  return raw.trim().replace(/^@/, '').toLowerCase();
+}
+
+/**
+ * Why a (normalized) username is not allowed, or null when it is. Uniqueness is checked by
+ * the server against the database, not here. Shared so the client can explain a rejection
+ * before the round-trip.
+ */
+export function usernameProblem(username: string): string | null {
+  if (username.length < USERNAME_MIN_LENGTH) return `At least ${USERNAME_MIN_LENGTH} characters`;
+  if (username.length > USERNAME_MAX_LENGTH) return `At most ${USERNAME_MAX_LENGTH} characters`;
+  if (!/^[a-z]/.test(username)) return 'Start with a letter';
+  if (!USERNAME_PATTERN.test(username)) return 'Only letters, numbers and _';
+  if (RESERVED_USERNAMES.includes(username)) return 'That username is reserved';
+  return null;
+}
+
+/**
  * The user shape as it crosses the wire — i.e. everything EXCEPT the password hash.
  *
  * This replaces three divergent declarations (server `User`, `src/types.ts` `User`,
@@ -764,11 +801,39 @@ export const FLASHCARD_CATEGORIES: readonly FlashcardCategory[] = [
 export interface UserProfile {
   /** uniqueidentifier in SQL. */
   id: string;
-  email: string;
-  name: string;
+  /**
+   * The account's email, lowercase. Null for a phone-only account (migration 188). PRIVATE:
+   * shown only to the account itself, never in a payload about another user — those carry
+   * `username` (docs/LOGIN_REWORK.md Q20).
+   */
+  email: string | null;
+  /** Optional display name (migration 188 made it nullable, Q19). */
+  name: string | null;
+  /**
+   * The public handle (migration 188): unique, lowercase, `USERNAME_PATTERN`, changeable at
+   * any time. What other users see and what add-friend accepts (docs/LOGIN_REWORK.md Q20–Q21).
+   */
+  username: string;
+  /** E.164 phone number, or null. PRIVATE, like `email`. */
+  phone?: string | null;
+  /** ISO timestamp the email was verified (migration 188); null when unverified or absent. */
+  emailVerifiedAt?: string | null;
+  /** ISO timestamp the phone was verified (migration 188). */
+  phoneVerifiedAt?: string | null;
+  /**
+   * Whether the account has a password (an email account does; a phone-only account never
+   * does). Lets settings offer "change password" only where there is one. Derived, not a
+   * column.
+   */
+  hasPassword?: boolean;
+  /**
+   * The account's friend code (migration 187) — 8 symbols from FRIEND_CODE_ALPHABET, stored
+   * and sent WITHOUT the hyphen; display it through `formatFriendCode`. Shown to the account
+   * itself on the Friends tab and typed by others to add it. Optional only because a row
+   * read by a narrow SELECT may omit it; every `users` row has one (NOT NULL).
+   */
+  friendCode?: string;
   selectedLanguage?: Language;
-  /** Whether the user appears on the public leaderboard. */
-  isPublic?: boolean;
   /**
    * May download/validate dictionary entries (migration 104, docs/DATA_VALIDATION_SYSTEM.md).
    * DATA VALIDATION only — feature-testing tools ride `isFeatureTester`.
@@ -823,6 +888,34 @@ export interface UserProfile {
  */
 export const USER_GENDERS = ['male', 'female'] as const;
 export type UserGender = typeof USER_GENDERS[number];
+
+// ─── Friend codes (migration 187, docs/FRIENDS_FEATURE.md § "Friend codes") ───────────
+
+/**
+ * The 30 symbols a friend code is drawn from: digits and capitals minus 0/O, 1/I/L (pairs
+ * that are confusable read aloud or handwritten) and U. MUST match the alphabet in
+ * database/migrations/187-users-friend-code.sql → `generate_friend_code`, and its CHECK.
+ */
+export const FRIEND_CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTVWXYZ';
+export const FRIEND_CODE_LENGTH = 8;
+
+/** "K7QM3XRA" → "K7QM-3XRA". Anything not 8 long is returned unchanged. */
+export function formatFriendCode(code: string): string {
+  return code.length === FRIEND_CODE_LENGTH ? `${code.slice(0, 4)}-${code.slice(4)}` : code;
+}
+
+/**
+ * What a person typed → the stored form, or null if it cannot be a friend code. Case,
+ * spaces and hyphens are ignored. A symbol outside the alphabet (0, O, 1, I, L, U) is
+ * rejected rather than guessed at: both halves of each look-alike pair are excluded, so
+ * there is nothing unambiguous to fold it onto. Used by FriendsService.sendRequest.
+ */
+export function normalizeFriendCode(raw: string): string | null {
+  const cleaned = raw.toUpperCase().replace(/[\s-]/g, '');
+  if (cleaned.length !== FRIEND_CODE_LENGTH) return null;
+  for (const ch of cleaned) if (!FRIEND_CODE_ALPHABET.includes(ch)) return null;
+  return cleaned;
+}
 
 /** The shape of a `YYYY-MM-DD` calendar date — `users."birthDate"` on the wire. */
 export const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -2575,7 +2668,7 @@ export function challengeGamesForLanguages(
 
 /**
  * The weather the Deck Tower's sky draws, folded down from Open-Meteo's WMO
- * weather codes (server/services/WeatherService.ts → `weatherFromWmoCode`).
+ * weather codes (server/contracts/weatherCodes.ts → `weatherFromWmoCode`).
  * Purely aesthetic: no game or study rule may read it.
  *
  *   clear    — sun / clear night; no effect
@@ -2598,8 +2691,8 @@ export interface WeatherNow {
   /**
    * The raw WMO weather code `kind` was folded from, kept for surfaces that need finer
    * distinctions than the particle families — docs/TOWER_WEATHER_SKY.md picks the sky's
-   * hue per code (partly cloudy vs overcast, sleet vs rain). A tester pin carries a
-   * representative code for its kind.
+   * hue per code (partly cloudy vs overcast, sleet vs rain). A tester pin IS a code
+   * (src/features/deckTower/towerWeather.ts → `WEATHER_PINS`).
    */
   wmoCode: number;
   /** Cloud cover, 0–1, or null when the provider omitted it (and on tester pins). */

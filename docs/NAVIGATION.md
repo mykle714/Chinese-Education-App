@@ -50,7 +50,7 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    | Lights | Routes |
    | --- | --- |
    | `deck` | `/`, `/flashcards/card/:id`, `/discover/sort/:language` |
-   | `menu` | `/community`, `/friends/requests`, `/friends/sent`, `/friends/remove`, `/friends/challenges*`, `/users/:userId`, `/reader` |
+   | `menu` | `/community`, `/friends/challenges*`, `/reader` |
    | `arena` | `/arena` |
    | `dictionary` | `/dictionary` |
 
@@ -96,7 +96,7 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
      Tower's card-stock style, matching the slab footer ([DECK_TOWER.md](./DECK_TOWER.md)
      § Footer). A `cardFace` card on a 6px `cardWall` lip with a down-right `10px 16px`
      cast shadow, radius 22. Rows are 52px keycaps: the row for the page on screen (the
-     most specific match, so `/friends/sent` lights Friends) and any pressed row wear the
+     most specific match, so `/friends/challenges` lights Friends) and any pressed row wear the
      slab's active-tab keycap (`cardBeige` + 3px inset `cardWall` lip). Each row leads with
      a 34px chip in the destination's ramp hue (`mid` face, `mark` lip, filled ink icon).
      Card colours read `tier2Var(...)` like the slab, so on a Tier 2 page they turn slate
@@ -124,8 +124,7 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    - Menu destinations → **back one history entry**, i.e. to the page the Menu popover
      was opened over, or `/` on a cold deep link (`src/utils/navigateBack.ts` →
      `navigateBackOr(navigate, "/")`): `/community`, `/reader` (node); `/tester-dashboard` (leaf).
-   - Friends drill-ins (`/friends/requests`, `/friends/sent`, `/friends/remove`,
-     `/friends/challenges`), opened from the AccountSheet's Friends tab → back one history
+   - Friends drill-in (`/friends/challenges`), opened from the AccountSheet's Friends tab → back one history
      entry (`navigateBackOr(navigate, "/")`), landing on the page the sheet was over with
      the sheet closed. (They used to `slideNavigate("/friends")`.)
    - Deck (td) drill-ins → back to `/`: Card Detail (`/flashcards/card/:id`, the
@@ -159,11 +158,12 @@ became a sheet (2026-10-09) they are:
 
 `Layout.tsx` has two modes:
 - Frame routes (`shell: "frame"` in `src/routes/routeMeta.ts`, which replaced the old
-  `MOBILE_DEMO_PATHS` array; includes `/`) → wrapped in `MobileDemoFrame` (full-bleed on mobile, centered phone card on desktop).
-- Everything else (auth pages, etc.) → full-height, no chrome; each owns its
+  `MOBILE_DEMO_PATHS` array; includes `/`, and `/login` + `/register` since 2026-11-14) → wrapped in `MobileDemoFrame` (full-bleed on mobile, centered phone card on desktop).
+- Everything else (the font lab, 404) → full-height, no chrome; each owns its
   `PageHeader`. (Reader / Settings / Tester Dashboard render inside
   the frame as leaf pages; both card-detail cdps render inside the frame as node pages;
   Dictionary is a footer tab.)
+- Both modes mount a `BootCoverSlot` (the app-opening cover, [LOGIN_REWORK.md](./LOGIN_REWORK.md) § 1).
 
 ## Tester Dashboard
 
@@ -186,8 +186,8 @@ learners, so it is gated on `users.isFeatureTester` (migration 178 — it rode
   goes back one history entry (`navigateBackOr`, else `/`).
 
 The route (`src/routes/routeMeta.ts`, `/tester-dashboard`) is `access: "any"` on
-purpose: a feature tester may be a public account, and the generic `isPublic` redirect
-must not pre-empt the role gate. For the personal widgets this is a **UX gate, not a
+purpose: the role gate lives in the page (the generic route levels are only `open` / `any`
+since the `account` level went with `isPublic`, [LOGIN_REWORK.md](./LOGIN_REWORK.md) Q7). For the personal widgets this is a **UX gate, not a
 security boundary** — they render the caller's own minute-point data from user-scoped
 endpoints.
 

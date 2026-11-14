@@ -22,12 +22,17 @@ import { LEADING, SIZE, WEIGHT } from "../../theme/scale";
  * `9 = 4 U→T + 3 T→C + 2 C→M`. v2 draws it instead: each boundary is a U-arrow from
  * one spine to the next, carrying `+N` (`VelocityArrows`). The arrows still sum to the
  * headline, since a two-band jump counts at both boundaries it crosses. That is no
- * longer spelled out with `=` and `+`. The ⓘ says it instead.
+ * longer spelled out with `=` and `+`, and since 2026-11-13 the ⓘ no longer spells it
+ * out either (see NO CAPTION).
  *
  * ── NO CAPTION ────────────────────────────────────────────────────────────────
  * The artboard draws "Mastery level-ups in the last 7 days" as body copy. It is
- * deliberately NOT rendered: the window and the definition of a level-up live in the
- * ⓘ, so the figure stays the loudest thing in the card. **The ⓘ sentence lives here
+ * deliberately NOT rendered: the definition of a level-up lives in the ⓘ, so the
+ * figure stays the loudest thing in the card. The ⓘ reads "Promoting a card into any
+ * level in the last N days counts as 1 velocity!" (user-chosen copy, 2026-11-14). N is the
+ * server's `windowDays` (`VELOCITY_WINDOW_DAYS`), passed down rather than hard-coded so
+ * the copy cannot drift from the query. The rule that a two-band jump counts on both
+ * arrows is still not stated on screen. **The ⓘ sentence lives here
  * and only here**. Velocity cannot be read without the definition, and a second host
  * writing its own copy is a copy that will drift.
  *
@@ -37,7 +42,7 @@ import { LEADING, SIZE, WEIGHT } from "../../theme/scale";
 export interface VelocityStatCardProps {
     /** Level-ups in the window. */
     velocity: number;
-    /** The window the figure covers, in days — the server decides it, not the client. */
+    /** The window's length in days (server-sent), named in the ⓘ. */
     windowDays: number;
     /**
      * `velocity` split per band boundary, ascending and aligned with
@@ -126,7 +131,22 @@ const VelocityStatCard: React.FC<VelocityStatCardProps> = ({
                         <InfoTip
                             className="velocity-stat-card__info"
                             ariaLabel="What counts as a level-up"
-                            text={`A level-up is one card crossing into a higher mastery band — Unfamiliar → Target → Comfortable → Mastered. Counted over the last ${windowDays} days. Each arrow under your library counts the cards that crossed from one band into the next; a card that jumped two bands at once counts on both arrows.`}
+                            // User-chosen copy (2026-11-14), naming the window inline. The
+                            // window phrase is bold (user, 2026-11-14): it is the part a
+                            // reader would otherwise miss.
+                            text={
+                                <>
+                                    Promoting a card into any level{" "}
+                                    <Box
+                                        component="strong"
+                                        className="velocity-stat-card__info-window"
+                                        sx={{ fontWeight: WEIGHT.bold }}
+                                    >
+                                        in the last {windowDays} {windowDays === 1 ? "day" : "days"}
+                                    </Box>{" "}
+                                    counts as 1 velocity!
+                                </>
+                            }
                         />
                     </Box>
                 </Box>

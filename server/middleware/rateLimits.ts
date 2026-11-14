@@ -33,6 +33,19 @@ export const authLimiter = rateLimit({
 });
 
 /**
+ * The sign-up form's live "is this username free?" check (GET /api/auth/usernameAvailable,
+ * docs/LOGIN_REWORK.md Q21). Debounced on the client, but typed character by character, so
+ * it needs far more headroom than authLimiter; usernames are public, so the cap only stops
+ * bulk scraping.
+ */
+export const usernameCheckLimiter = rateLimit({
+  ...standardOptions,
+  windowMs: 15 * 60 * 1000,
+  limit: 300,
+  message: { error: 'Too many checks, please slow down', code: 'ERR_RATE_LIMITED' },
+});
+
+/**
  * Token refresh: legitimate clients refresh at most every ~15 minutes per tab,
  * but multiple tabs/devices behind one IP (offices, CGNAT) need headroom, so
  * this is deliberately looser than authLimiter.

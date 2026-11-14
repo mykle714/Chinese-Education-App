@@ -136,6 +136,66 @@ export function freezeClone(original: HTMLElement, clone: HTMLElement): void {
     }
 }
 
+/**
+ * Where a departing clone is parked: the phone frame, so it stays clipped to the card. The
+ * clone is `position: absolute`, so the frame MUST stay positioned: parked against a static
+ * ancestor it resolves against the initial containing block and slides across the whole
+ * browser window on desktop, where the frame is a 402px card. Same trap as the sheet portal —
+ * see src/components/overlayHost.ts.
+ */
+function cloneFrameOf(el: HTMLElement): HTMLElement | null {
+    return (el.closest(".mobile-demo-frame") ?? el.parentElement) as HTMLElement | null;
+}
+
+/**
+ * The circle transition's EXIT (src/utils/pageTransition.ts → CIRCLE_MOTION): navigate at once
+ * (the destination mounts underneath) while a frozen clone of `el` shrinks into a circle closing
+ * onto `circleTo`, a viewport point. Under reduced motion (or with no Web Animations) it just
+ * navigates.
+ *
+ * Used by: `usePageSlide` → `exit` below (LeafPage / NodePage `exitCircleTo`), and
+ * src/pages/LoginPage.tsx (the login screen closing onto its platform after a sign-in,
+ * docs/LOGIN_REWORK.md § 1). Docs: docs/LEAF_NODE_PAGES.md.
+ */
+export function runCircleExit(el: HTMLElement, performNavigate: () => void, circleTo: ScreenPoint): void {
+    if (prefersReducedMotion() || typeof el.animate !== "function") {
+        performNavigate();
+        return;
+    }
+    const frame = cloneFrameOf(el);
+    const clone = el.cloneNode(true) as HTMLElement;
+    Object.assign(clone.style, {
+        position: "absolute",
+        inset: "0",
+        margin: "0",
+        transform: "none",
+        transition: "none",
+        pointerEvents: "none",
+        // Above the freshly-mounted destination route.
+        zIndex: "50",
+    } satisfies Partial<CSSStyleDeclaration>);
+    frame?.appendChild(clone);
+    // Hold the clone still: only the circle may move.
+    freezeClone(el, clone);
+
+    // Mount the destination NOW, underneath the clone; the skip-enter latch makes a leaf/node
+    // destination appear static instead of playing its own entrance.
+    armSkipNextEnter();
+    performNavigate();
+
+    // The clip is in the clone's own px, so the viewport point is shifted into the frame's box
+    // (the phone card on desktop).
+    const box = (frame ?? clone).getBoundingClientRect();
+    const at = { x: circleTo.x - box.left, y: circleTo.y - box.top };
+    const r = circleCoverRadius(at, { left: 0, top: 0, width: box.width, height: box.height });
+    const shrink = clone.animate([{ clipPath: circleClip(at, r) }, { clipPath: circleClip(at, 0) }], {
+        duration: CIRCLE_MOTION.ms,
+        easing: CIRCLE_MOTION.shrinkEasing,
+        fill: "forwards",
+    });
+    shrink.finished.catch(() => {}).finally(() => clone.remove());
+}
+
 interface UsePageSlideOptions {
     axis: "x" | "y";
 }
@@ -186,49 +246,29 @@ export function usePageSlide({ axis }: UsePageSlideOptions): UsePageSlideResult 
     const exit = useCallback(
         (performNavigate: () => void, circleTo?: ScreenPoint) => {
             const el = surfaceRef.current;
-            if (!el || (circleTo && (prefersReducedMotion() || typeof el.animate !== "function"))) {
+            if (!el) {
                 performNavigate();
                 return;
             }
-            // Anchor the clone to the phone frame so it stays clipped to the card. The
-            // clone is `position: absolute`, so the frame MUST stay positioned: parked
-            // against a static ancestor it resolves against the initial containing block
-            // and slides across the whole browser window on desktop, where the frame is a
-            // 402px card. Same trap as the sheet portal — see src/components/overlayHost.ts.
-            const frame = (el.closest(".mobile-demo-frame")
-                ?? el.parentElement) as HTMLElement | null;
+            if (circleTo) {
+                runCircleExit(el, performNavigate, circleTo);
+                return;
+            }
+            const frame = cloneFrameOf(el);
             const clone = el.cloneNode(true) as HTMLElement;
             Object.assign(clone.style, {
                 position: "absolute",
                 inset: "0",
                 margin: "0",
                 transform: onscreen,
-                transition: circleTo ? "none" : `transform ${DURATION_MS}ms ${EASING}`,
+                transition: `transform ${DURATION_MS}ms ${EASING}`,
                 pointerEvents: "none",
                 // Above the freshly-mounted destination route.
                 zIndex: "50",
             } satisfies Partial<CSSStyleDeclaration>);
             frame?.appendChild(clone);
-            // Hold the clone still: only the exit itself (slide / circle) may move.
+            // Hold the clone still: only the slide may move it.
             freezeClone(el, clone);
-
-            if (circleTo) {
-                // The circle exit: the clone stays put and is clipped to a circle closing
-                // onto `circleTo`. The clip is in the clone's own px, so the viewport point
-                // is shifted into the frame's box (the phone card on desktop).
-                armSkipNextEnter();
-                performNavigate();
-                const box = (frame ?? clone).getBoundingClientRect();
-                const at = { x: circleTo.x - box.left, y: circleTo.y - box.top };
-                const r = circleCoverRadius(at, { left: 0, top: 0, width: box.width, height: box.height });
-                const shrink = clone.animate([{ clipPath: circleClip(at, r) }, { clipPath: circleClip(at, 0) }], {
-                    duration: CIRCLE_MOTION.ms,
-                    easing: CIRCLE_MOTION.shrinkEasing,
-                    fill: "forwards",
-                });
-                shrink.finished.catch(() => {}).finally(() => clone.remove());
-                return;
-            }
 
             // Mount the destination NOW (underneath the clone). Arm the skip-enter
             // latch first so a leaf/node destination appears static beneath the

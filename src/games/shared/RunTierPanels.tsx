@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Box } from "@mui/material";
-import { COLORS, FONTS, LEADING, SIZE, TRACKING, WEIGHT } from "../../theme";
+import { COLORS, LEADING, SIZE, TRACKING, WEIGHT, DATA_TYPE } from "../../theme";
 import { formatTimeMs } from "../../utils/timeUtils";
 import PersonalBestLine from "./PersonalBestLine";
 import { formatAccuracy, type RunTier, type RunTiers } from "./runTiers";
@@ -103,7 +103,7 @@ function RunTierPanel({
                 sx={{
                     flex: `0 0 ${NUMERAL_COLUMN_PX}px`,
                     textAlign: "center",
-                    fontFamily: FONTS.mono,
+                    ...DATA_TYPE,
                     fontSize: SIZE.display,
                     fontWeight: WEIGHT.bold,
                     lineHeight: LEADING.none,
@@ -123,7 +123,7 @@ function RunTierPanel({
                 <Box
                     component="span"
                     className="run-tier-panels__figure"
-                    sx={{ fontFamily: FONTS.mono, fontSize: SIZE.title, fontWeight: WEIGHT.bold, lineHeight: LEADING.tight, color: COLORS.onSurface }}
+                    sx={{ ...DATA_TYPE, fontSize: SIZE.title, fontWeight: WEIGHT.bold, lineHeight: LEADING.tight, color: COLORS.onSurface }}
                 >
                     {figure}
                 </Box>

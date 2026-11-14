@@ -1,31 +1,25 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
+import { useBootCover } from '../hooks/useBootCover';
+import type { LoginRedirectState } from '../utils/loginRedirect';
 import { Box } from '@mui/material';
 import DelayedCircularProgress from './DelayedCircularProgress';
 
 interface ProtectedRouteProps {
     children: React.ReactNode;
-    /**
-     * Require a FULL account — i.e. bounce public/demo accounts to "/".
-     *
-     * The polarity is deliberate: this defaults to `false`, so the common case
-     * (any signed-in account, including public ones) is what you get by omitting
-     * the prop. It used to be the inverse — `allowPublic`, which 25 of the app's
-     * 30 routes had to remember to pass. A FORGOTTEN flag didn't error; it
-     * silently redirected to "/", which presents as a dead button rather than a
-     * crash, and since every local account is `isPublic` it reproduced for
-     * everyone. Now the restrictive case is the one you have to type.
-     *
-     * Callers don't set this by hand any more either — `src/routes/registry.ts`
-     * derives it from each route's `access` field.
-     *
-     * See docs/ARCHITECTURE_REVIEW.md finding 4.
-     */
-    requireFullAccount?: boolean;
 }
 
-function ProtectedRoute({ children, requireFullAccount }: ProtectedRouteProps) {
-    const { isAuthenticated, isLoading, user } = useAuth();
+/**
+ * Renders its page only for a signed-in account; otherwise redirects to `/login`.
+ * (A `requireFullAccount` prop bounced `isPublic` accounts to "/"; it went with `isPublic`
+ * on 2026-11-14, docs/LOGIN_REWORK.md Q7.)
+ */
+function ProtectedRoute({ children }: ProtectedRouteProps) {
+    const { isAuthenticated, isLoading } = useAuth();
+    const location = useLocation();
+    // Up only during the launch (docs/LOGIN_REWORK.md § 1): tells a cold-start deep link
+    // apart from a session that ended mid-use.
+    const { up: launching } = useBootCover();
 
     // Show loading spinner while checking authentication
     if (isLoading) {
@@ -36,14 +30,18 @@ function ProtectedRoute({ children, requireFullAccount }: ProtectedRouteProps) {
         );
     }
 
-    // Redirect to login if not authenticated
+    // Redirect to login if not authenticated. `replace`, so Back from the login screen does
+    // not return to this page only to be bounced again (the old back-button trap, R2).
+    //
+    // Return-to (R1, docs/LOGIN_REWORK.md Q2) is for a COLD-START DEEP LINK only: a launch
+    // that opened on this page while signed out comes back here after login. A session that
+    // ends mid-use (the interceptor's path, logout) lands on `/` instead, so no `from` is
+    // passed once the boot cover has gone.
     if (!isAuthenticated) {
-        return <Navigate to="/login" />;
-    }
-
-    // Public/demo accounts may use the app, but not the full-account-only pages.
-    if (user?.isPublic && requireFullAccount) {
-        return <Navigate to="/" />;
+        const state: LoginRedirectState | undefined = launching
+            ? { from: location.pathname + location.search + location.hash }
+            : undefined;
+        return <Navigate to="/login" replace state={state} />;
     }
 
     // Render children if authenticated

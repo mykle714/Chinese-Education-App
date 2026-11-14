@@ -1,25 +1,13 @@
 import { Request, Response } from 'express';
-import { UserService, IssuedRefreshToken } from '../services/UserService.js';
+import { UserService } from '../services/UserService.js';
 import { IIcons8DAL } from '../dal/interfaces/IIcons8DAL.js';
 import { ValidationError, DuplicateError, NotFoundError, DALError } from '../types/dal.js';
 import { CHINESE_FONT_IDS } from '../contracts/wire.js';
 import type { GoalsFocusAutoEnabled } from '../contracts/focusMode.js';
 import { FocusModeService } from '../services/FocusModeService.js';
 import { getUserLanguage } from '../utils/controllerUtils.js';
-
-// The access-token cookie lives at root (sent with every API request); the
-// refresh-token cookie is scoped to /api/auth so it is only ever sent to the
-// auth endpoints that need it (refresh / logout / delete-account), shrinking its
-// exposure. clearCookie MUST use the same path or the browser keeps the cookie.
-const ACCESS_COOKIE = 'token';
-const REFRESH_COOKIE = 'refreshToken';
-const REFRESH_COOKIE_PATH = '/api/auth';
-const ACCESS_COOKIE_MAX_AGE_MS = 15 * 60 * 1000; // mirrors ACCESS_TOKEN_TTL
-
-// PPE serves over HTTPS (https://mren.me), so auth cookies must never ride a
-// plain-HTTP request there. Dev runs on http://localhost, where `secure: true`
-// would make the browser drop the cookies entirely — hence the env switch.
-const SECURE_COOKIES = process.env.NODE_ENV === 'production';
+import { REFRESH_COOKIE, setAuthCookies, clearAuthCookies } from './authCookies.js';
+import { respondWithError } from './httpErrors.js';
 
 /**
  * User Controller - Handles HTTP requests and responses for user operations
@@ -34,71 +22,10 @@ export class UserController {
     private focusModeService: FocusModeService,
   ) {}
 
-  /**
-   * Set the access + refresh cookies after a login or refresh. Both are httpOnly
-   * (invisible to JS — XSS can't read them) and, in PPE, `secure`
-   * (HTTPS-only). The refresh cookie's lifetime tracks its DB expiry so the
-   * browser drops it in lockstep with the server.
-   */
-  private setAuthCookies(res: Response, accessToken: string, refresh: IssuedRefreshToken): void {
-    res.cookie(ACCESS_COOKIE, accessToken, {
-      httpOnly: true,
-      secure: SECURE_COOKIES,
-      sameSite: 'lax',
-      maxAge: ACCESS_COOKIE_MAX_AGE_MS,
-    });
-    res.cookie(REFRESH_COOKIE, refresh.rawToken, {
-      httpOnly: true,
-      secure: SECURE_COOKIES,
-      sameSite: 'lax',
-      path: REFRESH_COOKIE_PATH,
-      maxAge: Math.max(0, refresh.expiresAt.getTime() - Date.now()),
-    });
-  }
+  // The auth cookies are set/cleared by ./authCookies.ts (shared with SignInController).
 
-  /** Clear both auth cookies (logout / account deletion). Flags must match the
-   *  set call (path + secure) or some browsers keep the cookie. */
-  private clearAuthCookies(res: Response): void {
-    res.clearCookie(ACCESS_COOKIE, { httpOnly: true, secure: SECURE_COOKIES, sameSite: 'lax' });
-    res.clearCookie(REFRESH_COOKIE, {
-      httpOnly: true,
-      secure: SECURE_COOKIES,
-      sameSite: 'lax',
-      path: REFRESH_COOKIE_PATH,
-    });
-  }
-
-  /**
-   * Register a new user
-   * POST /api/auth/register
-   */
-  async register(req: Request, res: Response): Promise<void> {
-    try {
-      // `tz` is the browser's IANA zone, sent by AuthContext.register. Optional —
-      // an old client or a scripted signup omits it and the service falls back to
-      // 'UTC' — but supplying it is what keeps the account off the column default
-      // for the window between signup and the first login/minute point.
-      //
-      // `gender` / `birthDate` (migration 164) are asked on the signup form, where "Prefer not
-      // to answer" sends null. Optional here for the same reason as `tz` — an older client or a
-      // scripted signup omits them and the account is simply born "not told".
-      // UserService.createUser validates both (validateDemographics) and 400s a bad value.
-      const { email, name, password, tz, gender, birthDate } = req.body;
-
-      const newUser = await this.userService.createUser({
-        email,
-        name,
-        password,
-        timezone: tz,
-        gender,
-        birthDate,
-      });
-
-      res.status(201).json(newUser);
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
+  // register (POST /api/auth/register) was removed 2026-11-14: sign-up is verify-first
+  // (SignInController.signUp), docs/LOGIN_REWORK.md Q14.
 
   /**
    * Login user
@@ -117,7 +44,7 @@ export class UserController {
         authResponse.user.id,
         req.headers['user-agent'] ?? null
       );
-      this.setAuthCookies(res, authResponse.token, refresh);
+      setAuthCookies(res, authResponse.token, refresh);
 
       res.json(authResponse);
     } catch (error) {
@@ -147,7 +74,7 @@ export class UserController {
         req.headers['user-agent'] ?? null
       );
 
-      this.setAuthCookies(res, result.token, result.refreshToken);
+      setAuthCookies(res, result.token, result.refreshToken);
 
       // Refresh the stored timezone off the back of the rotation. This endpoint is
       // the app's only ~15-minute heartbeat for a logged-in client, so it is the
@@ -173,7 +100,7 @@ export class UserController {
       // A failed rotation (invalid/expired/reused token) must clear the cookies
       // so the browser stops resending a dead refresh token; the client then
       // falls back to the login redirect.
-      this.clearAuthCookies(res);
+      clearAuthCookies(res);
       this.handleError(error, res);
     }
   }
@@ -189,11 +116,11 @@ export class UserController {
       if (rawRefreshToken) {
         await this.userService.revokeRefreshToken(rawRefreshToken);
       }
-      this.clearAuthCookies(res);
+      clearAuthCookies(res);
       res.status(200).json({ message: 'Logged out successfully' });
     } catch (error) {
       // Even if revocation fails, still clear cookies so the client logs out.
-      this.clearAuthCookies(res);
+      clearAuthCookies(res);
       this.handleError(error, res);
     }
   }
@@ -442,49 +369,8 @@ export class UserController {
     }
   }
 
-  /**
-   * Delete user account
-   * DELETE /api/auth/deleteAccount
-   */
-  async deleteAccount(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = (req as any).user?.userId;
-      const { password } = req.body;
-      
-      if (!userId) {
-        res.status(401).json({ 
-          error: 'User not authenticated',
-          code: 'ERR_NOT_AUTHENTICATED'
-        });
-        return;
-      }
-      
-      if (!password) {
-        res.status(400).json({
-          error: 'Password is required to delete account',
-          code: 'ERR_PASSWORD_REQUIRED'
-        });
-        return;
-      }
-      
-      // Revoke any outstanding refresh tokens up front (the FK CASCADE on user
-      // deletion also removes the rows, but this is explicit and order-safe).
-      await this.userService.revokeAllRefreshTokens(userId);
-
-      // Delete user account (this will cascade delete all user data, including
-      // any remaining refresh_tokens rows via ON DELETE CASCADE)
-      await this.userService.deleteUser(userId, password);
-
-      // Clear both authentication cookies
-      this.clearAuthCookies(res);
-
-      res.json({
-        message: 'Account deleted successfully'
-      });
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
+  // deleteAccount moved to SignInController (2026-11-14): it now also takes a step-up token,
+  // and checks the credential BEFORE revoking sessions (docs/LOGIN_REWORK.md Q24).
 
   /**
    * Change user password
@@ -518,33 +404,8 @@ export class UserController {
     }
   }
 
-  /**
-   * Update user profile
-   * PUT /api/users/profile
-   */
-  async updateProfile(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = (req as any).user?.userId;
-      const { email, name } = req.body;
-      
-      if (!userId) {
-        res.status(401).json({ 
-          error: 'User not authenticated',
-          code: 'ERR_NOT_AUTHENTICATED'
-        });
-        return;
-      }
-      
-      const updatedUser = await this.userService.updateUserProfile(userId, {
-        email,
-        name
-      });
-      
-      res.json(updatedUser);
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
+  // NOTE: updateProfile (PUT /api/users/profile, email + name) was deleted 2026-11-14: no route
+  // mounted it, and an email change must now be verified (docs/LOGIN_REWORK.md Q24).
 
   /**
    * Get the caller's OWN user row by ID.
@@ -583,109 +444,12 @@ export class UserController {
   // "total minute points" any more — each language has its own wallet. The client reads
   // GET /api/users/minutePoints/summary?language=… instead. See docs/PER_LANGUAGE_STREAKS.md.
 
-  /**
-   * Create new user (admin function)
-   * POST /api/users
-   */
-  async createUser(req: Request, res: Response): Promise<void> {
-    try {
-      // Accepts `tz` for the same reason as register() — an admin/scripted
-      // creation that knows the user's zone should not leave the row on 'UTC'.
-      const { email, name, password, tz } = req.body;
+  // NOTE: createUser (POST /api/users, "admin function") was deleted 2026-11-14. It had no admin
+  // check (any signed-in caller could create accounts), no client called it, and it would
+  // create accounts that skip verification (docs/LOGIN_REWORK.md Q14).
 
-      const newUser = await this.userService.createUser({
-        email,
-        name,
-        password,
-        timezone: tz
-      });
-
-      res.status(201).json(newUser);
-    } catch (error) {
-      this.handleError(error, res);
-    }
-  }
-
-  /**
-   * Handle and convert errors to appropriate HTTP responses
-   * Uses sanitized error messages to prevent sensitive information exposure
-   */
+  /** Errors → JSON responses: the shared mapping in ./httpErrors.ts. */
   private handleError(error: any, res: Response): void {
-    // Log full error details server-side for debugging
-    console.error('UserController error:', {
-      message: error.message,
-      stack: error.stack,
-      code: error.code,
-      statusCode: error.statusCode,
-      timestamp: new Date().toISOString()
-    });
-    
-    // Handle DAL errors with sanitization
-    if (error instanceof ValidationError) {
-      const clientError = error.toClientError();
-      res.status(clientError.statusCode).json({
-        error: clientError.message,
-        code: clientError.code
-      });
-      return;
-    }
-    
-    if (error instanceof DuplicateError) {
-      const clientError = error.toClientError();
-      res.status(clientError.statusCode).json({
-        error: clientError.message,
-        code: clientError.code
-      });
-      return;
-    }
-    
-    if (error instanceof NotFoundError) {
-      const clientError = error.toClientError();
-      res.status(clientError.statusCode).json({
-        error: clientError.message,
-        code: clientError.code
-      });
-      return;
-    }
-    
-    if (error instanceof DALError) {
-      const clientError = error.toClientError();
-      res.status(clientError.statusCode).json({
-        error: clientError.message,
-        code: clientError.code
-      });
-      return;
-    }
-    
-    // Handle legacy custom errors from existing code
-    if (error.code && error.statusCode) {
-      // For legacy errors, sanitize manually
-      let sanitizedMessage = error.message;
-      sanitizedMessage = sanitizedMessage.replace(/mykle\.database\.windows\.net/gi, '[server]');
-      sanitizedMessage = sanitizedMessage.replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '[server]');
-      sanitizedMessage = sanitizedMessage.replace(/:\d{4,5}/g, '');
-      sanitizedMessage = sanitizedMessage.replace(/in \d+ms/g, '');
-      
-      res.status(error.statusCode).json({
-        error: sanitizedMessage,
-        code: error.code
-      });
-      return;
-    }
-    
-    // Handle JWT errors
-    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-      res.status(401).json({
-        error: 'Invalid or expired token',
-        code: 'ERR_INVALID_TOKEN'
-      });
-      return;
-    }
-    
-    // Generic server error - never expose internal details
-    res.status(500).json({
-      error: 'Internal server error',
-      code: 'ERR_INTERNAL_SERVER_ERROR'
-    });
+    respondWithError(res, error, 'UserController');
   }
 }

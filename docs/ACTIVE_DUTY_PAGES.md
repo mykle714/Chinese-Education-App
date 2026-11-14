@@ -39,9 +39,9 @@ Referenced code: `src/routes/routeMeta.ts` → `ROUTE_META`, `FLAGGED_OFF_PATHS`
 | `/reader/:id` | `ReaderDocumentPage` | Reader → a document (`ReaderPage` → `slideNavigate`) | 2026-11-10 |
 | `/arena` | `ArenaPage` | Menu popover → **Arena** (flag `arena`, on) | 2026-11-10 |
 | `/tester-dashboard` | `TesterDashboardPage` (tdp) | Menu popover → gated **Tester Dashboard** row (testers / admins only) | 2026-11-10 |
-| `/friends/sent`, `/friends/requests`, `/friends/remove` | Friends action pages | td avatar → AccountSheet → Friends tab (`FriendsBody`) | 2026-11-10 |
-| `/users/:userId` | user profile | `FriendsBody` / `IncomingRequestsPage` / `RemoveFriendsPage` → a person | 2026-11-10 |
-| `/settings/account` | `AccountSecurityPage` | td avatar → AccountSheet → Settings tab (`SettingsBody`) → account chevron row | 2026-11-10 |
+| `/login` | `LoginPage` (+ steps in `src/pages/login/`) | not tapped to: every signed-out launch and every ended session lands here (`ProtectedRoute`, the interceptor, `logout`, `deleteAccount`); td avatar → AccountSheet → Log out | 2026-11-14 |
+| `/register` | `RegisterRedirect` → `/login` | old links only (sign-up lives on `/login` since 2026-11-14) | 2026-11-14 |
+| `/settings/account` | `AccountSecurityPage` (+ `AccountIdentitySection`, `StepUpPanel`) | td avatar → AccountSheet → Settings tab (`SettingsBody`) → account chevron row | 2026-11-14 |
 | `/settings` | `SettingsPage` | only as `/settings/account`'s Back target (Settings is normally read inside AccountSheet) | 2026-11-10 |
 
 ## Non-route surfaces

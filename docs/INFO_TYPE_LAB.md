@@ -5,7 +5,7 @@
 | Token | Face | Job |
 |---|---|---|
 | `FONTS.label` | **Public Sans** | info type — overlines, captions, section labels |
-| `FONTS.mono` | **Azeret Mono** | data — counts, scores, user ids, timers, numbered-tone pinyin |
+| `DATA_TYPE` (`src/theme/fonts.ts`) | **Instrument Sans + `tabular-nums`** | data — counts, scores, friend codes, timers, numbered-tone pinyin. Was `FONTS.mono` = Azeret Mono until 2026-11-13, when the owner dropped the monospace face app-wide; Azeret is no longer loaded outside this lab. |
 
 JetBrains Mono, which used to be both, is **no longer used anywhere in the app** and has
 been dropped from `index.html`. The 18 hand-rolled overline sites were migrated in the
@@ -139,7 +139,7 @@ uppercase serial number (data). Scores, ranks, timestamps, `·` separators, tabu
 figures and **user ids** stay on `FONTS.mono`.
 
 > **Why user ids specifically stay mono.** `FriendsBody` (the AccountSheet's Friends tab) renders the account id for
-> someone to read out or transcribe by hand, and `SentRequestsPage`'s input takes it back.
+> someone to read out or transcribe by hand, and `SentRequestsBody`'s input takes it back.
 > That is the one place in the app where glyph DISAMBIGUATION is load-bearing — `0`/`O`,
 > `1`/`l`/`I` — and a fixed advance lets the eye track position in a long string. A
 > grotesque would make a mistyped id a support problem. Same reason the `PageHeader` `ch`

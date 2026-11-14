@@ -109,7 +109,7 @@ function serviceFor(
         findById: async (id: string) => ({
             id,
             name: id === ALICE ? 'Alice' : 'Bob',
-            email: `${id}@example.com`,
+            username: id,
             avatarIconId: null,
             timezone: tzOf(id),
             selectedLanguage: 'zh',

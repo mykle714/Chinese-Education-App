@@ -27,7 +27,14 @@ interface VariantSpec {
 export const SPINE_VARIANTS: Record<SpineVariant, VariantSpec> = {
     base: { width: 74, height: 116 },
     tall: { width: 74, height: 140 },
-    short: { width: 74, height: 96 },
+    // Compact floor (user, 2026-11-14: 52; 64 from 2026-11-13; the design's 96 before
+    // that). Every band label is one line now (11.5px, or the fit-to-line size for
+    // "Comfortable" — `Spine`'s `nameFitWidth`), so the content is 2×10 padding +
+    // 11.5 × 1.2 ≈ 14 name line + the 13px foot glyph ≈ 47–48px. 52 leaves ~4px between
+    // the name and the foot row so the bar still reads as having a top and a foot.
+    // ⚠️ A label that wraps to two lines (≈ 61px of content) would overflow this; the
+    // 64 floor was sized for that case.
+    short: { width: 74, height: 52 },
     uni: { width: 74, height: 126 },
     vol: { width: 86, height: 134 },
 };
@@ -67,8 +74,19 @@ export const SPINE_SIZES = {
     /** `.sp` padding. */
     padY: 10,
     padX: 9,
-    /** `.sp .nm` — the title. */
+    /** `.sp .nm` — the title, at the design's size. */
     nameFontSize: 11.5,
+    /**
+     * The name's RIGHT inset for a FIT-TO-LINE name (`Spine`'s `nameFitWidth`), in place
+     * of `padX`. Applied to the NAME only (as a negative right margin), so the left edge
+     * — every name in a row starts on the same inset (user, 2026-11-13) — and the foot
+     * row (count and glyph) stay level with the neighbouring spines. It widens the
+     * name's line from 56px to 63px at natural width; the font then takes the largest
+     * size that fits that line, capped at `nameFontSize`. (Replaced the fixed 10px
+     * `nameFontSizeCompact`, 2026-11-14.) If it ever wraps, the soft hyphen in
+     * DeckBuckets' `BUCKET_LABELS` still breaks it cleanly as "Comfort- / able".
+     */
+    namePadRightCompact: 2,
     nameLineHeight: 1.2,
     /** `.sp .k` — the mono count at the foot. */
     countFontSize: 10,
@@ -81,8 +99,12 @@ export const SPINE_SIZES = {
     /** `.sp .mine` — the top-left glyph. */
     glyphSize: 13,
     glyphInset: 8,
-    /** `.sp::after` — the dark strip down the left edge. This is what sells "book". */
-    strapWidth: 4,
+    /**
+     * The bar's corner radius, the same on all four corners (2026-11-13; was the
+     * design's `11px 11px 4px 4px` book foot). Not scaled with width: a narrowed spine
+     * keeps the same rounding so the four bands match.
+     */
+    cornerRadius: 11,
     /** `.sp.vol .band` — the title plate. */
     volBandInsetX: 7,
     volBandTop: 9,

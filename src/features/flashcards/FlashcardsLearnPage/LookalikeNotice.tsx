@@ -2,7 +2,7 @@ import { Box } from "@mui/material";
 import GlyphSvg from "../../../components/handwriting/GlyphSvg";
 import type { LookalikeChar, LookalikeMatch } from "../../../components/handwriting/lookalikes";
 import TonedPronunciation from "../../../components/TonedPronunciation";
-import { COLORS, FONTS } from "../../../theme";
+import { COLORS, FONTS, DATA_TYPE } from "../../../theme";
 import { LEADING, SIZE } from "../../../theme/scale";
 
 /**
@@ -55,7 +55,7 @@ export default function LookalikeNotice({ match, width, height, tellWidth, delay
         >
             <Box className="lookalike-notice__pair" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <LookalikeGlyph item={match.target} color={COLORS.onSurface} glyphPx={glyphPx} />
-                <Box className="lookalike-notice__vs" sx={{ fontFamily: FONTS.mono, fontSize: SIZE.caption, color: COLORS.textFaint }}>
+                <Box className="lookalike-notice__vs" sx={{ ...DATA_TYPE, fontSize: SIZE.caption, color: COLORS.textFaint }}>
                     vs
                 </Box>
                 <LookalikeGlyph item={match.recognized} label="yours looks like" color={COLORS.textFaint} glyphPx={glyphPx} />
@@ -101,7 +101,7 @@ function LookalikeGlyph({ item, label, color, glyphPx }: {
             <Box className="lookalike-notice__side-text" sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 0.25 }}>
                 <TonedPronunciation className="lookalike-notice__pinyin" pronunciation={item.pinyin} fontSize={SIZE.body} />
                 {label && (
-                    <Box className="lookalike-notice__label" sx={{ fontFamily: FONTS.mono, fontSize: SIZE.micro, color: COLORS.textFaint, whiteSpace: "nowrap" }}>
+                    <Box className="lookalike-notice__label" sx={{ ...DATA_TYPE, fontSize: SIZE.micro, color: COLORS.textFaint, whiteSpace: "nowrap" }}>
                         {label}
                     </Box>
                 )}

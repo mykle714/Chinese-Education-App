@@ -8,7 +8,7 @@ import type { Ink } from "../../../components/handwriting/types";
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from "../../../utils/definitionUtils";
 import { WRITING_LEVELS, WRITING_MAX_CHARS } from "../../../../server/contracts/writingLevels";
 import type { VocabEntry } from "../../../types";
-import { COLORS, FONTS } from "../../../theme";
+import { COLORS, DATA_TYPE } from "../../../theme";
 import { SIZE } from "../../../theme/scale";
 import { TOWER_CARD_FLIP_MS, FC_FONT } from "../constants";
 import TonedPronunciation from "../../../components/TonedPronunciation";
@@ -112,7 +112,7 @@ export default function WritingCardFace({
             {/* Header: text on the left, the card's icon on the right. */}
             <Box className="writing-card-face__header" sx={{ width: "100%", display: "flex", alignItems: "center", gap: 1.5 }}>
                 <Box className="writing-card-face__header-text" sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 0.5 }}>
-                    <Box className="writing-card-face__level" sx={{ fontFamily: FONTS.mono, fontSize: SIZE.body, color: COLORS.textFaint }}>
+                    <Box className="writing-card-face__level" sx={{ ...DATA_TYPE, fontSize: SIZE.body, color: COLORS.textFaint }}>
                         Level {spec.level} · {spec.name}
                     </Box>
                     {pronunciation && (

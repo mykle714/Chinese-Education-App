@@ -1,3 +1,4 @@
+import { displayName } from "../../utils/displayName";
 import { alpha } from "@mui/material/styles";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, ButtonBase, Typography } from "@mui/material";
@@ -60,7 +61,7 @@ function ChallengeResults({ challenge, viewerUserId, onChallengeUpdated }: Chall
 
     const myTotal = roundsTotal(challenge.rounds);
     const theirTotal = roundsTotal(challenge.opponentRounds);
-    const opponentName = challenge.opponent.name || challenge.opponent.email;
+    const opponentName = displayName(challenge.opponent);
     const noContest = challenge.status === "no_contest";
     const iWon = !noContest && !!challenge.winnerUserId && challenge.winnerUserId === viewerUserId;
     const theyWon = !noContest && !!challenge.winnerUserId && challenge.winnerUserId !== viewerUserId;

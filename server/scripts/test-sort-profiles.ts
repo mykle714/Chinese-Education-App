@@ -31,8 +31,9 @@ async function makeUser(tag: string): Promise<string> {
   try {
     const email = `sortprofile_${tag}_${Date.now()}@test.local`;
     const r = await client.query<{ id: string }>(
-      `INSERT INTO users (email, name, password) VALUES ($1, $2, $3) RETURNING id`,
-      [email, `sort-profile ${tag}`, 'x']
+      // `username` is NOT NULL since migration 188; derived from the tag (lowercase, a–z0–9_).
+      `INSERT INTO users (email, name, password, username) VALUES ($1, $2, $3, $4) RETURNING id`,
+      [email, `sort-profile ${tag}`, 'x', `sp_${String(tag).toLowerCase().replace(/[^a-z0-9]+/g, '_')}`.slice(0, 20)]
     );
     return r.rows[0].id;
   } finally {

@@ -72,7 +72,7 @@ function serviceFor(challenge: StudyChallengeRow, isFeatureTester = false) {
     } as unknown as IStudyChallengeDAL;
     const userDAL = {
         findById: async (id: string) => ({
-            id, name: id, email: '', avatarIconId: null, timezone: TZ, selectedLanguage: 'zh', isFeatureTester,
+            id, name: id, username: id, avatarIconId: null, timezone: TZ, selectedLanguage: 'zh', isFeatureTester,
         }),
     };
     const starterPacks = {
@@ -268,7 +268,7 @@ describe('StudyChallengeService — claimed (in-progress) rounds', () => {
         } as unknown as IStudyChallengeDAL;
         const userDAL = {
             findById: async (id: string) => ({
-                id, name: id, email: '', avatarIconId: null, timezone: TZ, selectedLanguage: 'zh', isFeatureTester: false,
+                id, name: id, username: id, avatarIconId: null, timezone: TZ, selectedLanguage: 'zh', isFeatureTester: false,
             }),
         };
         const unused = {} as never;

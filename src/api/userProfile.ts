@@ -31,7 +31,8 @@ export type ProfileRelationship =
 export interface ProfileIdentity {
   userId: string;
   name: string | null;
-  email: string;
+  /** The public handle (migration 188); never the email (docs/LOGIN_REWORK.md Q20). */
+  username: string;
   avatarIconId: string | null;
   /** The language THIS person is studying — the scope of every stat below. */
   language: string;
@@ -44,7 +45,7 @@ export interface ProfileIdentity {
 export interface ProfileLanguageStats {
   /** The language these figures describe — the panel renders its flag. */
   language: string;
-  /** True for the account's currently selected language, which sorts first. */
+  /** Always true now that only the selected language is sent. */
   isSelected: boolean;
   velocity: number;
   /**
@@ -59,18 +60,16 @@ export interface ProfileLanguageStats {
 }
 
 /**
- * The profiled account's study stats — ONE PANEL PER LANGUAGE they are learning.
- *
- * `languages` arrives in RENDER ORDER and must not be re-sorted client-side: selected
- * language first, then the rest by `netMinutes` descending, with zero-balance languages
- * already dropped by the server. `velocityWindowDays` and `activeWorlds` sit outside the
- * array because they are account-wide, not per-language.
+ * The profiled account's study stats — ONE PANEL, for their selected (active) language.
+ * `languages` stays an array for contract stability but always has exactly one entry
+ * (docs/USER_PROFILE_PAGE.md § Stats). `velocityWindowDays` and `activeWorlds` sit
+ * outside it because they are account-wide.
  */
 export interface ProfileStats {
   velocityWindowDays: number;
   /** Which mastery bars their goals make active. */
   activeWorlds: string[];
-  /** Selected language first, then by `netMinutes` desc. Never empty. */
+  /** Exactly one entry: the selected language. */
   languages: ProfileLanguageStats[];
 }
 

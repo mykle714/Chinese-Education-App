@@ -116,16 +116,16 @@ describe("shell classification matches the old MOBILE_DEMO_PATHS behaviour", () 
     "/flashcards/card/7", "/reader/abc-123",
     ...ROUTED_GAMES.map((g) => g.route),
   ];
-  const PLAIN = [
-    "/login", "/register",
-  ];
+  // The auth pages moved into the frame on 2026-11-14: the boot cover opens onto `/login`,
+  // and a shell switch under it would remount the cover (docs/LOGIN_REWORK.md § 1).
+  const AUTH_IN_FRAME = ["/login", "/register"];
 
   it.each(FRAME)("%s renders in the phone frame", (path) => {
     expect(routeShell(path)).toBe("frame");
   });
 
-  it.each(PLAIN)("%s renders plain", (path) => {
-    expect(routeShell(path)).toBe("plain");
+  it.each(AUTH_IN_FRAME)("%s (auth) renders in the phone frame", (path) => {
+    expect(routeShell(path)).toBe("frame");
   });
 
   it("falls back to the plain shell for an unknown path", () => {
@@ -217,13 +217,9 @@ describe("FIXED: every game page slides up", () => {
 });
 
 describe("access classification", () => {
-  // Only routed games with `requiresAuth` need a full account; no page route does since
-  // the legacy `/flashcards` and `/profile` pages were deleted (2026-11-10).
-  it("requires a full account only for auth-gated routed games", () => {
-    const accountOnly = ROUTE_META.filter((r) => r.access === "account").map((r) => r.path).sort();
-    expect(accountOnly).toEqual(
-      ROUTED_GAMES.filter((g) => g.requiresAuth).map((g) => g.route).sort()
-    );
+  // The 'account' level went with `users.isPublic` (docs/LOGIN_REWORK.md Q7).
+  it("has only the 'open' and 'any' access levels", () => {
+    expect(new Set(ROUTE_META.map((r) => r.access))).toEqual(new Set(["open", "any"]));
   });
 
   it("mounts login, register, both settings pages and the 404 with no auth wrapper", () => {

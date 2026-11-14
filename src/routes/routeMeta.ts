@@ -41,29 +41,26 @@ import { isFeatureEnabled } from "../../server/contracts/featureFlags";
 /**
  * Who may open the route.
  *
- * Replaces the bare `allowPublic` boolean that 25 of 30 routes had to remember to
- * pass. A FORGOTTEN flag did not error — it silently `<Navigate to="/">`d, which
- * presents as a dead button rather than a crash, and on this machine every local
- * user is `isPublic`, so it reproduced for everyone. Naming the three cases means
- * there is no default to forget.
+ *   'open' — no auth wrapper at all (login, register, 404).
+ *   'any'  — any signed-in account. The common case.
  *
- *   'open'    — no auth wrapper at all (login, register, 404).
- *   'any'     — any signed-in account, including public/demo ones. The common case.
- *   'account' — a full (non-public) account. Public accounts are bounced to "/".
+ * There used to be a third level, 'account' (a "full, non-public" account), backed by
+ * `users.isPublic`. It was removed with `isPublic` itself on 2026-11-14
+ * (docs/LOGIN_REWORK.md Q7): no route used it, every account is now public, and its
+ * redirect read a visible account as a restricted one.
  *
  * Feature-level gates (isValidator, isFeatureTester, isAdmin) are NOT expressed here: those
  * pages use 'any' and enforce their own gate inside the page, with the server
- * enforcing it too. Putting them here would let the generic isPublic redirect
- * pre-empt the specific gate.
+ * enforcing it too.
  */
-export type RouteAccess = "open" | "any" | "account";
+export type RouteAccess = "open" | "any";
 
 /**
  * Which shell the page renders inside.
  *
  *   'frame' — the shared phone-frame surface (MobileDemoFrame): full-bleed on
  *             mobile, a centred phone card on desktop.
- *   'plain' — full-height, no chrome (auth pages, the font lab, 404).
+ *   'plain' — full-height, no chrome (the font lab, 404).
  */
 export type RouteShell = "frame" | "plain";
 
@@ -156,22 +153,11 @@ const PAGE_ROUTES: RouteMeta[] = [
   // right on back, but got no slide on the way IN (routeSlideDir returns null for
   // "tab"). Asymmetric by accident, not by design — see docs/LEAF_NODE_PAGES.md.
   { path: "/community", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
-  // Friends leaderboard + its three action screens (Send / Accept / Remove). All
-  // four keep the Menu tab lit — they are reached from Menu, and the three
-  // action pages drill in one level further (their back arrows return to /friends,
-  // not to Menu). /friends itself is read-only; every mutation lives on a screen.
-  { path: "/friends/requests", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
-  { path: "/friends/sent", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
-  { path: "/friends/remove", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   // Study Challenge — four more Node drill-ins under /friends, all with back arrows
   // that return to /friends/challenges (docs/STUDY_CHALLENGE.md § 1).
   { path: "/friends/challenges", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   { path: "/friends/challenges/history", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   { path: "/friends/challenges/:challengeId", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
-  // User profile — the one screen for looking at somebody who is not you. A Node drill-in
-  // reachable from the friends list, the leaderboard and the challenges page, so its back
-  // arrow goes to actual history rather than a fixed parent (docs/USER_PROFILE_PAGE.md).
-  { path: "/users/:userId", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   { path: "/reader", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
   {
     path: "/flashcards/writing/notebook",
@@ -208,7 +194,7 @@ const PAGE_ROUTES: RouteMeta[] = [
     access: "any",
     shell: "frame",
     chrome: "leaf",
-    note: "Validator- or admin-only; the page bounces everyone else and Menu hides its tile. 'any' so the generic isPublic redirect can't pre-empt that gate.",
+    note: "Validator- or admin-only; the page bounces everyone else and Menu hides its tile.",
   },
   {
     path: "/settings",
@@ -235,8 +221,11 @@ const PAGE_ROUTES: RouteMeta[] = [
   },
 
   // ── Unauthenticated ──
-  { path: "/login", access: "open", shell: "plain", chrome: "none" },
-  { path: "/register", access: "open", shell: "plain", chrome: "none" },
+  // Auth pages sit in the FRAME (since 2026-11-14): the boot cover opens onto `/login` on a
+  // signed-out launch, and a shell switch under the cover would remount it and restart its
+  // drop (docs/LOGIN_REWORK.md § 1). No footerTab, so no footer.
+  { path: "/login", access: "open", shell: "frame", chrome: "none" },
+  { path: "/register", access: "open", shell: "frame", chrome: "none" },
   { path: "*", access: "open", shell: "plain", chrome: "none" },
 ];
 
@@ -254,7 +243,7 @@ const PAGE_ROUTES: RouteMeta[] = [
  */
 const GAME_ROUTE_META: RouteMeta[] = ROUTED_GAMES.map((g) => ({
   path: g.route,
-  access: g.requiresAuth ? ("account" as const) : ("any" as const),
+  access: "any" as const,
   shell: "frame" as const,
   chrome: "leaf" as const,
 }));

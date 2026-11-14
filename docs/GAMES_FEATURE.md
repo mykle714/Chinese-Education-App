@@ -314,8 +314,8 @@ the play button stop propagation). The card is not itself a button — the play 
 (`RoundPlayButton`, `size="card"`) stays the keyboard control.
 
 ### 2. Empty state instead of placeholder cards
-When the registry yields no visible rows — every game gated out by `requiresAuth`
-or `unlock`, e.g. on a public/demo account — the hub renders a centered empty
+When the registry yields no visible rows — every game gated out by `unlock` or
+`languages` — the hub renders a centered empty
 state ("No games yet" + subtitle) instead of mocked rows. Originally this covered
 the pre-first-game period; it now survives as the gated-out fallback. Rationale:
 placeholder rows tend to get shipped by accident.
@@ -338,7 +338,7 @@ for now; if a third page needs them we should hoist a shared
 | Question | Resolution |
 | --- | --- |
 | Row anatomy | Owned by the shared `HubMenu` / `HubMenuRow`, not by this page. See [BENTO_SYSTEM.md](./BENTO_SYSTEM.md). |
-| Locking / progression | Two gates on `GameDef`, both evaluated at hub render time: `requiresAuth` (hides the game from public/demo accounts) and `unlock.minVocabEntries` (declared but unused). **No game may block on card count** — see [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md): each game's old minimum is now a BASELINE the server tops the player up to with temporary cards. The only remaining entry conditions are being signed out and Word Search's zh-only restriction. No game is gated behind another game. |
+| Locking / progression | One gate on `GameDef`, evaluated at hub render time: `unlock.minVocabEntries` (declared but unused). (`requiresAuth`, which hid a game from public/demo accounts, went with `users.isPublic` on 2026-11-14, [LOGIN_REWORK.md](./LOGIN_REWORK.md) Q7.) **No game may block on card count** — see [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md): each game's old minimum is now a BASELINE the server tops the player up to with temporary cards. The only remaining entry conditions are being signed out and Word Search's zh-only restriction. No game is gated behind another game. |
 | Score / streak surfacing | Games feed the **existing** systems, not a parallel one. Both game routes are in `MINUTE_POINTS_ELIGIBLE_PAGES` (`src/constants.ts`) and are in the start-on-entry subset (a player reads the board before their first tap), so play time accrues minute points and streak exactly as flp does. Matches emit real review marks via `POST /api/flashcards/mark` — so playing a game moves mastery. Wins are counted separately via `POST /api/users/me/wins` and read back by `useGameWins` for the hub's `HubMenuStatBadge`. |
 | Sort order of the menu | Manual curation — `GAME_REGISTRY` array order, top to bottom. Not recency or recommendation-ranked. |
 
@@ -431,9 +431,9 @@ frontend layers and a thin backend.
 ```ts
 export const GAME_REGISTRY: GameDef[] = [
   { gameId: "bubble-match", title: "Bubble Match", route: "/games/bubble-match",
-    requiresAuth: true, Component: lazy(() => import("./bubble-match/BubbleMatchPage")) },
+    Component: lazy(() => import("./bubble-match/BubbleMatchPage")) },
   { gameId: "word-search", title: "Word Search", route: "/games/word-search",
-    requiresAuth: true, Component: lazy(() => import("./word-search/WordSearchPage")) },
+    Component: lazy(() => import("./word-search/WordSearchPage")) },
   { gameId: "match-speed", title: "Match Speed", route: "/games/match-speed",
     Component: lazy(() => import("./match-speed/MatchSpeedPage")) },
 ];
@@ -441,7 +441,7 @@ export const GAME_REGISTRY: GameDef[] = [
 
 Each `GameDef` (`src/games/types.ts`) carries `gameId`, `title`,
 `glyph`, `hue`, `markType`, `route`, a lazy-loaded `Component`, and optional gating
-(`requiresAuth`, `unlock.minVocabEntries`).
+(`unlock.minVocabEntries`, `languages`).
 
 The registry is consumed by:
 
@@ -565,7 +565,7 @@ Presentational only; nothing here holds state.
 - **`GameTimer`** (`.timer` + `.trk`) — tabular numerals over an optional 4px drain track
   (omit `fraction` for a bare stopwatch). **Every game's visible clock is this component** —
   no game draws one today (Writing Grid dropped its clock 2026-11-01) — in the style Word Search's HUD clock had when it was
-  standardized (2026-10-06; Word Search itself has shown no clock since 2026-11-01): `FONTS.mono`, `SIZE.bodyLg`, normal case/tracking, regular
+  standardized (2026-10-06; Word Search itself has shown no clock since 2026-11-01): `DATA_TYPE` (was `FONTS.mono` until 2026-11-13), `SIZE.bodyLg`, normal case/tracking, regular
   weight, on a strip padded like `GameHud` (`12px 15px`). Only **colour** varies per game:
   the strip's hue tint (`useGameSurfaceHue`) and `valueColor`.
   Opt-in show/hide eye via `valueShown` / `onToggleValueShown` (`TimerEyeToggle`), always
@@ -1286,7 +1286,6 @@ for a rAF loop, Match Speed / Speed Reading for a timer-driven board.
      gameId: "<gameId>",
      title: "...",
      route: "/games/<gameId>",
-     requiresAuth: true,
      Component: React.lazy(() => import("./<gameId>/<GameId>Page")),
    }
    ```
@@ -1683,7 +1682,7 @@ Referenced code: `src/games/bubbles/Bubble.tsx`,
   `physics.ts`, `BubbleMatchHeader.tsx` (right-slot controls: restart button +
   pinyin/autoplay toggles + fire badge), `BubbleMatchEndPopup.tsx` (won/lost card
   + minimize-to-corner puck), `constants.ts`, `types.ts`.
-- `src/games/registry.ts` — registers the game (`requiresAuth: true`).
+- `src/games/registry.ts` — registers the game.
 
 ### Backend
 

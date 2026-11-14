@@ -23,7 +23,7 @@ import {
     outlinedChipSx,
 } from "./pageHeaderSizing";
 import MinutePointsFireBadge from "../minutePoints/MinutePointsFireBadge";
-import { FONTS } from "../theme/fonts";
+import { FONTS, DATA_TYPE } from "../theme/fonts";
 import { LEADING, WEIGHT } from "../theme/scale";
 import { SAFE_TOP } from "../theme/safeArea";
 
@@ -65,9 +65,10 @@ interface SizeSpec {
     /** Container top padding in px, `.hd` = 23, `.lhd` = 27. */
     padTop: number;
     /**
-     * Container bottom padding in px. Zero for the three `.hd` sizes — those headers
-     * sit above content that brings its own top gutter, so the design leaves the
-     * header itself flush. `leaf` is the exception: see the note on SIZE_SPEC.leaf.
+     * Container bottom padding in px — `HEADER_PAD_BOTTOM_PX` for EVERY size (user,
+     * 2026-11-14), so whatever a page puts first under its header (a tab selector, a
+     * card, a list) starts the same distance below it on every page. Kept per size
+     * so a future size can still diverge deliberately.
      */
     padBottom: number;
     /** Container horizontal padding in px, `.hd` = 22, `.lhd` = 18. */
@@ -93,21 +94,34 @@ const HEADER_META_FONT_PX = 12;
 const HEADER_CHIP_PADDING = "7px 9px";
 const HEADER_CHIP_RADIUS = "8px";
 
+/**
+ * The ONE gap between a page header and the content under it, in px (user, 2026-11-14:
+ * "a universal padding for that header so all content for all pages that use the header
+ * has that bit of space"). 14px = the app's card gutter (`SectionCard`'s 14px top
+ * margin). Before it, the three `.hd` sizes (hub/node/dense) had 0 — the design left
+ * them flush and each page brought its own top gutter — and `leaf` had 8. A page whose
+ * content still pads its own top now gets that ON TOP of this gap.
+ *
+ * Overridden by: `components/sheet/sheetStyled.ts` → `SheetHeaderSlot` (a panel's
+ * title band centres itself with equal top/bottom padding).
+ * Docs: docs/designGuidelines.md (header spacing); docs/LEAF_NODE_PAGES.md.
+ */
+const HEADER_PAD_BOTTOM_PX = 14;
+
 const SIZE_SPEC: Record<PageHeaderSize, SizeSpec> = {
-    hub: { padTop: HUB_HEADER_PAD_TOP_PX, padBottom: 0, padX: HUB_HEADER_PAD_X_PX, titleSize: HUB_HEADER_TITLE_PX, titleTracking: HUB_HEADER_TITLE_TRACKING, rightGap: 11 },
-    node: { padTop: 23, padBottom: 0, padX: 22, titleSize: 24, titleTracking: "-0.02em", rightGap: 11 },
+    hub: { padTop: HUB_HEADER_PAD_TOP_PX, padBottom: HEADER_PAD_BOTTOM_PX, padX: HUB_HEADER_PAD_X_PX, titleSize: HUB_HEADER_TITLE_PX, titleTracking: HUB_HEADER_TITLE_TRACKING, rightGap: 11 },
+    node: { padTop: 23, padBottom: HEADER_PAD_BOTTOM_PX, padX: 22, titleSize: 24, titleTracking: "-0.02em", rightGap: 11 },
     // Tighter right gap too: the whole point of `dense` is that the line is full.
-    dense: { padTop: DENSE_HEADER_PAD_TOP_PX, padBottom: 0, padX: DENSE_HEADER_PAD_X_PX, titleSize: DENSE_HEADER_TITLE_PX, titleTracking: DENSE_HEADER_TITLE_TRACKING, rightGap: DENSE_HEADER_RIGHT_GAP_PX },
+    dense: { padTop: DENSE_HEADER_PAD_TOP_PX, padBottom: HEADER_PAD_BOTTOM_PX, padX: DENSE_HEADER_PAD_X_PX, titleSize: DENSE_HEADER_TITLE_PX, titleTracking: DENSE_HEADER_TITLE_TRACKING, rightGap: DENSE_HEADER_RIGHT_GAP_PX },
     // ⚠️ The leaf band is DELIBERATELY deeper than the design's `21px 18px 0`
     // (2026-09-05). At 17px (now 20px) the leaf title is the smallest in the app, so the same
     // padding that reads as generous under a 24px hub title read as cramped here —
     // the header looked short. The extra 6px above and 8px below buy the small title
     // the same optical breathing room the large ones already had, WITHOUT growing the
     // title itself (which would collide with the crowded right slots leaf/game pages
-    // carry). The bottom padding matters most: it is additive to whatever top gutter
-    // the body brings (Settings' first `.set` contributes only 14px), so before this
-    // the title sat almost against the first card.
-    leaf: { padTop: 27, padBottom: 8, padX: 18, titleSize: 20, titleTracking: "-0.015em", rightGap: 9 },
+    // carry). The bottom was 8px until 2026-11-14, when every size moved to the shared
+    // `HEADER_PAD_BOTTOM_PX`.
+    leaf: { padTop: 27, padBottom: HEADER_PAD_BOTTOM_PX, padX: 18, titleSize: 20, titleTracking: "-0.015em", rightGap: 9 },
 };
 
 /**
@@ -378,9 +392,9 @@ export const HeaderIconButton: React.FC<{
      */
     outlineColor?: string;
     className?: string;
-    /** Hover tooltip (the native `title`), for an action whose label needs more words than `label` (UserProfilePage's challenge block). */
+    /** Hover tooltip (the native `title`), for an action whose label needs more words than `label` (no caller since UserProfilePage was deleted 2026-11-13). */
     title?: string;
-    /** Set for a TOGGLE (UserProfilePage's challenge block): drives `aria-pressed`. Leave undefined for a plain action. */
+    /** Set for a TOGGLE: drives `aria-pressed`. Leave undefined for a plain action. No caller since UserProfilePage's challenge block was deleted 2026-11-13. */
     pressed?: boolean;
     /** Glyph fill: 0 = outlined (default), 1 = filled — e.g. a toggle's on state, so it does not rely on colour alone. */
     fill?: 0 | 1;
@@ -454,7 +468,7 @@ export const HeaderToggleChip: React.FC<{
             display: "inline-flex",
             alignItems: "center",
             gap: "5px",
-            fontFamily: FONTS.mono,
+            ...DATA_TYPE,
             fontSize: CYCLE_CHIP_FONT_PX,
             lineHeight: LEADING.none,
             padding: HEADER_CHIP_PADDING,
@@ -587,8 +601,8 @@ const CYCLE_CHIP_ICON_ALLOWANCE_PX = CYCLE_CHIP_ICON_PX + CYCLE_CHIP_ICON_GAP_PX
  * `sx` is layered LAST, over the chip's own skin.
  *
  * `fitLabels` is the width rule for a chip whose `sx` changes its FONT. `widthCh` is
- * measured in `ch` of the mono face, so it is only right while the chip stays mono; a
- * restyled chip instead stacks EVERY label invisibly in the label box (one grid cell),
+ * measured in `ch`, which was exact only while the chip was set in a mono face (it no longer
+ * is — see `widthCh`); a fitted chip instead stacks EVERY label invisibly in the label box (one grid cell),
  * which sizes the box to the longest label in whatever face, size and case the chip is
  * actually set in — still a constant width across states, with no measurement to keep in
  * sync. The label then inherits the chip's own size (the mono shrink rule, which exists
@@ -602,8 +616,10 @@ export const HeaderCycleChip: React.FC<{
     /** Whether the CURRENT state is a doing-something state (drives the inversion). */
     active: boolean;
     /**
-     * Fixed label width, in `ch` of the chip's MONO face — so it is an exact
-     * character count, not an estimate. Pass the longest label's length, derived
+     * Fixed label width, in `ch` of the chip's face. ⚠️ Written for a MONO face, where it
+     * was an exact character count; since 2026-11-13 the chip is set in `DATA_TYPE`
+     * (sans, tabular figures only), so it is exact for digits and an ESTIMATE for letters.
+     * The one caller (AudioModeChip) passes `fitLabels`, which ignores this. Pass the longest label's length, derived
      * from the label table rather than hard-coded, so adding a state cannot make
      * the chip jump again.
      */
@@ -671,7 +687,7 @@ export const HeaderCycleChip: React.FC<{
             // The icon is pinned left and the label takes the rest; see the block comment.
             justifyContent: "flex-start",
             gap: `${CYCLE_CHIP_ICON_GAP_PX}px`,
-            fontFamily: FONTS.mono,
+            ...DATA_TYPE,
             // The chip's OWN size stays full even when the label shrinks, because the
             // width below is measured in `ch` of this element's face — a per-state
             // font here would make the "fixed" width move with the label.

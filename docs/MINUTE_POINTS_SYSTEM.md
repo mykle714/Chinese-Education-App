@@ -174,8 +174,8 @@ is global except the two rollups listed above.
   and presentational: the `local_fire_department` glyph beside a mono tabular count, in
   one tone, optionally with a bottom-anchored fill window over the glyph. It takes the
   number as a prop and reads no hooks, which is what lets a screen show a minutes figure
-  that is **not** the signed-in viewer's — the user profile's per-language panel
-  (`ProfileStatsCard`) shows somebody else's banked balance with it.
+  that is **not** the signed-in viewer's — a friend's expanded leaderboard row
+  (`FriendExpandedDetail`) shows somebody else's banked balance with it.
 - `MinutePointsFireBadge` — the app's earning indicator. Rendered by `PageHeader` itself,
   last in the right slot, on **every** header; pages do not pass it. `null` when signed
   out. It draws in one of two **modes**, keyed on `isEligiblePage` (not on `isActive`):
@@ -301,9 +301,9 @@ on each call.
 | POST | `/api/users/minutePoints/increment`            | `{ timestamp, tz, language? }` | Adds 1 to the payload `language` (falls back to `selectedLanguage`); may advance THAT language's streak |
 | GET  | `/api/users/minutePoints/calendar/:yearMonth`  | path: `YYYY-MM`; query: `language` | Dense per-day list (one language) with `minutesEarned` and `penaltyMinutes` |
 | POST | `/api/auth/onLogin`                            | `{ tz }`                       | Post-login bookkeeping (currently: refresh `users.timezone`) |
-| POST | `/api/auth/register`                           | `{ email, name, password, tz? }` | `tz` sets `users.timezone` at creation so the row is never born on the `'UTC'` default |
+| POST | `/api/auth/signUp`                             | `{ signUpTicket, username, …, tz? }` | `tz` sets `users.timezone` at creation so the row is never born on the `'UTC'` default (replaced `/api/auth/register` 2026-11-14, [LOGIN_REWORK.md](./LOGIN_REWORK.md)) |
 | POST | `/api/auth/refresh`                            | `{ tz? }`                      | Token rotation; `tz` is a best-effort timezone re-sync (never fails the rotation) |
-| GET  | `/api/leaderboard`                              | —                              | `currentStreak` is `null` for non-public users |
+| GET  | `/api/leaderboard`                              | —                              | Every row shows `currentStreak` (`isPublic` was removed 2026-11-14) and carries `username`, never `email` |
 
 ### Abuse resistance of the increment path
 
@@ -352,10 +352,10 @@ Code: `server/services/UserMinutePointsService.ts` → `incrementMinutePoints`,
   once-per-streak-day td animation that re-enacts banking yesterday's minutes (flame
   drains, embers fly into the header avatar) and the AccountSheet bank banner.
 
-- [PUBLIC_PRIVATE_USERS_IMPLEMENTATION.md](./PUBLIC_PRIVATE_USERS_IMPLEMENTATION.md) —
-  the `users.isPublic` flag that gates what the leaderboard reveals. The leaderboard
-  aggregate itself lives in `server/services/LeaderboardService.ts`; `isPublic` masks
-  `currentStreak` only, never the minute totals.
+- The leaderboard aggregate lives in `server/services/LeaderboardService.ts`. Every account
+  is public since `users.isPublic` was dropped (migration 189, [LOGIN_REWORK.md](./LOGIN_REWORK.md)
+  Q7), so it masks nothing; [PUBLIC_PRIVATE_USERS_IMPLEMENTATION.md](./PUBLIC_PRIVATE_USERS_IMPLEMENTATION.md)
+  is a tombstone.
 - **Superseded history** — the two documents below describe the system under its former
   "work points" name (renamed to minute points in migration 48). They are kept for the
   reasoning behind the sync design, NOT as a description of current behaviour; where

@@ -5,6 +5,7 @@ import SheetPageHeader from "../components/sheet/SheetPageHeader";
 import SheetSegmentedTabs from "../components/sheet/SheetSegmentedTabs";
 import { TAB_SWIPE_TRANSITION } from "../components/sheet/sheetStyled";
 import { restingTabTransform, useTabSwipeTrack } from "../components/sheet/useTabSwipeTrack";
+import OverlayScrollbar, { hiddenNativeScrollbarSx } from "../components/OverlayScrollbar";
 import FriendsBody from "../features/friends/FriendsBody";
 import AccountPane from "./account/AccountPane";
 import SettingsBody from "./settings/SettingsBody";
@@ -62,6 +63,20 @@ const paneScrollSx = {
     overscrollBehavior: "contain",
     touchAction: "pan-y",
     paddingBottom: `calc(24px + ${SAFE_BOTTOM})`,
+    // NO NATIVE SCROLLBAR. A classic desktop bar takes ~15px of width only while the pane
+    // overflows, so content re-flowed narrower the moment it grew past the viewport (e.g.
+    // a friend row expanding) and back when it shrank (user, 2026-11-13). The pane's
+    // OverlayScrollbar sibling draws a thin thumb over the content instead, so the
+    // content width never depends on overflow — the eip panes' fix, shared
+    // (docs/EIP_SHEET_GESTURES.md § Pane scrollbar).
+    ...hiddenNativeScrollbarSx,
+    // PIN THE LIGHT SCHEME. Over a night sky the Deck Tower claims its dark ground
+    // (`useThemeColor` → `applyTopClaim`), which sets `color-scheme: dark` on <html>,
+    // and every descendant inherits it. The sheet is always paper
+    // (`surface={COLORS.background}`), so its native form controls must stay light. (This
+    // first fixed the native scrollbar drawing dark at the 80% height, before that bar
+    // was hidden above.)
+    colorScheme: "light",
 } as const;
 
 interface AccountSheetPanesProps {
@@ -132,13 +147,25 @@ const AccountSheetPanes = forwardRef<SheetPanelBodyHandle, AccountSheetPanesProp
                 }}
             >
                 {panes.map((pane, index) => (
+                    // Non-scrolling slot per pane: the positioning context for the
+                    // OverlayScrollbar thumb, which must sit OUTSIDE the scroller so it
+                    // does not scroll away with the content.
                     <Box
                         key={TAB_LABELS[index]}
-                        ref={(node: HTMLDivElement | null) => { paneRefs.current[index] = node; }}
-                        className={`account-sheet__pane account-sheet__pane--${TAB_LABELS[index].toLowerCase()}`}
-                        sx={{ ...paneScrollSx, flex: `0 0 ${100 / panes.length}%`, minWidth: 0 }}
+                        className="account-sheet__pane-slot"
+                        sx={{ flex: `0 0 ${100 / panes.length}%`, minWidth: 0, height: "100%", position: "relative" }}
                     >
-                        {visited.has(index) && pane}
+                        <Box
+                            ref={(node: HTMLDivElement | null) => { paneRefs.current[index] = node; }}
+                            className={`account-sheet__pane account-sheet__pane--${TAB_LABELS[index].toLowerCase()}`}
+                            sx={paneScrollSx}
+                        >
+                            {visited.has(index) && pane}
+                        </Box>
+                        <OverlayScrollbar
+                            className="account-sheet__pane-scrollbar"
+                            getScroller={() => paneRefs.current[index] ?? null}
+                        />
                     </Box>
                 ))}
             </Box>

@@ -39,7 +39,8 @@ import type {
 export interface ChallengeOpponent {
   userId: string;
   name: string | null;
-  email: string;
+  /** The public handle (migration 188); never the email (docs/LOGIN_REWORK.md Q20). */
+  username: string;
   avatarIconId: string | null;
 }
 

@@ -72,7 +72,7 @@ export const INFO_FACE_CATALOG: readonly InfoFaceOption[] = [
         family: "Azeret Mono",
         kind: "mono",
         weights: [100, 200, 300, 400, 500, 600, 700, 800, 900],
-        note: "Squarish, very even colour. Reads as deliberate at caps sizes; can look stencil-ish in long strings. ⚠ NOW SHIPPING as `FONTS.mono`, the DATA face — trying it here would put one face back on both jobs, which is what the split undid.",
+        note: "Squarish, very even colour. Reads as deliberate at caps sizes; can look stencil-ish in long strings. Shipped as the DATA face (`FONTS.mono`) 2026-09-04 → 2026-11-13; the app no longer loads it outside this lab.",
     },
     {
         id: "spline-sans-mono",

@@ -3,7 +3,7 @@ import { Box, Tooltip, Typography } from "@mui/material";
 import Icon from "../Icon";
 import { Label, Segmented } from "../primitives";
 import { COLORS } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
 import { getBandMark, getBandMid } from "../../utils/categoryColors";
 import { formatCooldownRemaining } from "../../utils/formatDuration";
@@ -225,7 +225,7 @@ const CooldownTimer: React.FC<{ bar: MasteryBar; entry: VocabEntry; now: number 
                     sx={{
                         // Mono + tabular figures: the timer re-renders every second,
                         // and a proportional face makes it jitter as digits change width.
-                        fontFamily: FONTS.mono,
+                        ...DATA_TYPE,
                         fontVariantNumeric: "tabular-nums",
                         fontSize: 10,
                     }}

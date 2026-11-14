@@ -338,6 +338,16 @@ export const COLORS = {
     // Used by: src/features/flashcards/FlashcardsLearnPage/hintPawn/PawnHintBody.tsx
     // (the wrong-streak hints' {keyword} markup, docs/HINT_PAWN.md § Wrong-streak).
     keywordInk: "#E8604C",
+
+    // ── Notification badge ────────────────────────────────────────
+    // ALSO outside the ramp (owner, 2026-11-13: "a red that more closely aligns with the
+    // classic notification"). The saturated system red of an app-icon badge, under white
+    // text — 3.6:1, the convention every phone badge uses; bold 10px digits carry it.
+    // No ramp red is saturated enough to read as "notification" (redMk is a pastel).
+    //
+    // Used by: src/components/bento/CardShell.tsx (the `pinTone="alert"` pin — the Friends
+    // tab's Accept and Challenges tiles).
+    notificationRed: "#FF3B30",
 } as const;
 
 export type ColorToken = keyof typeof COLORS;

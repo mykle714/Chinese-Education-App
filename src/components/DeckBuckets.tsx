@@ -24,12 +24,13 @@ const BucketsContainer = styled(Shelf, {
     shouldForwardProp: (prop) => prop !== "gutter",
 })<{ gutter: boolean }>(({ gutter }) => ({
     width: "100%",
-    // The 22px gutter is INHERITED from Shelf when this row is a PAGE section (the
-    // Account page), not overridden: zeroing it there would put the spines 22px to the
-    // left of the "Your library" header above them. A caller that has already paid for
-    // its own padding — a row nested in a card, like the profile page's language panel
-    // — passes `gutter={false}`, because inside that card the shelf's gutter is a
-    // SECOND indent and the spines no longer line up with the card's own heading.
+    // The 22px gutter is INHERITED from Shelf when this row is a PAGE section, not
+    // overridden: zeroing it there would put the spines 22px left of a 22px-gutter
+    // section header above them. A caller that has already paid for its own margin —
+    // `LibraryShelfPanel` (the Account tab and a friend's expanded row), whose root
+    // carries the page margin — passes `gutter={false}`, because there the shelf's
+    // gutter is a SECOND indent and the spines no longer line up with the Velocity
+    // card's column under them. (Every current caller passes `false`.)
     ...(gutter ? null : { padding: 0 }),
     // The query container the spines size themselves against (`fittedSpineWidth`).
     // `cqw` resolves against the CONTENT box, so the gutter above is already excluded
@@ -38,19 +39,34 @@ const BucketsContainer = styled(Shelf, {
 }));
 
 /**
- * The CSS width every spine renders at, so all four ALWAYS fit on one line, in pure
+ * The widest a band spine may grow, in px (user, 2026-11-14: the design's widest
+ * spine, `.sp.vol`'s 86). Once the spines left the `SectionCard` box the row had spare
+ * room (~81px per spine on a 390px phone, ~90 on a 430px one), and that width now goes
+ * to the spines rather than to the gaps — which buys "Comfortable" a bigger font.
+ */
+const WIDE_SPINE_CAP = 86;
+
+/**
+ * The CSS width a spine is sized to, so all four ALWAYS fit on one line, in pure
  * CSS — nothing is measured in JS.
  *
- *   width = min(74px, (100cqw − gaps) / count)
+ *   width = min(cap, (100cqw − gaps) / count)
  *
- * On a wide container the cap holds (the design's spine, not a stretched one) and
- * `distribute` spreads the slack between the spines. On a narrow one the spines
- * exactly fill the row and the gaps stay at `SPINE_GAP`. There is deliberately no
- * minimum (user, 2026-11-05: the row must always fit); every interior size scales
- * with the width (`Spine`'s `px`), so a narrower spine is a uniformly smaller one.
+ * Used twice with two caps (see `DeckBuckets`):
+ *   * the RENDERED width, capped at `WIDE_SPINE_CAP` (86) — the spine's footprint;
+ *   * the INTERIOR width (`Spine`'s `interiorWidth`), capped at the natural 74 — what
+ *     padding, type and glyph scale against.
+ * So between 74 and 86 a spine gets wider but its type stays the design's size: the
+ * extra width is label room (only the fit-to-line "Comfortable" name grows into it).
+ * Below 74 both expressions agree and the spine shrinks uniformly, as before.
  *
- * The spine's padding is INSIDE `width` (it renders border-box — the 56px of label
- * room `BUCKET_LABELS` is written against is 74 − 2×9), so width IS the footprint.
+ * On a wide container the cap holds and `distribute` spreads the slack between the
+ * spines. On a narrow one the spines exactly fill the row and the gaps stay at
+ * `SPINE_GAP`. There is deliberately no minimum (user, 2026-11-05: the row must always
+ * fit).
+ *
+ * The spine's padding is INSIDE `width` (it renders border-box — at 74px the label
+ * room is 74 − 2×9 = 56), so width IS the footprint.
  *
  * `ROUNDING_CUSHION` keeps sub-pixel layout rounding from tipping the row a hair over
  * and wrapping — the original bug: the old ResizeObserver read `clientWidth`, which
@@ -61,9 +77,9 @@ const BucketsContainer = styled(Shelf, {
  * generalise it to a row whose spines have different widths.
  */
 const ROUNDING_CUSHION = 1;
-function fittedSpineWidth(count: number): string {
+function fittedSpineWidth(count: number, cap: number): string {
     const gaps = SPINE_GAP * (count - 1) + ROUNDING_CUSHION;
-    return `min(${SPINE_VARIANTS.base.width}px, (100cqw - ${gaps}px) / ${count})`;
+    return `min(${cap}px, (100cqw - ${gaps}px) / ${count})`;
 }
 
 /**
@@ -99,6 +115,18 @@ const BUCKET_LABELS: Record<(typeof BUCKETS)[number], string> = {
     Comfortable: "Comfort\u00ADable",
     Mastered: "Mastered",
 };
+
+/**
+ * Bands whose label is set FIT-TO-LINE (`Spine` → `nameFitWidth`): the value is the
+ * label's width in px at the spine's 11.5px name size, plus a 2px cushion against
+ * font-rendering differences. "Comfortable" measured 70px (docs/SHELF_REDESIGN.md
+ * § "Labels that do not fit a 74px spine") and is the one band name that cannot always
+ * sit on one line at 11.5px; it takes the largest size that fits its spine (≈ 10px at
+ * 74px, ≈ 11.1px at 81px, the full 11.5px from ≈ 83px). The other three keep the
+ * design's size (user, 2026-11-13), so the row may mix two sizes deliberately rather
+ * than shrinking every label to the longest.
+ */
+const NAME_FIT_WIDTHS: Partial<Record<(typeof BUCKETS)[number], number>> = { Comfortable: 72 };
 
 /**
  * The glyph each band's spine carries, as one ascending progression: a question mark
@@ -141,9 +169,9 @@ interface DeckBucketsProps {
  * each showing its per-category card count. Display-only. Rendered only through
  * `components/velocity/LibraryShelfWithVelocity`, which hangs the Velocity card's
  * boundary arrows off these spines. Its hosts are the Account sheet's Account
- * pane (`src/pages/account/AccountPane.tsx`) and, per language, the user profile's stats card
- * (`src/features/profile/ProfileStatsCard.tsx`). The profile is the narrow host that the
- * `gutter` prop and the fitted spine width exist for.
+ * pane (`src/pages/account/AccountPane.tsx`) and a friend's expanded leaderboard row
+ * (`src/features/friends/FriendExpandedDetail.tsx`). The expanded row is the narrow host
+ * that the `gutter` prop and the fitted spine width exist for.
  *
  * The row carries the count TWICE on purpose — as each spine's banded height and as
  * its mono numeral — which A3 warns against by reflex but is right here: the height
@@ -152,7 +180,8 @@ interface DeckBucketsProps {
  * that is a navigation surface rather than a report, drop the numeral.
  */
 const DeckBuckets: React.FC<DeckBucketsProps> = ({ counts, gutter = true }) => {
-    const spineWidth = fittedSpineWidth(BUCKETS.length);
+    const spineWidth = fittedSpineWidth(BUCKETS.length, WIDE_SPINE_CAP);
+    const interiorWidth = fittedSpineWidth(BUCKETS.length, SPINE_VARIANTS.base.width);
 
     return (
         <BucketsContainer className="decks-buckets-container" gutter={gutter}>
@@ -161,20 +190,24 @@ const DeckBuckets: React.FC<DeckBucketsProps> = ({ counts, gutter = true }) => {
                 board on the right — which would read as a row cut off mid-shelf. */}
             {/* `board={false}`: the hairline that closes this row is drawn by
                 LibraryShelfWithVelocity, which frames the Velocity block with plain
-                section dividers rather than wooden boards (user, 2026-10-10). */}
+                section dividers rather than wooden boards (user, 2026-10-10) — and
+                since 2026-11-13 not even those: nothing closes the row. */}
             <ShelfRow className="decks-buckets-row" distribute board={false}>
                 {BUCKETS.map((category, index) => (
                     <Spine
                         key={category}
                         className={`${BAND_SPINE_CLASS} ${BAND_SPINE_CLASS}--${category.toLowerCase()}`}
                         label={BUCKET_LABELS[category]}
+                        nameFitWidth={NAME_FIT_WIDTHS[category]}
                         count={counts[category] ?? 0}
                         glyph={BUCKET_GLYPHS[category]}
                         variant={spineHeight(counts[category] ?? 0)}
                         color={BAND_COLORS[category].main}
-                        // A CSS length against the row (`fittedSpineWidth`): the natural
-                        // 74px when there is room, narrower when there is not.
+                        // CSS lengths against the row (`fittedSpineWidth`): the spine
+                        // widens up to 86px when there is room, but its interior stays
+                        // at the natural 74px scale, so the extra width is label room.
                         width={spineWidth}
+                        interiorWidth={interiorWidth}
                         // Stagger so the four cascade left-to-right instead of firing at once.
                         animationDelay={index * 70}
                     />

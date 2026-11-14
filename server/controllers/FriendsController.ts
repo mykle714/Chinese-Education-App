@@ -66,13 +66,13 @@ export class FriendsController {
     }
   }
 
-  /** POST /api/friends/requests — body { userId } */
+  /** POST /api/friends/requests — body { friendCode } (a code or a username) or legacy { userId } */
   async sendRequest(req: Request, res: Response): Promise<void> {
     try {
       const userId = requireUserId(req, res);
       if (!userId) return;
       const body = (req.body ?? {}) as SendFriendRequestBody;
-      const result = await this.friendsService.sendRequest(userId, body.userId);
+      const result = await this.friendsService.sendRequest(userId, body.friendCode ?? body.userId);
       res.status(201).json(result);
     } catch (error) {
       handleControllerError(error, res, 'FriendsController.sendRequest');

@@ -1,3 +1,4 @@
+import { displayName } from "../../utils/displayName";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { Box, ButtonBase, Typography } from "@mui/material";
@@ -178,7 +179,7 @@ function ChallengeDetailPage() {
     }, []);
 
     const isResolved = challenge?.status === "complete" || challenge?.status === "no_contest";
-    const opponentName = challenge?.opponent.name || challenge?.opponent.email || "them";
+    const opponentName = (challenge ? displayName(challenge.opponent) : "them");
     // The state chip in the header. Its vocabulary is the row pill's, so the page a
     // learner lands on names its state the same way the row they tapped did — and, like
     // the row pill, takes the hue's MID tier (v2: chips are mid).

@@ -13,7 +13,6 @@ import { apiPost, apiPut, apiDelete } from './api/http';
 import { setFetchInterceptorHandlers, setupFetchInterceptor } from './utils/fetchInterceptor';
 import { setRefreshHandlers, attemptTokenRefresh, endServerSession } from './utils/tokenRefresh';
 import { notifyLogin, syncTimezoneIfChanged } from './utils/authSync';
-import { getBrowserTimezone } from './utils/browserTimezone';
 import * as authStorage from './utils/authStorage';
 import { authLog, authError, tokenPreview, readBodySafely, rateLimitInfo } from './utils/authDebug';
 
@@ -51,10 +50,17 @@ interface AuthContextType {
     isAuthenticated: boolean;
     isLoading: boolean;
     login: (email: string, password: string) => Promise<void>;
-    register: (email: string, name: string, password: string, demographics?: Demographics) => Promise<void>;
+    /**
+     * Adopt a session the server just issued (an email code, a phone, sign-up, a password reset;
+     * src/api/auth.ts → `SignedIn`). The refresh cookie is already set by that response.
+     */
+    establishSession: (user: User, token: string) => void;
+    /** Replace the signed-in user with a fresh copy from the server (settings changes, Q24). */
+    replaceUser: (user: User) => void;
     logout: () => Promise<void>;
     changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
-    deleteAccount: (password: string) => Promise<void>;
+    /** With the password (an email account) or a step-up token (any account; Q24). */
+    deleteAccount: (proof: { password: string } | { stepUpToken: string }) => Promise<void>;
     updateLanguage: (language: Language) => Promise<void>;
     updateAvatar: (avatarIconId: string | null) => Promise<void>;
     /** Resolves to the worlds whose focus mode the server auto-enabled (docs/FOCUS_MODE.md § 1a). */
@@ -90,8 +96,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
             authStorage.clearToken();
             setToken(null);
             setUser(null);
-            // Navigate to login
-            navigate('/login');
+            // Navigate to login. `replace`: Back must not return to the page whose session
+            // just ended (docs/LOGIN_REWORK.md R2).
+            navigate('/login', { replace: true });
         };
 
         const clearAuth = () => {
@@ -248,7 +255,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     // Login function
     const login = async (email: string, password: string) => {
-        setError(null);
         authLog('login: POST /api/auth/login', { email, apiBase: API_BASE_URL });
         try {
             const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
@@ -298,52 +304,35 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 sameAsCurrentToken: data.token === token,
             });
 
-            setUser(data.user);
-            setToken(data.token);
-            authStorage.setToken(data.token);
-            notifyLogin(data.token);
-            navigate('/');
-            authLog('login: state set + navigated to /');
+            establishSession(data.user, data.token);
+            // No navigation here (docs/LOGIN_REWORK.md R3): the page that called login decides
+            // where to go (LoginPage → `postLoginPath`). This used to `navigate('/')`, and then
+            // LoginPage's own already-authenticated redirect fired a second time.
+            authLog('login: state set');
         } catch (error: unknown) {
+            // Rethrown, NOT copied into the context's `error` (docs/LOGIN_REWORK.md R4): the
+            // calling page owns the message. Two copies used to drift apart.
             authError('login: threw', error);
-            setError(error instanceof Error ? error.message : 'Login failed');
             throw error;
         }
     };
 
-    // Register function
-    const register = async (email: string, name: string, password: string, demographics: Demographics = {}) => {
-        setError(null);
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                // `tz` is sent AT CREATION so the row is never born on the
-                // `users.timezone` column default ('UTC'). Without it an account
-                // reads as a UTC user — and every 04:00-local boundary is computed
-                // in the wrong zone — until its owner's first login or minute
-                // point. See utils/authSync.ts for the full freshness contract.
-                //
-                // `gender` / `birthDate` ride along for the same at-creation reason
-                // (migration 164); null = "Prefer not to answer".
-                body: JSON.stringify({ email, name, password, tz: getBrowserTimezone(), ...demographics }),
-                credentials: 'include'
-            });
+    // `register` (POST /api/auth/register) was removed 2026-11-14: sign-up is verify-first and
+    // lives on the login screen (src/pages/login/, docs/LOGIN_REWORK.md Q14), which ends in
+    // `establishSession`.
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Registration failed');
-            }
-
-            // After registration, log the user in
-            await login(email, password);
-        } catch (error: unknown) {
-            setError(error instanceof Error ? error.message : 'Registration failed');
-            throw error;
-        }
+    /**
+     * Adopt a freshly issued session: the one place the signed-in state is SET (password login
+     * and every flow in src/api/auth.ts). No navigation (R3): the calling page decides.
+     */
+    const establishSession = (nextUser: User, nextToken: string) => {
+        setUser(nextUser);
+        setToken(nextToken);
+        authStorage.setToken(nextToken);
+        notifyLogin(nextToken);
     };
+
+    const replaceUser = (nextUser: User) => setUser(nextUser);
 
     // Logout function
     const logout = async () => {
@@ -354,7 +343,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
             setToken(null);
             setUser(null);
-            navigate('/login');
+            navigate('/login', { replace: true });
         } catch (error) {
             console.error('Error logging out:', error);
         }
@@ -383,14 +372,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     };
 
     // Delete account function
-    const deleteAccount = async (password: string) =>
+    const deleteAccount = async (proof: { password: string } | { stepUpToken: string }) =>
         withAuth('delete your account', async () => {
-            await apiDelete('/api/auth/deleteAccount', { password });
+            await apiDelete('/api/auth/deleteAccount', proof);
             // Clear local state and redirect
             authStorage.clearToken();
             setToken(null);
             setUser(null);
-            navigate('/login');
+            navigate('/login', { replace: true });
         });
 
     // Change password function. Returns nothing: its call site (AccountSecurityPage,
@@ -466,7 +455,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         isAuthenticated: !!user,
         isLoading,
         login,
-        register,
+        establishSession,
+        replaceUser,
         logout,
         changePassword,
         deleteAccount,

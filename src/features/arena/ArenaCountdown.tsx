@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Box, Typography } from "@mui/material";
 import { COLORS } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
 import { formatCountdownParts } from "./arenaStyles";
 
@@ -88,7 +88,7 @@ const ArenaCountdown: React.FC<ArenaCountdownProps> = ({ label, target, subtitle
                         alignItems: "baseline",
                         justifyContent: "flex-start",
                         gap: "5px",
-                        fontFamily: FONTS.mono,
+                        ...DATA_TYPE,
                         fontSize: 52,
                         lineHeight: 0.95,
                         letterSpacing: "-0.03em",

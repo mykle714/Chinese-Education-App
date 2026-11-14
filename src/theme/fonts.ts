@@ -7,9 +7,6 @@
 // ⚠️ Webfonts must be loaded in index.html for these to render as intended:
 //   - "Instrument Sans"  → primary Latin UI font (Google Fonts)
 //   - "Instrument Serif" → Latin display / hero text
-//   - "Azeret Mono"      → DATA only: counts, scores, user ids, timers, numbered-tone
-//                          pinyin. Replaced JetBrains Mono 2026-09-04; the token also
-//                          used to carry the overlines, which are now `label`.
 //   - "Public Sans"      → INFO TYPE: every overline, caption and section label
 //                          (`.lab`, `.sec2`, `.shelfhd`). Added 2026-09-04.
 //   - "Noto Sans SC"     → Simplified-Chinese glyphs
@@ -59,23 +56,6 @@ export const FONTS = {
     // CJK hero character.
     serif: '"Instrument Serif", "Noto Serif SC", Georgia, serif',
 
-    // Numeric / code / numbered-tone pinyin — real DATA: scores, counts, user ids,
-    // timestamps, numbered-tone pinyin. Things where a fixed advance earns its keep.
-    //
-    // ⚠️ This token used to carry the UI's overlines too. Those moved to `label` below;
-    // see that comment for why. The 18 hand-rolled overline sites were converted with the
-    // split (2026-09-04). The test is about MEANING, not casing: is the string a WORD the
-    // UI is saying (info type) or a FIGURE the user reads off (data)? Deliberate stays,
-    // beyond the obvious counts and timers: USER IDS (`FriendsPage`, `SentRequestsPage`),
-    // where 0/O and 1/l/I must not be confusable because people transcribe them by hand,
-    // and the two `PageHeader` chips that size themselves in `ch` — one character advance
-    // only against a FIXED-ADVANCE face.
-    //
-    // THE FACE IS AZERET MONO (chosen 2026-09-04, replacing JetBrains Mono). Squarish and
-    // very even in colour, which is what a column of figures wants. Picked for the DATA
-    // job specifically: with the overlines gone to `label`, this token no longer has to
-    // compromise between setting prose and setting numbers.
-    mono: '"Azeret Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace',
 
     // INFO TYPE — the app's overline/caption flavour: uppercase, tracked, micro-size,
     // faint. `.lab` / `.sec2` / `.shelfhd` (src/components/primitives/Label.tsx) and the
@@ -101,4 +81,20 @@ export const FONTS = {
     // which owns the ligature settings that make `nights_stay` render as a glyph
     // instead of as the literal word.
     icons: '"Material Symbols Rounded"',
+} as const;
+
+// DATA TYPE — figures the user reads off: scores, counts, timers, leaderboard minutes,
+// friend codes, numbered-tone pinyin. The UI sans with TABULAR figures, so a column of
+// numbers still lines up and a ticking timer does not jitter as its digits change.
+//
+// Replaced the `FONTS.mono` token (Azeret Mono, a web font) on 2026-11-13, by owner
+// decision: the app no longer ships a monospace face. A STYLE object rather than a FONTS
+// key because the tabular figures are half the point and `fontFamily` cannot carry them —
+// spread it into an `sx`: `sx={{ ...DATA_TYPE, fontSize: SIZE.micro }}`.
+//
+// ⚠️ Only the DIGITS are fixed-width now. Anything that sized itself in `ch` assuming every
+// character is one advance (PageHeader's HeaderCycleChip / `widthCh`) holds for digits only.
+export const DATA_TYPE = {
+    fontFamily: FONTS.sans,
+    fontVariantNumeric: "tabular-nums",
 } as const;

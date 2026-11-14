@@ -609,7 +609,7 @@ together. Faces follow `src/theme/fonts.ts`'s roles:
 | Element | Face | Weight | Where |
 |---|---|---|---|
 | gloss list | `FONTS.sans` | `WEIGHT.medium` | `WordSearchWordList.tsx` |
-| pinyin reveal | `FONTS.mono` (the blanks need a fixed pitch) | `WEIGHT.regular` | `WordSearchHintRow.tsx` |
+| pinyin reveal | `DATA_TYPE` — ⚠️ was `FONTS.mono` because the blanks need a fixed pitch; since 2026-11-13 only digits are fixed-width, so letters may shift as the mask fills | `WEIGHT.regular` | `WordSearchHintRow.tsx` |
 | component reveal | `FONTS.hanziComponents` (the only face with the rare component glyphs) | `WEIGHT.regular` | `WordSearchHintRow.tsx` |
 
 Line heights are `LEADING.tight`.

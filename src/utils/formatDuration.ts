@@ -1,21 +1,27 @@
 /**
- * Minute-points → duration copy ("2d 3h 5m", "7w 1d 2h 3m").
+ * Minute-points → duration copy ("2d 3h 5m", "7w 1d 2h 3m", "1y 3w 2d 4h 5m").
  *
  * A minute point IS a minute of study, so a balance reads naturally as a span of
- * time. The friends leaderboard's per-row subtitle renders it this way.
+ * time. The friends leaderboard's per-row subtitle and the AccountSheet's
+ * Accumulated-minutes card render it this way.
  *
  * Unit sizes match the minute-points domain, not the calendar: an hour is 60
  * minutes, a day is 1440 (the same 24-hour CHECKPOINT_MINUTES the inactivity penalty
- * floors at — see src/constants.ts) and a week is 7 of those. No DST, no month.
+ * floors at — see src/constants.ts), a week is 7 of those and a year a flat 365. No
+ * DST, no leap years, and deliberately NO month: its suffix would collide with the
+ * `m` of minutes (the cooldown countdown below lives with that ambiguity; a balance
+ * does not have to).
  *
  * Depended on by: src/features/friends/friendLabels.ts,
- * src/features/profile/ProfileStatsCard.tsx, src/components/mastery/MasteryWindow.tsx.
+ * src/features/friends/FriendExpandedDetail.tsx, src/components/mastery/MasteryWindow.tsx,
+ * src/minutePoints/BankBanner.tsx (docs/DAILY_MINUTE_BANKING.md § 6).
  * Tested by: src/__tests__/formatDuration.test.ts.
  */
 
 export const MINUTES_PER_HOUR = 60;
 export const MINUTES_PER_DAY = 24 * MINUTES_PER_HOUR;
 export const MINUTES_PER_WEEK = 7 * MINUTES_PER_DAY;
+export const MINUTES_PER_YEAR = 365 * MINUTES_PER_DAY;
 
 interface FormatDurationOptions {
     /**
@@ -25,38 +31,78 @@ interface FormatDurationOptions {
      * "7w 1d" is easier to size up at a glance than "50d".
      */
     weeks?: boolean;
+    /**
+     * Break a year (365 days) out as `y` (525600 → "1y 0d 0h 0m"). Independent of
+     * `weeks`; pass both for the full y-w-d-h-m ladder (the Accumulated-minutes card).
+     */
+    years?: boolean;
+}
+
+/** One unit of a formatted duration — `{ value: 26, unit: "m" }` — for callers that style the suffix. */
+export interface DurationPart {
+    value: number;
+    unit: 'y' | 'w' | 'd' | 'h' | 'm';
 }
 
 /**
- * Format a raw minute-points balance as a coarse duration.
+ * The unit breakdown behind `formatMinutesAsDuration`, as structured parts.
  *
- * Leading zero units are dropped (90 → "1h 30m") so the string stays short, but a
- * zero *middle* unit is kept (1500 → "1d 1h 0m") to avoid the ambiguous-looking
- * "1d 0m". A balance under an hour renders as plain minutes, and 0 or negative
- * balances render as "0m" — never as an empty string.
+ * Exists so a caller can render the digits and the unit letters at different sizes
+ * (the Accumulated-minutes card sets its suffixes smaller) without re-deriving the
+ * breakdown — the string formatter below is just these parts joined.
+ *
+ * Leading zero units are dropped (90 → 1h 30m) so the result stays short, but a
+ * zero *middle* unit is kept (1500 → 1d 1h 0m) to avoid the ambiguous-looking
+ * "1d 0m". The minutes part is always present, so the list is never empty; 0 or
+ * negative balances yield a single `0m`.
+ */
+export function minutesAsDurationParts(
+    totalMinutes: number,
+    { weeks = false, years = false }: FormatDurationOptions = {}
+): DurationPart[] {
+    // Guards a NaN/negative/fractional balance into something renderable: every
+    // caller is showing a number to a user, and "NaNm" is worse than "0m".
+    let rest = Number.isFinite(totalMinutes) ? Math.max(0, Math.floor(totalMinutes)) : 0;
+
+    // Peel units off largest-first; a disabled unit contributes 0 and leaves its
+    // minutes for the next unit down.
+    const yearCount = years ? Math.floor(rest / MINUTES_PER_YEAR) : 0;
+    rest -= yearCount * MINUTES_PER_YEAR;
+    const weekCount = weeks ? Math.floor(rest / MINUTES_PER_WEEK) : 0;
+    rest -= weekCount * MINUTES_PER_WEEK;
+    const days = Math.floor(rest / MINUTES_PER_DAY);
+    rest -= days * MINUTES_PER_DAY;
+    const hours = Math.floor(rest / MINUTES_PER_HOUR);
+    const minutes = rest - hours * MINUTES_PER_HOUR;
+
+    // A unit prints once any LARGER unit has printed, which is what keeps the middle
+    // zeros ("1d 0h 5m") while still dropping the leading ones. A DISABLED unit never
+    // prints, even as a middle zero (with weeks off, 1y 3d stays "1y 3d …", not "1y 0w 3d").
+    const ladder: Array<[DurationPart['unit'], number, boolean]> = [
+        ['y', yearCount, years],
+        ['w', weekCount, weeks],
+        ['d', days, true],
+        ['h', hours, true],
+    ];
+    const parts: DurationPart[] = [];
+    for (const [unit, value, enabled] of ladder) {
+        if (enabled && (parts.length > 0 || value > 0)) parts.push({ value, unit });
+    }
+    parts.push({ value: minutes, unit: 'm' });
+    return parts;
+}
+
+/**
+ * Format a raw minute-points balance as a coarse duration string ("1h 26m").
+ * See `minutesAsDurationParts` for the unit rules.
  */
 export function formatMinutesAsDuration(
     totalMinutes: number,
-    { weeks = false }: FormatDurationOptions = {}
+    options: FormatDurationOptions = {}
 ): string {
-    // Guards a NaN/negative/fractional balance into something renderable: every
-    // caller is showing a number to a user, and "NaNm" is worse than "0m".
-    const safeMinutes = Number.isFinite(totalMinutes) ? Math.max(0, Math.floor(totalMinutes)) : 0;
-
-    const weekCount = weeks ? Math.floor(safeMinutes / MINUTES_PER_WEEK) : 0;
-    const afterWeeks = safeMinutes - weekCount * MINUTES_PER_WEEK;
-    const days = Math.floor(afterWeeks / MINUTES_PER_DAY);
-    const hours = Math.floor((afterWeeks % MINUTES_PER_DAY) / MINUTES_PER_HOUR);
-    const minutes = safeMinutes % MINUTES_PER_HOUR;
-
-    // Each unit prints once any LARGER unit has printed, which is what keeps the
-    // middle zeros ("1d 0h 5m") while still dropping the leading ones.
-    const parts: string[] = [];
-    if (weekCount > 0) parts.push(`${weekCount}w`);
-    if (weekCount > 0 || days > 0) parts.push(`${days}d`);
-    if (weekCount > 0 || days > 0 || hours > 0) parts.push(`${hours}h`);
-    parts.push(`${minutes}m`);
-    return parts.join(' ');
+    return minutesAsDurationParts(totalMinutes, options)
+        .map(({ value, unit }) => `${value}${unit}`)
+        .join(' ');
 }
 
 /**

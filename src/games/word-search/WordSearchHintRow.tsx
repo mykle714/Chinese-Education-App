@@ -1,7 +1,7 @@
 import React from "react";
 import { Box } from "@mui/material";
 import { LEADING, SIZE, WEIGHT } from "../../theme/scale";
-import { FONTS } from "../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../theme/fonts";
 import { HINT_ACCENT_COLOR, HINT_LETTER_BLANK } from "./constants";
 import { wordToPinyinUnits } from "./pinyinUnits";
 import { buildComponentReveals } from "./componentUnits";
@@ -177,7 +177,7 @@ const WordSearchHintRow: React.FC<WordSearchHintRowProps> = ({ word, revealCount
                         // (the blanks must sit on a fixed pitch or the word appears to
                         // shuffle as it fills) at a readable size, in the accent the
                         // gloss chip is tinted with so the two visibly pair up.
-                        fontFamily: FONTS.mono,
+                        ...DATA_TYPE,
                         // SIZE.bodyLg — the play panel's one text size, shared with the
                         // HUD and the gloss list (2026-09-25). Tracking scaled with it
                         // (2px at 13px) so the blanks keep the same relative pitch.

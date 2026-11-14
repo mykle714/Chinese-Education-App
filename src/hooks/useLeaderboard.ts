@@ -4,11 +4,12 @@ import { authHeader } from '../utils/authHeader';
 
 export interface LeaderboardEntry {
   userId: string;
-  email: string;
-  name: string;
+  /** The public handle (migration 188); the board no longer ships emails (docs/LOGIN_REWORK.md Q20). */
+  username: string;
+  name: string | null;
   accumulativeMinutePoints: number;
-  /** null when the user is not public — streak is hidden from other viewers. */
-  currentStreak: number | null;
+  /** Every account is public since `isPublic` was removed (docs/LOGIN_REWORK.md Q7). */
+  currentStreak: number;
   todaysMinutes: number;
   yesterdaysMinutes: number;
   /** How many weekly achievements this user has earned in the current week. */

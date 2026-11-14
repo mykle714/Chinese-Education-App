@@ -1,5 +1,5 @@
 import { Box } from "@mui/material";
-import { COLORS, FONTS, WEIGHT } from "../../theme";
+import { COLORS, WEIGHT, DATA_TYPE } from "../../theme";
 import { formatTimeMs } from "../../utils/timeUtils";
 import { PERSONAL_BEST_GAMES, type PersonalBestGame } from "../../../server/contracts/personalBests";
 
@@ -36,7 +36,7 @@ export default function PersonalBestLine({
             sx={{ display: "flex", alignItems: "center", justifyContent: align === "start" ? "flex-start" : "center", flexWrap: "wrap", gap: 1, color: COLORS.textSecondary, fontSize: "0.9rem" }}
         >
             <span className="personal-best-line__label">Personal best</span>
-            <Box component="span" className="personal-best-line__value" sx={{ fontFamily: FONTS.mono, color: COLORS.onSurface, fontWeight: WEIGHT.semibold }}>
+            <Box component="span" className="personal-best-line__value" sx={{ ...DATA_TYPE, color: COLORS.onSurface, fontWeight: WEIGHT.semibold }}>
                 {shown}
             </Box>
             {isNewBest && (

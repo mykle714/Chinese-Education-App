@@ -205,8 +205,8 @@ lookalike, so the header a panel wears is the app's one header. It lives in
 `SheetHeaderSlot` (`sheetStyled.ts`) as the sheet's **second flex child**, directly under
 the grabber row.
 
-**The slot re-pads it.** `PageHeader`'s node spec is 23px above the row and **0 below**
-(`SIZE_SPEC.node`) — right on a page, where that padding is the gap under the status bar
+**The slot re-pads it.** `PageHeader`'s node spec is 23px above the row and the shared
+14px gap below (`SIZE_SPEC.node`, `HEADER_PAD_BOTTOM_PX`; 0 until 2026-11-14) — right on a page, where that padding is the gap under the status bar
 and nothing sits below the header but the page itself. A panel header is a *band*, with the
 grabber above it and the body below, so the same asymmetry reads as the title and the ✕
 shoved against the band's bottom edge. `SheetHeaderSlot` overrides both to
@@ -1073,8 +1073,14 @@ fades out ~0.9s after. It is a sibling of the scroller inside a non-scrolling
 `.mobile-demo-tab-pane-slot`, so it neither scrolls with the content nor gets clipped by
 the pane's edge-fade mask.
 
+The AccountSheet's three panes (Account / Friends / Settings) use the same pair, each
+scroller inside a non-scrolling `.account-sheet__pane-slot`. Without it, a pane's content
+narrowed by the bar's width whenever it grew past the viewport (a friend row expanding)
+and widened again when it shrank.
+
 Code: `src/components/OverlayScrollbar.tsx` → `OverlayScrollbar`,
-`hiddenNativeScrollbarSx`; `InfoCardPanelBody.tsx` (the pane slot).
+`hiddenNativeScrollbarSx`; `InfoCardPanelBody.tsx` (the pane slot);
+`src/pages/AccountSheet.tsx` → `AccountSheetPanes`, `paneScrollSx`.
 
 ## Referenced code
 

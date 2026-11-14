@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Typography } from "@mui/material";
 import { setArenaMessage } from "../../api/arena";
 import { COLORS } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { dialogQuietButtonSx, errorTextSx } from "./arenaStyles";
 
@@ -101,7 +101,7 @@ export default function ArenaMessageDialog({
                     <Typography
                         className="arena-message-dialog__counter"
                         sx={{
-                            fontFamily: FONTS.mono,
+                            ...DATA_TYPE,
                             fontSize: SIZE.micro,
                             // Counts DOWN and only turns urgent near the end: a counter that
                             // is red the whole time is one more thing to ignore.

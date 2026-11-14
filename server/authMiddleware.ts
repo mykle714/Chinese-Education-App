@@ -12,7 +12,6 @@ declare global {
     interface Request {
       user?: {
         userId: string;
-        email: string;
       };
     }
   }
@@ -50,8 +49,10 @@ export const authenticateToken: RequestHandler = (req: Request, res: Response, n
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; email: string };
-    req.user = decoded;
+    // `{ userId }` only: the access token stopped carrying `email` (docs/LOGIN_REWORK.md § 4d);
+    // tokens minted before that still verify, and their extra claim is simply not copied.
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
+    req.user = { userId: decoded.userId };
     next();
   } catch (error) {
     // Log only the shape of the failing token, never its contents — a JWT prefix

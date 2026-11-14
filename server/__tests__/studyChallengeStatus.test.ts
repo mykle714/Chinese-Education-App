@@ -62,7 +62,7 @@ function serviceFor(challenge: StudyChallengeRow, isFeatureTester = false) {
         findById: async (id: string) => ({
             id,
             name: id === ALICE ? 'Alice' : 'Bob',
-            email: `${id}@example.com`,
+            username: id,
             avatarIconId: null,
             // Both players in the challengee's zone keeps the fixture's arithmetic to
             // one boundary; whose zone the deadline uses is pinned by challengeWeek's

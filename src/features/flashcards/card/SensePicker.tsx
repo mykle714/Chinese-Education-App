@@ -4,7 +4,7 @@ import { Box, ListSubheader, Menu, MenuItem, Typography } from "@mui/material";
 import Icon from "../../../components/Icon";
 import { Label } from "../../../components/primitives";
 import { COLORS } from "../../../theme/colors";
-import { FONTS } from "../../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../../theme/fonts";
 import { ddt, isStarredSense, senseGrammarTag, sortedSenseClusters } from "../../../utils/definitionUtils";
 import { numberedToTonedPinyin } from "../../../utils/textUtils";
 import { getToneColor } from "../../../utils/toneColors";
@@ -260,7 +260,7 @@ const SensePicker: React.FC<SensePickerProps> = ({
                     component="span"
                     className={`${classPrefix}-sense-count`}
                     sx={{
-                        fontFamily: FONTS.mono,
+                        ...DATA_TYPE,
                         fontVariantNumeric: "tabular-nums",
                         fontSize: 10,
                         letterSpacing: "0.06em",

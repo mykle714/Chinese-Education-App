@@ -27,7 +27,7 @@ import type { IWinsDAL } from '../dal/interfaces/IWinsDAL.js';
  * the two sources the service actually consults, and `total`/`streak` stand for the user's
  * cross-language Σ wallet and MAX streak respectively.
  */
-type MinuteRow = { userId: string; total: number; streak: number; isPublic: boolean };
+type MinuteRow = { userId: string; total: number; streak: number };
 
 function makeUsers(rows: MinuteRow[]) {
   return rows;
@@ -42,12 +42,11 @@ function makeService(
   const getMinutesForDatesByUser = vi.fn().mockResolvedValue(minutes);
   const getMinutesForDate = vi.fn().mockResolvedValue(0);
 
-  // Identity + isPublic only — no points live on `users` any more.
+  // Public identity only (username, never email) — no points live on `users` any more.
   const roster = users.map((r) => ({
     userId: r.userId,
-    email: `${r.userId}@example.com`,
+    username: r.userId,
     name: r.userId,
-    isPublic: r.isPublic,
     avatarIconId: null,
   }));
 
@@ -82,9 +81,9 @@ describe('LeaderboardService.getLeaderboard', () => {
   it('issues ONE batched minutes query, never a per-user lookup', async () => {
     const { service, getMinutesForDatesByUser, getMinutesForDate, getTotalsForAllUsers } = makeService(
       makeUsers([
-        { userId: 'a', total: 100, streak: 3, isPublic: true },
-        { userId: 'b', total: 50, streak: 1, isPublic: true },
-        { userId: 'c', total: 25, streak: 0, isPublic: true },
+        { userId: 'a', total: 100, streak: 3 },
+        { userId: 'b', total: 50, streak: 1 },
+        { userId: 'c', total: 25, streak: 0 },
       ])
     );
 
@@ -101,8 +100,8 @@ describe('LeaderboardService.getLeaderboard', () => {
   it('asks only for users that will be rendered, and for exactly two dates', async () => {
     const { service, getMinutesForDatesByUser } = makeService(
       makeUsers([
-        { userId: 'ranked', total: 100, streak: 3, isPublic: true },
-        { userId: 'zero', total: 0, streak: 0, isPublic: true },
+        { userId: 'ranked', total: 100, streak: 3 },
+        { userId: 'zero', total: 0, streak: 0 },
       ])
     );
 
@@ -121,8 +120,8 @@ describe('LeaderboardService.getLeaderboard', () => {
     const minutes = new Map([['a', new Map([[TODAY, 42]])]]);
     const { service } = makeService(
       makeUsers([
-        { userId: 'a', total: 100, streak: 3, isPublic: true },
-        { userId: 'b', total: 50, streak: 1, isPublic: true },
+        { userId: 'a', total: 100, streak: 3 },
+        { userId: 'b', total: 50, streak: 1 },
       ]),
       minutes
     );
@@ -144,8 +143,8 @@ describe('LeaderboardService.getLeaderboard', () => {
     ]);
     const { service } = makeService(
       makeUsers([
-        { userId: 'low', total: 999, streak: 0, isPublic: true },
-        { userId: 'high', total: 1, streak: 0, isPublic: true },
+        { userId: 'low', total: 999, streak: 0 },
+        { userId: 'high', total: 1, streak: 0 },
       ]),
       minutes
     );
@@ -157,23 +156,25 @@ describe('LeaderboardService.getLeaderboard', () => {
     expect(result.data.map((e) => e.rank)).toEqual([1, 2]);
   });
 
-  it('masks streak for non-public users but keeps their minutes', async () => {
+  it('shows every account\'s streak and never ships an email (isPublic removed, LOGIN_REWORK Q7/Q20)', async () => {
     const { service } = makeService(
       makeUsers([
-        { userId: 'shy', total: 100, streak: 7, isPublic: false },
-        { userId: 'open', total: 50, streak: 5, isPublic: true },
+        { userId: 'quiet', total: 100, streak: 7 },
+        { userId: 'open', total: 50, streak: 5 },
       ])
     );
 
     const result = await service.getLeaderboard();
 
-    expect(result.data.find((e) => e.userId === 'shy')!.currentStreak).toBeNull();
+    expect(result.data.find((e) => e.userId === 'quiet')!.currentStreak).toBe(7);
     expect(result.data.find((e) => e.userId === 'open')!.currentStreak).toBe(5);
+    expect(result.data.every((e) => !('email' in e))).toBe(true);
+    expect(result.data.find((e) => e.userId === 'open')!.username).toBe('open');
   });
 
   it('returns empty without querying minutes when every user has zero points', async () => {
     const { service, getMinutesForDatesByUser } = makeService(
-      makeUsers([{ userId: 'zero', total: 0, streak: 0, isPublic: true }])
+      makeUsers([{ userId: 'zero', total: 0, streak: 0 }])
     );
 
     const result = await service.getLeaderboard();

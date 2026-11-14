@@ -22,7 +22,7 @@ const REQUEST_ID = '33333333-3333-4333-8333-333333333333';
 
 /** Minimal user row shape the service reads off IUserDAL.findById. */
 function userRow(id: string, name: string) {
-    return { id, name, email: `${name.toLowerCase()}@example.com`, avatarIconId: null };
+    return { id, name, username: name.toLowerCase(), avatarIconId: null };
 }
 
 function pendingRow(overrides: Partial<Friendship> = {}): Friendship {
@@ -73,8 +73,22 @@ function makeFriendshipDAL(overrides: Partial<IFriendshipDAL> = {}) {
     };
 }
 
+/** Friend codes (migration 187) for the two stub accounts, stored form (no hyphen). */
+const FRIEND_CODES: Record<string, string> = { [ALICE]: 'AAAA2222', [BOB]: 'BBBB3333' };
+
 function makeUserDAL(users: Record<string, ReturnType<typeof userRow>> = {}) {
-    return { findById: async (id: string) => users[id] ?? null } as any;
+    return {
+        findById: async (id: string) => users[id] ?? null,
+        findByFriendCode: async (code: string) => {
+            const id = Object.keys(users).find((userId) => FRIEND_CODES[userId] === code);
+            return id ? { id } : null;
+        },
+        // Migration 188: usernames are the lowercased names in these fixtures (userRow).
+        findByUsername: async (username: string) => {
+            const id = Object.keys(users).find((userId) => users[userId].username === username);
+            return id ? { id } : null;
+        },
+    } as any;
 }
 
 /**
@@ -142,6 +156,49 @@ describe('FriendsService.sendRequest', () => {
         await expect(service.sendRequest(ALICE, 'bob@example.com')).rejects.toBeInstanceOf(ValidationError);
         await expect(service.sendRequest(ALICE, undefined)).rejects.toBeInstanceOf(ValidationError);
         expect(calls).toEqual([]);
+    });
+
+    it('resolves a friend code — any case, hyphen optional — to the account', async () => {
+        const { dal, calls } = makeFriendshipDAL();
+        const service = makeService(dal, userDAL);
+        const result = await service.sendRequest(ALICE, 'bbbb-3333');
+        expect(result.status).toBe('requested');
+        expect(calls).toContain('createRequest');
+    });
+
+    it('rejects a code with a look-alike symbol (O, 0, I, L, 1, U) before querying', async () => {
+        const { dal, calls } = makeFriendshipDAL();
+        const service = makeService(dal, userDAL);
+        await expect(service.sendRequest(ALICE, 'BBBB-333O')).rejects.toBeInstanceOf(ValidationError);
+        expect(calls).toEqual([]);
+    });
+
+    it('resolves a username, with or without the @ (LOGIN_REWORK Q20)', async () => {
+        for (const handle of ['bob', '@Bob']) {
+            const { dal, calls } = makeFriendshipDAL();
+            const service = makeService(dal, userDAL);
+            const result = await service.sendRequest(ALICE, handle);
+            expect(result.status).toBe('requested');
+            expect(calls).toContain('createRequest');
+        }
+    });
+
+    it('404s on an @username that belongs to no account', async () => {
+        const { dal } = makeFriendshipDAL();
+        const service = makeService(dal, userDAL);
+        await expect(service.sendRequest(ALICE, '@nobody_here')).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it('404s on a well-formed code that belongs to no account', async () => {
+        const { dal } = makeFriendshipDAL();
+        const service = makeService(dal, userDAL);
+        await expect(service.sendRequest(ALICE, 'ZZZZ-9999')).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it('rejects friending yourself by your own code', async () => {
+        const { dal } = makeFriendshipDAL();
+        const service = makeService(dal, userDAL);
+        await expect(service.sendRequest(ALICE, 'AAAA-2222')).rejects.toBeInstanceOf(ValidationError);
     });
 
     it('rejects friending yourself', async () => {
@@ -344,7 +401,7 @@ const CARLA = '44444444-4444-4444-8444-444444444444';
 function profile(id: string, name: string, over: Record<string, unknown> = {}) {
     return {
         userId: id,
-        email: `${name.toLowerCase()}@example.com`,
+        username: name.toLowerCase(),
         name,
         avatarIconId: null,
         selectedLanguage: 'zh',
@@ -362,7 +419,7 @@ function makeLeaderboardService(opts: {
 }) {
     const { dal } = makeFriendshipDAL({
         listFriends: async () => opts.friends.map((f) => ({
-            userId: f.userId, name: null, email: '', avatarIconId: null, friendsSince: f.friendsSince,
+            userId: f.userId, name: null, username: '', avatarIconId: null, friendsSince: f.friendsSince,
         })),
     });
     const userDAL = { findScoringProfilesByIds: async () => opts.profiles } as any;

@@ -65,8 +65,9 @@ function HeaderAvatarButton({
     // Signed out there is no profile to show (the flame renders null in that case too).
     if (!user) return null;
 
-    // Name is optional on some accounts; fall back to the email so the initial is never empty.
-    const initial = (user.name || user.email || "?").charAt(0).toUpperCase();
+    // Name is optional (docs/LOGIN_REWORK.md Q19); the username is required, so the initial
+    // is never empty.
+    const initial = (user.name || user.username || "?").charAt(0).toUpperCase();
 
     // `box-shadow` is one property, so the rest shadow and the glow halo share it.
     const glowShadow = glowPx > 0

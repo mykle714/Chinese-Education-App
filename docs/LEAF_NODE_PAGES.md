@@ -111,13 +111,22 @@ the `HEADER_*` constants, `src/components/pageHeaderSizing.ts`,
 
 | `size` | Title | Padding | Defaulted when | Design class |
 | --- | --- | --- | --- | --- |
-| `hub` | 28px / 600 / -0.025em | `23px 22px 0` | `showBack` is false | `.hd` |
-| `node` | 24px / 600 / -0.02em | `23px 22px 0` | `arrowDirection="left"` | `.hd` + back |
-| `dense` | 21px / 600 / -0.018em | `23px 22px 0` | **never — ask for it** | `.hd` (Card Detail, Learn) |
-| `leaf` | 20px / 600 / -0.015em | `27px 18px 8px` | `arrowDirection="down"` | `.lhd` |
+| `hub` | 28px / 600 / -0.025em | `23px 22px 14px` | `showBack` is false | `.hd` |
+| `node` | 24px / 600 / -0.02em | `23px 22px 14px` | `arrowDirection="left"` | `.hd` + back |
+| `dense` | 21px / 600 / -0.018em | `23px 22px 14px` | **never — ask for it** | `.hd` (Card Detail, Learn) |
+| `leaf` | 20px / 600 / -0.015em | `27px 18px 14px` | `arrowDirection="down"` | `.lhd` |
 
-⚠️ **`leaf` is the one size whose padding is not the design's.** The design writes
-`.lhd { padding: 21px 18px 0 }`; the app ships `27px 18px 8px` (2026-09-05). The leaf
+**One header-to-content gap for every size (user, 2026-11-14).** All four sizes pad
+**14px below** the header (`HEADER_PAD_BOTTOM_PX` in `src/components/PageHeader.tsx`, the
+app's card gutter), so whatever a page puts first — a tab selector, a card, a list —
+starts the same distance under its header everywhere. The design left the `.hd` sizes
+flush (`… 0`) and let each page bring its own top gutter; a page that still does now gets
+that gutter on top of the 14px. A panel's title band (`SheetHeaderSlot`) still overrides
+it — see docs/EIP_SHEET_GESTURES.md.
+
+⚠️ **`leaf`'s TOP padding is not the design's.** The design writes
+`.lhd { padding: 21px 18px 0 }`; the app ships 27px above (2026-09-05; the bottom was 8px
+until the shared 14px gap replaced it). The leaf
 title is the app's smallest (17px then, 20px since the 2026-11-05 scale-up), so the design's padding — tuned under a 24px hub
 title — read as a cramped, short header, and the bottom padding is additive to whatever
 top gutter the body brings (on Settings the first `SettingsSection` contributes only
@@ -200,7 +209,7 @@ so nothing breaks.
 
 `src/utils/pageTransition.ts` → `CIRCLE_MOTION`, `circleCoverRadius`, `circleClip`,
 `ScreenPoint`, `readCirclePoint`; `useSlideNavigate` (`circleFrom`); `usePageSlide` →
-`exit(…, circleTo)`; `LeafPage` / `NodePage` `exitCircleTo`; the `data-vt-dir="circle"` rules in `src/index.css`.
+`exit(…, circleTo)` and the standalone `runCircleExit`; `LeafPage` / `NodePage` `exitCircleTo`; the `data-vt-dir="circle"` rules in `src/index.css`.
 
 A leaf can be opened and closed with a circle instead of the slide: the page is revealed in
 a circle growing out of the tapped thing, and Back closes it into a circle shrinking onto
@@ -227,6 +236,9 @@ one transition.
 - **Used by:** the Deck Tower's notebook paper stack ↔ the Writing Notebook
   (DECK_TOWER.md § The notebook stack). (The sort platform ↔ Add Cards used it until
   2026-11-09; it now dashes, below.)
+- **The exit on its own:** `runCircleExit(el, performNavigate, circleTo)` is the same exit
+  without a `usePageSlide` surface. The login page uses it to close onto its platform after
+  a sign-in (LAUNCH_SCREEN.md § "Leaving the login screen").
 
 ### The dash transition (the world pan, between routes)
 
@@ -401,9 +413,6 @@ own-animation pages) are neither archetype.
 | `/reader/:id` | `ReaderDocumentPage` | Node-style (footerless) — the open-document cdp-style page, see § below |
 | `/flashcards/card/:id` | `VocabCardDetailPage` | Node (saved-card cdp; slab footer, Flashcards tab lit) |
 | `/flashcards/writing/notebook` | `WritingNotebookPage` | Leaf (from td's writing-world paper stack, circle transition) |
-| `/friends/requests` | `IncomingRequestsPage` | Node |
-| `/friends/sent` | `SentRequestsPage` | Node |
-| `/friends/remove` | `RemoveFriendsPage` | Node |
 | `/games/bubble-match` | `BubbleMatchPage` | Leaf (footer removed; the info/picker screen no longer shows the footer). The five `/games/*` rows are mounted only while the `standaloneGames` flag is on (off since 2026-11-06) |
 | `/games/word-search` | `WordSearchPage` | Leaf |
 | `/games/match-speed` | `MatchSpeedPage` | Leaf |

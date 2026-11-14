@@ -57,14 +57,12 @@
          in src/theme/fonts.ts:
            Instrument Sans  - primary Latin UI
            Instrument Serif - Latin display / hero (CJK falls through to Noto Serif SC)
-           Azeret Mono      - DATA: counts, scores, user ids, timers, numbered-tone
-                              pinyin. Replaced JetBrains Mono on 2026-09-04.
            Public Sans      - INFO TYPE: the overline/caption voice (FONTS.label). Split
-                              off the mono token on 2026-09-04 because that one token was
+                              off the old mono token on 2026-09-04 because that one token was
                               setting both prose and data; see docs/INFO_TYPE_LAB.md.
            Noto Sans/Serif SC - CJK glyphs + hero character
          `display=swap` on all of them: text must stay readable while faces load. -->
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=Azeret+Mono:wght@400;500;700&family=Public+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=Public+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@400;700&display=swap" rel="stylesheet">
     <!-- Material Symbols Rounded — the icon face (D3), replacing per-icon
          @mui/icons-material imports. Separate <link> because it is a variable font on
          four axes (optical size, weight, fill, grade) that the other families do not

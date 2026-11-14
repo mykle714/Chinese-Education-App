@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { Box, Typography, Button, IconButton, Portal, Snackbar, Switch } from "@mui/material";
+import { Box, Typography, Button, Switch } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
-import LibraryShelfWithVelocity from "../../components/velocity/LibraryShelfWithVelocity";
+import LibraryShelfPanel from "../../components/velocity/LibraryShelfPanel";
 import IconPickerDialog from "../../components/IconPickerDialog";
 import BankBanner from "../../minutePoints/BankBanner";
 import Icon from "../../components/Icon";
-import { Label, Row, RowList, SectionHeader } from "../../components/primitives";
+import { Row, RowList, SectionRule } from "../../components/primitives";
 import { API_BASE_URL } from "../../constants";
 import { useAuth } from "../../AuthContext";
 import { useConfirmation } from "../../contexts/ConfirmationContext";
@@ -20,17 +20,14 @@ import { forgiveAutoFocusNotice, oweAutoFocusNotice } from "../../features/focus
  * (docs/SHELF_REDESIGN.md entry 5).
  *
  * Assembled ENTIRELY from shelf-system primitives, in the artboard's order: the profile as
- * a `Row`, the minute bank as a `StatCard` (`BankBanner`, docs/DAILY_MINUTE_BANKING.md § 6 —
- * not on the artboard, added 2026-10-10), the four utcm bands as a `Shelf` under a "Your
- * library" header, Velocity as a `StatCard`, the two mastery goals as `Row`s with switches,
+ * a `Row`, the minute bank as a two-column `SectionCard` (`BankBanner`, docs/DAILY_MINUTE_BANKING.md § 6 —
+ * not on the artboard, added 2026-10-10), the four utcm bands and Velocity together in an
+ * unboxed `LibraryShelfPanel` (the same panel a friend's row uses, without its header), the two mastery goals as `Row`s with switches,
  * and Log Out as the `.btn3` outlined block.
  *
  * ⚠️ THE PANE ITSELF HAS NO SIDE PADDING. Every primitive here carries its own page gutter
- * (`RowList` 16px, `SectionHeader`/`Shelf` 22px, `StatCard` 18px) plus its own top margin,
+ * (`RowList` 16px, `SectionRule` 22px, `SectionCard` 18px) plus its own top margin,
  * because in the design those gutters differ per shape.
- *
- * ⚠️ The toast is PORTALED: this pane sits on a transformed track, which would otherwise
- * become its `position: fixed` containing block.
  *
  * LAYER: app-level page surface (src/pages). Data comes from AuthContext +
  * useCategoryCounts/useVelocity; no direct server calls.
@@ -91,20 +88,6 @@ function AccountPane({ onClose }: AccountPaneProps) {
     // account's selected language (docs/VELOCITY.md). Display-only.
     const { velocity, windowDays, boundaryCounts, loaded: velocityLoaded } = useVelocity();
 
-    // "Copied to clipboard" toast for the user-ID copy button
-    const [copiedToastOpen, setCopiedToastOpen] = useState(false);
-
-    // Copy the user ID to the clipboard, then surface a confirmation toast.
-    // Falls back silently if the Clipboard API is unavailable (e.g. insecure context).
-    const handleCopyUserId = async (id: string) => {
-        try {
-            await navigator.clipboard.writeText(id);
-            setCopiedToastOpen(true);
-        } catch {
-            // Clipboard unavailable (non-HTTPS / unsupported) — no-op rather than crash.
-        }
-    };
-
     // Loading / signed-out are edge states: the host only offers the avatar button while
     // a user is loaded. They still render so the pane never opens blank.
     if (isLoading || !user) {
@@ -120,14 +103,12 @@ function AccountPane({ onClose }: AccountPaneProps) {
         );
     }
 
-    const userId = user.id;
-    const userEmail = user.email;
-    const userName = user.name;
-
-    // The shelf header's right-hand figure: the library's total size. It is the sum of
-    // the four bands rather than a fifth number from the server, so it can never
-    // disagree with the spines under it.
-    const totalCards = Object.values(categoryCounts).reduce((sum, n) => sum + n, 0);
+    // Header identity: the username is the title (`@`-prefixed, like FriendPersonRow's
+    // title) and the optional display name (migration 188, docs/LOGIN_REWORK.md Q19) is
+    // the subtitle, omitted when unset. Email/phone are deliberately NOT shown here
+    // (user, 2026-11-14) — contact details stay off the account header.
+    const profileTitle = `@${user.username}`;
+    const profileSubtitle = user.name || undefined;
 
     // The avatar OWNS the whole 48px slot (Row's `avatar` escape hatch) because it is
     // tappable and the styled 36px box the primitive draws for `icon`/`initials` is
@@ -170,60 +151,42 @@ function AccountPane({ onClose }: AccountPaneProps) {
                     sx={{ width: "100%", height: "100%", objectFit: "contain", padding: "6px" }}
                 />
             ) : (
-                userName.charAt(0).toUpperCase()
+                (user.name || user.username).charAt(0).toUpperCase()
             )}
         </Box>
     );
 
     return (
         <>
-                    {/* Profile — one Row. Its third (mono) line is the copyable user ID,
-                        which Friends needs the learner to be able to hand out. */}
+                    {/* Profile — one Row: avatar, @username, name. No email/phone. No user ID: the copyable ID
+                        lives on the Friends tab, the one place a learner hands it out
+                        (user, 2026-11-13). */}
                     <RowList className="account-sheet__profile">
                         <Row
                             className="account-sheet__profile-row"
                             avatar={avatarButton}
-                            title={userName}
-                            subtitle={userEmail}
-                            meta={
-                                <>
-                                    ID {userId}
-                                    <IconButton
-                                        className="account-sheet__copy-user-id-button"
-                                        aria-label="Copy user ID"
-                                        size="small"
-                                        onClick={() => handleCopyUserId(String(userId))}
-                                        sx={{ color: COLORS.textFaint, padding: "1px" }}
-                                    >
-                                        <Icon name="content_copy" size={12} color="inherit" />
-                                    </IconButton>
-                                </>
-                            }
+                            title={profileTitle}
+                            subtitle={profileSubtitle}
                         />
                     </RowList>
 
-                    {/* The minute bank — NET through yesterday, with today's minutes as
-                        a corner chip. Directly under the profile row, tying it to the
+                    {/* The minute bank — NET through yesterday, with today's minutes in
+                        a right-hand column. Directly under the profile row, tying it to the
                         avatar the td banking embers fly into (Q4). */}
                     <BankBanner className="account-sheet__bank-banner" />
 
-                    <SectionHeader
-                        className="account-sheet__library-header"
-                        label={
-                            <>
-                                <Label>Your library</Label>
-                                {countsLoaded && <Label className="account-sheet__library-total">{totalCards.toLocaleString()}</Label>}
-                            </>
-                        }
-                        sx={{ "& > .lab": { flexShrink: 0 } }}
-                    />
-                    {/* The library shelf, with the Velocity card hanging under it: one
-                        spine per utcm band (height encodes its count), then the card whose
-                        U-arrows join neighbouring spines with the cards that climbed between
-                        them in the last 7 days (docs/VELOCITY.md). One component, because
-                        the arrows have to line up with the spines. It holds each half back
-                        until it loads and reserves its height, so nothing below shifts. */}
-                    <LibraryShelfWithVelocity
+                    {/* The library, unboxed on the page (user, 2026-11-14): one spine per
+                        utcm band (height encodes its count), then the Velocity card
+                        whose U-arrows join neighbouring spines with the cards that climbed
+                        between them in the last 7 days (docs/VELOCITY.md). The same `LibraryShelfPanel` a friend's profile
+                        draws per language, minus its flag/name header and minutes flame —
+                        this sheet is already one language, and BankBanner above already
+                        shows the minutes. No "Your library" header either (user,
+                        2026-11-13). The panel holds each half
+                        back until it loads and reserves its height, so nothing below
+                        shifts. The panel's default `14px 18px 0` margin lines it up
+                        with BankBanner's card directly above. */}
+                    <LibraryShelfPanel
                         className="account-sheet__library"
                         counts={countsLoaded ? categoryCounts : null}
                         velocity={velocityLoaded ? { velocity, windowDays, boundaryCounts } : null}
@@ -231,24 +194,25 @@ function AccountPane({ onClose }: AccountPaneProps) {
 
                 {/* Goals — opt into the Reading / Writing mastery goals
                     (docs/MASTERY_REWORK.md). Recognition + Production are always pursued
-                    and aren't shown. Hidden for Spanish accounts.
-
-                    The artboard replaces the old explanatory paragraph with one subtitle
-                    per row ("Adds a reading bar to every card"), which is the same fact
-                    said once per control instead of once per section. */}
+                    and aren't shown. Hidden for Spanish accounts. Title-only rows: the
+                    per-row "Adds a reading/writing bar to every card" subtitles were
+                    dropped (user, 2026-11-14). */}
                 {showGoals && (
                     <>
-                        <SectionHeader className="account-sheet__goals-header" label="Goals" />
+                        {/* A SectionRule (overline + hairline), not a SectionHeader: the
+                            header shape is only for an overline with a tappable action,
+                            and Goals has none (src/components/primitives/Label.tsx). */}
+                        <SectionRule className="account-sheet__goals-header" label="Goals" />
                         <RowList className="account-sheet__goals">
                             <Row
                                 className="account-sheet__goal-reading"
                                 icon="menu_book"
                                 hue="red"
                                 title="Learn reading"
-                                subtitle="Adds a reading bar to every card"
                                 trailing={
                                     <Switch
                                         className="account-sheet__goal-reading-switch"
+                                        sx={goalSwitchOnSx(COLORS.redMk)}
                                         inputProps={{ "aria-label": "Learn reading" }}
                                         checked={user.readingGoal === true}
                                         disabled={goalSaving !== null}
@@ -261,10 +225,10 @@ function AccountPane({ onClose }: AccountPaneProps) {
                                 icon="edit"
                                 hue="org"
                                 title="Learn writing"
-                                subtitle="Adds a writing bar to every card"
                                 trailing={
                                     <Switch
                                         className="account-sheet__goal-writing-switch"
+                                        sx={goalSwitchOnSx(COLORS.orgMk)}
                                         inputProps={{ "aria-label": "Learn writing" }}
                                         checked={user.writingGoal === true}
                                         disabled={goalSaving !== null}
@@ -303,20 +267,18 @@ function AccountPane({ onClose }: AccountPaneProps) {
                 onRemove={() => updateAvatar(null)}
                 removeLabel="Remove avatar"
             />
-
-            {/* "Copied to clipboard" confirmation for the user-ID copy button */}
-            <Portal>
-                <Snackbar
-                    className="account-sheet__copy-toast"
-                    open={copiedToastOpen}
-                    autoHideDuration={2000}
-                    onClose={() => setCopiedToastOpen(false)}
-                    message="Copied to clipboard"
-                    anchorOrigin={{ vertical: "top", horizontal: "center" }}
-                />
-            </Portal>
         </>
     );
 }
+
+/**
+ * "On" track colour for a goal switch: each one takes its row's ramp Mark tier
+ * (Reading → `redMk`, Writing → `orgMk`, matching the row icon's hue). Only the TRACK
+ * is recoloured — the knob keeps the theme's app-wide ink from the `MuiSwitch`
+ * override (ThemeContext), per the user (2026-11-14).
+ */
+const goalSwitchOnSx = (onColor: string) => ({
+    "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": { backgroundColor: onColor },
+});
 
 export default AccountPane;

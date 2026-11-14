@@ -17,8 +17,8 @@ import { addDaysToDateString } from '../utils/streakDate.js';
  * Splitting the board per language would fragment an already-small user base, and
  * a learner's standing should reflect all the study they did, not just one track.
  *
- * Note: streak is hidden (null) for users with isPublic = false. This is the only
- * field gated on isPublic — totals and minutes are still public.
+ * Every account is public (`isPublic` was removed, docs/LOGIN_REWORK.md Q7), so every
+ * streak is shown. Rows carry `username`, never `email` (Q20).
  */
 export class LeaderboardService {
   constructor(
@@ -30,7 +30,7 @@ export class LeaderboardService {
 
   async getLeaderboard(): Promise<LeaderboardResponse> {
     try {
-      // Roster = identity + isPublic only; since migration 130 the points no longer live on
+      // Roster = public identity only; since migration 130 the points no longer live on
       // `users`, so the wallet/streak totals come from a second grouped query over
       // user_languages. Two queries, both O(1) in the number of users — never
       // getAllProgress() in a per-user loop. We mask streak for non-public users below.
@@ -90,12 +90,13 @@ export class LeaderboardService {
         const totals = totalsByUser.get(user.userId);
         return {
           userId: user.userId,
-          email: user.email,
+          username: user.username,
           name: user.name,
           // Σ of the user's per-language wallets (see the class note on why the board is global).
           accumulativeMinutePoints: totals?.totalMinutePoints ?? 0,
           // Hide streak from non-public users. Best = MAX across the user's languages.
-          currentStreak: user.isPublic ? (totals?.bestStreak ?? 0) : null,
+          // Every account is public since `isPublic` was removed (docs/LOGIN_REWORK.md Q7).
+          currentStreak: totals?.bestStreak ?? 0,
           todaysMinutes: userMinutes?.get(todayStr) ?? 0,
           yesterdaysMinutes: userMinutes?.get(yesterdayStr) ?? 0,
           weeklyAchievements: weeklyAchievementCounts.get(user.userId) ?? 0,

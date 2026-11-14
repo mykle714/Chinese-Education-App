@@ -238,21 +238,24 @@ every account either way — the goal surfaces them, it does not start them.
 
 ### Account settings UI
 
-**Goals** section on the **account page** (`src/pages/AccountSheet.tsx`) — a
+**Goals** section on the **account page** (`src/pages/account/AccountPane.tsx`, inside `src/pages/AccountSheet.tsx`) — a
 `SectionHeader` overline plus two shelf-system `Row`s, each carrying a MUI `Switch`
 in its `trailing` slot:
 
-| Row | Glyph / hue | Subtitle | State |
-|---|---|---|---|
-| Learn reading | `menu_book`, `red` | Adds a reading bar to every card | `users.readingGoal` |
-| Learn writing | `edit`, `org` | Adds a writing bar to every card | `users.writingGoal` |
+| Row | Glyph / hue | State |
+|---|---|---|
+| Learn reading | `menu_book`, `red` | `users.readingGoal` |
+| Learn writing | `edit`, `org` | `users.writingGoal` |
+
+The rows are title-only (no subtitle) since 2026-11-14.
 
 **They are switches, not checkboxes, and not the artboard's glyphs.** Artboard 5 of
 the shelf redesign draws `toggle_on` / `toggle_off` Material Symbols; a glyph is not
-focusable, checkable or announced, so the control stays a real form control painted
-the artboard's colours (`COLORS.grnA` when on). The skin is `GOAL_SWITCH_SX` in
-`AccountSheet.tsx` and belongs in `MuiSwitch.styleOverrides` once the other ten
-`Switch` call sites are converted.
+focusable, checkable or announced, so the control stays a real form control. Shape
+comes from the app-wide `MuiSwitch` override (`src/contexts/ThemeContext.tsx`, "on" =
+ink); the goal switches recolour only the "on" TRACK (the knob stays ink) with their row's ramp Mark tier
+— Reading `COLORS.redMk`, Writing `COLORS.orgMk` — via `goalSwitchOnSx` in
+`src/pages/account/AccountPane.tsx` (2026-11-14).
 
 **The section-level description paragraph is gone**, replaced by the one-line
 subtitle per row above. The paragraph said once, for both goals, what each row now

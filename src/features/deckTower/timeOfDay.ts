@@ -20,7 +20,8 @@ import type { TowerWorld } from "./towerWorlds";
  *     the world's own `nightSky` (OKLCH, towerWorlds.ts — reading's aurora teal, writing's
  *     velvet violet) or, for a world without one (main), its day sky turned in OKLCH
  *     (`NIGHT_SKY`): its hue rotated part-way toward night's hue along the shortest arc, its
- *     lightness and chroma set to night's. ⚠️ Derived colours, outside the colour framework
+ *     lightness set to night's and its chroma to night's (scaled down for a desaturated
+ *     day sky — overcast's grey — by `SATURATED_DAY_CHROMA`). ⚠️ Derived colours, outside the colour framework
  *     (the same divergence as `spaceOver`): the framework has no night tier.
  *   - AURORA: a rare (1%) aurora over the reading world's night — towerAurora.ts.
  *   - WASH (night only; `phaseWash`, src/timeOfDay/wash.ts): everything drawn ON the sky (platform, cards, pawns, clouds, wind,
@@ -58,6 +59,16 @@ interface SkyRecipe {
 
 const NIGHT_SKY: SkyRecipe = { hue: 270, hueBy: 0.35, L: 0.34, C: 0.08 };
 
+/**
+ * The day-sky chroma at or above which night takes its full `NIGHT_SKY.C`. Every saturated
+ * day sky (the world tokens and the weather skies, gamut-max at L 0.77: 0.116–0.132) is
+ * above it, so their nights are unchanged. A DESATURATED day sky — today only overcast
+ * (weatherSky.ts → `OVERCAST_SKY`, chroma 0.04) — gets the same share of night's chroma,
+ * so a grey day turns into a darker grey night (≈ #2F3847) rather than night blue
+ * (2026-11-13, docs/TOWER_WEATHER_SKY.md § 2).
+ */
+const SATURATED_DAY_CHROMA = 0.11;
+
 /** The star field's opacity from the ground, per phase (SpaceBackdrop `groundStars`). */
 const PHASE_STARS: Record<DayPhase, number> = { day: 0, night: 0.55 };
 
@@ -73,8 +84,9 @@ export function phaseSky(world: SkyWorld, phase: DayPhase): string {
     const daySky = world.sky;
     if (phase === "day") return daySky;
     if (world.nightSky) return oklchToHex(world.nightSky.L, world.nightSky.C, world.nightSky.h);
-    const [, , h] = hexToOklch(daySky);
-    return oklchToHex(NIGHT_SKY.L, NIGHT_SKY.C, (h + hueTurn(h, NIGHT_SKY.hue) * NIGHT_SKY.hueBy + 360) % 360);
+    const [, dayC, h] = hexToOklch(daySky);
+    const nightC = NIGHT_SKY.C * Math.min(1, dayC / SATURATED_DAY_CHROMA);
+    return oklchToHex(NIGHT_SKY.L, nightC, (h + hueTurn(h, NIGHT_SKY.hue) * NIGHT_SKY.hueBy + 360) % 360);
 }
 
 /** Everything the page paints with for one time of day. */

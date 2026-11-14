@@ -147,12 +147,14 @@ PostgreSQL 15 database with Node.js/Express backend, managed via Docker Compose.
 | Column Name | Data Type | Nullable | Default | Description |
 | --- | --- | --- | --- | --- |
 | id | uuid | NO | `uuid_generate_v4()` | Unique identifier for each user |
-| email | varchar(255) | NO | — | User's email address (UNIQUE) |
-| name | varchar(100) | NO | — | User's display name |
-| password | varchar(255) | NO | — | bcrypt hash |
+| email | varchar(255) | YES | — | Lowercase (CHECK), UNIQUE; null for a phone-only account (migration 188). Private: never sent about another user |
+| name | varchar(100) | YES | — | Optional display name (migration 188) |
+| username | text | NO | backfilled | Public handle, UNIQUE, `^[a-z][a-z0-9_]{2,19}$`, changeable (migration 188) |
+| phone | text | YES | — | E.164, UNIQUE where set (migration 188). Private |
+| emailVerifiedAt / phoneVerifiedAt | timestamptz | YES | — | When the channel was verified (migration 188) |
+| password | varchar(255) | YES | — | bcrypt hash; null for a phone-only account (CHECK: only with an email) |
 | selectedLanguage | varchar(10) | YES | `'zh'` | The learner's active language |
 | lastMinutePointIncrement | timestamp | YES | — | Rate-limit anchor for minute-point increments |
-| isPublic | boolean | YES | `true` | Leaderboard/profile visibility — see [PUBLIC_PRIVATE_USERS_IMPLEMENTATION.md](./PUBLIC_PRIVATE_USERS_IMPLEMENTATION.md) |
 | createdAt | timestamp | YES | `now()` | Account creation |
 | timezone | text | NO | `'UTC'` | IANA zone; resolves the 4 AM-bounded streak day |
 | avatarIconId | text | YES | — | FK → `icons8("icons8Id")`, ON DELETE SET NULL |

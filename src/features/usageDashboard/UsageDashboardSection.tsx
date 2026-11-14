@@ -3,7 +3,7 @@ import { Box, Typography } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { Label, SectionCard, SectionRule, Segmented } from "../../components/primitives";
 import { COLORS, RAMP, type RampHue } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import { LANGUAGE_NAMES, type Language } from "../../../server/contracts/wire";
 import {
@@ -79,11 +79,11 @@ function StatLine({ label, value, sub, meter, hue = "blu", indent = false }: {
                     {label}
                 </Typography>
                 {sub && (
-                    <Typography className="usage-dashboard__stat-sub" sx={{ fontFamily: FONTS.mono, fontSize: SIZE.micro, color: COLORS.textFaint, whiteSpace: "nowrap" }}>
+                    <Typography className="usage-dashboard__stat-sub" sx={{ ...DATA_TYPE, fontSize: SIZE.micro, color: COLORS.textFaint, whiteSpace: "nowrap" }}>
                         {sub}
                     </Typography>
                 )}
-                <Typography className="usage-dashboard__stat-value" sx={{ fontFamily: FONTS.mono, fontSize: indent ? SIZE.caption : SIZE.body, color: COLORS.onSurface, minWidth: 44, textAlign: "right" }}>
+                <Typography className="usage-dashboard__stat-value" sx={{ ...DATA_TYPE, fontSize: indent ? SIZE.caption : SIZE.body, color: COLORS.onSurface, minWidth: 44, textAlign: "right" }}>
                     {value.toLocaleString()}
                 </Typography>
             </Box>

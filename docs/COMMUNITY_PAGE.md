@@ -24,7 +24,8 @@ A discovery surface where learners browse, upvote, and copy **advanced card-icon
 users have saved. The page (`CommunityPage.tsx`, a Menu-reached `NodePage`; back arrow → `navigateBackOr(navigate, "/")` from `src/utils/navigateBack.ts`, i.e. one history entry back, or `/` when it is the first entry) has a search bar
 (`CommunitySearchBar`) above two horizontally-scrolling, infinitely-paginated feeds:
 
-A **fourth surface** renders the same tiles outside this page: the user profile's card-design
+A **fourth surface** renders the same tiles outside this page — ⚠️ **currently unreachable**,
+since its only host, the profile page, was deleted 2026-11-13: the profile card-design
 grid ([USER_PROFILE_PAGE.md](./USER_PROFILE_PAGE.md)) lists one account's advanced layouts via
 `ICommunityLayoutDAL.getDesignsByOwner`, reusing `CommunityDesignCard`/`CommunityDesignZoom`
 and the vote/apply flow verbatim. It differs from the three feeds below in three ways — it

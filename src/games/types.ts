@@ -47,8 +47,6 @@ export interface GameDef {
         components take no props, so the default `ComponentType` ({}-props) is what
         `React.lazy` of a plain `React.FC` resolves to. */
     Component?: LazyExoticComponent<ComponentType>;
-    /** When true, hide the game from public/demo accounts. Defaults to false. */
-    requiresAuth?: boolean;
     /**
      * The single mastery track this game feeds (docs/MASTERY_REWORK.md). It is NOT
      * shown on the hub (name-only tiles since 2026-10-03); it drives the game's mark

@@ -91,6 +91,10 @@ function relativeLuminance(color: string): number | null {
  * Side effect, by design limited to while a dark ground is claimed: native form
  * controls and scrollbars render dark. Text is unaffected — `:root` sets `color`
  * explicitly (src/index.css), so nothing inherits the dark scheme's default ink.
+ * A LIGHT surface floating over a dark claim must opt back out with its own
+ * `color-scheme: light`, or its native controls and scrollbars draw dark on paper — the
+ * AccountSheet's panes do (`paneScrollSx` in src/pages/AccountSheet.tsx, 2026-11-13; they
+ * have since hidden their native scrollbar for an OverlayScrollbar thumb).
  */
 function schemeFor(color: string): "light" | "dark" {
     const l = relativeLuminance(color);

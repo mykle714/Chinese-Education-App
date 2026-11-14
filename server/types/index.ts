@@ -159,11 +159,19 @@ export interface User extends UserProfile {
 }
 
 export interface UserCreateData {
-  email: string;
-  name: string;
-  password: string;
-  /** Defaults to true in the database. */
-  isPublic?: boolean;
+  /** Lowercase; null for a phone-only account. At least one of email / phone (migration 188). */
+  email?: string | null;
+  /** Optional display name (Q19). */
+  name?: string | null;
+  /** The bcrypt hash, never the raw password; null for a phone-only account. */
+  password?: string | null;
+  /** Required, already normalized and validated (wire.ts → usernameProblem). */
+  username: string;
+  /** E.164, already verified (Firebase); null for an email account. */
+  phone?: string | null;
+  /** Set at creation: an account is only ever created AFTER its channel's code checked out (Q14). */
+  emailVerifiedAt?: Date | null;
+  phoneVerifiedAt?: Date | null;
   /**
    * The registering client's IANA timezone. Optional because the column is
    * NOT NULL DEFAULT 'UTC' and a caller with no browser (a seed script, a test)
@@ -186,10 +194,13 @@ export interface UserLoginData {
 
 export interface UserUpdateData {
   email?: string;
-  name?: string;
+  name?: string | null;
   password?: string;
   selectedLanguage?: Language;
-  isPublic?: boolean;
+  username?: string;
+  phone?: string | null;
+  emailVerifiedAt?: Date | null;
+  phoneVerifiedAt?: Date | null;
   /** Set when the user picks/clears their profile avatar (migration 77). */
   avatarIconId?: string | null;
   /** Toggled in account settings (migration 101). */

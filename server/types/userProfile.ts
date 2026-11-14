@@ -37,7 +37,8 @@ export type ProfileRelationship =
 export interface ProfileIdentity {
   userId: string;
   name: string | null;
-  email: string;
+  /** The public handle (migration 188). Never the email (docs/LOGIN_REWORK.md Q20). */
+  username: string;
   avatarIconId: string | null;
   /** The language THIS person is studying — the scope of every stat below. */
   language: string;
@@ -59,7 +60,7 @@ export interface ProfileIdentity {
 export interface ProfileLanguageStats {
   /** The language these figures describe — the client renders its flag beside them. */
   language: string;
-  /** True for the account's currently selected language, which sorts first. */
+  /** Always true now that only the selected language is sent (kept for the contract). */
   isSelected: boolean;
   /** Band-steps climbed in the velocity window, counting only bars they pursue. */
   velocity: number;
@@ -76,17 +77,12 @@ export interface ProfileLanguageStats {
 }
 
 /**
- * The profiled account's study stats — ONE PANEL PER LANGUAGE they are learning.
+ * The profiled account's study stats — ONE PANEL, for their SELECTED (active) language.
  *
- * ── ORDER AND MEMBERSHIP ARE SERVER-OWNED ─────────────────────────────────────
- * `languages` arrives in render order and needs no client sort: the account's SELECTED
- * language first (whatever its balance, including zero — it is what the header says
- * they are studying, so a profile that omitted it would contradict itself), then every
- * other language by `netMinutes` descending. Languages with a **zero** balance other
- * than the selected one are dropped entirely: a `user_languages` row is created the
- * moment somebody so much as switches languages to look around, so an untouched row is
- * a language they are not learning, and drawing an empty panel for it would misreport
- * a focused learner as a dabbler.
+ * `languages` is an array for contract stability (it used to carry one panel per
+ * language with a non-zero wallet) but now always holds exactly one entry: the
+ * account's selected language, drawn even at a zero balance because the header says
+ * they are studying it. See docs/USER_PROFILE_PAGE.md § Stats.
  *
  * `velocityWindowDays` and `activeWorlds` sit OUTSIDE the array because they are
  * account-wide: the window is a constant, and the reading/writing goals are per-account
@@ -97,7 +93,7 @@ export interface ProfileStats {
   velocityWindowDays: number;
   /** Which mastery bars their goals make active — the badges' source of truth. */
   activeWorlds: MasteryWorldId[];
-  /** Selected language first, then the rest by `netMinutes` desc. Never empty. */
+  /** Exactly one entry: the selected language. */
   languages: ProfileLanguageStats[];
 }
 

@@ -8,7 +8,7 @@ import { signedPoints } from "../../features/studyChallenge/challengeLabels";
 import type { ChallengeRoundState } from "./useChallengeRound";
 import { alpha } from "@mui/material/styles";
 import { COLORS } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../theme/fonts";
 import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 
 /**
@@ -164,7 +164,7 @@ const ChallengeRoundScoreboard: React.FC<{
                 </Typography>
             )}
             <Typography sx={{
-                fontFamily: FONTS.mono,
+                ...DATA_TYPE,
                 fontSize: tone === "total" ? "3.25rem" : tone === "sub" ? SIZE.title : SIZE.bodyLg,
                 fontWeight: tone === "line" ? WEIGHT.regular : tone === "sub" ? WEIGHT.semibold : WEIGHT.bold,
                 letterSpacing: tone === "line" ? undefined : "-0.02em",

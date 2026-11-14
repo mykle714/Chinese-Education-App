@@ -3,7 +3,7 @@ import type { SxProps, Theme } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router-dom";
 import Icon from "../Icon";
 import { COLORS, RAMP, type RampHue } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../theme/fonts";
 
 /**
  * `Row` — the shelf system's standard list row (docs/SHELF_REDESIGN.md § A5, class
@@ -45,8 +45,9 @@ export interface RowProps {
     subtitle?: React.ReactNode;
     /**
      * THIRD line, set in mono — the design's second `.s` inside `.tx`. Only one row in
-     * the artboards has it (Account's profile row, carrying the copyable user ID), so
-     * it is the exception rather than a general-purpose slot: reach for it when a row's
+     * the artboards has it (Account's profile row, carrying the copyable user ID — removed
+     * 2026-11-13, the ID now lives on the Friends tab only, so the slot has NO caller
+     * today), so it is the exception rather than a general-purpose slot: reach for it when a row's
      * identity genuinely needs a machine-readable line under its subtitle, not to fit
      * one more sentence in.
      */
@@ -192,7 +193,7 @@ export const Row: React.FC<RowProps> = ({
                         // paragraph is invalid markup.
                         component="span"
                         sx={{
-                            fontFamily: FONTS.mono,
+                            ...DATA_TYPE,
                             fontSize: 10.5,
                             color: COLORS.textFaint,
                             marginTop: "3px",
@@ -209,7 +210,7 @@ export const Row: React.FC<RowProps> = ({
             {value !== undefined && (
                 <Typography
                     className="row__value"
-                    sx={{ fontFamily: FONTS.mono, fontSize: 11, color: COLORS.iconColor, flexShrink: 0 }}
+                    sx={{ ...DATA_TYPE, fontSize: 11, color: COLORS.iconColor, flexShrink: 0 }}
                 >
                     {value}
                 </Typography>

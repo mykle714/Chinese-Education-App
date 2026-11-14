@@ -1,7 +1,7 @@
 import { Box, Typography } from "@mui/material";
 import Icon from "../components/Icon";
 import { COLORS } from "../theme/colors";
-import { FONTS } from "../theme/fonts";
+import { DATA_TYPE } from "../theme/fonts";
 import { SIZE, WEIGHT } from "../theme/scale";
 
 /**
@@ -18,8 +18,9 @@ import { SIZE, WEIGHT } from "../theme/scale";
  *                            passes `fillPct` so the glyph doubles as the seconds
  *                            gauge, and it owns all of the state — the hooks, the
  *                            eligibility branch, the tick, the pulse.
- *   `ProfileStatsCard`       SOMEBODY ELSE's banked minutes for ONE language, a static
- *                            figure on a profile. No fill, no pulse, no ticking.
+ *   `FriendExpandedDetail`   SOMEBODY ELSE's banked minutes for ONE language, a static
+ *                            figure in a friend's expanded leaderboard row. No fill, no
+ *                            pulse, no ticking.
  *
  * ⚠️ THAT SECOND CALLER IS WHY THIS IS PRESENTATIONAL. `MinutePointsFireBadge` reads
  * `useMinutePoints()` internally and is therefore hard-wired to the signed-in viewer
@@ -41,7 +42,7 @@ export const FIRE_COUNT_FONT_SIZE = SIZE.body;
 /**
  * The HEADER flame's glyph and count, ~15% over the defaults above (2026-11-05 header
  * scale-up, docs/SHELF_REDESIGN.md). Separate from the defaults so a non-header caller
- * (ProfileStatsCard) keeps its size. Read by MinutePointsFireBadge (every page header).
+ * (FriendExpandedDetail) keeps its size. Read by MinutePointsFireBadge (every page header).
  */
 export const HEADER_FIRE_GLYPH_PX = 26;
 // Count bumped 16px (bodyLg) → 18px (subtitle) on 2026-11-05 so the figure reads at a glance
@@ -134,7 +135,7 @@ const FireCount: React.FC<FireCountProps> = ({
                     // The design's 4px: tight enough that the glyph reads as the count's
                     // UNIT rather than as a separate icon that happens to sit nearby.
                     gap: "4px",
-                    fontFamily: FONTS.mono,
+                    ...DATA_TYPE,
                     color: tone,
                     // Fade rather than snap between tones. Chromium leaves a ghost
                     // repaint when a filter is removed outright, which is why the old
@@ -221,7 +222,7 @@ const FireCount: React.FC<FireCountProps> = ({
                 className="fire-count__count"
                 component="span"
                 sx={{
-                    fontFamily: FONTS.mono,
+                    ...DATA_TYPE,
                     fontSize: countFontSize,
                     ...FIRE_COUNT_INK,
                     // Tabular so the row does not shift width as the count ticks over.

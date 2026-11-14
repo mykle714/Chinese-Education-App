@@ -3,7 +3,7 @@ import { Box } from "@mui/material";
 import CjkLab from "./CjkLab";
 import InfoTypeLab from "./InfoTypeLab";
 import { COLORS } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
+import { FONTS, DATA_TYPE } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 
 /**
@@ -80,7 +80,7 @@ const FontLabPage: React.FC = () => {
                             statement of what the mode does. Set in mono because it is a
                             code identifier, and NOT through FONTS.label: the info lab
                             re-faces that, and its own chrome must not move underfoot. */}
-                        <Box component="span" sx={{ fontFamily: FONTS.mono, fontSize: 10, opacity: 0.62 }}>
+                        <Box component="span" sx={{ ...DATA_TYPE, fontSize: 10, opacity: 0.62 }}>
                             {m.blurb}
                         </Box>
                     </Box>

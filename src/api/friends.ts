@@ -12,7 +12,8 @@ import { apiGet, apiPost, apiDelete, withFallback } from './http';
 export interface FriendSummary {
     userId: string;
     name: string | null;
-    email: string;
+    /** The public handle (migration 188); never the email (docs/LOGIN_REWORK.md Q20). */
+    username: string;
     avatarIconId: string | null;
     /** ISO timestamp of the accept; null for rows accepted before the column was stamped. */
     friendsSince: string | null;
@@ -29,7 +30,8 @@ export interface FriendSummary {
 export interface FriendLeaderboardEntry {
     userId: string;
     name: string | null;
-    email: string;
+    /** The public handle (migration 188); never the email (docs/LOGIN_REWORK.md Q20). */
+    username: string;
     avatarIconId: string | null;
     language: string;
     /** utcm band-steps climbed in the last `windowDays` days. The ranked metric. */
@@ -55,7 +57,8 @@ export interface FriendRequestSummary {
     direction: RequestDirection;
     userId: string;
     name: string | null;
-    email: string;
+    /** The public handle (migration 188); never the email (docs/LOGIN_REWORK.md Q20). */
+    username: string;
     avatarIconId: string | null;
     requestedAt: string;
 }
@@ -73,8 +76,8 @@ export interface SendFriendRequestResponse {
 /**
  * The viewer's accepted friends, newest friendship first — the plain list.
  *
- * Used by `/friends/remove` (the unfriend screen). `/friends` itself reads the
- * leaderboard below instead, which carries the scores the plain list has no
+ * Used by RemoveFriendsBody (the Friends tab's Remove key). The tab's leaderboard reads
+ * the leaderboard below instead, which carries the scores the plain list has no
  * business computing.
  */
 export function fetchFriends(): Promise<FriendSummary[]> {
@@ -106,12 +109,13 @@ export function fetchOutgoingRequests(): Promise<FriendRequestSummary[]> {
 }
 
 /**
- * Send a request by the target's user ID (the app has no username — the ID shown
- * on the Friends screen is the shareable handle).
+ * Send a request by the target's FRIEND CODE (migration 187) — the short handle shown on
+ * their Friends tab. Sent as typed; the server normalises case and hyphens
+ * (FriendsService → `resolveTarget`) and also still accepts a full user ID.
  */
-export function sendFriendRequest(userId: string): Promise<SendFriendRequestResponse> {
+export function sendFriendRequest(friendCode: string): Promise<SendFriendRequestResponse> {
     return withFallback(
-        apiPost<SendFriendRequestResponse>('/api/friends/requests', { userId }),
+        apiPost<SendFriendRequestResponse>('/api/friends/requests', { friendCode }),
         'Could not send the friend request'
     );
 }

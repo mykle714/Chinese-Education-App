@@ -151,7 +151,8 @@ export interface ChallengeSummary {
 export interface ChallengeOpponent {
   userId: string;
   name: string | null;
-  email: string;
+  /** The public handle (migration 188). Never the email (docs/LOGIN_REWORK.md Q20). */
+  username: string;
   avatarIconId: string | null;
 }
 

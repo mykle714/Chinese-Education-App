@@ -1,12 +1,17 @@
-import type { WeatherNow, WeatherResponse } from '../contracts/wire.js';
+import type { WeatherResponse } from '../contracts/wire.js';
 import { geohashCenter } from '../utils/geohashCenter.js';
+import { weatherFromWmoCode } from '../contracts/weatherCodes.js';
+
+// Re-exported so existing importers (the service test) keep one import site; the fold
+// itself lives in the shared contract so the client's tester pins use the same one.
+export { weatherFromWmoCode };
 
 /**
  * WeatherService — the current weather at a user's stored location cell, for the
  * Deck Tower's sky (docs/DECK_TOWER.md § "Weather"). Purely aesthetic.
  *
- * LAYER: service. It owns the policy (which cell, how long a reading is good for, how a
- * WMO code folds into a WeatherKind); the location comes from the DAL
+ * LAYER: service. It owns the policy (which cell, how long a reading is good for); the
+ * WMO-code fold is the shared contract `server/contracts/weatherCodes.ts` → `weatherFromWmoCode`; the location comes from the DAL
  * (`ArenaDAL.getGeoCell`, through the narrow `GeoCellLookup` shape) and the
  * observation from Open-Meteo. No SQL here.
  *
@@ -23,7 +28,7 @@ import { geohashCenter } from '../utils/geohashCenter.js';
  * upstream call is cached as `unavailable` for `RETRY_MS`, so an Open-Meteo outage is
  * not hammered by every tower mount.
  *
- * Depends on: server/utils/geohashCenter.ts, server/contracts/wire.ts (WeatherKind).
+ * Depends on: server/utils/geohashCenter.ts, server/contracts/weatherCodes.ts, server/contracts/wire.ts.
  * Depended on by: server/controllers/WeatherController.ts (wired in dal/setup.ts).
  */
 
@@ -47,44 +52,6 @@ const MAX_CELLS = 5_000;
 const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
 
 type Cached = { at: number; ttl: number; value: Exclude<WeatherResponse, { status: 'no-location' }> };
-
-/**
- * Fold an Open-Meteo WMO weather code (and the cloud-cover percentage, used for the
- * partly-cloudy band) into what the tower draws. Unknown codes read as clear — a
- * missing effect is harmless, a wrong one is not.
- *
- * WMO table: https://open-meteo.com/en/docs → "WMO Weather interpretation codes".
- */
-export function weatherFromWmoCode(code: number, cloudCoverPct: number | null): WeatherNow {
-  const cloudCover = cloudCoverPct === null ? null : Math.min(1, Math.max(0, cloudCoverPct / 100));
-  return { ...foldWmoCode(code, cloudCover ?? 0), wmoCode: code, cloudCover };
-}
-
-/** The kind + intensity half of `weatherFromWmoCode`. */
-function foldWmoCode(code: number, cloud: number): Pick<WeatherNow, 'kind' | 'intensity'> {
-  switch (code) {
-    case 0:
-    case 1: return { kind: 'clear', intensity: 0 };              // clear / mainly clear
-    case 2: return { kind: 'cloudy', intensity: Math.max(0.35, cloud * 0.7) }; // partly cloudy
-    case 3: return { kind: 'cloudy', intensity: 1 };             // overcast
-    case 45:
-    case 48: return { kind: 'fog', intensity: 1 };               // fog / rime fog
-    case 51: case 56: return { kind: 'drizzle', intensity: 0.3 };
-    case 53: return { kind: 'drizzle', intensity: 0.55 };
-    case 55: case 57: return { kind: 'drizzle', intensity: 0.8 };
-    case 61: case 80: return { kind: 'rain', intensity: 0.35 };  // slight rain / showers
-    case 63: case 66: case 81: return { kind: 'rain', intensity: 0.65 };
-    case 65: case 67: case 82: return { kind: 'rain', intensity: 1 };
-    case 77: return { kind: 'snow', intensity: 0.3 };            // snow grains
-    case 71: case 85: return { kind: 'snow', intensity: 0.35 };
-    case 73: return { kind: 'snow', intensity: 0.65 };
-    case 75: case 86: return { kind: 'snow', intensity: 1 };
-    case 95: return { kind: 'storm', intensity: 0.8 };
-    case 96:
-    case 99: return { kind: 'storm', intensity: 1 };             // thunderstorm with hail
-    default: return { kind: 'clear', intensity: 0 };
-  }
-}
 
 export class WeatherService {
   private readonly cache = new Map<string, Cached>();

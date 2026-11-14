@@ -260,7 +260,7 @@ need to decide. A 502/503 for an upstream failure would make the distinction che
 | **Why deferred** | The removal was scoped to code that only NM/IW could reach. These are generic enough that a revived IW (or another feature) might reuse them, and (a) is a product decision, not a cleanup |
 | **Cost of leaving it** | (a) is the costly one: the app collects a birth date and gender for a purpose that no longer exists, and the on-screen copy describes that defunct purpose. (b)–(e) are dead branches that readers must still understand |
 | **Trigger** | (a) now — before more sign-ups answer it. (b)–(e) the next time any of those files is reworked, or a decision that IW will not return |
-| **References** | `src/utils/demographics.ts`, `src/pages/settings/AboutYouSections.tsx`, `src/pages/RegisterPage.tsx`, `server/services/UserService.ts`; `src/hooks/useTTS.ts`, `src/services/tts/*`; `server/dal/implementations/DictionaryDAL.ts`; `src/utils/formatDuration.ts` |
+| **References** | `src/utils/demographics.ts`, `src/pages/settings/AboutYouSections.tsx`, `src/pages/login/DetailsStep.tsx`, `server/services/UserService.ts`; `src/hooks/useTTS.ts`, `src/services/tts/*`; `server/dal/implementations/DictionaryDAL.ts`; `src/utils/formatDuration.ts` |
 
 ### 19. Rotate every API key and secret the app holds
 
@@ -355,8 +355,10 @@ undo body fallback). Docs: [MASTERY_REWORK.md § 6](./MASTERY_REWORK.md) "Silent
 `displacedMarks: ReviewMark[]`. The server still sends `displacedMark`
 (`= displacedMarks[0]`) and the undo route still accepts it alone.
 
-**Why deferred.** An installed Capacitor build runs its bundled JS until it is updated;
-dropping the field would break undo there.
+**Why deferred.** A client that is already loaded keeps running its old bundle until it
+reloads, and a native (Capacitor) build would keep it until the store update. Dropping the
+field would break undo there. Capacitor is not installed yet (no native build exists), so
+today only stale web tabs are affected.
 
 **Cost to leave.** One duplicated field. An old client undoing a doubled review that
 displaced two marks restores only one of them.
@@ -591,6 +593,168 @@ study time**, not with open tabs.
 | **Cost of leaving it** | Reduplicated adjectives render as nonsense segments with wrong glosses. The segmentation audit (`auditSegmentation`) does not reliably catch them: 安安 was not flagged |
 | **Trigger** | The next change to `segmentWithDict`, or a learner/validator report of a split reduplication |
 | **References** | `server/dal/shared/segmentString.ts` → `segmentWithDict`; `server/scripts/backfill/chinese/backfill-example-sentences.js` → `auditSegmentation`, `loadSegmentDictData` |
+
+### 44. Native Google + Apple sign-in (mobile SSO) — a Capacitor requirement
+
+*Added 2026-11-13 during the login-page rework.* Specified as a row in
+[REACT_NATIVE_MIGRATION.md](./REACT_NATIVE_MIGRATION.md) § "Concrete product demands on a
+native shell" (what it needs, the `user_identities` proposal, the App Store's Sign in with Apple rule).
+
+**Why deferred.** There is no native app (Capacitor is not installed), and the owner dropped web SSO in a
+mobile browser on 2026-11-13.
+
+**Cost to leave.** Email + password is the only way in.
+
+**Trigger.** A Capacitor build is started. It also needs email verification to be built
+([LOGIN_REWORK.md](./LOGIN_REWORK.md) § 4), because accounts are linked by a verified email.
+
+### 45. The Study Challenge block toggle has no UI, and the profile endpoint over-serves
+
+*Added 2026-11-13, when the `/users/:userId` profile page was deleted (a friend's leaderboard row expands in place instead).*
+
+| | |
+|---|---|
+| **What** | (a) Give the per-pair "no challenges with this friend" toggle a new home. Its only UI was the profile page's header toggle; the backend (`PUT /api/studyChallenges/blocks/:friendUserId`) and `src/api/studyChallenges.ts` → `setChallengeBlock` remain, with no caller. (b) Decide whether to trim `GET /api/users/:userId/profile`: `relationship`, `requestId`, `challengeBlock`, `identity.readingGoal` / `writingGoal` / `createdAt`, `stats.activeWorlds` and `isSelected` have no client reader now. (c) Delete or re-home `src/features/profile/ProfileDesignGrid.tsx` + `profileStyles.ts`, `fetchUserDesigns`, and `HeaderIconButton`'s now-callerless `pressed` prop |
+| **Why deferred** | (a) The `studyChallenge` flag is OFF, so nobody can reach a challenge to block. (b) and (c) are cleanup that touches a wire contract or a flag-gated feature (`community`, OFF) |
+| **Cost of leaving it** | (a) Turning `studyChallenge` back on would ship a durable opt-out that users cannot set. (b) A few wasted reads per expanded row (the friendship + challenge-block lookups). (c) Dead files a reader must still understand |
+| **Trigger** | (a) Before `studyChallenge` is switched on. (b)/(c) The next change to `UserProfileService` or the community feature |
+| **References** | [USER_PROFILE_PAGE.md](./USER_PROFILE_PAGE.md), [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § "No challenges with this friend", [FRIENDS_FEATURE.md](./FRIENDS_FEATURE.md) § "Expand in place" |
+
+### 47. Keep the refresh token in native secure storage — a Capacitor requirement
+
+*Added 2026-11-13 during the login rework.* Specified as a row in
+[REACT_NATIVE_MIGRATION.md](./REACT_NATIVE_MIGRATION.md) § "Concrete product demands on a
+native shell".
+
+**Why deferred.** There is no native app. On the web the httpOnly cookie is the right store.
+
+**Cost to leave.** None until a Capacitor build exists.
+
+**Trigger.** A Capacitor build is started.
+
+### 48. `refresh_tokens` is never purged
+
+*Found 2026-11-13. Code: `server/dal/implementations/RefreshTokenDAL.ts`,
+`server/services/UserService.ts` → `issueRefreshToken`, `refresh`; table from migration 85.*
+
+**What.** Every rotation (about every 15 minutes per active session) inserts a row and revokes
+its predecessor, and nothing ever deletes a row. Dev held 2,157 rows (1,547 revoked) from
+2026-06-27 on. Add a periodic delete of rows that are expired, or revoked longer ago than the
+reuse-detection window needs, since a family's revoked rows are what reuse detection reads.
+
+**Why deferred.** It is small (1.2 MB on dev), and the 180-day lifetime only changes how long
+a live row is kept, not how fast revoked rows pile up.
+
+**Cost to leave.** Linear growth with active minutes. It is harmless at today's scale because lookups go through
+the unique `tokenHash` index.
+
+**Trigger.** The table passes about 1 M rows on PPE, or the next time cron work is done on PPE.
+
+### 49. Friend-code cleanup: drop the UUID handle, rate-limit lookups
+
+*Added 2026-11-13. Code: `server/services/FriendsService.ts` → `resolveTarget`,
+`server/types/friends.ts` → `SendFriendRequestBody.userId`,
+`server/controllers/FriendsController.ts` → `sendRequest`. Doc: docs/FRIENDS_FEATURE.md
+§ "Friend codes".*
+
+**What.** Migration 187 made the friend code the handle, but `POST /api/friends/requests`
+still accepts a full UUID (as `friendCode` or the legacy `{ userId }` body) so a client built
+before the migration keeps working through a deploy. Remove the UUID branch and the `userId`
+field. Separately, add a per-user rate limit on that endpoint: a 30⁸ code space is far more
+enumerable than UUIDs, and the 404-vs-201 answer confirms an account exists.
+
+**Why deferred.** The UUID path is needed until every installed client sends `friendCode`
+(the Capacitor app updates slower than the web). The user base is too small for enumeration
+to matter yet.
+
+**Cost to leave.** Two handle formats in one endpoint, and no throttle on probing codes.
+
+**Trigger.** One release after migration 187 reaches PPE (UUID path), or before any public
+launch (rate limit).
+
+### 50. OWNER: Resend + mren.me mail DNS (blocks the login-rework deploy)
+
+*Added 2026-11-14. Owner-only: accounts and DNS, nothing in the repo can do it. Code:
+`server/services/auth/EmailSender.ts` → `createEmailSender` / `ResendEmailSender`. Docs:
+[LOGIN_REWORK.md](./LOGIN_REWORK.md) § 4a, § 7;
+[LOGIN_REWORK_DEPLOY_RUNBOOK.md](./LOGIN_REWORK_DEPLOY_RUNBOOK.md) § "New configuration".*
+
+**What.**
+1. Create a Resend account; add the domain `mren.me`.
+2. In Cloudflare DNS for `mren.me`, add the SPF and DKIM records Resend lists (DNS only, not
+   proxied), plus a DMARC record: `_dmarc.mren.me TXT "v=DMARC1; p=none"`.
+3. Wait until Resend shows the domain **Verified**.
+4. Create an API key (sending access, `mren.me` only). Put it on PPE in the repo-root `.env`
+   (the backend's `env_file` in `docker-compose.ppe.yml`) as `RESEND_API_KEY=…`. Optional:
+   `EMAIL_FROM` (default `no-reply@mren.me`).
+5. Optional, for testing real mail on dev: the same key in `server/.env` on the dev box.
+   Without it dev keeps printing codes to the `cow-backend` log (`📧 [dev email]`).
+
+**Why it waits on the owner.** Account creation, billing and DNS for `mren.me`.
+
+**Cost to leave.** The login rework cannot ship: on PPE every email code send fails (503).
+That means no new sign-ups, no code sign-in and no password reset. Password sign-in still works.
+
+**Done when.** Runbook check V6 passes: a real "Email me a code" reaches the inbox, not spam.
+
+**Trigger.** Before the login-rework deploy.
+
+### 51. OWNER: Firebase phone sign-in (needed for phone sign-in on PPE)
+
+*Added 2026-11-14. Owner-only: GCP/Firebase console and billing. Code:
+`server/services/auth/FirebasePhoneVerifier.ts`,
+`server/services/auth/DevConsolePhoneVerifier.ts` → `createPhoneVerifier`,
+`src/utils/firebasePhone.ts`. Docs: [LOGIN_REWORK.md](./LOGIN_REWORK.md) § 4c, Q6, Q18.*
+
+**What.** On the existing GCP project:
+1. Add Firebase to the project; upgrade to the **Blaze** plan (phone auth requires it).
+2. Authentication → Sign-in method → turn on **Phone**. Under Settings → Authorized domains,
+   make sure `mren.me` is listed (`localhost` is there by default).
+3. Register a **Web app**; copy its config (`apiKey`, `authDomain`, `projectId`, `appId`).
+   These values are public by design: they ship in the browser bundle.
+4. **App Check** with a reCAPTCHA Enterprise key for `mren.me`. Copy the site key. Start in
+   monitor mode and turn on enforcement for Authentication once the metrics look clean.
+5. Authentication → Settings → **SMS region policy / fraud defense**: turn on SMS fraud scoring
+   (Q18 layer 2).
+6. Billing → **Budgets & alerts**: a monthly budget on the project with email alerts at
+   50 / 90 / 100 % (Q18 layer 3).
+7. Hand the values over for item 52.
+
+No service account is needed: the server checks the ID token against Google's public keys
+(`FirebasePhoneVerifier`), not through `firebase-admin`.
+
+**Why it waits on the owner.** Billing (Blaze), console access, the budget figure.
+
+**Cost to leave.** On PPE the phone boxes stay greyed out ("Phone sign-in is coming soon."),
+and the login screen opens on them. Email still works. Dev is unaffected: it uses the
+console stand-in (`📱 [dev sms]` in the `cow-backend` log).
+
+**Done when.** Runbook verification with phone on: a real US number gets a text and signs in.
+
+**Trigger.** Whenever phone sign-in should be live. It does not block the deploy.
+
+### 52. OWNER: put the Firebase keys on PPE (after item 51)
+
+*Added 2026-11-14. Owner or a deploy agent with the values. Docs:
+[LOGIN_REWORK_DEPLOY_RUNBOOK.md](./LOGIN_REWORK_DEPLOY_RUNBOOK.md) § "New configuration".*
+
+**What.** Two files on the PPE box, both gitignored and never committed:
+- Repo-root `.env` (backend): `FIREBASE_PROJECT_ID=<projectId>`.
+- Repo-root **`.env.production`** (frontend build): `VITE_FIREBASE_API_KEY`,
+  `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID`,
+  `VITE_FIREBASE_APPCHECK_SITE_KEY`.
+
+Why `.env.production` and not `.env`: `.dockerignore` keeps `.env` out of the frontend build
+context, and the `Dockerfile` build stage takes no build args. `.env.production` is copied in
+by `COPY . .`, and Vite's production build reads it. The `VITE_*` values are baked in at
+build time, so rebuild the frontend (`up --build frontend`) after adding them.
+
+**Cost to leave.** The same as item 51: phone sign-in shows as "coming soon" on PPE.
+
+**Done when.** `curl -s https://mren.me/api/auth/methods` → `"phone":true`, and the phone
+boxes on `/login` are enabled.
+
+**Trigger.** Item 51 is done.
 
 ## Recently closed
 

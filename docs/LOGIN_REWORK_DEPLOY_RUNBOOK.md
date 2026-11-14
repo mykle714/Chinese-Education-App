@@ -3,7 +3,13 @@
 > ⚠️ **TEMPORARY.** Delete this file (and its row in [DEPLOY_RUNBOOKS.md](./DEPLOY_RUNBOOKS.md))
 > once every check below has passed on PPE.
 >
-> **Status: NOT YET DEPLOYED.** Written 2026-11-14. Design: [LOGIN_REWORK.md](./LOGIN_REWORK.md).
+> **Status: DEPLOYED 2026-11-14** (`b242d8a`). 187 + 188 applied before the rebuild, 189 after
+> it (by hand with tracking rows; `migrate.sh` needs a TCP password on PPE). V1–V4 and the HTTP
+> checks passed; `/api/auth/login` answers "Wrong email or password" (400) on the new schema.
+> Deployed WITHOUT `RESEND_API_KEY` (owner's call), so phone is off and V6 waits for item 50.
+> **Still open:** V5, V6 (after Resend), V7 with a real account, V8.
+>
+> Written 2026-11-14. Design: [LOGIN_REWORK.md](./LOGIN_REWORK.md).
 
 ## What ships
 

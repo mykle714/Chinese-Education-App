@@ -32,6 +32,8 @@ PPE is current through migration **186** (2026-11-09). Latest code deploy: `fe83
 
 ## Deploy history and lessons
 
+Deployed 2026-11-15 (`ac4cef6`), **no migration**, no runbook. Ships `chinese/backfill-long-definitions` **v16** with the manifest bumped in `server/scripts/backfill/shared/lib/requiredScripts.js` — a deliberate choice: every v15-stamped discoverable zh row is now version-stale and heals in place (on-first-sort worker / cron) rather than via a one-off re-run. Also adds the `chinese/backfill-character-components` manifest step (`singleChar`), whose rows PPE had already filled by an untargeted run on 2026-11-14. **Lesson:** `database/deploy/migrate.sh --dry-run` run from the PPE host has no DB password (`fe_sendauth`); use `schema_migrations` MAX vs the highest numbered file instead.
+
 Retired 2026-11-09 without a PPE action: `IW_SCENE_NOTES_DEPLOY_RUNBOOK.md` (migrations
 160/161). Its last open condition (a half-built scene saving with warnings) became moot
 when Immersive World was removed — see [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md).

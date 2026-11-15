@@ -18,6 +18,7 @@ import {
     MINI_CARD_CONTENT_LAYOUT,
     miniCardDefinitionBottom,
     miniCardFaceSx,
+    miniCardWordFit,
     type MiniCardSize,
 } from "./miniCardFace";
 
@@ -26,7 +27,7 @@ import {
  * (plus a 78×112 `compact` face the acp dock alone falls back to — see `size`).
  *
  * Rendered by `MiniVocabCard` (td's cards page, provisional-card previews — driven by a saved
- * `VocabEntry`), `QuickMarkCard` (Quick Mark triage — a `DiscoverCard`),
+ * `VocabEntry`), acp's `DraggableCard` (a `DiscoverCard`),
  * `ChallengeWordCard` (the challenge word set — a `ChallengeReviewWord`) and the acp's
  * `DraggableCard` (`AddCardsPage.tsx` — a `DiscoverCard`). Those wrappers differ only
  * in their data source, the overlays they add (`children`), and what a tap or drag does.
@@ -85,7 +86,8 @@ export interface MiniCardProps extends Omit<BoxProps, "children"> {
     masteryBar?: MasteryBar | null;
     /**
      * The face's footprint — `regular` (92×132, every surface) or `compact` (78×112,
-     * only the acp dock when a 4-card pack won't fit across). See MINI_CARD_DIMENSIONS
+     * only the acp dock, for a pack that won't fit across at regular — a 4-card pack on a
+     * phone; AddCardsPage → `dockCardSize`). See MINI_CARD_DIMENSIONS
      * in miniCardFace.ts; the contents re-lay per size via MINI_CARD_CONTENT_LAYOUT (same file).
      */
     size?: MiniCardSize;
@@ -217,6 +219,10 @@ const MiniCard = forwardRef<HTMLDivElement, MiniCardProps>(function MiniCard(
     // The definition sits just above the strip when there is one, and in the strip's
     // place when there isn't — suppressing the strip lets the card breathe.
     const definitionBottom = miniCardDefinitionBottom(!!masteryBar);
+    // Long words on the compact face: a smaller cpcd size from 4 characters, and past one
+    // line a balanced wrap that takes the icon's place (miniCardWordFit, miniCardFace.ts — shared with
+    // MiniCardSvg so the two faces agree).
+    const wordFit = miniCardWordFit(entryKey, language, size);
     return (
         <Box
             ref={ref}
@@ -235,7 +241,7 @@ const MiniCard = forwardRef<HTMLDivElement, MiniCardProps>(function MiniCard(
         >
             {/* Advanced icon arrangement, BEHIND the text (the layer sets zIndex 0; the
                 word/definition below are lifted to zIndex 1). */}
-            {iconLayer}
+            {wordFit.showIcon && iconLayer}
 
             {/* Icon slot — fixed position/height, always rendered (empty without an icon)
                 so every mini card reserves identical space and the word sits at the same
@@ -244,7 +250,7 @@ const MiniCard = forwardRef<HTMLDivElement, MiniCardProps>(function MiniCard(
                 className="mini-card__icon-slot"
                 sx={{ position: "absolute", top: layout.iconTop, left: layout.sideInset, right: layout.sideInset, height: layout.iconSize, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1 }}
             >
-                {!iconLayer && iconId && (
+                {wordFit.showIcon && !iconLayer && iconId && (
                     <Box
                         component="img"
                         className="mini-card__icon"
@@ -258,29 +264,32 @@ const MiniCard = forwardRef<HTMLDivElement, MiniCardProps>(function MiniCard(
 
             {/* Word + pronunciation. Foreign text ALWAYS goes through ForeignText, which
                 picks cpcd vs plain Latin text per language. Items wrap so multi-character
-                phrases reflow within the ~76px body. */}
+                phrases reflow within the ~76px body; a long word wraps at its balanced
+                width (`wordFit.maxWidth`, on the inner box) from the icon slot's top. */}
             <Box
-                className="mini-card__key-wrapper"
-                sx={{ position: "absolute", top: layout.keyTop, left: layout.sideInset, right: layout.sideInset, display: "flex", alignItems: "center", justifyContent: "center", minWidth: 0, zIndex: 1 }}
+                className={`mini-card__key-wrapper${wordFit.wraps ? " mini-card__key-wrapper--wrapped" : ""}`}
+                sx={{ position: "absolute", top: wordFit.keyTop, left: layout.sideInset, right: layout.sideInset, display: "flex", alignItems: "center", justifyContent: "center", minWidth: 0, zIndex: 1 }}
             >
-                <ForeignText
-                    className="mini-card__entry-key"
-                    language={language}
-                    size="xs"
-                    compact={layout.cpcdCompact}
-                    bold
-                    flexWrap="wrap"
-                    justifyContent="center"
-                    text={entryKey}
-                    pronunciation={pronunciation ?? undefined}
-                    characterColor={characterColor}
-                    // Latin-script (es) only: a Spanish headword is many glyphs wide where a
-                    // Chinese one is 1–2, so the shared xs size (18px) overruns the 76px
-                    // body. zh ignores this. (Only MiniVocabCard used to pass it, so Quick
-                    // Mark / challenge / sort cards overran on long es words.)
-                    plainFontSize={layout.plainFontSize}
-                    latinFontFamily={FONTS.cjk}
-                />
+                <Box className="mini-card__entry-key-measure" sx={{ maxWidth: wordFit.maxWidth, minWidth: 0 }}>
+                    <ForeignText
+                        className="mini-card__entry-key"
+                        language={language}
+                        size={wordFit.cpcdSize}
+                        compact={layout.cpcdCompact}
+                        bold
+                        flexWrap="wrap"
+                        justifyContent="center"
+                        text={entryKey}
+                        pronunciation={pronunciation ?? undefined}
+                        characterColor={characterColor}
+                        // Latin-script (es) only: a Spanish headword is many glyphs wide where a
+                        // Chinese one is 1–2, so the shared xs size (18px) overruns the 76px
+                        // body. zh ignores this. (Only MiniVocabCard used to pass it, so Quick
+                        // Mark / challenge / sort cards overran on long es words.)
+                        plainFontSize={layout.plainFontSize}
+                        latinFontFamily={FONTS.cjk}
+                    />
+                </Box>
             </Box>
 
             {/* Definition — anchored to the bottom (clear of the strip when present),
@@ -324,8 +333,8 @@ export default MiniCard;
 
 /**
  * The conversation-frequency corner badge (1 = almost never spoken … 5 = constant in
- * daily speech) — top-left, 18px circle. Shared by QuickMarkCard and ChallengeWordCard,
- * which used to each declare it. Renders nothing for a null score (five hollow dots —
+ * daily speech) — top-left, 18px circle. Used by ChallengeWordCard (it and the deleted
+ * QuickMarkCard used to each declare it). Renders nothing for a null score (five hollow dots —
  * or a "0" — would read as a real value).
  */
 export const MiniCardFrequencyBadge: React.FC<{ score: number | null | undefined; className?: string }> = ({ score, className }) => {

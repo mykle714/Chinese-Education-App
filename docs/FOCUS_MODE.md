@@ -117,7 +117,7 @@ set everywhere at once: every candidate query narrows to the ids, and every lend
 | `POST /api/flashcards/mark` (refill) | body `world` | resolved after the mark commits, so the card just marked correct is already out |
 | `GET /api/onDeck/gamePool` | `worldForMarkType(markType)` | baseline top-up skipped; a short pool is a smaller board. With `?flpBreak=1` the round is inverted instead (§ 4a) |
 | `GET /api/onDeck/wordSearchGrid` | its mark type's world | no lending escalation. With `?flpBreak=1` the round is inverted instead (§ 4a) |
-| `GET /api/onDeck/flpReadyCounts` | `?world=` | counts only the remaining set; response adds `focusOn` |
+| `GET /api/onDeck/flpReadyCounts` | `?world=` | counts only the remaining set; response adds `focusOn`. `&ignoreFocus=1` skips focus entirely (whole deck, `focusOn: false`, no focus-ended header) — acp's deck-fill notices ([SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) § 5.4) |
 
 **Not narrowed:** Study Challenge boards, Memory Map (its own `MemoryMapService` pool) and a Writing Grid deal
 without `?flpBreak=1` (its own DAL). Writing Grid is break-only, so in practice its deals do apply § 4a: `WritingGridController.deal`

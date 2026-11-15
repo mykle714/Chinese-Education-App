@@ -42,6 +42,12 @@ export interface SheetPanelBodyHandle {
 // that must MOVE with the `extra` row's reveal rather than just be clipped by it (the eip's
 // pinned caret, which eases onto the page header's line as the title arrives):
 //   --sheet-telescope-t           0 at/below the open height → 1 at max (extra's reveal)
+//   --sheet-telescope-clip        px of `rest` clipped off the frame's TOP below the open
+//                                 height (rest − frame height; 0 at/above it). Content
+//                                 pinned to the frame's top can lift by this to stay put
+//                                 against the bottom-anchored rows and be clipped with them
+//                                 as the sheet minimizes (the eip's caret stays on the
+//                                 trail row's line instead of riding the top edge down).
 //   --sheet-telescope-transition  the write's own duration ("0ms" while dragging), so a
 //                                 `transition: … var(--sheet-telescope-transition)` rides
 //                                 the snap exactly and tracks the finger 1:1 otherwise.
@@ -87,9 +93,9 @@ interface SheetPanelProps {
     initialHeight?: number | null;
     // Open height as a FRACTION of the frame (default DEFAULT_HEIGHT_RATIO, 0.6). Unlike
     // `initialHeight` (a px value copied from a parent panel) this is a host's standing
-    // choice of how tall its sheet opens — the Dictionary page opens at 0.8. It is also
-    // the RESTING STOP: on the way down the sheet clips back to this height (release
-    // snap, and a downward fling's momentum floor), and only a drag below it dismisses.
+    // choice of how tall its sheet opens — the Dictionary page opens at 0.8. It is NOT a
+    // resting stop: once the sheet is moved it is the close/maximize THRESHOLD — a
+    // release above it maximizes, below it dismisses (computeSnapTarget).
     // Ignored when `initialHeight` is given or the panel is persistent (minHeight > 0).
     defaultHeightRatio?: number;
     // Stack depth (0 = root panel). Bumps z-index so child panels and their
@@ -117,14 +123,12 @@ interface SheetPanelProps {
         requestClose: () => void;
         dismiss: () => void;
     }) => React.ReactNode);
-    // How far a release must have travelled between the lower stop and the max, as a
-    // share of that gap, before it commits to the stop it was HEADING for — measured
-    // from the stop it left (src/utils/directionalSnap.ts). Growing: past this share
-    // above the lower stop, it goes on to max. Shrinking: past this share below max, it
-    // goes on to the lower stop. Short of that it springs back. 0.5 (default) is the
-    // plain nearest-stop rule either way; a SMALLER value makes both trips easier (the
-    // eip passes 0.25). Only the {lower stop, max} choice is affected; a modal panel's
-    // dismiss floor (its default height) is untouched.
+    // PERSISTENT panels only (minHeight > 0 — no caller today): how far a release must
+    // have travelled between the floor and the max, as a share of that gap, before it
+    // commits to the stop it was HEADING for — measured from the stop it left
+    // (src/utils/directionalSnap.ts). 0.5 (default) is the plain nearest-stop rule. A
+    // modal panel ignores it: it has no stop between closed and max, only the default
+    // height as a threshold (computeSnapTarget).
     snapCommitShare?: number;
     // Tap handler for the sheet's ✕ (SheetCloseX, top-right of the chrome). Optional:
     // with nothing passed the ✕ simply dismisses the sheet.
@@ -314,23 +318,24 @@ function inverseRubberBand(visible: number, limit: number): number {
 }
 
 // Shared snap rule used by every release path (grabber drag, touch release,
-// momentum decay): below default → dismiss (0); at or above it → the
-// DIRECTIONAL two-stop rule shared with td's tower ↔ cards snap
-// (src/utils/directionalSnap.ts → directionalSnapTarget). `direction` is the way
-// the height was last moving (+1 growing, −1 shrinking, 0 unknown): growing, it
-// maximizes once `commitShare` of the gap above the default height; shrinking,
-// it drops back to the default once `commitShare` of the gap below max; short of
-// that it springs back to the stop it left. The default height is the floor —
-// there is no resting stop between 0 and it.
+// momentum decay). A MODAL panel has exactly two resting states — max and closed.
+// It OPENS at the default height, but that height is not a stop: once a gesture
+// moves the sheet, the default height is the THRESHOLD between the two. Released
+// above it → max; below it → dismiss (0). Released exactly on it (a momentum
+// fling that hit its floor, or a touch that barely moved) → the way it was last
+// moving decides (+1 growing → max, −1 shrinking → close); with no direction
+// known (a tap-sized wobble) it stays where it opened.
 //
-// `commitShare` of 0.5 is the plain nearest-stop rule whichever way it moved.
-//
-// A PERSISTENT panel (minH > 0) has no dismiss stop at all: `defaultH` IS
-// `minH`, nothing can go below it, so the rule degrades to "collapse to minH or
-// grow to max" via the same comparison.
+// A PERSISTENT panel (minH > 0) has no closed state, so its floor IS a resting
+// stop: it keeps the DIRECTIONAL two-stop rule {minH, max} shared with td's
+// tower ↔ cards snap (src/utils/directionalSnap.ts → directionalSnapTarget),
+// where `commitShare` is how far between the stops a release must travel before
+// it commits to the one it was heading for (0.5 = plain nearest-stop).
 function computeSnapTarget(h: number, defaultH: number, maxH: number, minH: number, direction: SnapDirection, commitShare: number): number {
-    if (h < defaultH && minH === 0) return 0;
-    return directionalSnapTarget(h, defaultH, maxH, direction, commitShare);
+    if (minH > 0) return directionalSnapTarget(h, defaultH, maxH, direction, commitShare);
+    if (h > defaultH) return maxH;
+    if (h < defaultH) return 0;
+    return direction > 0 ? maxH : direction < 0 ? 0 : defaultH;
 }
 
 // Module-level set of currently mounted panel depths. The window-level wheel
@@ -451,9 +456,10 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     const dragStartHeightRef = useRef<number | null>(null);
     // Parent container height; the cap and the default stop derive from it.
     const parentHeightRef = useRef(0);
-    // The height the sheet opens to. Doubles as the middle snap stop and the
-    // dismiss floor: any release below this height snaps to 0 instead of
-    // springing back up.
+    // The height the sheet opens to. Not a resting stop for a modal panel: once a
+    // gesture moves the sheet it is the THRESHOLD — released above it the sheet
+    // maximizes, below it the sheet dismisses (computeSnapTarget). For a persistent
+    // panel it is the floor (= minHeight) and IS a stop.
     const defaultHeightRef = useRef(0);
     const momentumRafRef = useRef<number | null>(null);
     // Raw finger travel (px) PAST max, when `squeezeOnOverstretch` is on. Not a height:
@@ -567,6 +573,9 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         let frameH = h <= openH
             ? (openH > 0 ? rest * (h / openH) : 0)
             : rest + extra * reveal;
+        // How much of `rest` the shrinking frame has clipped off its top (below open only).
+        // Read before the overstretch squeeze, which only happens above max.
+        const clip = Math.max(0, rest - frameH);
         // OVERSTRETCH: travel past max shrinks the frame by a rubber-banded amount of the
         // host's `squeezable` spacing, and hands the host the fraction closed
         // (`--sheet-squeeze`, 0 → 1) so it can close its gaps by exactly that much. Rows
@@ -583,6 +592,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
         frame.style.transition = animate ? `height ${SNAP_DURATION_MS}ms ease-out` : "none";
         frame.style.height = `${frameH}px`;
         frame.style.setProperty("--sheet-telescope-t", String(reveal));
+        frame.style.setProperty("--sheet-telescope-clip", `${clip}px`);
         frame.style.setProperty("--sheet-telescope-transition", animate ? `${SNAP_DURATION_MS}ms` : "0ms");
     }, [telescopeRef, measureTelescope]);
 
@@ -1073,9 +1083,8 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
             if (mode === null || dismissingRef.current) return;
 
             if (!persistent && mode === "resize" && heightRef.current < defaultHeightRef.current) {
-                // Dragged below the default height and released → dismiss.
-                // This is the ONLY way a swipe closes the panel; momentum never
-                // carries it below the default height (see startMomentum).
+                // Dragged below the default height (the close/maximize threshold) and
+                // released → dismiss.
                 dismiss();
                 return;
             }
@@ -1087,13 +1096,23 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 settle();
                 return;
             }
+            if (!persistent) {
+                // A modal panel has only two resting states, so a fling just picks one:
+                // a downward fling closes from wherever it starts (even from max, well
+                // above the threshold); an upward one maximizes. No coast is needed —
+                // the snap/dismiss animation IS the follow-through.
+                if (velocity < 0) dismiss();
+                else writeHeight(maxHeight(), true);
+                return;
+            }
             startMomentum(velocity);
         };
 
-        // Release momentum for a RESIZE fling only — the panel keeps growing or
-        // shrinking, floored at the DEFAULT height, so a downward fling coasts to
-        // the default height and stops there rather than running on into a dismiss;
-        // growing stops dead at the max.
+        // Release momentum for a RESIZE fling of a PERSISTENT panel only (a modal
+        // panel's fling resolves straight to max or a dismiss in onTouchEnd) — the
+        // panel keeps growing or shrinking, floored at its resting floor (the
+        // default height, which for a persistent panel IS minHeight); growing stops
+        // dead at the max.
         //
         // There is no "scroll" arm any more: a scroll gesture is native (see
         // onTouchMove), so the browser owns its inertia too. Inertia still cannot
@@ -1109,8 +1128,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
                 const dt = Math.min(now - lastFrame, MOMENTUM_MAX_FRAME_MS);
                 lastFrame = now;
                 const dy = v * dt;
-                // Momentum floors at the default height — the fling stops there
-                // instead of running on into a dismiss.
+                // Momentum floors at the resting floor — it can never run below it.
                 if (!applyResize(dy, defaultHeightRef.current)) {
                     settle();
                     return;

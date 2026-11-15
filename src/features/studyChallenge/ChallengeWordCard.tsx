@@ -52,7 +52,7 @@ interface ChallengeWordCardProps {
  * only needed while the set was still editable. The pill costs no layout at all —
  * it is absolutely positioned over the card it belongs to.
  *
- * The 92×132 thumbnail matches MiniVocabCard and QuickMarkCard exactly, so all three
+ * The 92×132 thumbnail matches MiniVocabCard and acp's DraggableCard exactly, so all three
  * drop into the shared MiniVocabCardGrid and read as one family. It is driven by a
  * ChallengeReviewWord rather than a VocabEntry because a challenge word is not a card
  * yet — it becomes a vet row only on accept (§ 3.3).

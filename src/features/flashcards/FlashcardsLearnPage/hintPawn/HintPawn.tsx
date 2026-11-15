@@ -528,6 +528,8 @@ export default function HintPawn({ world, hint, unseen, away, parked, contentRef
                             // Its own tail, angled up at the pawn's head (PawnBubbleTail).
                             tailSide="custom"
                             tailY="17px"
+                            // A plain fade on dismissal — the pop was too loud (owner, 2026-11-14).
+                            exit="fade"
                             onSelect={() => setClosedKey(bubble.key)}
                             ariaLabel="Dismiss hint"
                             bodySx={{

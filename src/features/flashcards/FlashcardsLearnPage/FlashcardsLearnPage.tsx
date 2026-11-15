@@ -9,7 +9,7 @@ import type { ReadyOutKind } from "./ReadyOutCardLayer";
 import { afterNextPaint } from "../../../utils/afterNextPaint";
 import { useEventCallback } from "../../../hooks/useEventCallback";
 import WordToolsRail from "../../../components/WordToolsRail";
-import { FC_FONT, TOWER_CARD_FLIP_MS } from "../constants";
+import { TOWER_CARD_FLIP_MS } from "../constants";
 import { playBreakAway, playBreakReturn, playBreakToolsReturn } from "./gameBreak/breakMotion";
 import { SIZE, WEIGHT, TRACKING } from "../../../theme/scale";
 import { useCardDrag } from "./useCardDrag";
@@ -24,7 +24,8 @@ import InfoCardSection from "./InfoCardSection";
 import { getBreakdownItems as buildBreakdownItems } from "../../../utils/breakdownUtils";
 import { useEipTabs } from "./useEipTabs";
 import EipTabStrip from "./EipTabStrip";
-import TooManyTabsSnackbar from "./TooManyTabsSnackbar";
+import { useEipOverflowNotice } from "./useEipOverflowNotice";
+import { useNotificationFor } from "../../../components/notifications/useNotify";
 import { useLearningToggle } from "../../../hooks/useLearningToggle";
 import FlashCardSection, { ChineseBlock, EnglishBlock } from "./FlashCardSection";
 import { useGameBreak } from "./gameBreak/useGameBreak";
@@ -51,8 +52,6 @@ import {
     DialogContentText,
     DialogActions,
     Button,
-    Snackbar,
-    Alert,
 } from "@mui/material";
 import { clearWritingDraft } from "../../../components/handwriting/writingDraftStore";
 import { useTestingFeatures } from "../../../hooks/useTestingFeatures";
@@ -539,6 +538,13 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     const eipLearningEntry = isEicOpen && eip.activeTab?.kind === "entry" ? eip.activeTab.entry : null;
     const eipLearning = useLearningToggle(eipLearningEntry, (eipLearningEntry?.language ?? "zh") as Language);
     const eipAddKeyShown = eipLearning.inLibraryOnLoad === false;
+    // Notifications (docs/NOTIFICATIONS.md): the eip trail-full notice; the eip Add key's
+    // failures only (a successful add/remove is shown by the key); and an icon-layout
+    // save/reset failure (e.g. a backend PATCH error), so the editor stays open and the
+    // learner knows the write didn't land.
+    useEipOverflowNotice(eip.overflowSignal);
+    useNotificationFor(eipLearning.error, eipLearning.clearError, { id: "flp-eip-learning-error", tone: "error", autoHideMs: 2500 });
+    useNotificationFor(saveError, () => setSaveError(null), { id: "card-icon-save-error", tone: "error" });
 
     const openEicSheet = () => {
         if (!displayCurrentEntry) return;
@@ -1217,39 +1223,6 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                 {gameBreak.areaMounted && (
                     <GameBreakArea gameBreak={gameBreak} onCardCleared={onBreakCardCleared} />
                 )}
-                <TooManyTabsSnackbar signal={eip.overflowSignal} />
-                {/* The eip Add key's failures only — a successful add/remove is shown by the key. */}
-                <Snackbar
-                    className="flp-eip__learning-error-snackbar"
-                    open={eipLearning.error !== null}
-                    autoHideDuration={2500}
-                    onClose={eipLearning.clearError}
-                    anchorOrigin={{ vertical: "top", horizontal: "center" }}
-                    sx={{ zIndex: 2000 }}
-                >
-                    <Alert severity="error" variant="filled" onClose={eipLearning.clearError}>
-                        {eipLearning.error}
-                    </Alert>
-                </Snackbar>
-                {/* Icon-layout save/reset failure toast (e.g. backend PATCH error).
-                    Replaces the prior silent console.error so the editor stays open
-                    and the user knows the write didn't land. */}
-                <Snackbar
-                    open={saveError !== null}
-                    autoHideDuration={4000}
-                    onClose={() => setSaveError(null)}
-                    anchorOrigin={{ vertical: "top", horizontal: "center" }}
-                    sx={{ zIndex: 2000 }}
-                >
-                    <Alert
-                        severity="error"
-                        variant="filled"
-                        onClose={() => setSaveError(null)}
-                        sx={{ fontFamily: FC_FONT }}
-                    >
-                        {saveError}
-                    </Alert>
-                </Snackbar>
             </ContentArea>
 
             {/* Add-icon search dialog (download-on-select). docs/CARD_ICON_LAYOUT.md */}

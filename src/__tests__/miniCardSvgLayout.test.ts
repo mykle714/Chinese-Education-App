@@ -78,12 +78,56 @@ describe("layoutMiniCardSvg", () => {
         expect(l.pinyins.map((p) => p.text)).toEqual(["yí", "cì"]);
     });
 
-    it("wraps a five-character word after four cells", () => {
-        const l = layoutMiniCardSvg({ ...base, entryKey: "一二三四五", pronunciation: "yī èr sān sì wǔ" }, measure);
-        const rows = new Set(l.glyphs.map((g) => g.y.toFixed(2)));
-        expect(rows.size).toBe(2);
+    it("leaves the regular face as it was: xs, greedy 4 + 1 wrap, icon kept", () => {
+        const four = layoutMiniCardSvg({ ...base, entryKey: "一二三四", pronunciation: "yī èr sān sì" }, measure);
+        expect(new Set(four.glyphs.map((g) => g.y.toFixed(2))).size).toBe(1);
+        expect(four.glyphs[1].x - four.glyphs[0].x).toBeCloseTo(18);
+        const five = layoutMiniCardSvg({ ...base, entryKey: "一二三四五", pronunciation: "yī èr sān sì wǔ" }, measure);
+        expect(new Set(five.glyphs.map((g) => g.y.toFixed(2))).size).toBe(2);
         // The lone fifth cell is centred on its own line.
-        expect(l.glyphs[4].x).toBeCloseTo(46);
+        expect(five.glyphs[4].x).toBeCloseTo(46);
+        expect(five.showIcon).toBe(true);
+    });
+
+    describe("compact face long words", () => {
+        const compact = { ...base, size: "compact" as const };
+
+        it("sets a four-character word at xxs on one line, keeping the icon", () => {
+            const l = layoutMiniCardSvg({ ...compact, entryKey: "一二三四", pronunciation: "yī èr sān sì" }, measure);
+            expect(new Set(l.glyphs.map((g) => g.y.toFixed(2))).size).toBe(1);
+            // xxs: 18px columns overlapping by 3px → 15px apart.
+            expect(l.glyphs[1].x - l.glyphs[0].x).toBeCloseTo(15);
+            expect(l.showIcon).toBe(true);
+        });
+
+        it("wraps a five-character word onto balanced lines (3 + 2) and drops the icon", () => {
+            const l = layoutMiniCardSvg({ ...compact, entryKey: "一二三四五", pronunciation: "yī èr sān sì wǔ" }, measure);
+            const ys = l.glyphs.map((g) => g.y.toFixed(2));
+            expect(new Set(ys).size).toBe(2);
+            expect(ys.filter((y) => y === ys[0])).toHaveLength(3);
+            expect(l.showIcon).toBe(false);
+            // Each line centred: line 2's two cells straddle the card's centre (78 / 2).
+            expect((l.glyphs[3].x + l.glyphs[4].x) / 2).toBeCloseTo(39);
+            // The word moved up into the icon slot (iconTop 11), above keyTop (38).
+            expect(l.glyphs[0].y).toBeLessThan(38);
+        });
+
+        it("balances longer words: 7 → 4 + 3, 9 → 3 + 3 + 3", () => {
+            const lineLengths = (word: string) => {
+                const l = layoutMiniCardSvg({ ...compact, entryKey: word, pronunciation: null }, measure);
+                const counts = new Map<string, number>();
+                for (const g of l.glyphs) counts.set(g.y.toFixed(2), (counts.get(g.y.toFixed(2)) ?? 0) + 1);
+                return [...counts.values()];
+            };
+            expect(lineLengths("一二三四五六七")).toEqual([4, 3]);
+            expect(lineLengths("一二三四五六七八九")).toEqual([3, 3, 3]);
+        });
+
+        it("leaves short words at xs with the icon", () => {
+            const l = layoutMiniCardSvg({ ...compact, entryKey: "一二三", pronunciation: "yī èr sān" }, measure);
+            expect(l.glyphs[1].x - l.glyphs[0].x).toBeCloseTo(18);
+            expect(l.showIcon).toBe(true);
+        });
     });
 
     it("keeps a one-line gloss at the top of its min-height box", () => {

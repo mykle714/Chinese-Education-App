@@ -10,8 +10,8 @@ import { useWindowedRows } from "../hooks/useWindowedRows";
 import type { VocabEntry } from "../types";
 
 // Fixed-width wrapping grid of MiniVocabCards. Shared by the Deck Tower's cards page
-// (TowerCardsPage), Study Challenge (ChallengePanel, ChallengeDetailPage) and Quick Mark
-// (QuickMarkPanel) so the loading / error / empty / list states stay identical across them.
+// (TowerCardsPage), Study Challenge (ChallengePanel, ChallengeDetailPage) and the
+// provisional-card previews so the loading / error / empty / list states stay identical across them.
 const CardsPreviewContainer = styled(Box)(() => ({
     // 3 cards × 92px + 2 gaps × 16px + 2 sides × 28px padding = 364px
     width: 364,

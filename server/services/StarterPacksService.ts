@@ -6,7 +6,8 @@ import type { IStarterPacksDAL, DiscoverDetRow } from '../dal/interfaces/IStarte
 import { DiscoverCard, StarterPackBucket, SortPack } from '../types/index.js';
 import { NotFoundError, ValidationError } from '../types/dal.js';
 import { SortPackRow } from '../types/sortPacks.js';
-import { coreSeededTypedMarkHistory, SORT_BUCKET_CORE_POSITIVES } from '../utils/masteryCompute.js';
+import { SORT_BUCKET_CORE_POSITIVES } from '../utils/masteryCompute.js';
+import { sortSeedTypedMarkHistory } from '../contracts/cooldown.js';
 import { DISCOVER_SORT_BUCKETS, type DiscoverSortBucket } from '../contracts/wire.js';
 import { LazyEnrichmentService } from './LazyEnrichmentService.js';
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../utils/definitions.js';
@@ -400,10 +401,13 @@ export class StarterPacksService {
       //
       // ⚠️ Like the Mastered seed always has, this REPLACES the row's history — so a
       // promoted provisional card's earned marks are overwritten by the declared band.
-      const currentTimestamp: string = new Date().toISOString();
+      //
+      // Target and Comfortable seeds are stamped so the card starts OFF cooldown (it joins
+      // the Deck Tower's Learning deck at once); Mastered starts its full window
+      // (sortSeedTypedMarkHistory, contracts/cooldown.ts).
       await this.vocabEntryDAL.updateTypedMarkHistory(
         vocabEntryId,
-        coreSeededTypedMarkHistory(seedPositives, currentTimestamp)
+        sortSeedTypedMarkHistory(bucket as Exclude<DiscoverSortBucket, 'skip'>, Date.now())
       );
       console.log(`[StarterPacks] Seeded VocabEntry id=${vocabEntryId} for bucket '${bucket}' (${seedPositives}/track core history)`);
     }

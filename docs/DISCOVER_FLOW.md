@@ -53,9 +53,11 @@ Deck Tower (/) — main world's mini sort platform
     card → recycle it, Recycle all). The old `/discover/skipped/:language` page
     (`SkippedCardsPage`) and its hub tile were removed 2026-10-12. See
     [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) §5.1a and §7.
-  - **Quick Mark is not mounted.** `src/features/discover/QuickMarkPanel.tsx` (with
-    `useQuickMarkGrid`) is still in the tree but nothing renders it — acp has no ⊞
-    button. See [QUICK_MARK.md](./QUICK_MARK.md).
+  - **Quick Mark is gone.** It lost its only entry (acp's ⊞ button) 2026-10-29 and its
+    client code was deleted 2026-11-14. See [QUICK_MARK.md](./QUICK_MARK.md).
+  - **Deck-fill notifications.** acp tells the learner how many cards to sort to fill
+    today's deck to ~25, and warns once a deck reaches 40. See
+    [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) § 5.4.
 
 ## Card supply gate
 

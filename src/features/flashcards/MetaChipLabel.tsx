@@ -4,8 +4,10 @@ import EipSectionLabel from "./EipSectionLabel";
 import type { Language, ValidationField } from "../../types";
 
 interface MetaChipLabelProps {
-    // User-facing caption, e.g. "Difficulty" / "Parts of Speech" / "Commonality".
-    label: string;
+    // User-facing caption, e.g. "Difficulty" / "Commonality". Optional: omitted, only the
+    // validator overlay renders (the Parts of Speech field has no caption since 2026-11-14 —
+    // its pills speak for themselves — but a validator still needs its Approve/Flag pair).
+    label?: string;
     // The validation field this chip's value comes from — decides what an
     // Approve/Flag here records (docs/DATA_VALIDATION_SYSTEM.md).
     field: ValidationField;
@@ -43,7 +45,7 @@ interface MetaChipLabelProps {
  * carries.
  *
  * Used by the eip's meta strip (DefinitionFacts, in InfoCardTabContent), which renders
- * three chips (Difficulty / Parts of Speech / Commonality). There used to be a second,
+ * three chips (Difficulty / Parts of Speech / Commonality; Parts of Speech uncaptioned). There used to be a second,
  * identical strip on the cdp (`VocabCardDetailBody`, deleted), which is why this is
  * shared. It is deliberately a MODULE-level
  * component: declaring it inside either parent's render body would make it a new
@@ -56,7 +58,7 @@ export default function MetaChipLabel({ label, field, word1, language, senseLabe
             {/* The panels' one section-title style (EipSectionLabel, 2026-11-07), shared with
                 "Other Translations" and Synonyms / Related Words. Was its own Tower Tier 2
                 `.lab` treatment (FONTS.label, 10.5px, .08em), which drifted from those. */}
-            <EipSectionLabel className={`${classPrefix}__meta-chip-label`}>{label}</EipSectionLabel>
+            {label && <EipSectionLabel className={`${classPrefix}__meta-chip-label`}>{label}</EipSectionLabel>}
             {language && (
                 <Box
                     className={`${classPrefix}__validate-${field}`}

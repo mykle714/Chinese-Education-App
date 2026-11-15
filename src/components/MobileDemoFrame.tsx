@@ -3,6 +3,7 @@ import { Box, useMediaQuery, useTheme } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { COLORS } from "../theme/colors";
 import FooterPresenter from "./FooterPresenter";
+import NotificationViewport from "./notifications/NotificationViewport";
 import { FooterVisibilityProvider } from "./FooterVisibilityContext";
 import { PHONE_WIDTH, PHONE_HEIGHT, PHONE_RADIUS, PHONE_SHADOW } from "./phoneGeometry";
 
@@ -86,6 +87,9 @@ const MobileDemoFrame: React.FC<MobileDemoFrameProps> = ({ children, className }
                 {/* Single persistent footer pill, animated independently of the page
                     slides (it lives outside the page surfaces). See FooterPresenter. */}
                 <FooterPresenter />
+                {/* The app notifications (docs/NOTIFICATIONS.md), pinned against this frame
+                    under the page header, above the footer and any sheet. */}
+                <NotificationViewport placement="frame" />
             </FooterVisibilityProvider>
         </FrameRoot>
     );

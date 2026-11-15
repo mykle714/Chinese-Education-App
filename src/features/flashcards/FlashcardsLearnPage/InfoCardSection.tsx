@@ -134,15 +134,6 @@ const ENTRY_SLIDE_TRAVEL_PCT = 34;
 const ENTRY_SLIDE_MS = 280;
 const ENTRY_SLIDE_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 
-// How far an eip maximize / shrink must travel, as a share of the gap between the open
-// height and max, before a release commits — forwarded to SheetPanel's `snapCommitShare`.
-// DIRECTIONAL, like td's tower ↔ cards snap (towerScroll.ts → SNAP_COMMIT_SHARE, the same
-// 0.25): pulling up from the open height, a quarter of the gap (0.6 → 0.7 of the screen at
-// the default open height) maximizes; pulling down from max, a quarter of the gap
-// (1 → 0.9) shrinks back to the open height. Short of that it springs back to the stop it
-// left. Docs: docs/EIP_SHEET_GESTURES.md § "Height model".
-const EIP_SNAP_COMMIT_SHARE = 0.25;
-
 // Re-export the handle under the original name so callers don't need to update.
 export type InfoCardSectionHandle = SheetPanelHandle;
 
@@ -247,7 +238,6 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
             depth={depth}
             initialHeight={initialHeight}
             defaultHeightRatio={defaultHeightRatio}
-            snapCommitShare={EIP_SNAP_COMMIT_SHARE}
             bodyRef={panelRef}
             // Fold selectedTab into the key: InfoCardPanelBody's scrollable
             // element is the ACTIVE tab's pane (each pane scrolls on its own),

@@ -28,7 +28,9 @@ import { useEipColors } from "./useEipPalette";
  * chevron sits and closes the whole panel (SheetPanel's `dismiss` — it does NOT pop a word;
  * tapping an earlier crumb does that). THERE IS ONE CARET at every height, and it belongs
  * to the panel rather than to a row: it is pinned to the frame's top-left, so it rides the
- * top of the panel up the screen and never arrives from anywhere. Its small offset from
+ * top of the panel up the screen and never arrives from anywhere. Below the open height it
+ * is LEFT BEHIND (2026-11-14): it lifts by `--sheet-telescope-clip` to stay on the trail
+ * row's line and is clipped away with that row as the panel minimizes. Its small offset from
  * the frame's top eases from the trail row's line to the page header's line over the same
  * travel that reveals the title (`--sheet-telescope-t`, written by SheetPanel's
  * writeTelescope). The rows only keep room for it: the trail row its leading cluster
@@ -202,7 +204,13 @@ const EipUpperPanel = forwardRef<SheetTelescopeHandle, EipUpperPanelProps>(funct
                     alignItems: "center",
                     justifyContent: "center",
                     cursor: "pointer",
-                    transform: `translateY(calc(${CARET_TRAVEL}px * var(--sheet-telescope-t, 0)))`,
+                    // Toward max: ease onto the page header's line (`--sheet-telescope-t`).
+                    // Below the open height: lift by what the frame has clipped off its top
+                    // (`--sheet-telescope-clip`), so the caret stays on the trail row's line
+                    // and is clipped away with it as the panel minimizes, rather than riding
+                    // the descending top edge down. The two never overlap (t is 0 below open,
+                    // clip is 0 above it).
+                    transform: `translateY(calc(${CARET_TRAVEL}px * var(--sheet-telescope-t, 0) - var(--sheet-telescope-clip, 0px)))`,
                     transition: "transform var(--sheet-telescope-transition, 0ms) ease-out",
                 }}
             >

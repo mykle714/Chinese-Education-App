@@ -1,6 +1,6 @@
 import { Box } from "@mui/material";
-import TouchAppOutlinedIcon from "@mui/icons-material/TouchAppOutlined";
 import ForeignText from "../../../../components/ForeignText";
+import DismissCue from "../../../../components/hintBubble/DismissCue";
 import { COLORS } from "../../../../theme";
 import { SIZE, WEIGHT } from "../../../../theme/scale";
 import { PAWN_BUBBLE_VARIANT, type PawnHint, type UsedInPawnHint } from "./pawnHints";
@@ -58,40 +58,21 @@ const BUBBLE_BODY_PAD_Y = 2;
  * padding on the right).
  */
 const DISMISS_CUE_INSET = 6;
-/**
- * The dismiss cue's text size: 10px, ONE STEP BELOW the type scale's smallest token
- * (`SIZE.micro`, 11px) — owner asked for it smaller still (2026-11-08). A local value, not
- * a token; a few other spots inline 10px too (e.g. card/SensePicker.tsx).
- */
-const DISMISS_CUE_FONT_SIZE = "0.625rem";
 
-/** The cue for tap-to-dismiss (the whole bubble is the target). Shared by both variants. */
-function DismissCue() {
+/**
+ * The cue for tap-to-dismiss (the whole bubble is the target). Shared by both variants;
+ * the cue itself is the shared DismissCue (src/components/hintBubble/DismissCue.tsx), placed
+ * here so it lands DISMISS_CUE_INSET from the bubble's edges.
+ */
+function PawnDismissCue() {
     return (
-        // Three short right-aligned lines, a tapping hand beside the middle "to" (owner, 2026-11-08).
-        <Box
+        <DismissCue
             className="pawn-hint-body__dismiss-cue"
             sx={{
-                flexShrink: 0,
-                alignSelf: "flex-end",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "flex-end",
                 mr: `${DISMISS_CUE_INSET - BUBBLE_BODY_PAD_X - ROOT_PAD}px`,
                 mb: `${DISMISS_CUE_INSET - BUBBLE_BODY_PAD_Y - ROOT_PAD}px`,
-                fontSize: DISMISS_CUE_FONT_SIZE,
-                fontWeight: WEIGHT.semibold,
-                lineHeight: 1.1,
-                color: COLORS.textSecondary,
             }}
-        >
-            <span className="pawn-hint-body__dismiss-line">Tap</span>
-            <Box component="span" className="pawn-hint-body__dismiss-line" sx={{ display: "flex", alignItems: "center", gap: "2px" }}>
-                <TouchAppOutlinedIcon className="pawn-hint-body__dismiss-icon" sx={{ fontSize: 12 }} />
-                to
-            </Box>
-            <span className="pawn-hint-body__dismiss-line">dismiss</span>
-        </Box>
+        />
     );
 }
 
@@ -202,7 +183,7 @@ export default function PawnHintBody({
                     <Box className="pawn-hint-body__line" sx={{ ...lineSx, flex: 1, minWidth: 0, overflow: "hidden" }}>
                         <HintLine line={line} />
                     </Box>
-                    {showDismissCue && <DismissCue />}
+                    {showDismissCue && <PawnDismissCue />}
                 </>
             ) : (
                 <>
@@ -217,7 +198,7 @@ export default function PawnHintBody({
                     </Box>
                     <Box className="pawn-hint-body__cpcd-row" sx={{ alignSelf: "stretch", display: "flex", alignItems: "flex-end", gap: 0.75 }}>
                         <CpcdRowContent hint={hint} />
-                        {showDismissCue && <DismissCue />}
+                        {showDismissCue && <PawnDismissCue />}
                     </Box>
                 </>
             )}

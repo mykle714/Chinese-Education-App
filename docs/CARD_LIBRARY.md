@@ -74,16 +74,43 @@ both on purpose (CLAUDE.md § Terminology).
 `src/components/MiniCard.tsx` (`MiniCard`, `MiniCardFrequencyBadge`), `miniCardFace.ts`
 (`miniCardFaceSx`, `MINI_CARD_RING`, `MINI_CARD_WIDTH` / `HEIGHT` / `RADIUS`, and the
 contents' geometry: `MINI_CARD_CONTENT_LAYOUT`, `MINI_CARD_BAR_STRIP`, `DEFINITION_*`,
-`miniCardDefinitionBottom`).
+`miniCardDefinitionBottom`, `miniCardWordFit`).
 
 The 92×132 tile is the app's one mini preview card. `MiniVocabCard` (the library grid),
-`QuickMarkCard` (provisional sort offer), `ChallengeWordCard` (a challenge word set) and
+`ChallengeWordCard` (a challenge word set) and
 acp's `DraggableCard` (`AddCardsPage.tsx`) all render it. `MiniCard` owns the tile
 (size, radius, fill, hairline inset ring, elevation, offscreen containment, staggered
 pop-in) and its contents: icon slot, word (`ForeignText`), 2-line definition and the
 optional mastery strip. Wrappers pass plain display values plus `children` overlays
 (corner badges, action buttons). The **mastery strip is opt-in** (`masteryBar`; only
 `MiniVocabCard` passes it); omitting it gives the strip's height back to the definition.
+
+### Long words on the mini card
+
+`miniCardFace.ts` → `miniCardWordFit` (`MINI_CARD_SMALL_WORD_MIN_CHARS`), read by both
+`MiniCard` and `miniCardSvgLayout.ts` → `layoutMiniCardSvg`; the `xxs` row of the size tables
+in `cpcdLayout.ts`. Applies to the **compact (78×112) face only** — in practice the acp dock's
+4-card packs on a phone. The regular 92×132 face is unchanged (`xs`, 4 characters fit its
+76px body exactly; 5+ wrap greedily with the icon kept). Chinese only (a Latin-script
+headword keeps ForeignText's plain-text path).
+
+| Word (compact face) | cpcd size | Lines | Icon | Top |
+|---|---|---|---|---|
+| 1–3 characters | `xs` (22px columns, 18px pitch) | 1 | shown | `keyTop` |
+| 4 characters | `xxs` (18px columns, −3 overlap → 15px pitch, 63px wide) | 1 | shown | `keyTop` |
+| 5+ characters | `xxs` | balanced wrap | **dropped** | the icon slot's `iconTop` |
+
+- **Why.** At `xs` a 4-character word is 76px, 10px over the compact face's 66px body, so
+  idioms wrapped 3 + 1. `xxs` fits four (`capacity` = 4).
+- **Balanced lines** are arithmetic, not CSS `text-wrap: balance` (which the SVG twin could not
+  mirror): `lines = ceil(n / capacity)`, `perLine = ceil(n / lines)`, and the row is capped at
+  `perLine` cells (`MiniCardWordFit.maxWidth`, on `MiniCard`'s `.mini-card__entry-key-measure`
+  box) so the greedy wrap lands on 5 → 3+2, 6 → 3+3, 7 → 4+3, 9 → 3+3+3.
+- **Room.** A wrapped compact `xxs` line is ~31px; two lines from `iconTop` (11) end at ~72px,
+  clear of the two-line definition. A 9+ character word needs three lines and can reach the
+  definition — rare, accepted.
+- Long pinyin at `xxs` (8px on a 15px pitch) relies on the shared collision solver
+  (CPCD_PINYIN_SHIFT.md) and may spread slightly past the glyphs.
 
 **Its SVG twin.** `MiniCardSvg` (`src/components/MiniCardSvg.tsx`) draws the same face —
 tile, ring, icon, cpcd word, two-line gloss — as native SVG, for the acp's iso deck tops

@@ -278,8 +278,11 @@ of empty sky → 300 ms in, ease-out) and its own streak field (`speedLineField`
   hidden the frame carries `page-dash-hold` (rule in `src/index.css`), which pauses every CSS
   animation in the route page — delays included, late-mounting elements too; a paused
   `backwards`-fill animation holds its first frame. Released at the in phase, they play as
-  the page slides in. JS-driven motion (td's tower build-up, `useBuildProgress`) is not held
-  and still runs partly unseen.
+  the page slides in. JS-driven motion is not paused by that rule; a page that needs it seen
+  holds it itself on `usePageDashRunning()` (`src/hooks/usePageDashRunning.ts`, true from the
+  navigation until the arriving page has settled; store in `src/hooks/pageDash.ts` →
+  `isPageDashRunning`, `subscribePageDash`). td holds its recount grows and cooldown releases
+  on it, so the cards gained in acp drop once td is in view (DECK_TOWER.md § Back from Add Cards).
 - **Used by:** the Deck Tower's mini sort platform ↔ Add Cards (a node page;
   DECK_TOWER.md § The sort platform).
 

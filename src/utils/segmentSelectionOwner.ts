@@ -17,6 +17,9 @@
 //
 // Referenced by:
 //   - src/components/SegmentedSentenceDisplay.tsx (registers on mount, claims on select)
+//   - src/features/flashcards/FlashcardsLearnPage/InfoCardPanelBody.tsx (clears all on an
+//     eip sub-tab or word change — the off-screen pane stays mounted, so its popup would
+//     otherwise linger over the new tab)
 //   - docs/EXAMPLE_SENTENCES.md § "One selection at a time (cross-sentence deselect)"
 
 /** Identity token for a registered display, plus how to clear its selection. */
@@ -49,4 +52,13 @@ export function claimSegmentSelection(token: object): void {
   owners.forEach((owner) => {
     if (owner.token !== token) owner.clear();
   });
+}
+
+/**
+ * Drop EVERY registered display's selection (and with it its popup). For hosts that
+ * move a still-mounted display out of view — the eip's sub-tab track keeps its panes
+ * mounted, so a popup opened on the est would otherwise float over the next tab.
+ */
+export function clearAllSegmentSelections(): void {
+  owners.forEach((owner) => owner.clear());
 }

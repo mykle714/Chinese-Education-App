@@ -178,8 +178,10 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
                         position: "relative",
                     }}
                 >
+                    {/* No caption (2026-11-14, by request): the outlined pills read as parts
+                        of speech on their own. MetaChipLabel stays for the validator's
+                        Approve/Flag overlay on this field. */}
                     <MetaChipLabel
-                        label="Parts of Speech"
                         field="partsOfSpeech"
                         word1={entry.entryKey}
                         language={entry.language}
@@ -196,7 +198,7 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
                         shelf; `line` flips to a light hairline with the rest of the dark ink. */}
                     <Box
                         className={`${classPrefix}__definition-facts-pos-list`}
-                        sx={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "7px" }}
+                        sx={{ display: "flex", flexWrap: "wrap", gap: "6px" }}
                     >
                         {posList.map((pos) => (
                             <Typography

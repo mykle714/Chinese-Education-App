@@ -104,7 +104,7 @@ as the same text wherever it appears:
 - the mini preview card — `src/components/MiniCard.tsx` (`MiniCard`, `MiniCardFrequencyBadge`):
   the WHOLE card is set in `FONTS.cjk` (root `fontFamily`, inherited by wrapper overlays;
   restated on the dd `Typography` and the frequency badge). Reaches every wrapper at once:
-  the acp's `DraggableCard`, `SkippedCardsSheet`, `MiniVocabCard`, `QuickMarkCard`,
+  the acp's `DraggableCard`, `SkippedCardsSheet`, `MiniVocabCard`,
   `ChallengeWordCard`.
 
 The rest of the sense menu (pinyin reading headings, counter chip, grammar tag) stays on

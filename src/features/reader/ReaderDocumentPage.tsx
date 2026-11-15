@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Box, Collapse, useTheme, useMediaQuery, Snackbar, Alert } from "@mui/material";
-import { TouchApp as TouchAppIcon } from "@mui/icons-material";
+import { Box, Collapse, useTheme, useMediaQuery, Alert } from "@mui/material";
+import { useNotify, useNotificationFor } from "../../components/notifications/useNotify";
 import { HeaderIconButton } from "../../components/PageHeader";
 import { COLORS } from "../../theme/colors";
 import ReaderDocumentSurface from "./ReaderDocumentSurface";
@@ -28,7 +28,6 @@ import { useTextSelection } from "./useTextSelection";
 import { useReaderSettings } from "./useReaderSettings";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useLockBodyScroll } from "../../hooks/useLockBodyScroll";
-import { SAFE_TOP } from "../../theme/safeArea";
 import {
     useKeyboardInset,
     transitionForInset,
@@ -40,13 +39,6 @@ import {
 // CARD_EDIT_ANIM_MS/EASING (CardEditToolbar.tsx) so both editors' toolbars
 // animate with the same feel. Kept as a local constant rather than importing
 // across the flashcards/reader feature boundary (docs/PROJECT structure).
-// Where the page's three top-anchored snackbars sit. They clear the surface's own
-// fixed header (the reader draws its NodePageHeader over the text) so an alert never
-// covers the back arrow / edit / delete buttons — plus the status-bar inset, because
-// the header itself is offset by it since `viewport-fit=cover` (src/theme/safeArea.ts).
-// One constant rather than the three byte-identical `top: '68px !important'` overrides
-// that used to sit inline on each Snackbar.
-const SNACKBAR_TOP = `calc(68px + ${SAFE_TOP}) !important`;
 
 const EDIT_TOOLBAR_ANIM_MS = 300;
 const EDIT_TOOLBAR_ANIM_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
@@ -94,7 +86,6 @@ function ReaderDocumentPage() {
 
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
-    const [tapHintOpen, setTapHintOpen] = useState(false);
     const [savingEdit, setSavingEdit] = useState(false);
     const [editSaveError, setEditSaveError] = useState<string | null>(null);
 
@@ -259,12 +250,25 @@ function ReaderDocumentPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [text?.id]);
 
-    // Tap-to-navigate hint toast, once per document open. A draft has nothing to
-    // navigate yet; the hint shows once it is saved (its id changes then).
+    // Tap-to-navigate hint, once per document open. A draft has nothing to navigate yet;
+    // the hint shows once it is saved (its id changes then). An app notification
+    // (docs/NOTIFICATIONS.md) — the shell pins it under the page header, clear of the
+    // reader's back / edit / delete buttons.
+    const { notify, dismiss } = useNotify();
     const openTextId = text?.id;
     useEffect(() => {
-        setTapHintOpen(!!openTextId && openTextId !== NEW_DOCUMENT_ID);
-    }, [openTextId]);
+        if (!openTextId || openTextId === NEW_DOCUMENT_ID) return;
+        notify({
+            id: "reader-tap-hint",
+            tone: "info",
+            icon: "touch_app",
+            message: "Tap the left or right side of the text to move the cursor back or forward.",
+            autoHideMs: 5000,
+        });
+        return () => dismiss("reader-tap-hint");
+    }, [openTextId, notify, dismiss]);
+    // An inline edit that failed to save.
+    useNotificationFor(editSaveError, () => setEditSaveError(null), { id: "reader-edit-save-error", tone: "error" });
 
     // Return focus + re-highlight when a dialog closes (see original rationale in
     // docs/READER_SEGMENTATION.md / useTextSelection). Inline edit mode is treated
@@ -493,42 +497,6 @@ function ReaderDocumentPage() {
                 onSuccess={handleDeleteSuccess}
             />
 
-            <Snackbar
-                className="reader-page-tap-hint-snackbar"
-                open={tapHintOpen}
-                autoHideDuration={5000}
-                onClose={() => setTapHintOpen(false)}
-                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-                sx={{ top: SNACKBAR_TOP }}
-            >
-                <Alert
-                    className="reader-page-tap-hint-alert"
-                    severity="info"
-                    variant="filled"
-                    icon={<TouchAppIcon className="reader-page-tap-hint-icon" />}
-                    onClose={() => setTapHintOpen(false)}
-                >
-                    Tap the left or right side of the text to move the cursor back or forward.
-                </Alert>
-            </Snackbar>
-
-            <Snackbar
-                className="reader-page-edit-save-error-snackbar"
-                open={!!editSaveError}
-                autoHideDuration={4000}
-                onClose={() => setEditSaveError(null)}
-                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-                sx={{ top: SNACKBAR_TOP }}
-            >
-                <Alert
-                    className="reader-page-edit-save-error-alert"
-                    severity="error"
-                    variant="filled"
-                    onClose={() => setEditSaveError(null)}
-                >
-                    {editSaveError}
-                </Alert>
-            </Snackbar>
         </ReaderDocumentSurface>
     );
 }

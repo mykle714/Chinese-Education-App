@@ -4,15 +4,16 @@
  * LAYER: data-enrichment (backfill) utility layer.
  *
  * ONE source of truth for the completeness check + the on-first-sort worker
- * (docs/DISCOVER_LAZY_ENRICHMENT.md §5). `REQUIRED_SCRIPTS_ZH` mirrors the 18-step zh
+ * (docs/DISCOVER_LAZY_ENRICHMENT.md §5). `REQUIRED_SCRIPTS_ZH` mirrors the 19-step zh
  * pipeline in `.claude/commands/mark-discoverable.md` §A; `REQUIRED_SCRIPTS_ES` mirrors
  * the 8-step es pipeline in §B3. `id` MUST match the `script:` id each backfill passes
  * to initRunLog (that is the key it stamps into `enrichmentLog`).
  *
  * Each step carries:
- *   - when: applicability. 'always' | 'multiChar' | 'multiDef' | 'nounPos' |
+ *   - when: applicability. 'always' | 'singleChar' | 'multiChar' | 'multiDef' | 'nounPos' |
  *     'esSemicolonDef' | 'esAbbrevDef'. A step is only required on rows it applies to
- *     (breakdown → multi-char; process-defs → multi-def; classifier → nouns; the two
+ *     (components → single-char; breakdown → multi-char; process-defs → multi-def;
+ *     classifier → nouns; the two
  *     deterministic es cleanups → rows whose text actually contains their trigger).
  *   - version: the script's CURRENT `SCRIPT_VERSION`. **Keep in sync by hand when a
  *     script bumps its SCRIPT_VERSION** — this is the manifest's known-good version,
@@ -89,6 +90,15 @@ export const REQUIRED_SCRIPTS_ZH = [
   // then at v1). Reads only word1, so it has no ordering constraint; it sits with the
   // other deterministic steps. NULL is a decided answer — done-ness is the stamp.
   { id: 'chinese/backfill-max-char-stroke-count',     when: 'always',    version: 1, deterministic: true },
+  // The sub-character visual parts of a single character (想 → ["相","心"]; atomic → []),
+  // read by the word search No Pinyin hint ladder. Reads only word1 + the cached
+  // decomposition file, so it has no ordering constraint. NOTE the script's own scope is
+  // wider than this step: an untargeted run fills EVERY single-char row, discoverable or
+  // not (component characters inside discoverable words are often not discoverable
+  // themselves) — PPE was filled that way on 2026-11-14. This step only guarantees that
+  // a row promoted later arrives with its components. Stamps every examined row, `[]`
+  // included, so done-ness is the stamp.
+  { id: 'chinese/backfill-character-components',      when: 'singleChar', version: 2, deterministic: true },
   { id: 'chinese/backfill-dictionary-breakdown',      when: 'multiChar', version: 1 },
   // NOT 'multiDef': this script also owns the ≤20-char lead-gloss synthesis, whose
   // trigger is the LENGTH of definitions[0], not the gloss count. Under 'multiDef' a
@@ -114,10 +124,11 @@ export const REQUIRED_SCRIPTS_ZH = [
   // Long-definitions writes ONE definition per (SENSE, POS) PAIR, taking its senses (and the
   // `sense` labels it keys on) plus each sense's POS list from `definitionClusters` — so it
   // MUST follow clustering, and skips any row that isn't clustered yet. docs/DEFINITION_CLUSTERS.md.
-  { id: 'chinese/backfill-long-definitions',          when: 'always',    version: 15, validationFields: ['definitions'] },
+  { id: 'chinese/backfill-long-definitions',          when: 'always',    version: 16, validationFields: ['definitions'] },
   // Translates the Chinese runs QUOTED INSIDE the long definition (migration 126), so it reads
   // that step's output and must follow it. Re-running long-definitions for a word invalidates
-  // this column for that word. docs/DEFINITION_MAPPING.md #5b.
+  // this column for that word — so (v16+) that script's write NULLs the column and drops THIS
+  // step's stamp, making the step pending again. docs/DEFINITION_MAPPING.md #5b.
   { id: 'chinese/backfill-longdef-citations',         when: 'always',    version: 2, validationFields: ['definitions'] },
   // HELD BACK: the script is at v8, the manifest deliberately stays at 7. v8 only changes
   // sentences that repeat the headword (~0.4%: the 【】-marked target → `vocabCharIndex`, and
@@ -386,6 +397,7 @@ export function driftProbesFor(steps = DEFAULT_SCRIPTS_ZH) {
 function conditionSql(when, alias) {
   switch (when) {
     case 'always':    return 'TRUE';
+    case 'singleChar': return `char_length(${alias}.word1) = 1`;
     case 'multiChar': return `char_length(${alias}.word1) > 1`;
     case 'multiDef':  return `jsonb_array_length(COALESCE(${alias}.definitions, '[]'::jsonb)) > 1`;
     // zh process-definitions-array: something to reorder OR a headline too long for the
@@ -413,6 +425,7 @@ export function appliesTo(step, row) {
   const pos = Array.isArray(row.partsOfSpeech) ? row.partsOfSpeech : [];
   switch (step.when) {
     case 'always':    return true;
+    case 'singleChar': return [...word1].length === 1;
     case 'multiChar': return [...word1].length > 1;
     case 'multiDef':  return defs.length > 1;
     case 'multiDefOrLongLead':

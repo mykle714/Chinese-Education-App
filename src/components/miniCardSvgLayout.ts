@@ -38,7 +38,9 @@ import {
     MINI_CARD_DIMENSIONS,
     MINI_CARD_RADIUS,
     miniCardDefinitionBottom,
+    miniCardWordFit,
     type MiniCardSize,
+    type MiniCardWordFit,
 } from "./miniCardFace";
 import { isLatinScriptLang } from "./ForeignText";
 
@@ -94,6 +96,8 @@ export interface MiniCardSvgLayout {
     radius: number;
     /** The fixed icon slot's image box (drawn only when the card has an icon). */
     iconBox: { x: number; y: number; size: number };
+    /** False when a long word wraps into the icon slot (miniCardWordFit) — draw no icon. */
+    showIcon: boolean;
     /** zh: one glyph per character, centred on `x`, baseline `y`. */
     glyphs: { x: number; y: number; text: string }[];
     glyphFont: FontSpec;
@@ -125,8 +129,6 @@ export interface TextMeasurer {
 }
 const CANVAS_MEASURER: TextMeasurer = { advance: measureAdvance, metrics: fontLineMetrics };
 
-/** The cpcd size every mini card sets its word at (MiniCard → ForeignText `size="xs"`). */
-const WORD_SIZE = "xs" as const;
 /** Line height of ForeignText's plain (Latin-script) headword. */
 const PLAIN_LINE_HEIGHT = 1.21;
 const ELLIPSIS = "…";
@@ -136,15 +138,19 @@ export function layoutMiniCardSvg(input: MiniCardSvgInput, measure: TextMeasurer
     const { width, height } = MINI_CARD_DIMENSIONS[size];
     const content = MINI_CARD_CONTENT_LAYOUT[size];
     const bodyWidth = width - 2 * content.sideInset;
+    // The word's size, wrap width, top and whether the icon survives — the SAME decision
+    // MiniCard makes (miniCardFace.ts → miniCardWordFit).
+    const wordFit = miniCardWordFit(input.entryKey, input.language, size);
+    const wordSize = wordFit.cpcdSize;
 
     const glyphFont: FontSpec = {
         family: FONTS.cjk,
-        sizePx: fontPx(content.cpcdCompact ? COMPACT_CHAR_FONT[WORD_SIZE] : CHAR_FONT_SIZE[WORD_SIZE]),
+        sizePx: fontPx(content.cpcdCompact ? COMPACT_CHAR_FONT[wordSize] : CHAR_FONT_SIZE[wordSize]),
         weight: WEIGHT.bold,
     };
     const pinyinFont: FontSpec = {
         family: FONTS.cjk,
-        sizePx: fontPx(content.cpcdCompact ? COMPACT_PINYIN_FONT[WORD_SIZE] : PINYIN_FONT_SIZE[WORD_SIZE]),
+        sizePx: fontPx(content.cpcdCompact ? COMPACT_PINYIN_FONT[wordSize] : PINYIN_FONT_SIZE[wordSize]),
         weight: WEIGHT.regular,
         stretch: "condensed",
     };
@@ -155,13 +161,14 @@ export function layoutMiniCardSvg(input: MiniCardSvgInput, measure: TextMeasurer
 
     const word = isLatinScriptLang(input.language)
         ? { glyphs: [], pinyins: [], separators: [], plainLines: layoutPlainWord(input.entryKey, plainFont, content, bodyWidth, measure) }
-        : { ...layoutCpcdWord(input, glyphFont, pinyinFont, separatorFont, content, bodyWidth, measure), plainLines: [] };
+        : { ...layoutCpcdWord(input, wordFit, glyphFont, pinyinFont, separatorFont, content, bodyWidth, measure), plainLines: [] };
 
     return {
         width,
         height,
         radius: parseFloat(MINI_CARD_RADIUS),
         iconBox: { x: content.sideInset + (bodyWidth - content.iconSize) / 2, y: content.iconTop, size: content.iconSize },
+        showIcon: wordFit.showIcon,
         ...word,
         glyphFont,
         pinyinFont,
@@ -181,9 +188,13 @@ export function layoutMiniCardSvg(input: MiniCardSvgInput, measure: TextMeasurer
  * overlap` (negative), so each cell's margin box is `cellWidth + overlap` and its border
  * box starts `|overlap|` before its margin box. Cells wrap between one another when the
  * row would pass the body width; each line is centred in the space after the padding.
+ * A long word sets at `wordFit.cpcdSize` and wraps at `wordFit.maxWidth` (the inner
+ * `.mini-card__entry-key-measure` box's cap, centred in the key wrapper) from
+ * `wordFit.keyTop`.
  */
 function layoutCpcdWord(
     input: MiniCardSvgInput,
+    wordFit: MiniCardWordFit,
     glyphFont: FontSpec,
     pinyinFont: FontSpec,
     separatorFont: FontSpec,
@@ -192,14 +203,15 @@ function layoutCpcdWord(
     measure: TextMeasurer,
 ) {
     const items = buildCharItems(input.entryKey, input.pronunciation, true, true, true);
-    const columnWidth = COLUMN_WIDTH[WORD_SIZE];
-    const overlap = OVERLAP_BY_SIZE[WORD_SIZE];
+    const wordSize = wordFit.cpcdSize;
+    const columnWidth = COLUMN_WIDTH[wordSize];
+    const overlap = OVERLAP_BY_SIZE[wordSize];
     const pad = Math.abs(overlap);
-    const band = PINYIN_RESERVED_HEIGHT[WORD_SIZE];
-    const padTop = fontPx(VERTICAL_PADDING[WORD_SIZE]);
+    const band = PINYIN_RESERVED_HEIGHT[wordSize];
+    const padTop = fontPx(VERTICAL_PADDING[wordSize]);
     const glyphLine = glyphFont.sizePx * CHAR_LINE_HEIGHT;
     const pinyinLine = pinyinFont.sizePx * CHAR_LINE_HEIGHT;
-    const glyphBaseline = baselineInLineBox(glyphLine, measure.metrics(glyphFont)) + GLYPH_DROP_PX[WORD_SIZE];
+    const glyphBaseline = baselineInLineBox(glyphLine, measure.metrics(glyphFont)) + GLYPH_DROP_PX[wordSize];
     const pinyinBaseline = baselineInLineBox(pinyinLine, measure.metrics(pinyinFont));
     // The apostrophe's span sets `line-height: 1`.
     const separatorBaseline = baselineInLineBox(separatorFont.sizePx, measure.metrics(separatorFont));
@@ -208,9 +220,11 @@ function layoutCpcdWord(
     // A cell reserves the pinyin band whenever it HAS a syllable (shown or not).
     const cellHeightOf = (item: CpcdCharItem) => 2 * CELL_BORDER_PX + padTop + glyphLine + (item.pinyin ? band : 0);
 
-    // Root width: the chars block's max-content, capped by the body (then it wraps).
+    // Root width: the chars block's max-content, capped by the body — or, for a wrapping
+    // long word, by its balanced line width (then it wraps).
     const marginBoxes = items.map((item) => cellWidthOf(item) + overlap);
-    const rootWidth = Math.min(bodyWidth, pad + marginBoxes.reduce((a, b) => a + b, 0));
+    const wrapWidth = Math.min(bodyWidth, wordFit.maxWidth ?? Infinity);
+    const rootWidth = Math.min(wrapWidth, pad + marginBoxes.reduce((a, b) => a + b, 0));
     const rootLeft = content.sideInset + (bodyWidth - rootWidth) / 2;
     const lineRoom = rootWidth - pad;
 
@@ -232,7 +246,7 @@ function layoutCpcdWord(
     const glyphs: MiniCardSvgLayout["glyphs"] = [];
     const pinyins: MiniCardSvgLayout["pinyins"] = [];
     const separators: MiniCardSvgLayout["separators"] = [];
-    let lineTop = content.keyTop;
+    let lineTop = wordFit.keyTop;
     for (const line of lines) {
         const lineWidth = line.reduce((sum, i) => sum + marginBoxes[i], 0);
         // An overflowing line (one cell wider than the body) start-aligns, as CSS does.

@@ -15,6 +15,7 @@ import { useBlockZoom } from "./hooks/useBlockZoom";
 import { useChineseFont } from "./hooks/useChineseFont";
 import { useWeatherPrefetch } from "./hooks/useWeatherPrefetch";
 import { BootCoverProvider, BootRouteMounted } from "./components/bootCover/BootCover";
+import NotificationProvider from "./components/notifications/NotificationProvider";
 import type { BootCoverRenderProps, BootSceneRenderProps } from "./hooks/useBootCover";
 import { BOOT_COVER_GROUND } from "./components/bootCover/bootCoverGround";
 
@@ -129,6 +130,9 @@ function App() {
               `data-beginner-keyboard="off"`.
             */}
             <BeginnerKeyboardProvider>
+              {/* The app notification stack (docs/NOTIFICATIONS.md). Holds state only;
+                  Layout's shells draw it (NotificationViewport). */}
+              <NotificationProvider>
               {/* The app-opening cover, played on every cold start before auth resolves
                   (docs/LOGIN_REWORK.md § 1). Layout mounts its slot in both shells. */}
               <BootCoverProvider renderCover={renderBootCover} renderScene={renderBootScene}>
@@ -139,6 +143,7 @@ function App() {
               {/* Focus mode's "it turned itself off" popup, on whatever page is up
                   (docs/FOCUS_MODE.md § 4). */}
               <FocusEndedNoticeHost />
+              </NotificationProvider>
             </BeginnerKeyboardProvider>
           </ConfirmationProvider>
         </VocabularyUpdateProvider>

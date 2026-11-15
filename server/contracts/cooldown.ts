@@ -27,7 +27,13 @@
  * Referenced by docs/MASTERY_REWORK.md § 6 and § 7.
  */
 import type { MarkType, MasteryWorldId, TypedMarkHistory } from './wire.js';
-import { WORLD_MARK_TYPES, barCategory, worldForMarkType } from './mastery.js';
+import {
+  WORLD_MARK_TYPES,
+  barCategory,
+  worldForMarkType,
+  coreSeededTypedMarkHistory,
+  SORT_BUCKET_CORE_POSITIVES,
+} from './mastery.js';
 
 /**
  * Per-category cooldown after a correct mark: a card marked correct recently should
@@ -138,4 +144,44 @@ export function isMarkOnCooldown(
   writingMastery?: number | null
 ): boolean {
   return isBarOnCooldown(typedMarkHistory, worldForMarkType(type), now, writingMastery);
+}
+
+/**
+ * The acp sort buckets whose seeded card starts OFF cooldown (user decision 2026-11-14).
+ * Sorting a word as Target or Comfortable puts it straight onto the Deck Tower's Learning
+ * deck, so the tower can grow by it on the way back from acp (docs/DECK_TOWER.md
+ * § "Back from Add Cards"). Mastered (`already-learned`) is deliberately NOT here: a word
+ * declared known rests its full 180-day window from the sort. `library` seeds no marks, so
+ * it has no clock to start with.
+ */
+export const SORT_BUCKETS_SEEDED_RESTED: ReadonlySet<keyof typeof SORT_BUCKET_CORE_POSITIVES> = new Set([
+  'target',
+  'comfortable',
+] as const);
+
+/**
+ * The core history an acp sort into `bucket` seeds (`SORT_BUCKET_CORE_POSITIVES` correct
+ * marks per core track), stamped so the card's clock is right for that bucket:
+ *
+ *   - a RESTED bucket (`SORT_BUCKETS_SEEDED_RESTED`) is stamped `now − its band's window`,
+ *     so `barReadyAt` is exactly `now`: the card is dealable at once, and the queue
+ *     (`queueArrivalAt`, cardQueueRanking.ts) treats it as having just arrived rather
+ *     than as long overdue. The stamp is still inside the queue's 30-day recent tier
+ *     (Comfortable's window is 14 days).
+ *   - every other bucket is stamped `now`, which starts its full cooldown.
+ *
+ * The window is read off the SEEDED history's own band (`barCategory`), so it stays
+ * right if `SORT_BUCKET_CORE_POSITIVES` or the pbh cut lines move.
+ * Depended on by: server/services/StarterPacksService.ts → `sortCard`.
+ * Docs: docs/SORT_CARDS_REQUIREMENTS.md § 5, docs/DECK_TOWER.md § "Back from Add Cards".
+ */
+export function sortSeedTypedMarkHistory(
+  bucket: keyof typeof SORT_BUCKET_CORE_POSITIVES,
+  now: number
+): TypedMarkHistory {
+  const positives = SORT_BUCKET_CORE_POSITIVES[bucket];
+  const seededNow = coreSeededTypedMarkHistory(positives, new Date(now).toISOString());
+  if (positives === 0 || !SORT_BUCKETS_SEEDED_RESTED.has(bucket)) return seededNow;
+  const window = COOLDOWN_MS_BY_CATEGORY[barCategory(seededNow, 'core')] ?? 0;
+  return coreSeededTypedMarkHistory(positives, new Date(now - window).toISOString());
 }

@@ -559,7 +559,9 @@ export function coreSeededTypedMarkHistory(positives: number, timestamp: string)
  *   | `already-learned` | 8         | 8.67→8   | Mastered    |
  *
  * Keys are `DiscoverSortBucket` wire values (wire.ts); `skip` never writes a vet row.
- * Depended on by: server/services/StarterPacksService.ts → `sortCard`.
+ * The seed's TIMESTAMP (which buckets start off cooldown) is cooldown.ts →
+ * `sortSeedTypedMarkHistory`.
+ * Depended on by: server/contracts/cooldown.ts → `sortSeedTypedMarkHistory`.
  */
 export const SORT_BUCKET_CORE_POSITIVES = {
   'library': 0,

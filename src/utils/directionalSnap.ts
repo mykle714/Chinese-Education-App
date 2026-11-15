@@ -1,7 +1,8 @@
 /**
  * directionalSnap — the one "which of two stops does a release go to" rule shared by
- * td's tower ↔ cards snap zone and the SheetPanel's {open height, max} stops (the eip's
- * maximize / shrink).
+ * td's tower ↔ cards snap zone and a PERSISTENT SheetPanel's {floor, max} stops. (A modal
+ * SheetPanel — every eip — no longer uses it: its open height is a plain close/maximize
+ * threshold since 2026-11-14, see SheetPanel.tsx → computeSnapTarget.)
  *
  * The rule depends on the LAST DIRECTION the position was moving, not just where it sits:
  * moving towards the HIGH stop, it commits to it once `commitShare` of the gap past the
@@ -12,7 +13,7 @@
  * returns home. At `commitShare = 0.5` the rule is plain nearest-stop in either direction.
  *
  * "Low" and "high" are just the two ends of a number line: td passes scrollTops (platform
- * line < cards line), SheetPanel passes heights (open height < max).
+ * line < cards line), SheetPanel passes heights (floor < max).
  *
  * Layer: shared pure utility. No DOM, no React — unit-testable.
  * Read by: src/features/deckTower/towerScroll.ts → snapTargetOf,

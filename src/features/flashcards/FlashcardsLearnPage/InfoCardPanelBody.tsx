@@ -8,6 +8,7 @@ import { tabAvailability } from "./infoCardTabAvailability";
 import SheetSegmentedTabs from "../../../components/sheet/SheetSegmentedTabs";
 import { restingTabTransform, useTabSwipeTrack } from "../../../components/sheet/useTabSwipeTrack";
 import { TAB_LABELS } from "../constants";
+import { clearAllSegmentSelections } from "../../../utils/segmentSelectionOwner";
 import { useEipColors } from "./useEipPalette";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
 
@@ -258,6 +259,14 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
             }
         };
     }, [currentEntry?.entryKey, selectedTab, dragDxRef]);
+
+    // Erase any open example-sentence popup when the learner leaves its tab or word. The
+    // panes stay mounted (panesWarm), and the popup is a Popper anchored in viewport space,
+    // so without this it keeps floating over the newly shown tab. (Also runs on mount,
+    // harmlessly: nothing can be selected before the first render.)
+    useEffect(() => {
+        clearAllSegmentSelections();
+    }, [currentEntry?.entryKey, selectedTab]);
 
     return (
         <Box

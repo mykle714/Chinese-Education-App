@@ -14,7 +14,7 @@ import { CommonalityMeter, DifficultyMeter } from "../../components/ScoreMeters"
 import { difficultyAriaLabel } from "../../components/scoreMeterScale";
 import EipSheet from "../flashcards/FlashcardsLearnPage/EipSheet";
 import SkippedCardsSheet from "./SkippedCardsSheet";
-import SortBins, { SORT_BINS_ASPECT_RATIO, type SortBinSpec, type SortBinsHitTester } from "./SortBins";
+import SortBins, { SORT_BINS_ASPECT_RATIO, SORT_BINS_CLUSTER_WIDTH_FRACTION, SORT_BINS_HEADROOM_WIDTH_FRACTION, type SortBinSpec, type SortBinsHitTester } from "./SortBins";
 import { sortLookAt, type SortLook } from "./sortTimeOfDay";
 import { useTowerWeather } from "../deckTower/useTowerWeather";
 import { weatherDaySky } from "../deckTower/weatherSky";
@@ -55,6 +55,8 @@ import MiniCard from "../../components/MiniCard";
 import { MINI_CARD_DIMENSIONS, type MiniCardSize } from "../../components/miniCardFace";
 import { SORTED_STOCK, SORTED_PRINT_OPACITY, cardStockShadow, sortCardStockSx, CARD_LEVITATE_MS, cardLevitateKeyframes, LEVITATE_PHASES_MS } from "./sortCardStock";
 import { navigateBackOr } from "../../utils/navigateBack";
+import { useDeckFillNotices } from "./useDeckFillNotices";
+import { countedSessionSorts } from "./deckFillNotices";
 
 // The on-deck unit is now a SORT PACK (docs/SORT_CARDS_REQUIREMENTS.md §4.5): up to 4
 // draggable cards (no sentence band). The client holds a short FIFO queue of PACKS
@@ -69,8 +71,8 @@ import { navigateBackOr } from "../../utils/navigateBack";
 const MAX_CARDS_PER_PACK = 4;
 const UNDO_DEPTH = MAX_CARDS_PER_PACK;
 
-// Manual HSK/difficulty dropdown levels: DIFFICULTY_LEVELS (./difficultyLevels.ts),
-// shared with the expanded Quick Mark panel. `selectedLevel === null` is the dropdown's
+// Manual HSK/difficulty dropdown levels: DIFFICULTY_LEVELS (./difficultyLevels.ts).
+// `selectedLevel === null` is the dropdown's
 // extra "auto" entry (the adaptive target the client tracks itself).
 
 // Holding the Skip button this long opens the hidden skipped-cards sheet (§5.1a).
@@ -167,41 +169,86 @@ const SORT_BIN_IDS: readonly string[] = SORT_BINS.map((b) => b.id);
 // but the bins' band colours comes from `SortLook` (sortTimeOfDay.ts), so the page
 // follows the tower's clock.
 
+// ── The bins' vertical placement (docs/SORT_CARDS_REQUIREMENTS.md § 4.5 "Bins placement") ──
+// The bins area runs from the content's top (under the page header) to the on-deck dock.
+// The EMPTY platform cluster (SortBins → SORT_BINS_CLUSTER_WIDTH_FRACTION) is the object
+// placed in it: the height the cluster leaves over — the SPARE height — splits ABOVE the
+// platforms (content top → platform tops; the prompt and the toolbar live there, and the
+// decks grow up into it) and BELOW them (platform undersides → the dock) at
+// SORT_SPACE_ABOVE_SHARE : SORT_SPACE_BELOW_SHARE (5 : 1, user 2026-11-14), with the space
+// below never under SORT_MIN_SPACE_BELOW_PX. Was: all spare height above (the prompt was
+// `flex: 1`) and a fixed ~24px below (SortBins' 16px scene margin + the dock's 8px top
+// padding), which read as too much gap on a tall screen and nothing to scale with.
+const SORT_SPACE_ABOVE_SHARE = 5;
+const SORT_SPACE_BELOW_SHARE = 1;
+const SORT_MIN_SPACE_BELOW_PX = 8;
+
 // The bins' area: absorbs the page's spare height (and gives it back on short screens).
-// A column: the rating prompt takes whatever height the scene leaves over, the scene
-// sits at the bottom just above the on-deck cards, and the toolbar floats over the top.
+// A SIZE CONTAINER, so its children can do the split above in pure CSS against its own
+// height (`cqh`) and width (`cqw`) — no ResizeObserver, no re-render on resize. The
+// variables resolve where they are USED (each child, whose nearest size container is this
+// box), which is why they are declared here and read by BinsScene / SortPrompt:
+//   --sort-scene-w     the scene box's width: the full width, unless the screen is too
+//                      short for the cluster + the minimum gap, when it scales down so
+//                      they fit (centred).
+//   --sort-cluster-h   the empty platform cluster's height at that width.
+//   --sort-below       the space below the platforms: its share of the spare height,
+//                      floored at SORT_MIN_SPACE_BELOW_PX.
+//   --sort-above       the space above: the rest of the spare height — i.e. the platform
+//                      tops' distance from the area's top.
+// The toolbar (absolute, top-right) floats over the space above.
 const BinsArea = styled(Box)({
     flex: 1,
     minHeight: 0,
     width: "100%",
     position: "relative",
-    display: "flex",
-    flexDirection: "column",
+    containerType: "size",
+    "--sort-scene-w": `min(100cqw, calc((100cqh - ${SORT_MIN_SPACE_BELOW_PX}px) / ${SORT_BINS_CLUSTER_WIDTH_FRACTION}))`,
+    "--sort-cluster-h": `calc(var(--sort-scene-w) * ${SORT_BINS_CLUSTER_WIDTH_FRACTION})`,
+    "--sort-below": `max(${SORT_MIN_SPACE_BELOW_PX}px, calc((100cqh - var(--sort-cluster-h)) * ${SORT_SPACE_BELOW_SHARE / (SORT_SPACE_ABOVE_SHARE + SORT_SPACE_BELOW_SHARE)}))`,
+    "--sort-above": "calc(100cqh - var(--sort-cluster-h) - var(--sort-below))",
 });
 
-// The bins' scene box, sized to the scene's own aspect (SORT_BINS_ASPECT_RATIO) so its top
-// edge is the scene's top and the prompt above it can centre in the true gap. It shrinks
-// on a short screen (the SVG scales down inside it, pinned to the bottom).
+// The bins' scene box, sized to the scene's own aspect (SORT_BINS_ASPECT_RATIO) and placed
+// by its PLATFORMS, not its box: its top is the platform tops' line (--sort-above) minus
+// the deck headroom the box reserves above them (SORT_BINS_HEADROOM_WIDTH_FRACTION). So a
+// full deck can rise past the area's top on a short screen, and the box's own bottom
+// margin (SortBins → SCENE_BOTTOM_MARGIN) hangs into the space below — both paint
+// `overflow: visible`, and the dock (later in the DOM) paints over the latter.
 const BinsScene = styled(Box)({
-    width: "100%",
+    position: "absolute",
+    left: 0,
+    right: 0,
+    marginInline: "auto",
+    top: `calc(var(--sort-above) - var(--sort-scene-w) * ${SORT_BINS_HEADROOM_WIDTH_FRACTION})`,
+    width: "var(--sort-scene-w)",
     aspectRatio: `${SORT_BINS_ASPECT_RATIO}`,
-    flexShrink: 1,
-    minHeight: 0,
     display: "flex",
 });
 
 // The toolbar's inset from the bins area's top, px (SortToolbar `top`) — with the key
-// height it puts the prompt's box under the toolbar. (The "Difficulty" caption sits beside
-// the pill, so it takes no room below.)
-const TOOLBAR_TOP_PX = 12;
+// height it puts the prompt's box under the toolbar. (The "Difficulty" caption under the
+// pill is absolutely placed, so it takes no room below.) Zero since 2026-11-14: the toolbar sits flush
+// against the content's top edge and PageHeader's shared bottom padding
+// (`HEADER_PAD_BOTTOM_PX`, 14px) supplies the gap under the header — it was 12px when
+// the header had no bottom padding, and the two stacked read as too far down.
+const TOOLBAR_TOP_PX = 0;
 
 // The rating prompt: white type painted straight on the sky (a game's "tap to start"),
-// centred in the gap between the toolbar and the platforms. Ink on the ground comes from
+// centred in the gap between the toolbar's bottom (its top padding, set at the call site)
+// and the tops of the EMPTY platforms: its box is exactly the space above them
+// (`--sort-above`, see BinsArea). Not the scene box's top — the deck headroom is empty
+// until cards are sorted, so centring on it put the text ~21px high (user 2026-11-14).
+// Growing decks paint over the box's tail (the scene comes later in the DOM). Ink on the ground comes from
 // `SortLook.ink` — white by day, the night look's near-white after dark. The sky type
 // (TOWER_TYPE_SX), like the page header. Not interactive: drags pass through it.
 const SortPrompt = styled(Typography)({
-    flex: 1,
-    minHeight: 0,
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: "max(0px, var(--sort-above))",
+    boxSizing: "border-box",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -214,9 +261,8 @@ const SortPrompt = styled(Typography)({
 });
 
 // Level pill · undo · skip, in a row along the top-right corner over the bins (the
-// artboard's `.tb`). Absolutely placed so it never pushes the scene down. `top` is
-// the breathing room under the page header — kept close to `right` so the corner
-// inset reads as even on both sides.
+// artboard's `.tb`). Absolutely placed so it never pushes the scene down. `top` is 0:
+// the page header's own bottom padding is the breathing room above it (TOOLBAR_TOP_PX).
 const SortToolbar = styled(Box)({
     position: "absolute",
     top: TOOLBAR_TOP_PX,
@@ -290,7 +336,8 @@ const OnDeckSection = styled(Box)({
     // this does not become a stacking context for the dragged card.
     position: "relative",
     flex: "0 0 auto",
-    paddingTop: 8,
+    // No top padding: the gap above the dock is the bins' space BELOW the platforms,
+    // floored at SORT_MIN_SPACE_BELOW_PX (BinsArea). It was a fixed 8px here.
     // The row's action targets sit ON_DECK_FOOTER_GAP_PX from the slab footer's top edge.
     paddingBottom: `calc(${SLAB_FOOTER_TOTAL_HEIGHT} + ${ON_DECK_FOOTER_GAP_PX}px)`,
     // Hands back the ScrollArea's bottom reservation. acp is a SLAB route, so that is the
@@ -304,9 +351,14 @@ const OnDeckSection = styled(Box)({
     justifyContent: "center",
 });
 
-// Holds the up-to-4 cards side by side on ONE line — it never wraps. `compact` (the dock
+// Holds the up-to-4 cards side by side on ONE line — it never wraps. `compact` (a pack
 // laid out on compact MiniCards — see `dockCardSize`) also tightens the gap between slots,
-// since a 4-card row is what needs the room. The artboard's 24 / 14.
+// since a 4-card row is what needs the room. The artboard's 24 / 14. A compact row is
+// also padded top and bottom by half the face-height difference
+// (`COMPACT_ROW_BLOCK_PAD_PX`), so it stands exactly as tall as a regular row: the tier
+// tag and action row are the same height at both sizes, so only the card well differs.
+// That keeps the dock — and the bins above it — the same height whether a pack is on
+// regular faces (1–3 cards) or compact ones (4 cards on a phone).
 //
 // Every slot is pinned to its card's face width (`& .add-cards__card-slot`), so the
 // row's true width is exactly what `dockCardSize` computes. The tier label and action row
@@ -320,6 +372,8 @@ const OnDeckSection = styled(Box)({
 // wrapping. `overflow-x: clip` (not `hidden`) leaves the y axis `visible`, so a dragged
 // card can still travel up to the bins.
 const CARDS_ROW_GAP: Record<MiniCardSize, number> = { regular: 24, compact: 14 };
+/** Half of (regular − compact) face height: 10px. See CardsRow. */
+const COMPACT_ROW_BLOCK_PAD_PX = (MINI_CARD_DIMENSIONS.regular.height - MINI_CARD_DIMENSIONS.compact.height) / 2;
 const CARDS_ROW_INLINE_PADDING = 8;
 // Gap between a slot's two action glyphs (CardActionRow). Compact tightens it so the row
 // (36 + 6 + 36 = 78) matches the compact face instead of spilling 3px past each side.
@@ -338,28 +392,27 @@ const CardsRow = styled(Box, {
         justifyContent: "center",
         gap: CARDS_ROW_GAP[size],
         paddingInline: CARDS_ROW_INLINE_PADDING,
+        paddingBlock: compact ? COMPACT_ROW_BLOCK_PAD_PX : 0,
         "& .add-cards__card-slot": { width: MINI_CARD_DIMENSIONS[size].width },
         "& .add-cards__card-actions": { gap: `${CARD_ACTIONS_GAP[size]}px` },
     };
 });
 
-/** The most cards a sort pack holds — the row every pack is sized for (dockCardSize). */
-const MAX_PACK_CARDS = 4;
-
 /**
- * The face size EVERY pack is laid out on, given the row's width
- * (docs/SORT_CARDS_REQUIREMENTS.md §4.5 "Compact dock"): the size a full
- * `MAX_PACK_CARDS` pack needs — regular 92px cards when four fit across, else the compact
- * 78px face (in practice: compact on a phone, regular on a wider screen). Sized for the
- * full pack whatever the pack's own count (user request 2026-11-09): a per-count size
- * made a 4-card pack's dock shorter than a 3-card one's, so the bins above re-centred
- * between packs. Exact because CardsRow pins every slot to its face width; a row that
- * doesn't fit even at compact clips (never wraps).
+ * The face size ONE pack is laid out on, given its card count and the row's width
+ * (docs/SORT_CARDS_REQUIREMENTS.md §4.5 "Compact dock"): regular 92px cards whenever the
+ * pack's own row fits across at that size, else the compact 78px face — in practice a
+ * 4-card pack on a phone is compact and a 1–3-card pack stays regular (packs never hold
+ * more than 4). Per pack again since 2026-11-14 (user request: "larger card size for
+ * <=3 packs"); the 2026-11-09 one-size-for-all rule existed only to stop the dock
+ * changing height between packs, which CardsRow's compact padding now guarantees.
+ * Exact because CardsRow pins every slot to its face width; a row that doesn't fit even
+ * at compact clips (never wraps).
  * An unmeasured row (`dockWidth` null — the first commit only) reads as regular.
  */
-function dockCardSize(dockWidth: number | null): MiniCardSize {
-    if (dockWidth == null) return "regular";
-    const regularRowWidth = MAX_PACK_CARDS * MINI_CARD_DIMENSIONS.regular.width + (MAX_PACK_CARDS - 1) * CARDS_ROW_GAP.regular;
+function dockCardSize(cardCount: number, dockWidth: number | null): MiniCardSize {
+    if (dockWidth == null || cardCount <= 1) return "regular";
+    const regularRowWidth = cardCount * MINI_CARD_DIMENSIONS.regular.width + (cardCount - 1) * CARDS_ROW_GAP.regular;
     return regularRowWidth <= dockWidth - 2 * CARDS_ROW_INLINE_PADDING ? "regular" : "compact";
 }
 
@@ -579,23 +632,22 @@ const CommonalityTierLabel = styled(Typography)({
 });
 
 // The level pill's soft-introduction caption (si `sortDifficultyCaption`,
-// docs/SOFT_INTRODUCTION.md): "DIFFICULTY →" for a learner's first visits, then gone.
+// docs/SOFT_INTRODUCTION.md): "DIFFICULTY" for a learner's first visits, then gone.
 // Drawn like the Deck Tower's sort-platform si print ("ADD MORE / CARDS →",
 // DeckTowerPlatform → `FIXTURE_PRINT`): bold caps in the cjk face, the look's full ink
-// (white by day, as the print's washed white), the arrow pointing at what it names. It
-// sits LEFT of the pill, vertically centred on it (user request 2026-11-09; it was under
-// the pill), absolutely placed so the toolbar keeps its width and the prompt its room.
+// (white by day, as the print's washed white). It sits UNDER the pill, centred on it
+// (back under it by user request 2026-11-14; 2026-11-09 → 11-14 it sat left of the pill
+// as "DIFFICULTY →"). Absolutely placed so it takes no room: the toolbar keeps its
+// height and the rating prompt's top padding (TOOLBAR_KEY_HEIGHT_PX) stays correct.
 // 9px — two steps below the type scale's smallest (SIZE.micro, 11px) and below the shelf
 // overline (components/primitives/Label → `Label`, 10px); no token this small exists —
 // it matches the Settings page's 9px uppercase tags (made smaller twice by user request
 // 2026-10-29: 11 → 10 → 9).
 const LevelCaption = styled(Typography)({
     position: "absolute",
-    right: "calc(100% + 8px)",
-    top: 0,
-    height: TOOLBAR_KEY_HEIGHT_PX,
-    display: "flex",
-    alignItems: "center",
+    top: "calc(100% + 9px)",
+    left: "50%",
+    transform: "translateX(-50%)",
     fontFamily: FONTS.cjk,
     fontSize: 9,
     fontWeight: WEIGHT.bold,
@@ -607,7 +659,7 @@ const LevelCaption = styled(Typography)({
 });
 
 // The on-deck card IS the app's mini preview card (src/components/MiniCard.tsx) — the
-// same 92×132 tile, contents and hairline ring as MiniVocabCard / QuickMarkCard /
+// same 92×132 tile, contents and hairline ring as MiniVocabCard /
 // ChallengeWordCard — wrapped in `animated()` so the drag spring can drive its
 // transform. It carries no mastery strip (MiniCard omits it unless given a bar): these
 // are words being triaged, not the learner's cards.
@@ -935,7 +987,7 @@ const DraggableCard = memo(function DraggableCard({ card, size, locked, sorted, 
 const AddCardsPage: React.FC = () => {
     usePageTitle("Discover");
     const navigate = useNavigate();
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, user } = useAuth();
     const { language } = useParams<{ language: Language }>();
     const [searchParams] = useSearchParams();
 
@@ -1002,8 +1054,8 @@ const AddCardsPage: React.FC = () => {
     // The live CardsRow, measured when a pack leaves so the exit overlay can sit in the
     // exact same spot and know how far it has to travel to clear the section's top.
     const cardsRowRef = useRef<HTMLDivElement>(null);
-    // The on-deck row's width, which decides whether a full 4-card pack fits across on
-    // regular MiniCards or every pack takes the compact face (dockCardSize). A callback ref, not a ref +
+    // The on-deck row's width, which decides whether a pack fits across on regular
+    // MiniCards or takes the compact face (dockCardSize). A callback ref, not a ref +
     // effect: the platform only mounts once the first pack arrives (the page shows a
     // spinner before that), so an effect keyed on mount would miss it. The first width
     // is read synchronously in the commit, so a compact dock is laid out compact before
@@ -1045,6 +1097,14 @@ const AddCardsPage: React.FC = () => {
     // other bins' memoized SortBin skip the render.
     const [sessionDecks, setSessionDecks] = useState<Record<string, readonly DiscoverCard[]>>(() =>
         Object.fromEntries(SORT_BIN_IDS.map((id) => [id, []])));
+
+    // Deck-fill notifications (docs/SORT_CARDS_REQUIREMENTS.md § 5.4): the "sort at least N"
+    // goal and the "deck's getting full" warning. The visit's sorts are counted off the
+    // session decks — so Undo is accounted for — minus the Mastered bin, which never joins
+    // today's stack. Off in set mode, and when the route's language is not the account's
+    // (the ready counts are read for the account's language).
+    const deckFillSorts = useMemo(() => countedSessionSorts(sessionDecks), [sessionDecks]);
+    useDeckFillNotices({ enabled: !setMode && user?.selectedLanguage === language, countedSorts: deckFillSorts });
 
     // Adaptive leveling state (docs/SORT_CARDS_REQUIREMENTS.md §6): the CLIENT is the
     // sole owner of the auto target level once seeded. Refs (not state) because they
@@ -1801,9 +1861,10 @@ const AddCardsPage: React.FC = () => {
         // Resolved this session (sorted/skipped) and not pre-sorted: the card is gone,
         // its well left empty. Pre-sorted (locked) cards stay in place, greyed.
         const resolvedHere = !card.sorted && done[pack.packKey]?.has(card.id) === true;
-        // One size for every pack (the full pack's, dockCardSize), so the dock's height —
-        // and the bins above it — never change between packs.
-        const cardSize = dockCardSize(dockWidth);
+        // Per pack (dockCardSize): a leaving 4-card pack keeps the compact face it was
+        // shown at while a 3-card pack replacing it rises in at regular size. The dock's
+        // height stays put either way (CardsRow's compact padding).
+        const cardSize = dockCardSize(pack.cards.length, dockWidth);
         const infoLoading = !leaving && eipLoadingKey === card.entryKey;
         return (
             <>
@@ -1947,11 +2008,11 @@ const AddCardsPage: React.FC = () => {
                                 {levelPillContent}
                                 <Icon name="keyboard_arrow_down" size={18} color={look.keyInk} />
                             </ButtonBase>
-                            {/* si `sortDifficultyCaption`: points at the pill for a
-                                learner's first 7 visits over 7 days, then retires. */}
+                            {/* si `sortDifficultyCaption`: names the pill from under it for
+                                a learner's first 7 visits over 7 days, then retires. */}
                             {difficultyCaption === "intro" && (
                                 <LevelCaption className="add-cards__level-caption" sx={{ color: look.ink }}>
-                                    Difficulty →
+                                    Difficulty
                                 </LevelCaption>
                             )}
                         </Box>
@@ -2011,14 +2072,14 @@ const AddCardsPage: React.FC = () => {
                     </Menu>
                 </BinsArea>
 
-                {/* On-deck: up to 4 levitating cards (compact faces for every pack when 4 won't fit). A
+                {/* On-deck: up to 4 levitating cards (compact faces when the pack won't fit at regular). A
                     card the user resolved this session leaves an empty well in its slot so
                     the other cards don't reposition. */}
                 <OnDeckSection ref={onDeckSectionRef} className="add-cards__on-deck">
                     <CardsRow
                         ref={cardsRowRef}
                         className="add-cards__cards-row"
-                        compact={dockCardSize(dockWidth) === "compact"}
+                        compact={dockCardSize(currentPack.cards.length, dockWidth) === "compact"}
                     >
                         {currentPack.cards.map((card, slotIndex) => (
                             // Keyed on pack + card, and the SAME element whether the card
@@ -2042,7 +2103,7 @@ const AddCardsPage: React.FC = () => {
                             <CardsRow
                                 key={leavingPack.exitId}
                                 className="add-cards__cards-row add-cards__cards-row--leaving"
-                                compact={dockCardSize(dockWidth) === "compact"}
+                                compact={dockCardSize(leavingPack.pack.cards.length, dockWidth) === "compact"}
                                 sx={{
                                     position: "absolute",
                                     left: 0,

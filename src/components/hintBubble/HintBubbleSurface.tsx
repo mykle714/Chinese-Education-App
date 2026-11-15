@@ -1,14 +1,18 @@
 /**
  * HintBubbleSurface — the shared look and motion of a hint bubble: a white,
  * outlined speech bubble with a downward (or leftward) tail, which GROWS out of its tail on
- * entry and POPS (swell + fading ring) on exit.
+ * entry and, on exit, either POPS (swell + fading ring — the bk's chip hints) or simply
+ * FADES away (`exit="fade"` — the flp hint pawn and the app notifications, whose pop was
+ * too loud for a dismissal; owner, 2026-11-14).
  *
- * LAYER: shared presentation (src/components — two features use it):
+ * LAYER: shared presentation (src/components — three callers use it):
  *   - the beginner keyboard's glyph-chip hints (features/beginnerKeyboard/HintBubble,
  *     docs/BEGINNER_KEYBOARD.md § 6z-4), which positions it over a chip and commits on tap;
  *   - the flp hint pawn's speech bubble (features/flashcards/FlashcardsLearnPage/
  *     hintPawn/HintPawn, docs/HINT_PAWN.md), which sits BESIDE the pawn and draws its own
- *     tail angled up at the pawn's head (`tailSide="custom"`); a tap on it closes it.
+ *     tail angled up at the pawn's head (`tailSide="custom"`); a tap on it closes it;
+ *   - the app notifications (src/components/notifications/NotificationViewport.tsx,
+ *     docs/NOTIFICATIONS.md), tailless banners under the page header (`tailSide="none"`).
  *
  * It owns only HOW a bubble looks and animates. WHEN it enters / pops is the caller's
  * `useHintBubblePresence`; WHERE it sits is the caller's positioned wrapper (this
@@ -33,7 +37,7 @@ import { Box, useMediaQuery } from '@mui/material';
 import type { ReactNode } from 'react';
 import { COLORS, SHADOW } from '../../theme';
 import { HINT_MOTION } from './hintMotion';
-import { fadeIn, fadeOut, growIn, growInFromLeft, popOut, popRing } from './bubbleKeyframes';
+import { fadeIn, fadeOut, growIn, growInFromAbove, growInFromLeft, popOut, popRing } from './bubbleKeyframes';
 
 /** How far the tail reaches down past the bubble's body. */
 export const HINT_BUBBLE_TAIL_SIZE = 7;
@@ -58,25 +62,38 @@ interface HintBubbleSurfaceProps {
    * Which edge the tail is on: `'bottom'` (default — the bubble floats over what it points
    * at), `'left'` (it sits beside it, to the right; `tailY` places it), or `'custom'`: the
    * caller draws its own tail as a child (e.g. one angled at a point off the edge — the
-   * hint pawn's head); the grow still comes in from the left edge at `tailY`.
+   * hint pawn's head); the grow still comes in from the left edge at `tailY`. `'none'`:
+   * no tail at all — a banner pinned under the page header (the app notifications,
+   * src/components/notifications/NotificationViewport.tsx); it grows DOWN out of its top
+   * centre (`growInFromAbove`), as if dropped from the header.
    */
-  tailSide?: 'bottom' | 'left' | 'custom';
+  tailSide?: 'bottom' | 'left' | 'custom' | 'none';
   /** Where along the LEFT edge the tail sits (`tailSide="left"`), as a CSS length from the body's top. Default `'50%'`. */
   tailY?: string;
+  /**
+   * How the bubble leaves: `'pop'` (default — a swell plus a fading ring, for the bk's
+   * chip hints, where the pop answers a committed tap) or `'fade'` (a plain opacity fade
+   * in place, no ring: the flp hint pawn and the app notifications). Either plays over
+   * `HINT_MOTION.popMs`, so callers' unmount timing is the same for both.
+   */
+  exit?: 'pop' | 'fade';
   /** Extra styles on the bubble body (e.g. a wider body, left-aligned content). */
   bodySx?: Record<string, unknown>;
   children: ReactNode;
 }
 
-export default function HintBubbleSurface({ phase, delayMs, className, onSelect, ariaLabel, tailX = '50%', tailSide = 'bottom', tailY = '50%', bodySx, children }: HintBubbleSurfaceProps) {
-  const tailLeft = tailSide !== 'bottom';
+export default function HintBubbleSurface({ phase, delayMs, className, onSelect, ariaLabel, tailX = '50%', tailSide = 'bottom', tailY = '50%', exit = 'pop', bodySx, children }: HintBubbleSurfaceProps) {
+  const tailLeft = tailSide === 'left' || tailSide === 'custom';
+  const noTail = tailSide === 'none';
   const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const popping = phase === 'out';
+  // Reduced motion always fades, whatever the caller's exit.
+  const fades = reduceMotion || exit === 'fade';
   const interactive = !!onSelect && !popping;
 
   const bodyAnimation = popping
-    ? `${reduceMotion ? fadeOut : popOut} ${HINT_MOTION.popMs}ms ease-out forwards`
-    : `${reduceMotion ? fadeIn : tailLeft ? growInFromLeft : growIn} ${HINT_MOTION.growMs}ms ease-out ${delayMs}ms both`;
+    ? `${fades ? fadeOut : popOut} ${HINT_MOTION.popMs}ms ease-out forwards`
+    : `${reduceMotion ? fadeIn : noTail ? growInFromAbove : tailLeft ? growInFromLeft : growIn} ${HINT_MOTION.growMs}ms ease-out ${delayMs}ms both`;
 
   return (
     <Box
@@ -87,7 +104,7 @@ export default function HintBubbleSurface({ phase, delayMs, className, onSelect,
         pointerEvents: interactive ? 'auto' : 'none',
       }}
     >
-      {popping && !reduceMotion && (
+      {popping && !fades && (
         <Box
           className={`${className}-pop-ring`}
           aria-hidden
@@ -123,9 +140,11 @@ export default function HintBubbleSurface({ phase, delayMs, className, onSelect,
           display: 'flex',
           flexDirection: 'column',
           // Grow out of the tail's tip, i.e. out of what the bubble points at.
-          transformOrigin: tailLeft
-            ? `-${HINT_BUBBLE_TAIL_SIZE}px ${tailY}`
-            : `${tailX} calc(100% + ${HINT_BUBBLE_TAIL_SIZE}px)`,
+          transformOrigin: noTail
+            ? '50% 0'
+            : tailLeft
+              ? `-${HINT_BUBBLE_TAIL_SIZE}px ${tailY}`
+              : `${tailX} calc(100% + ${HINT_BUBBLE_TAIL_SIZE}px)`,
           animation: bodyAnimation,
           minWidth: 44, // the platform tap-target floor
           minHeight: 44,
@@ -147,7 +166,7 @@ export default function HintBubbleSurface({ phase, delayMs, className, onSelect,
           // The tail: a small square turned 45°, sharing the body's fill and showing
           // only the two borders that face out (bottom/right for a bottom tail,
           // bottom/left for a left one), so it reads as one outline with the body.
-          '&::after': tailSide === 'custom' ? undefined : {
+          '&::after': tailSide === 'custom' || noTail ? undefined : {
             content: '""',
             position: 'absolute',
             width: HINT_BUBBLE_TAIL_SIZE,

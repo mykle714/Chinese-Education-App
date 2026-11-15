@@ -619,6 +619,7 @@ list has one entry today. Callers:
 | Deck swap's new tower ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md) § "The new tower's sky drop") | — | 0 → the new deck's count at the slam, either deck, no camera move (`startResize(…, { camera: false })`) |
 | Climbing out of a study (§ Studying the tower) | none — the tower just stands at the lower figure | cards came back off cooldown mid-session |
 | Opening the page, main only (§ Opening at the last height) | none — the tower just stands at the lower figure | cards came off cooldown since the last visit |
+| Back from Add Cards, main only (§ Back from Add Cards) | none | the cards sorted into Unfamiliar / Target / Comfortable (+ any cooldown releases meanwhile), after the return dash lands |
 
 - **Marks are not a removal.** Cards leaving the tower because they were marked correct, on
   a card or in a game, are the learner's progress, so the ghost collapse never plays for
@@ -1714,6 +1715,31 @@ no ghost collapse.
   demoralising. They open at their real height, as before. The Mastered deck is not
   stored either.
 - **No build-up.** This replaced main's build-up on page load (2026-10-24).
+
+## Back from Add Cards
+
+`DeckTowerPage.tsx` (`dashArriving`, the `resolveRecount` effect, `releaseCooldowns`),
+`src/hooks/usePageDashRunning.ts`, `src/hooks/pageDash.ts` (`isPageDashRunning`,
+`subscribePageDash`), `server/contracts/cooldown.ts` → `sortSeedTypedMarkHistory`,
+`SORT_BUCKETS_SEEDED_RESTED`.
+
+Cards gained in acp drop onto main's Learning tower when the learner comes back, as **one**
+sky drop.
+
+- **The grow is § Opening at the last height.** td remounts on the return: main's Learning
+  tower is held at its stored height (written while it stood settled before the sort
+  platform's tap) and grows to the re-read figure. No acp-specific count is passed back.
+- **Which cards count.** Only cards that are off cooldown join the tower, so the sort seeds
+  decide it: Unfamiliar seeds no marks; Target and Comfortable seeds are stamped
+  `now − the band's window`, so they come off cooldown the moment they are sorted
+  (`sortSeedTypedMarkHistory`). Mastered seeds are stamped `now` and rest their 180 days, so
+  a Mastered sort does not grow the tower (SORT_CARDS_REQUIREMENTS.md § 5).
+- **Held until seen.** acp's Back is a page dash, which mounts td at t = 0 under the dash's
+  sky. While a dash runs (`usePageDashRunning` → `dashArriving`), the `resolveRecount`
+  effect and `releaseCooldowns` wait, the way they wait for the launch screen; when the dash
+  settles (~820 ms, `DASH_MOTION`) the camera moves and the stack falls. Without the dash
+  (reduced motion, a deep link) nothing waits.
+- Cards that came off cooldown while the learner was on acp fall in the same drop.
 
 ## Cooldown releases
 

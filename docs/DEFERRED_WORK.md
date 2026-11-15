@@ -415,18 +415,6 @@ any accessibility pass.
 | **Trigger** | Any work on dictionary search ranking, or a playtest note that typo'd searches dead-end |
 | **References** | `src/features/dictionary/DictionaryPageParts.tsx` → `DictionaryNoResults`; `server/controllers/DictionaryController.ts` → `search`; `server/dal/implementations/DictionaryDAL.ts` → `searchByWord1` |
 
-### 27. Quick Mark has no entry point (dormant panel code)
-
-*Added 2026-10-29. Docs: [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) § 4.8, [QUICK_MARK.md](./QUICK_MARK.md).*
-
-| | |
-|---|---|
-| **What** | The Tower Tier 2 re-skin of acp removed the ⊞ expand button (the design has none, and the owner chose not to keep it) together with acp's hosting code for the Quick Mark panel. That button was Quick Mark's **only** entry, so the grid is unreachable. `QuickMarkPanel.tsx`, `useQuickMarkGrid.ts` and `useQuickMarkPreload.ts` are still in the tree with no importer. Decide: delete them (and retire QUICK_MARK.md), or give Quick Mark a new entry (a toolbar keycap, a td fixture) and restore the hosting from git at `09f607e` |
-| **Why deferred** | Removing the button was a design decision; deleting a whole feature's code was not asked for |
-| **Cost of leaving it** | Dead code that still type-checks and drifts silently; a reader of QUICK_MARK.md assumes a live feature |
-| **Trigger** | The next Quick Mark or acp toolbar change, or a dead-code sweep |
-| **References** | `src/features/discover/QuickMarkPanel.tsx`, `useQuickMarkGrid.ts`, `useQuickMarkPreload.ts` |
-
 ### 28. Move the iso kit to `src/components/iso/`
 
 *Added 2026-10-29. Docs: [FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md) § 1, [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md).*
@@ -472,10 +460,10 @@ were deleted from the code. Docs: [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md),
 
 | | |
 |---|---|
-| **What** | Server endpoints with no client caller: `GET /api/onDeck/libraryCards` (`server/routes/onDeckRoutes.ts` → `OnDeckVocabController.getLibraryCards`), `GET /api/changelog` (`server/routes/metaRoutes.ts`), `POST /api/starterPacks/quickMarkBatch` (`server/routes/starterPacksRoutes.ts` → `StarterPacksController.quickMarkBatch`). Client files with no importer: `src/features/discover/QuickMarkPanel.tsx` (see item 27 — `quickMarkBatch` is its endpoint, so they go or stay together), `src/features/studyChallenge/ChallengeScoreTable.tsx`, `src/games/shared/useLocalGameSettings.ts`, `src/utils/arenaWeek.ts`. Delete each, or wire it back up |
+| **What** | Server endpoints with no client caller: `GET /api/onDeck/libraryCards` (`server/routes/onDeckRoutes.ts` → `OnDeckVocabController.getLibraryCards`), `GET /api/changelog` (`server/routes/metaRoutes.ts`), `GET /api/starterPacks/:language/quickMark` and `POST /api/starterPacks/quickMarkBatch` (`server/routes/starterPacksRoutes.ts` → `StarterPacksController.getQuickMarkCards` / `quickMarkBatch` — Quick Mark's endpoints; its client code was deleted 2026-11-14, so nothing calls either). Client files with no importer: `src/features/studyChallenge/ChallengeScoreTable.tsx`, `src/games/shared/useLocalGameSettings.ts`, `src/utils/arenaWeek.ts`. Delete each, or wire it back up |
 | **Why deferred** | Out of scope for the removal that found them |
 | **Cost of leaving it** | Dead code that type-checks and drifts; an uncalled authenticated endpoint is attack surface with no owner |
-| **Trigger** | A dead-code sweep, or item 27's decision |
+| **Trigger** | A dead-code sweep |
 | **References** | the files above |
 
 ### 33. Spanish long-dd fixes (paused with all Spanish work, 2026-11-03)
@@ -756,7 +744,28 @@ boxes on `/login` are enabled.
 
 **Trigger.** Item 51 is done.
 
+### 53. Community's Apply Design toast is the last MUI Snackbar
+
+*Added 2026-11-14. Docs: [NOTIFICATIONS.md](./NOTIFICATIONS.md), [COMMUNITY_PAGE.md](./COMMUNITY_PAGE.md).*
+
+| | |
+|---|---|
+| **What** | MUI `Snackbar` was removed from the app in favour of the app notification system (`useNotify`), except in `src/features/community/ApplyDesignButton.tsx` ("Added card & design!" / "Couldn't add"). Community is flagged OFF, so the toast is unreachable and was left as is. Replace it with `useNotify().notify({ tone: "success" \| "error", … })` |
+| **Why deferred** | The whole feature is behind an OFF flag; migrating unreachable code was not asked for |
+| **Cost of leaving it** | None while Community is off; on revival it would show the one off-framework MUI toast in the app |
+| **Trigger** | Switching the `community` feature flag on, or any work on Community |
+| **References** | `src/features/community/ApplyDesignButton.tsx` → `toast` state + `<Snackbar>` |
+
 ## Recently closed
+
+### 27. Quick Mark has no entry point (closed 2026-11-14 — code DELETED)
+
+Deleted by owner decision: `QuickMarkPanel.tsx`, `useQuickMarkGrid.ts`,
+`useQuickMarkPreload.ts`, `src/components/QuickMarkCard.tsx`,
+`src/components/quickMarkSwipe.ts` and `starterPacksApi.ts` → `fetchQuickMarkPage`. Its two
+server endpoints remain, listed under item 35. Revival: restore the files from git at
+`7ba6c11` (the last commit with them) and the acp hosting at `09f607e`
+([QUICK_MARK.md](./QUICK_MARK.md)).
 
 ### 31. Remove review and challenge modes (closed 2026-11-04 — DONE)
 

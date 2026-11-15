@@ -1,4 +1,4 @@
-// Thin client for the Add Cards / Quick Mark / Skipped Cards endpoints
+// Thin client for the Add Cards / Skipped Cards endpoints
 // (docs/SORT_CARDS_REQUIREMENTS.md). All are auth-gated.
 //
 // Why this module exists: the three discover pages each hand-rolled the same
@@ -26,14 +26,6 @@ import type {
  * `starterPackBucket = 'library'` server-side; each seeds the band's core history.
  */
 export type SortBucket = Exclude<DiscoverSortBucket, "skip">;
-
-/** Keyset cursor for Quick Mark paging — the last fetched card's frequency score + id. */
-export interface QuickMarkCursorParams {
-    /** The last fetched card's frequency score (may be null — those sort last). */
-    score: number | null;
-    /** The last fetched card's det id — the tiebreaker that makes the cursor total. */
-    id: number;
-}
 
 /**
  * Initial pack-queue fill for Add Cards. `level` is the requested difficulty (the
@@ -115,18 +107,4 @@ export function recycleSkips(language: Language): Promise<unknown> {
 /** Return ONE skipped card to the sort supply (acp's hold-to-recycle). */
 export function recycleSkip(language: Language, cardId: number): Promise<unknown> {
     return apiPost<unknown>(`/api/starterPacks/${language}/recycleSkip`, { cardId });
-}
-
-/** One keyset page of Quick Mark cards. `level: null` asks the server to seed one. */
-export function fetchQuickMarkPage(
-    language: Language,
-    level: number | null,
-    cursor: QuickMarkCursorParams | null,
-): Promise<{ cards: DiscoverCard[]; level: number; hasMore: boolean }> {
-    return apiGet(`/api/starterPacks/${language}/quickMark`, {
-        params: {
-            level,
-            ...(cursor ? { cursorId: cursor.id, cursorScore: cursor.score } : {}),
-        },
-    });
 }

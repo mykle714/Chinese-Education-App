@@ -46,8 +46,11 @@ import { useEffect, useLayoutEffect, useRef, type MutableRefObject, type RefObje
 // wobbles don't glitch either gesture.
 export const TAB_SWIPE_AXIS_LOCK_PX = 8;
 // Fraction of the pane's width a swipe must travel before release advances the tab
-// instead of snapping back.
-export const TAB_SWIPE_COMMIT_RATIO = 0.22;
+// instead of snapping back. Loosened 0.22 → 0.16 (2026-11-14, eip felt stiff): ~60px on a
+// 375px pane. Must stay above TAB_SWIPE_EDGE_RUBBER_MAX_PX / paneWidth (below) so an end
+// overscroll can never read as a commit. Shared by the eip (InfoCardPanelBody) and the
+// AccountSheet, so both loosen together.
+export const TAB_SWIPE_COMMIT_RATIO = 0.16;
 // Rubber-band at the ends of the strip. Swiping left on the LAST tab or right on the
 // FIRST used to clamp the track to exactly zero travel, which is visually identical to
 // "this tab has no swipe" — the gesture looked broken rather than bounded. The track now

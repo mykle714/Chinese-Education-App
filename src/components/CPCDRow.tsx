@@ -148,6 +148,10 @@ interface CPCDRowProps {
 // How long the tap-to-copy confirmation caption stays up. Long enough to read two
 // words, short enough that it never sits over the content the user came back to.
 const COPY_MESSAGE_MS = 1400;
+// How far a touch may travel between touchstart and touchend and still count as a tap on a
+// character (onTapToggle). Matches the tab-swipe axis-lock order of magnitude: past this,
+// the finger was dragging something else (useTabSwipeTrack locks at 8px).
+const TAP_SLOP_PX = 10;
 
 const CPCDRow: React.FC<CPCDRowProps> = ({
     items,
@@ -167,6 +171,9 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
 }) => {
     const charsBlockRef = useRef<HTMLDivElement | null>(null);
     const cellRefs = useRef<(HTMLDivElement | null)[]>([]);
+    // Where the current touch landed on a character cell — one finger at a time, so one
+    // slot for the whole row. Read by the cell's touchend to tell a tap from a drag.
+    const touchStartRef = useRef<{ x: number; y: number } | null>(null);
     const pinyinRefs = useRef<(HTMLSpanElement | null)[]>([]);
     // One separator apostrophe per gap (indexed by the LEFT syllable's item index).
     const sepRefs = useRef<(HTMLSpanElement | null)[]>([]);
@@ -403,14 +410,30 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                             // an ancestor's "tap background → deselect" handler doesn't
                             // fire when the user taps a character directly.
                             onPointerDown={isInteractive ? (e) => e.stopPropagation() : undefined}
+                            // A TAP toggles; a drag does not. Without the slop check, a finger
+                            // that lands on a word, drags (a tab swipe, a sheet resize, a
+                            // scroll) and lifts still fired touchend here and opened the popup.
+                            onTouchStart={
+                                isInteractive && item.onTapToggle
+                                    ? (e) => {
+                                          const t = e.touches[0];
+                                          touchStartRef.current = t ? { x: t.clientX, y: t.clientY } : null;
+                                      }
+                                    : undefined
+                            }
                             onTouchEnd={
                                 isInteractive && item.onTapToggle
                                     ? (e) => {
                                           e.preventDefault();
+                                          const start = touchStartRef.current;
+                                          touchStartRef.current = null;
+                                          const t = e.changedTouches[0];
+                                          if (start && t && Math.hypot(t.clientX - start.x, t.clientY - start.y) > TAP_SLOP_PX) return;
                                           item.onTapToggle!();
                                       }
                                     : undefined
                             }
+                            onTouchCancel={() => { touchStartRef.current = null; }}
                             // inline-block (not flex) so multi-cell selection serializes as
                             // a single line of characters with no inter-cell newlines.
                             sx={{

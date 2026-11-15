@@ -139,7 +139,7 @@ the whole page.
   (Before `voteDeltas`, the count lived in each `VoteButton`'s local state, so a vote left duplicate
   cards in other rows coloured-but-stale.)
 - **Apply toast** — a successful apply shows a top-center "Added!" / "Added card & design!"
-  success `Snackbar` (mirrors the dictionary add-to-library flow).
+  success `Snackbar` (mirrors the dictionary add-to-library flow). This is the app's last MUI Snackbar, left because Community is flagged off ([DEFERRED_WORK.md](./DEFERRED_WORK.md) #53).
 - **Apply** (`ApplyDesignButton.tsx`, the **single shared component** used by both feeds) — copies
   the design's `iconLayout` onto the viewer's card. Label flips on `design.inLibrary`:
   - owns the word → **"Add design to card"**

@@ -3,11 +3,16 @@
 > ↑ Part of [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) → [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md).
 > Sibling: [SORT_CARDS_REQUIREMENTS.md § 4.8](./SORT_CARDS_REQUIREMENTS.md) — the panel host.
 >
-> STATUS: **DORMANT since 2026-10-29 — no entry point.** The Tower Tier 2 re-skin of Sort
-> Cards removed the ⊞ expand button that was Quick Mark's only way in, and acp's hosting
-> code with it ([SORT_CARDS_REQUIREMENTS.md § 4.8](./SORT_CARDS_REQUIREMENTS.md),
-> [DEFERRED_WORK.md](./DEFERRED_WORK.md) #27). The panel and its hooks are still in the
-> tree, unimported. Below is the structure as it shipped.
+> STATUS: **CLIENT CODE DELETED 2026-11-14** (owner decision). Quick Mark had no entry point
+> since 2026-10-29, when the Tower Tier 2 re-skin of Sort Cards removed the ⊞ expand button
+> and acp's hosting code ([SORT_CARDS_REQUIREMENTS.md § 4.8](./SORT_CARDS_REQUIREMENTS.md)).
+> `QuickMarkPanel.tsx`, `useQuickMarkGrid.ts`, `useQuickMarkPreload.ts`,
+> `src/components/QuickMarkCard.tsx`, `src/components/quickMarkSwipe.ts` and
+> `starterPacksApi.ts` → `fetchQuickMarkPage` are gone; restore them from git at `7ba6c11`
+> (the acp hosting from `09f607e`). The server endpoints (`GET
+> /api/starterPacks/:language/quickMark`, `POST /api/starterPacks/quickMarkBatch`) are still
+> mounted with no caller ([DEFERRED_WORK.md](./DEFERRED_WORK.md) #35). Below is the
+> structure as it shipped — a revival reference, not a description of live code.
 
 ## 1. What it is
 

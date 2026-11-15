@@ -236,7 +236,7 @@ the same two scripts, the same validators, the same stamps — only the *answere
 local (zero API egress), which is why it is viable at all at ~85 h/51k-rows API pace.
 
 **The pre-pass subset is declared once**, in the manifest, as a strict subset of the
-14 steps — `PRE_PASS_STEP_IDS` / `PRE_PASS_SCRIPTS_ZH`
+zh manifest steps — `PRE_PASS_STEP_IDS` / `PRE_PASS_SCRIPTS_ZH`
 (`server/scripts/backfill/shared/lib/requiredScripts.js`). Run order is
 process-defs **then** hsk-level, because the level judgment reads `definitions` and
 process-defs rewrites them. A missing id throws at import rather than silently
@@ -563,11 +563,11 @@ Batch is always ≥ as cheap as serial; the margin varies by cache ratio:
 The genuine cost of "always batch" is **engineering**, not runtime: multi-pass
 scripts don't map onto the runner's one-request-per-row model without a redesign.
 
-### Current batch support (zh pipeline, 14 steps)
+### Current batch support (zh pipeline)
 
 | Support | Steps |
 |---|---|
-| Deterministic (no AI, no batch needed) | `tones`, `numbered-pinyin` |
+| Deterministic (no AI, no batch needed) | `tones`, `numbered-pinyin`, `max-char-stroke-count`, `character-components` (single-char only) |
 | AI + already `--batch`-capable | `hsk-level`, `word-forms`, `classifier` |
 | AI, needs porting | `dictionary-breakdown`, `process-definitions-array`, `parts-of-speech`, `long-definitions`, `longdef-citations`, `frequency-score`, `cluster-definitions`, `example-sentences` |
 

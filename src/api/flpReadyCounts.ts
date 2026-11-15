@@ -13,7 +13,7 @@
  * Server counterpart: `OnDeckVocabController.getFlpReadyCounts` /
  * `OnDeckVocabService.getFlpReadyCounts`.
  *
- * Called by: src/hooks/useFlpReadyCounts.ts
+ * Called by: src/hooks/useFlpReadyCounts.ts, src/features/discover/useDeckFillNotices.ts
  * Referenced by docs/DECK_TOWER.md.
  */
 import { apiGet, withFallback } from './http';
@@ -36,10 +36,20 @@ export interface FlpReadyCounts {
     upcoming?: FlpUpcomingRelease[];
 }
 
-/** `world` — the session world the figures describe: core, reading or writing (a Deck Tower world). */
-export function fetchFlpReadyCounts(world: FlpWorld = 'core'): Promise<FlpReadyCounts> {
+/**
+ * `world` — the session world the figures describe: core, reading or writing (a Deck Tower world).
+ * `ignoreFocus` — count every sorted card even when focus mode is on (acp's deck-fill
+ * notices, src/features/discover/useDeckFillNotices.ts); the Deck Tower leaves it off.
+ */
+export function fetchFlpReadyCounts(
+    world: FlpWorld = 'core',
+    options: { ignoreFocus?: boolean } = {}
+): Promise<FlpReadyCounts> {
+    const params: Record<string, string> = {};
+    if (world !== 'core') params.world = world;
+    if (options.ignoreFocus) params.ignoreFocus = '1';
     return withFallback(
-        apiGet<FlpReadyCounts>('/api/onDeck/flpReadyCounts', world === 'core' ? undefined : { params: { world } }),
+        apiGet<FlpReadyCounts>('/api/onDeck/flpReadyCounts', Object.keys(params).length ? { params } : undefined),
         'Failed to load card counts'
     );
 }

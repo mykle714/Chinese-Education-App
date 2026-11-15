@@ -39,7 +39,7 @@ import { COLORS } from "../theme/colors";
  * every CSS animation in the frame's first child (the route page) — delays included, and
  * elements that mount mid-dash too. A paused `backwards`-fill animation sits on its first
  * frame, so released at the in phase they all play as the page slides in. JS-driven motion
- * (td's tower build-up) is not held.
+ * is not paused by that rule: a page holds its own on `usePageDashRunning` (the store below).
  *
  * Fallback: reduced motion, no Web Animations, or no phone frame → a plain navigation.
  *
@@ -86,6 +86,28 @@ function layer(className: string, zIndex: string): HTMLDivElement {
     div.className = className;
     Object.assign(div.style, { position: "absolute", inset: "0", overflow: "hidden", zIndex } satisfies Partial<CSSStyleDeclaration>);
     return div;
+}
+
+// ── Is a dash running? ───────────────────────────────────────────────────────────
+// A tiny external store, so the ARRIVING page can hold JS-driven motion until it is in
+// view (the HOLD_CLASS rule only pauses CSS). Counted, not a flag, so a dash started
+// before the last one finished keeps it up. Read through `usePageDashRunning`.
+// Used by: src/features/deckTower/DeckTowerPage.tsx (the grow back from acp waits for the
+// dash to land — docs/DECK_TOWER.md § "Back from Add Cards").
+let runningDashes = 0;
+const dashListeners = new Set<() => void>();
+function setDashRunning(delta: 1 | -1): void {
+    runningDashes = Math.max(0, runningDashes + delta);
+    for (const l of dashListeners) l();
+}
+/** Whether a page dash is between its navigation and its arriving page's settle. */
+export function isPageDashRunning(): boolean {
+    return runningDashes > 0;
+}
+/** Subscribe to `isPageDashRunning` changes (useSyncExternalStore's shape). */
+export function subscribePageDash(listener: () => void): () => void {
+    dashListeners.add(listener);
+    return () => dashListeners.delete(listener);
 }
 
 export function runPageDash({ leaving, direction, lineColor, navigate }: PageDashRun): void {
@@ -153,6 +175,8 @@ export function runPageDash({ leaving, direction, lineColor, navigate }: PageDas
     // from playing its own slide-in under the sky (usePageSlide).
     armSkipNextEnter();
     frame.classList.add(HOLD_CLASS);
+    // Up BEFORE the navigation, so the destination's first render already reads it.
+    setDashRunning(1);
     navigate();
 
     // Out: the clone whips off the side the camera is leaving.
@@ -191,6 +215,7 @@ export function runPageDash({ leaving, direction, lineColor, navigate }: PageDas
         const cleanup = () => {
             sky.remove();
             lines.remove();
+            setDashRunning(-1);
         };
         if (!arriving || arriving === sky || arriving === leavingRoot) {
             // The navigation went nowhere new (blocked, or another tap took over): just

@@ -183,7 +183,15 @@ Child docs:
   (form #5b) overrides all of that: it becomes one tappable unit showing the phrase's
   meaning, and is never drillable.
 - **Producer:** `backfill-long-definitions.js` — reads `definitionClusters`, so it runs
-  AFTER `backfill-cluster-definitions.js` and skips unclustered rows.
+  AFTER `backfill-cluster-definitions.js` and skips unclustered rows. `--spot-check` and
+  `--words=` both WRITE; add `--dry-run` to preview a prompt change (runs the full pipeline,
+  writes and stamps nothing, prints stored vs new per pair — `formatDryRunComparison`).
+  **Style (v16):** plain everyday English, one idea per sentence, no abstract framings or
+  English idioms — but a sense that belongs to a technical field (physics, music theory,
+  medicine…) keeps that field's standard terms rather than a homemade paraphrase (rule 12,
+  violation code `complex_language`). Target ~60–140 chars, ceiling 200; an optional
+  cultural note stays a separate `\n\n` paragraph. Each write also resets #5b (see
+  `CITATIONS_SCRIPT_ID` in the script).
 - **Rolling this out:** [LONGDEF_PER_SENSE_MIGRATION.md](./LONGDEF_PER_SENSE_MIGRATION.md) —
   the deploy/regeneration runbook (code must ship BEFORE any data is regenerated; the legacy
   per-POS object stays readable until each row is re-run).
@@ -294,7 +302,7 @@ Rough order; each is an idempotent backfill in
 | 5b | Frequency reconciliation | `shared/repair-frequency-score-drift.js` | safety net only — every scorer now enforces `frequencyScore == MAX(cluster scores)` on write. No API calls; runs as the last step of both enrichment pipelines, and by hand for rows written before 2026-08-28 |
 | 6 | Cluster | `backfill-cluster-definitions.js` | produces `definitionClusters` (form #6) |
 | 7 | Long definition | `backfill-long-definitions.js` | produces `longDefinition` (form #5), one definition per cluster from step 6 |
-| 8 | Cite translations | `backfill-longdef-citations.js` | produces `longDefinitionCitations` (form #5b) — one English translation per Chinese run quoted in step 7's text. Re-running step 7 invalidates it. |
+| 8 | Cite translations | `backfill-longdef-citations.js` | produces `longDefinitionCitations` (form #5b) — one English translation per Chinese run quoted in step 7's text. Step 7's write (v16+) clears this column AND drops this step's `enrichmentLog` stamp in the same UPDATE, so a regenerated definition always gets its citations re-translated. |
 
 #### Step 4, Spanish only: the comma split
 **Code:** `server/scripts/backfill/spanish/backfill-process-definitions-array.js`

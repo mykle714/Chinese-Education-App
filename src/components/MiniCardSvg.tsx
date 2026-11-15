@@ -111,7 +111,7 @@ const MiniCardSvg: React.FC<MiniCardSvgProps> = ({
                 stroke={COLORS.border}
                 strokeWidth={1}
             />
-            {iconId && (
+            {layout.showIcon && iconId && (
                 <image
                     className="mini-card-svg__icon"
                     href={iconImageUrl(iconId)}

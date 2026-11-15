@@ -61,6 +61,12 @@
  *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-long-definitions.js              # full backfill
  *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-long-definitions.js --spot-check # test 5 entries
  *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-long-definitions.js --words=快,打
+ *   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-long-definitions.js --words=快,打 --dry-run  # compare stored vs new, write nothing
+ *
+ * NOTE: --spot-check and --words= WRITE to the DB. Use --dry-run to preview a prompt change.
+ *
+ * Docs that depend on this script: docs/DEFINITION_MAPPING.md § 5, .claude/commands/mark-discoverable.md,
+ * server/scripts/backfill/shared/lib/requiredScripts.js (manifest version — keep in sync on a bump).
  */
 
 import dotenv from 'dotenv';
@@ -73,9 +79,14 @@ dotenv.config({ path: path.join(__dirname, '../../../.env.docker') });
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../../../db.js';
 import { initRunLog, cachedSystem } from '../run-log.js';
-const SCRIPT_VERSION = 15; // bump when this script's logic/prompt changes
+const SCRIPT_VERSION = 16; // bump when this script's logic/prompt changes. v16: plain-language rule 12 (everyday words; technical senses keep their field's terms)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// The downstream step whose output this script's writes invalidate (see the CITATION RESET
+// comment at the UPDATE). Must equal the `script:` id backfill-longdef-citations.js passes to
+// initRunLog, which is also its id in shared/lib/requiredScripts.js.
+const CITATIONS_SCRIPT_ID = 'chinese/backfill-longdef-citations';
 
 // run-log: track duration, version, words/mode, and token usage/cost
 const { stampEntries, validatedClause, staleClause } = initRunLog({ script: 'chinese/backfill-long-definitions', version: SCRIPT_VERSION, anthropic: anthropic });
@@ -84,6 +95,12 @@ const { stampEntries, validatedClause, staleClause } = initRunLog({ script: 'chi
 const validatedFilter = `AND ${validatedClause(['definitions'], 'dictionaryentries_zh')}`;
 const isSpotCheck = process.argv.includes('--spot-check');
 const isStale = process.argv.includes('--stale');
+// --dry-run: run the full pipeline but write NOTHING (no UPDATE, no version stamp). Prints the
+// currently-stored definition next to the freshly generated one, pair by pair — the way to
+// spot-check a prompt change against what is live before bumping SCRIPT_VERSION. Combine with
+// --words= (the usual case) or --spot-check. Without this flag, BOTH --spot-check and --words=
+// overwrite the stored definition, which destroys the "old" side of any comparison.
+const isDryRun = process.argv.includes('--dry-run');
 
 const wordsArg = process.argv.find(a => a.startsWith('--words='));
 const targetWords = wordsArg ? wordsArg.slice('--words='.length).split(',').map(s => s.trim()).filter(Boolean) : null;
@@ -166,6 +183,42 @@ function defToLogString(def) {
   return (Array.isArray(def) ? def : [])
     .map(d => `${d?.sense} (${d?.pos ?? '?'}): ${d?.definition}`)
     .join('  |  ');
+}
+
+/**
+ * --dry-run output: for each NEW (sense, POS) pair, the stored definition for the same pair
+ * (matched case-insensitively on sense + pos) above the new one, with char counts. A stored
+ * value in the legacy per-POS object shape is matched on POS alone.
+ *
+ * LABEL DRIFT FALLBACK: when the clusterer re-ran after the last longdef run, the stored `sense`
+ * labels no longer match the cluster's (an orphaned key — see lib/reconcileLongDefs.js). Then the
+ * first not-yet-shown stored element with the same POS is used, printed as "OLD~" with its stale
+ * label, so the comparison still has an old side. "(none)" means no stored element fits at all.
+ */
+function formatDryRunComparison(stored, fresh) {
+  const norm = s => (typeof s === 'string' ? s.trim().toLowerCase() : '');
+  const used = new Set();
+  const oldFor = d => {
+    if (Array.isArray(stored)) {
+      const exact = stored.find(o => o && !used.has(o) && norm(o.sense) === norm(d.sense) && norm(o.pos) === norm(d.pos));
+      if (exact) { used.add(exact); return { text: exact.definition, drifted: null }; }
+      const byPos = stored.find(o => o && !used.has(o) && norm(o.pos) === norm(d.pos));
+      if (byPos) { used.add(byPos); return { text: byPos.definition, drifted: byPos.sense }; }
+      return null;
+    }
+    if (stored && typeof stored === 'object' && stored[d.pos]) return { text: stored[d.pos], drifted: null };
+    return null;
+  };
+  const show = s => (s == null ? '(none)' : `[${s.length}] ${s.replace(/\n/g, ' ⏎ ')}`);
+  return (Array.isArray(fresh) ? fresh : [])
+    .map(d => {
+      const old = oldFor(d);
+      const oldLine = old?.drifted
+        ? `OLD~ (stored as "${old.drifted}") ${show(old.text)}`
+        : `OLD ${show(old?.text ?? null)}`;
+      return `    ▸ ${d.sense} (${d.pos ?? '?'})\n      ${oldLine}\n      NEW ${show(d.definition)}`;
+    })
+    .join('\n');
 }
 
 // ── Sense (cluster) helpers ──────────────────────────────────────────────────
@@ -269,13 +322,35 @@ How to write each definition:
 - DO NOT RESTATE THE GLOSS. The learner already sees this sense's gloss. Say what the gloss cannot:
   what the sense actually covers, where its edges are, and any nuance a bare gloss loses. Do NOT open
   by echoing the gloss back.
-- WRITE SIMPLY. Use short, common words and short sentences, as if explaining to a beginner. Avoid
-  academic, abstract, or flowery wording. Plain and clear always beats clever.
+- WRITE PLAINLY: EVERYDAY WORDS, SIMPLE SENTENCES. Write the way you would explain the word out loud
+  to a curious friend.
+  · Words: pick the most common English word for every idea ("use", not "utilize"; "keep working at
+    it", not "apply sustained effort"; "a big city", not "a prefecture-level city"). Proper names
+    (places, people, brands, rivers) are fine.
+  · TECHNICAL SENSES MAY USE THEIR FIELD'S OWN TERMS. When the sense itself belongs to a technical
+    field (physics, music theory, medicine, law, grammar, chemistry...), use that field's standard
+    English terms ("physics", "force", "motion", "interval", "chord", "defendant") — inventing a
+    homemade paraphrase for a real term ("the part of science that studies pushes and pulls") is
+    worse, not plainer. The plain-word rule applies to everything AROUND the term, and to every
+    everyday sense: never bring a technical or academic word into a sense that is not itself technical.
+  · Sentences: one idea per sentence, in plain subject-verb order. No colons that introduce a list, no
+    semicolons, no stacked "which / that / where" clauses, no dash asides.
+  · No abstract framings ("X seen as a place where...", "refers to the notion of...", "the act or
+    state of...") and no English idioms or figures of speech ("in fits and starts", "at the heart of").
+  · SIMPLIFY THE WORDS, NOT THE MEANING. Keep the detail that makes this sense distinctive (what it
+    covers and what it does not, e.g. learned ability as opposed to permission or physical strength);
+    just say it in plain words. A plainer definition that drops the distinguishing detail is worse.
+  · AIM SHORT. Most definitions should land around 60–140 characters; use more only for a genuinely
+    useful cultural paragraph.
+  · Never use the headword itself inside your English sentences ("when something stays in your 脑海")
+    — refer to it as "it" or "this word", or describe it.
 - BE BRIEF. The length cap is a CEILING, not a target. Say only what matters and stop.
 - CULTURAL CONTEXT IS OPTIONAL AND GOES LAST. When the sense figures in daily life, customs,
   associations, or a common set phrase in a way a learner would not guess, add it as a SECOND
   PARAGRAPH separated by a literal \\n\\n. If there is nothing genuinely useful to add, STOP after the
-  first paragraph — do NOT pad.
+  first paragraph — do NOT pad. When there IS such a note (a custom, a naming practice, a social
+  meaning), keep it as its own second paragraph; do not fold it into the first or drop it to save
+  space — shorten the first paragraph instead.
 - USE CHINESE CHARACTERS SPARINGLY — only to cite a term that is itself CULTURALLY SIGNIFICANT (a real
   idiom / chengyu, or a culturally loaded phrase such as 九五之尊 or 关系网). Do NOT use Chinese for
   constructed example sentences or trivial collocations; describe ordinary usage in English. When you do
@@ -318,6 +393,13 @@ Hard constraints — all must be satisfied:
 9. NO REGIONAL-USAGE ELABORATION — Do not describe which regions, dialects, or countries use the word, or note regional variants. Focus on meaning, not geographic distribution.
 10. NO "APPEARS IN" FILLER — Do not append example-word lists with "appears in", "found in", "seen in", or similar tacked-on phrasing. Cite a related phrase only when it is woven into a sentence explaining a nuance, never as a list to fill space.
 11. SENTENCE COUNT — Use between 1 and 3 sentences per definition (inclusive). Reject a definition with 4 or more sentences, or one whose extra sentence is a tacked-on citation or a padding aside that adds no distinct nuance.
+12. PLAIN LANGUAGE — Use everyday English words (proper names excepted). Technical, scientific, medical,
+   legal, administrative, or academic terms are allowed ONLY when the sense itself belongs to that field
+   and the term is that field's standard name for the thing (a physics sense may say "force"; an everyday
+   sense may not say "perceive" or "favourable treatment"). Reject: needless jargon in a non-technical
+   sense; a homemade paraphrase replacing a technical sense's standard term; English idioms or figures of
+   speech; abstract framings ("seen as", "the notion of", "the act or state of"); and sentences built from
+   stacked clauses, colon-introduced lists, semicolons, or dash asides.
 `;
 }
 
@@ -338,6 +420,7 @@ const VIOLATION_CODE_LABELS = {
   elaborates_regional: 'Elaborates on regional, dialectal, or geographic usage (rule 9)',
   appears_in_filler: 'Uses an "appears in" / "found in" style tacked-on example listing (rule 10)',
   extra_sentence: 'Exceeds 3 sentences, or pads with a tacked-on sentence citing a related phrase/chengyu or a filler aside (rule 11)',
+  complex_language: 'Uses needless jargon in a non-technical sense, paraphrases away a technical sense\'s standard term, or uses idioms, abstract framings, or tangled sentence structure (rule 12)',
   inaccurate: 'Definition is factually misleading or incorrect for a learner',
 };
 
@@ -583,7 +666,7 @@ ${annotateDefForPrompt(sonnetDef)}
 Option B (opus):
 ${annotateDefForPrompt(opusDef)}
 
-Judge which array better satisfies all constraints and quality goals. Penalize constraint violations (including any definition exceeding the ${MAX_LEN_PER_SENSE}-character per-pair budget, a missing pair, a dropped part of speech, or a reworded sense label) AND vague or unhelpful definitions.
+Judge which array better satisfies all constraints and quality goals. Penalize constraint violations (including any definition exceeding the ${MAX_LEN_PER_SENSE}-character per-pair budget, a missing pair, a dropped part of speech, or a reworded sense label), vague or unhelpful definitions, AND wording that is harder to read than it needs to be (rule 12): between two otherwise sound arrays, prefer the plainer one.
 
 Respond with ONLY one of:
   {"winner": "sonnet", "reason": "1 short sentence"}
@@ -794,6 +877,7 @@ async function run() {
   if (isSpotCheck) {
     console.log('🔍 SPOT CHECK MODE — processing 5 entries only\n');
   }
+  if (isDryRun) console.log('🧪 DRY RUN — nothing will be written or stamped; stored vs new is printed per pair\n');
   if (targetWords?.length) console.log(`🎯 Scoped to: ${targetWords.join(', ')}\n`);
   console.log('🚀 Starting AI-powered per-sense longDefinition backfill (generator → validator → opus retry → opus chooser)...\n');
 
@@ -810,7 +894,7 @@ async function run() {
     // this script). partsOfSpeech is still required as the fallback POS list for a
     // cluster that carries none of its own.
     const { rows: entries } = await client.query(`
-      SELECT id, word1, "partsOfSpeech", "definitionClusters"
+      SELECT id, word1, "partsOfSpeech", "definitionClusters", "longDefinition"
       FROM dictionaryentries_zh
       WHERE language = 'zh'
         ${discoverableFilter}
@@ -867,12 +951,29 @@ async function run() {
           continue;
         }
 
-        // longDefinition is a JSONB array of per-(sense, POS) objects — serialize for the jsonb param.
-        await client.query(
-          `UPDATE dictionaryentries_zh SET "longDefinition" = $1::jsonb WHERE id = $2`,
-          [JSON.stringify(result.definition), row.id]
-        );
-        await stampEntries(client, 'dictionaryentries_zh', row.id);
+        // --dry-run skips ONLY the write + stamp; logging and counters below run as normal, and
+        // the stored-vs-new comparison is printed after the usual result line.
+        if (!isDryRun) {
+          // longDefinition is a JSONB array of per-(sense, POS) objects — serialize for the jsonb param.
+          //
+          // CITATION RESET (v16): `longDefinitionCitations` (migration 126) holds translations of
+          // the Chinese runs quoted INSIDE this text, keyed by the run itself — so new text
+          // invalidates them. Clearing the column AND removing the citations script's
+          // enrichmentLog stamp in the SAME statement makes the manifest planner (and
+          // backfill-longdef-citations.js's own `IS NULL` gate) treat that step as pending, so
+          // the next round re-translates against the new text. Without this, a rewritten
+          // definition kept its old citations and the step still counted as done.
+          // The stamp key must match CITATIONS_SCRIPT_ID (= that script's initRunLog id).
+          await client.query(
+            `UPDATE dictionaryentries_zh
+                SET "longDefinition" = $1::jsonb,
+                    "longDefinitionCitations" = NULL,
+                    "enrichmentLog" = COALESCE("enrichmentLog", '{}'::jsonb) - $3::text
+              WHERE id = $2`,
+            [JSON.stringify(result.definition), row.id, CITATIONS_SCRIPT_ID]
+          );
+          await stampEntries(client, 'dictionaryentries_zh', row.id);
+        }
 
         // A citation that survived the repair pass is written, not discarded — the definition
         // is still useful — but flagged to stdout for the human review sweep. See REVIEW_MARKER.
@@ -906,6 +1007,7 @@ async function run() {
             console.log(`    opus:   "${defToLogString(result.opusDef)}"`);
           }
         }
+        if (isDryRun) console.log(formatDryRunComparison(row.longDefinition, result.definition));
         updated++;
       } catch (err) {
         console.log(`FAILED: ${err.message}`);

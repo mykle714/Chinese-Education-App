@@ -1002,7 +1002,7 @@ feature; promote to `src/components/` if a second surface needs it),
 * **The words are drawn as the app's mini preview cards, not as text rows.** Both the
   confirmation sheet and the detail page's word set render each word through
   `ChallengeWordCard` inside the shared `MiniVocabCardGrid` — literally the same tile
-  `MiniVocabCard` (the Deck Tower's cards page) and `QuickMarkCard` (Quick Mark) draw, since all of them
+  `MiniVocabCard` (the Deck Tower's cards page) draws, since both
   render the shared `MiniCard` (`src/components/MiniCard.tsx`; the face extracted
   2026-09-01 after the copies drifted apart, the contents on 2026-09-28), carrying the word +
   pinyin (always via `ForeignText`), the **English lead gloss**, the

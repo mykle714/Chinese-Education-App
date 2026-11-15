@@ -129,8 +129,8 @@ export function isLatinScriptLang(language?: string | null): boolean {
 
 // Plain-text font sizing, mirroring CPCDRow's per-size character font so a
 // Spanish word sits at the same visual scale as a Chinese row would.
-const PLAIN_CHAR_FONT: Record<CPCDSize, string> = { xs: "18px", sm: "26px", smd: "32px", md: "2.25rem", lg: "2.4rem", xl: "3.2rem" };
-const PLAIN_COMPACT_CHAR_FONT: Record<CPCDSize, string> = { xs: "16px", sm: "22px", smd: "28px", md: "1.875rem", lg: "2.25rem", xl: "2.8rem" };
+const PLAIN_CHAR_FONT: Record<CPCDSize, string> = { xxs: "15px", xs: "18px", sm: "26px", smd: "32px", md: "2.25rem", lg: "2.4rem", xl: "3.2rem" };
+const PLAIN_COMPACT_CHAR_FONT: Record<CPCDSize, string> = { xxs: "13px", xs: "16px", sm: "22px", smd: "28px", md: "1.875rem", lg: "2.25rem", xl: "2.8rem" };
 
 
 /**

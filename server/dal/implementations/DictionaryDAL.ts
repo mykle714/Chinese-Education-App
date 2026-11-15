@@ -121,9 +121,13 @@ function buildCitationMap(citations: LongDefinitionCitation[] | null | undefined
 }
 
 // Shared relevance tiebreak for every "list of det rows" query: shortest word1 first, then
-// highest conversation frequency, then alphabetical. Kept as one constant so the three query sites
-// below (searchByWord1, its numbered-pinyin fallback, findMultipleByWord1) can't drift apart.
-const RELEVANCE_ORDER_BY = `LENGTH(word1), "frequencyScore" DESC NULLS LAST, word1`;
+// highest commonality ("frequencyScore", 1–5), then lowest difficulty (1–6, HSK level for zh —
+// an HSK 1 word outranks an equally common HSK 4 one), then alphabetical. NULLS LAST on both
+// scores so unenriched (not-yet-discoverable) rows sink below enriched ones. Kept as one constant
+// so the query sites below (findByWord1, findMultipleByWord1, searchByWord1 and its
+// `english-first` window) can't drift apart.
+// Referenced by: docs/DICTIONARY_NUMBERED_PINYIN_SEARCH.md § "The shared bucket ladder" (Ties within a bucket).
+const RELEVANCE_ORDER_BY = `LENGTH(word1), "frequencyScore" DESC NULLS LAST, difficulty ASC NULLS LAST, word1`;
 
 /**
  * EVERY sense of an entry as one searchable blob, parentheticals stripped.

@@ -150,7 +150,7 @@ function dozePose(t: number): IdlePose {
 // Looking down at the needles, the head bobbing a little with each click.
 
 /** One needle click — IsoPawn's needles cross on this beat (PawnIdleProps). */
-export const KNIT_CLICK_MS = 560;
+export const KNIT_CLICK_MS = 1100; // was 560 — slowed to a calmer, unhurried rhythm (2026-11-14)
 const KNIT_IN_MS = 500;
 const KNIT_ARCH = 7;
 

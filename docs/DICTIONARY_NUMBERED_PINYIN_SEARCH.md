@@ -87,6 +87,12 @@ English starts-with, word starts-with, then the rest. It replaced "the word side
 pair", which put 龙头-style pinyin prefixes above 寿 "long life". The cost is visible on a broad
 term: "long" has ~240 English-prefix rows on dev, so its pinyin prefixes start near row 277.
 
+**Ties within a bucket** break on `RELEVANCE_ORDER_BY` (`server/dal/implementations/DictionaryDAL.ts`):
+shortest `word1` → highest commonality (`frequencyScore` DESC) → lowest `difficulty` (ASC; HSK
+level for zh) → `word1` alphabetical. Both scores sort NULLS LAST, so not-yet-enriched rows sink
+below enriched ones. Difficulty was added 2026-11-14 (owner's call: length stays first). The same
+constant orders `findByWord1`, `findMultipleByWord1` and the `english-first` window.
+
 ### Match kinds on the wire (added 2026-10-29)
 
 Each `/search` row now says which bucket it landed in: the entries query SELECTs the ladder as

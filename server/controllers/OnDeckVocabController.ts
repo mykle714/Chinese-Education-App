@@ -318,11 +318,17 @@ export class OnDeckVocabController {
   /**
    * Cooldown-aware ready counts per utcm band of the session bar — the Deck Tower's
    * Learning-deck figures (docs/DECK_TOWER.md), one call per bar.
-   * GET /api/onDeck/flpReadyCounts[?world=core|reading|writing]
+   * GET /api/onDeck/flpReadyCounts[?world=core|reading|writing][&ignoreFocus=1]
    * → { counts: {Unfamiliar,Target,Comfortable,Mastered}, upcoming: {readyAt, band}[], focusOn: boolean }
    *
    * `upcoming` is the cooling cards' release schedule for the next 24 h
    * (`flpUpcomingReady`), scoped like `counts` (a focused world: today's set only).
+   *
+   * `ignoreFocus=1` counts every sorted card even when focus mode is on (`focusOn` is
+   * then always false — the figures are not focus-scoped). acp's deck-fill notices read
+   * the whole deck, because they are about how big the deck is, not how much of it focus
+   * will serve today (docs/SORT_CARDS_REQUIREMENTS.md § 5.4). Focus resolution is skipped
+   * entirely on that path, so it also never sets the focus-ended header.
    *
    * `reviewNextReadyMs` (the Review study mode's countdown) was dropped from the
    * response 2026-11-04 with that mode (docs/DEFERRED_WORK.md § 31).
@@ -338,9 +344,11 @@ export class OnDeckVocabController {
 
       const language = await getUserLanguage(userId);
       const world = parseFlpWorld(req.query.world);
+      const ignoreFocus = req.query.ignoreFocus === '1' || req.query.ignoreFocus === 'true';
       // A focused world counts only today's remaining set — the Deck Tower reads this,
-      // so it never promises a card focus will not serve.
-      const focus = await this.applyFocus(res, userId, language, world);
+      // so it never promises a card focus will not serve. `ignoreFocus` (acp) wants the
+      // whole deck instead.
+      const focus = ignoreFocus ? null : await this.applyFocus(res, userId, language, world);
       const result = await this.onDeckVocabService.getFlpReadyCounts(
         userId, language, world, focus?.kind === 'focus' ? focus.ids : undefined
       );

@@ -36,7 +36,7 @@ import { COMMONALITY_UNIT_COUNT, DIFFICULTY_UNIT_COUNT, difficultyAriaLabel } fr
  * Referenced by docs/DEFINITION_MAPPING.md, docs/DEFINITION_CLUSTERS.md,
  * docs/SORT_CARDS_REQUIREMENTS.md, docs/QUICK_MARK.md and docs/SHELF_REDESIGN.md.
  * Rendered by: DefinitionFacts (eip/cdp), AddCardsPage (card header + level pill/menu),
- * QuickMarkPanel (level chip/menu), SensePicker (per-sense commonality).
+ * SensePicker (per-sense commonality).
  */
 
 /*

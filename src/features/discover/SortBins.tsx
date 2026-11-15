@@ -244,10 +244,14 @@ const LAYOUT = (() => {
     ];
     const deckTopZ = MAX_LAYERS * LAYER_PITCH;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    // The highest EMPTY platform's top surface (z = 0) — where the bins visibly start
+    // before any card is sorted, as opposed to `minY`, which also reserves a full deck.
+    let platformTopY = Infinity;
     const raw = CELL_WORLD.map((w) => proj.project(w.x, w.y, 0));
     CELL_WORLD.forEach((w) => {
         for (const [cx, cy] of corners) {
             const top = proj.project(w.x + cx, w.y + cy, 0);
+            platformTopY = Math.min(platformTopY, top.y);
             const under = proj.project(w.x + cx, w.y + cy, -PLATFORM_THICKNESS);
             minX = Math.min(minX, top.x);
             maxX = Math.max(maxX, top.x);
@@ -263,16 +267,41 @@ const LAYOUT = (() => {
         origins: raw.map((p) => ({ x: p.x + shiftX, y: p.y })),
         viewBox: `0 ${top} ${SCENE_WIDTH} ${bottom - top}`,
         height: bottom - top,
+        /** viewBox px from the box's top down to the highest empty platform's top (deck headroom + SCENE_TOP_MARGIN). */
+        headroom: platformTopY - top,
+        /** viewBox px of the EMPTY platform cluster: highest platform top → nearest platform's underside. */
+        cluster: maxY - platformTopY,
     };
 })();
 
 /**
  * The scene's width ÷ height (its viewBox). The page sizes the scene's box to it, so the
- * box's top edge IS the scene's top (the headroom over a full deck on the farthest bin)
- * and the page can lay things out in the space above it — the rating prompt
- * (AddCardsPage → `SortPrompt`).
+ * box's top edge IS the scene's top (the headroom over a full deck on the farthest bin),
+ * and places the box by its platforms using the two width fractions below
+ * (AddCardsPage → `BinsArea` / `BinsScene`).
  */
 export const SORT_BINS_ASPECT_RATIO = SCENE_WIDTH / LAYOUT.height;
+
+/**
+ * The scene's empty headroom (box top → highest empty platform's top, ~42 viewBox px: a
+ * full `MAX_LAYERS` deck + SCENE_TOP_MARGIN) as a fraction of the scene's WIDTH. A
+ * fraction of width so the page can turn it into a CSS percentage margin (percent margins
+ * resolve against the containing block's width, which is the scene box's width), and
+ * the value tracks the SVG's scale on any phone width. The page places the scene box so
+ * the platforms you SEE (not the room reserved for decks that have not grown yet) sit
+ * where its above/below split puts them: box top = platform top − this × scene width
+ * (AddCardsPage → `BinsArea`'s `--sort-*` variables, user 2026-11-14).
+ */
+export const SORT_BINS_HEADROOM_WIDTH_FRACTION = LAYOUT.headroom / SCENE_WIDTH;
+
+/**
+ * The EMPTY platform cluster's height (highest platform top → nearest platform's
+ * underside, before any deck grows) as a fraction of the scene's WIDTH. It is the "object"
+ * the page splits the spare height around — space above it vs below it (AddCardsPage →
+ * `BinsArea`, SORT_SPACE_ABOVE_SHARE). Decks grow up from the platforms into the space
+ * above, so the split does not move as cards are sorted.
+ */
+export const SORT_BINS_CLUSTER_WIDTH_FRACTION = LAYOUT.cluster / SCENE_WIDTH;
 
 /**
  * How far off a platform (world units, measured on the floor) a held card still counts

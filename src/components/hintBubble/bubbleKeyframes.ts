@@ -1,8 +1,9 @@
 /**
  * The bubble motion's keyframes — grow in (with a small overshoot), pop out (swell + fade)
  * and the pop's fading ring:
- *   - HintBubbleSurface (the bk's glyph-chip hints, the flp hint pawn's speech bubble)
- *     plays all of them;
+ *   - HintBubbleSurface plays all of them for the bk's glyph-chip hints; the flp hint
+ *     pawn's speech bubble and the app notifications grow in but leave on `fadeOut`
+ *     (`exit="fade"`, owner 2026-11-14);
  *   - CpcdPopup (the est's segment definition box, CPCDRow's copy message, the eip sense
  *     list's commonality popup) plays only the grow-in + `fadeOut` — its exit is a plain
  *     fade, the pop being too loud for a caption (owner's call 2026-11-10).

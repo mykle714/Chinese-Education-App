@@ -86,17 +86,17 @@ description of something on screen:
 
 | | modal (`minHeight = 0`, default) | persistent (`minHeight > 0`) |
 |---|---|---|
-| stops | `{0, default, max}` | `{minHeight, max}` — `default` **is** `minHeight` |
+| stops | `{0, max}` — `default` is only the open height + threshold | `{minHeight, max}` — `default` **is** `minHeight` |
 | on mount | laid out at `default`, slid up from below the frame (§ Open slide) | painted **at** `minHeight`, no animation |
 | drag to the bottom | dismisses (`onClose` after the shrink) | stops dead at `minHeight` |
 | release below default | dismiss | snap back to `minHeight` |
-| release between the stops | the directional `snapCommitShare` rule (§ Height model) | same rule, from `minHeight` |
-| fling down | floors at `default` (never dismisses) | floors at `minHeight` |
+| release above default | max | the directional `snapCommitShare` rule (§ Height model), from `minHeight` |
+| fling down | dismisses (from any height) | floors at `minHeight` |
 | scrim | yes | `showScrim={false}` — it is always on screen, so a permanent dim, and a scrim tap would have nothing to dismiss to |
 | `onClose` | required in practice | **omitted** — nothing to report |
 
 The three constants are the only branch points in the code (`persistent =
-minHeight > 0`): `computeSnapTarget` drops its dismiss stop, the mount effect skips
+minHeight > 0`): `computeSnapTarget` swaps the threshold rule for the directional {floor, max} rule, the mount effect skips
 the open animation, and every `applyResize` floor becomes `minHeightRef.current`
 instead of `0`. There is no second implementation of the gesture model.
 
@@ -119,48 +119,44 @@ strip as they scroll up. See docs/UX_AND_NAVIGATION.md § Edge fade.
 
 ---
 
-## Height model — three stops, one floor
+## Height model — two stops and a threshold (2026-11-14)
 
-| Stop | Value | Meaning |
+| Height | Value | Meaning |
 |---|---|---|
-| `0` | — | dismissed (panel unmounts after the shrink animation) |
-| **default** | `parentHeight * defaultHeightRatio` (prop, defaults to `DEFAULT_HEIGHT_RATIO` = 0.6; the Dictionary page's `EipSheet` and `src/pages/AccountSheet.tsx` → `AccountSheet` pass **0.8**), or `initialHeight` for a stacked child panel | the open height; **also the floor** — a downward release snaps back to it and a downward fling's momentum stops at it |
-| **max** | `parentHeight * MAX_HEIGHT_RATIO` (**1**) | fully expanded — the sheet IS the screen |
+| `0` | — | **stop**: dismissed (panel unmounts after the shrink animation) |
+| **default** | `parentHeight * defaultHeightRatio` (prop, defaults to `DEFAULT_HEIGHT_RATIO` = 0.6; the Dictionary page's `EipSheet` and `src/pages/AccountSheet.tsx` → `AccountSheet` pass **0.8**), or `initialHeight` for a stacked child panel | **not a stop** — the height the sheet opens to, and from then on the **threshold** between the two stops |
+| **max** | `parentHeight * MAX_HEIGHT_RATIO` (**1**) | **stop**: fully expanded — the sheet IS the screen |
 
-There is **no resting stop between 0 and default**. `computeSnapTarget(h, default,
-max, min, direction, commitShare)` is the single rule every release path uses: below
-default → `0` (dismiss); at or above → the **directional** two-stop rule shared with td's
-tower ↔ cards snap (`src/utils/directionalSnap.ts` → `directionalSnapTarget`; td's use is
-docs/DECK_TOWER.md § "The snap zone"). A persistent sheet passes `min > 0`, which
-suppresses the dismiss stop (see above).
+A modal sheet opens at default and rests there until the first gesture moves it; after
+that it can only come to rest at max or closed. `computeSnapTarget(h, default, max, min,
+direction, commitShare)` (`src/components/sheet/SheetPanel.tsx`) is the single rule every
+release path uses:
 
-**Directional thresholds (2026-11-10).** The choice between default and max depends on
-the way the sheet was **last moving**, not only where it was let go:
+| released at | goes to |
+|---|---|
+| above default | max (so a short pull down from max springs back up) |
+| below default | `0` (dismiss) |
+| exactly default | by the last direction (`snapDirectionRef`): growing → max, shrinking → dismiss, unknown (a tap-sized wobble) → stays |
 
-| heading | commits to | once it has travelled | short of that |
-|---|---|---|---|
-| up (growing) | max | `commitShare` of the gap **above default** | springs back to default |
-| down (shrinking) | default | `commitShare` of the gap **below max** | springs back to max |
-| unknown | nearer stop | — (halfway point) | — |
+The direction is `snapDirectionRef`, written by `writeVirtualHeight` (every
+gesture-driven height write goes through it; the animated snaps call `writeHeight`
+directly and never touch it) via `nextSnapDirection`
+(`src/utils/directionalSnap.ts`), which ignores steps under `DIRECTION_MIN_STEP_PX` (2) so
+a lifting finger's jitter cannot flip it. It resets to 0 when a new touch or header drag
+grabs the sheet.
 
-The direction is `snapDirectionRef` in `SheetPanel.tsx`, written by `writeVirtualHeight`
-(every gesture-driven height write — live finger, header drag, momentum — goes through it;
-the animated snaps call `writeHeight` directly and never touch it) via `nextSnapDirection`,
-which ignores steps under `DIRECTION_MIN_STEP_PX` (2) so a lifting finger's jitter cannot
-flip it. It resets to 0 when a new touch or header drag grabs the sheet. A drag up that
-turns back down is heading **down**, so it springs back to default from any height under
-the up-going breakpoint's mirror. A fling's momentum keeps the fling's direction.
+**Persistent panels keep a directional two-stop rule.** With `min > 0` the floor IS a
+resting stop, so `computeSnapTarget` uses `directionalSnapTarget(h, min, max, direction,
+commitShare)` — the rule shared with td's tower ↔ cards snap (docs/DECK_TOWER.md § "The
+snap zone"): heading up, it commits to max once `commitShare` of the gap above the floor;
+heading down, to the floor once `commitShare` of the gap below max; short of that it
+springs back. `commitShare` is the **`snapCommitShare`** prop (default 0.5 = nearest stop).
+No caller passes it today: the eip passed 0.25 for its old {default, max} choice, which
+the threshold rule replaced (2026-11-14).
 
-`commitShare` comes from the **`snapCommitShare`** prop (renamed from
-`collapseThresholdRatio`, whose rule was one undirected line) and defaults to **0.5**, at
-which the directional rule IS the plain nearest-stop midpoint whichever way the sheet
-moved — so every non-eip sheet behaves as before. **The eip passes 0.25**
-(`InfoCardSection.tsx` → `EIP_SNAP_COMMIT_SHARE`, every eip host: flp/td, cdp, Dictionary,
-acp) — the same share as td's `SNAP_COMMIT_SHARE`. At the default 0.6 open height, a pull up
-past 0.7 of the screen maximizes and a pull down from max below 0.9 shrinks. (Before
-2026-11-10 one undirected line at 0.7 served both trips, so shrinking from max needed
-three-quarters of the gap.) Only the {default, max} choice is affected; a modal panel's
-dismiss floor is still its default height.
+**History.** Until 2026-11-14 default was a third resting stop — a release between
+default and max chose between them by the directional rule (eip `commitShare` 0.25), and a
+downward fling's momentum floored at default so a fling never closed the sheet.
 
 The open height is a fixed fraction of the screen, deliberately *not* measured from
 content, so every eip tab opens to the same extent.
@@ -329,7 +325,7 @@ Three rules, all changed on **2026-09-06**:
   on a row that does not scroll. The row scrolls now, so that reading is true, and the
   measuring apparatus (`measureTabWidth`, `readStripGeometry`, `fitsNewTab`, the per-tab
   `measuredWidth` cache, and the `stripRef` the hook took to read the geometry) is deleted.
-  `TooManyTabsSnackbar` still fires on the counter, now at 50 rather than after a handful.
+  `useEipOverflowNotice` (an app notification, docs/NOTIFICATIONS.md; was `TooManyTabsSnackbar` until 2026-11-14) still fires on the counter, now at 50 rather than after a handful.
 - **The active pill is scrolled into view** whenever the active index or the tab count
   changes — twice, because a just-pushed pill is mid-entrance (`eipPillIn` widens it from
   `max-width: 0`) and a scroll aimed at it then lands short. The second pass runs at
@@ -394,8 +390,13 @@ There is **one caret at every height (2026-10-31)**, pinned to the upper frame's
 screen. It replaced a handover in which the trail row's caret faded out as the title row
 brought in its own.
 
-- **At and below the open height** it sits on the TRAIL row's line, and the row's speaker
+- **At the open height** it sits on the TRAIL row's line, and the row's speaker
   cluster keeps clear of it.
+- **Below the open height it is left behind (2026-11-14).** The shrinking frame clips its
+  bottom-anchored rows off the top; the caret lifts by `--sheet-telescope-clip` (rest −
+  frame height, written by `writeTelescope`) so it stays on the trail row's line and is
+  clipped away with that row, instead of riding the descending top edge down over the
+  entry header.
 - **Toward max** it eases 10px down onto the page header's line while the TITLE row is
   revealed under it. That row's own chevron is `visibility: hidden`, which keeps the title
   on the page's column. The speaker cluster and the crumbs slide left over the same travel. Both read `--sheet-telescope-t` (0 at the open height → 1 at max) and
@@ -687,30 +688,28 @@ stationary (velocity 0): the finger was parked when it lifted.
 
 On `touchend` (only when the *last* finger lifts):
 
-1. `resize` mode and height < default → **dismiss**. This is the only way a swipe
-   closes the panel.
-2. `|v| < FLING_MIN_VELOCITY` → **settle** (`computeSnapTarget`).
-3. otherwise → **momentum** — `resize` mode only. A `scroll` gesture is the
-   browser's, fling included; running our rAF momentum on top of a native fling
+1. `resize` mode and height < default → **dismiss** (below the threshold).
+2. `|v| < FLING_MIN_VELOCITY` (or overstretched) → **settle** (`computeSnapTarget`).
+3. otherwise, a **modal** panel's fling picks a stop outright: **down → dismiss** (from
+   any height, max included), **up → animate to max**. No coast — the snap/dismiss
+   animation is the follow-through.
+4. a **persistent** panel's fling → **momentum** — `resize` mode only. A `scroll` gesture
+   is the browser's, fling included; running our rAF momentum on top of a native fling
    would double-scroll, so `touchend` returns early for it.
 
-### Momentum floors at the default height
+### Momentum (persistent panels only)
 
-Momentum in `resize` mode is clamped to `[default, max]` — **not** `[0, max]`. So a
-downward fling coasts to the default height and **stops there; momentum never
-dismisses.** An upward fling stops dead at max. Inertia still cannot cross between
-the two modes — not because momentum is mode-locked (it no longer has a `scroll`
-arm at all), but because the gesture's mode is locked before either kind of inertia
-can start.
+Momentum in `resize` mode is clamped to `[minHeight, max]`: a downward fling coasts to the
+floor and stops there; an upward fling stops dead at max. Inertia still cannot cross
+between the two modes — the gesture's mode is locked before either kind of inertia can
+start.
 
 Momentum integrates with a capped frame time (`MOMENTUM_MAX_FRAME_MS`, 32ms) so one
 janky frame can't teleport the sheet or wipe out the fling through the
 `decay^(dt/16)` term. Whenever momentum ends — decayed out or stopped at a boundary —
 `resize` mode runs `settle()` so it always comes to rest on a stop.
 
-The live-finger path uses floor `0` (that's the dismiss gesture); only momentum uses
-the default-height floor. That's the whole difference, expressed as the `minH`
-argument to `applyResize`.
+The live-finger path uses floor `0` for a modal panel (that's the dismiss gesture).
 
 ### Overstretch — pulling past max squeezes the upper panel (2026-11-05)
 
@@ -764,7 +763,9 @@ Code: `src/components/sheet/SheetPanel.tsx` → `squeezeOnOverstretch`, `overstr
 
 `deltaY > 0` grows the sheet; `deltaY < 0` shrinks it, but only from the top of the
 content. A wheel gesture has no release, so crossing below the default height
-dismisses immediately. Only the top-most mounted `depth` reacts (module-level
+dismisses immediately. Because nothing settles a wheel gesture, it is the one input
+that can still park a modal sheet **between** default and max (kept deliberately,
+2026-11-14). Only the top-most mounted `depth` reacts (module-level
 `mountedDepths` set); touch is already top-only via DOM hit-testing.
 
 ### Escape key (desktop)
@@ -912,7 +913,8 @@ Toward a neighboring tab the finger delta is clamped to one pane width. Toward a
 indistinguishable from "this tab has no swipe at all". It now rubber-bands instead:
 the track follows the finger at `TAB_SWIPE_EDGE_RUBBER_RATIO` (0.25) of its travel,
 capped at `TAB_SWIPE_EDGE_RUBBER_MAX_PX` (40px), and springs back on release. The cap
-sits far below the commit threshold (`paneWidth · TAB_SWIPE_COMMIT_RATIO`) and
+sits below the commit threshold (`paneWidth · TAB_SWIPE_COMMIT_RATIO`, 0.16 since
+2026-11-14 — ~60px on a 375px pane) and
 `settleDrag` rejects out-of-range targets, so an overscroll can never land on a tab
 change. See `useTabSwipeTrack`'s touchmove handler and the constants at the top of
 `src/components/sheet/useTabSwipeTrack.ts`.
@@ -1133,7 +1135,7 @@ Code: `src/components/OverlayScrollbar.tsx` → `OverlayScrollbar`,
 - `src/api/dictionary.ts` — `lookupVocabEntry(entryKey, language?)`, the single
   det-lookup-and-adapt every eip host goes through
 - `src/features/flashcards/FlashcardsLearnPage/EipSheet.tsx` — the shared non-flp mount
-  (`InfoCardSection` + `EipTabStrip` + `TooManyTabsSnackbar`), used by
+  (`InfoCardSection` + `EipTabStrip` + `useEipOverflowNotice`), used by
   `src/features/discover/AddCardsPage.tsx` (`handleOpenCardInfo`) and
   `src/features/dictionary/DictionaryPage.tsx` (`handleEntryClick` — the only host that
   passes `showSynonymsRelated`, `showWordTools` and `showLearning`). `depth` (default 0) is

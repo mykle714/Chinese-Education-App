@@ -1,5 +1,6 @@
 import { useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { Box, Portal, Typography, Snackbar, Switch } from '@mui/material';
+import { Box, Typography, Switch } from '@mui/material';
+import { useNotify } from '../../components/notifications/useNotify';
 import Icon from '../../components/Icon';
 import { SettingsSection, OptionRow, SwitchRow } from '../../components/primitives';
 import { AboutYouSections } from './AboutYouSections';
@@ -110,8 +111,9 @@ const VOICE_SAMPLE: Record<Language, { text: string; pronunciation?: string }> =
  * ⚠️ NO `Container`, NO page padding. `.set`'s own `14px 18px 0` margin is the gutter;
  * the old `<Container maxWidth="sm" sx={{ py: 4 }}>` would double it.
  *
- * ⚠️ Its Snackbars are PORTALED: in the sheet this body sits on a transformed pane track,
- * which would otherwise become their `position: fixed` containing block.
+ * Its language-change result is an app notification (useNotify, docs/NOTIFICATIONS.md),
+ * drawn by the shell at the phone frame — so the sheet's transformed pane track cannot
+ * trap it (the retired Snackbars needed a `<Portal>` for that).
  *
  * Depended on by: SettingsPage, AccountSheet, docs/SHELF_REDESIGN.md entry 11,
  * docs/LEAF_NODE_PAGES.md, docs/UX_AND_NAVIGATION.md, docs/EXAMPLE_SENTENCES.md (the
@@ -149,8 +151,7 @@ function SettingsBody() {
     const slideNavigate = useSlideNavigate();
     const { themeMode, setThemeMode, availableThemes } = useTheme();
     const { user, updateLanguage, updateDisplaySettings } = useAuth();
-    const [languageSuccess, setLanguageSuccess] = useState(false);
-    const [languageError, setLanguageError] = useState<string | null>(null);
+    const { notify } = useNotify();
     // One hook for the whole Narration group: it carries the mode, the voice, and the
     // `autoSpeakSentence` the voice sample plays through — so the sample cannot drift from the
     // route and autoplay rules the mode above it just set.
@@ -218,11 +219,15 @@ function SettingsBody() {
     const handleLanguageChange = async (newLanguage: Language) => {
         try {
             await updateLanguage(newLanguage);
-            setLanguageSuccess(true);
-            setLanguageError(null);
+            // One id for both outcomes: a retry's result replaces the last one in place.
+            notify({ id: 'settings-language-result', tone: 'success', message: 'Language preference updated successfully!' });
         } catch (error: unknown) {
-            setLanguageError(error instanceof Error ? error.message : 'Failed to update language preference');
-            setLanguageSuccess(false);
+            notify({
+                id: 'settings-language-result',
+                tone: 'error',
+                message: error instanceof Error ? error.message : 'Failed to update language preference',
+                autoHideMs: 5000,
+            });
         }
     };
 
@@ -601,21 +606,6 @@ function SettingsBody() {
                     <Icon name="chevron_right" size={18} color={COLORS.textFaint} />
                 </Box>
 
-            {/* Success/Error Snackbars */}
-            <Portal>
-                <Snackbar
-                    open={languageSuccess}
-                    autoHideDuration={3000}
-                    onClose={() => setLanguageSuccess(false)}
-                    message="Language preference updated successfully!"
-                />
-                <Snackbar
-                    open={!!languageError}
-                    autoHideDuration={5000}
-                    onClose={() => setLanguageError(null)}
-                    message={languageError}
-                />
-            </Portal>
         </>
     );
 }

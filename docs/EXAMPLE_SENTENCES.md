@@ -450,7 +450,9 @@ Tapping a segment **selects it and narrates it**.
 > narration path, and horizontal gestures belong to the eip tab swipe unconditionally.
 
 - **Where.** `toggleFromIndex` in `SegmentedSentenceDisplay.tsx` (the handler behind
-  `CPCDRow`'s `onTapToggle` → cell `onTouchEnd`). It fires
+  `CPCDRow`'s `onTapToggle` → cell `onTouchEnd`, which ignores a touch that travelled past
+  `TAP_SLOP_PX` (10px) since its touchstart — a drag released over a word is not a tap,
+  2026-11-14). It fires
   `onSegmentSpeak(segment, segmentMetadata[segment]?.pronunciation)` — the identical call
   so tap narration inherits the pinyin-hinted TTS cache key for free. Pronunciation comes from the selection
   itself (`SelectedRange.pronunciation`), falling back to
@@ -493,6 +495,10 @@ a segment in one sentence clears the selection in every other mounted
   *other* owners only, so that ordering is safe. Every tap that resolves to a selection
   claims, drill rungs included; a tap that cancels does not — nobody else holds a
   selection to clear.
+- **Hosts can clear everyone.** `clearAllSegmentSelections()` drops every owner's
+  selection. `InfoCardPanelBody` calls it on each eip sub-tab or word change: the panes
+  stay mounted and the popup is a viewport-anchored Popper, so an est popup would
+  otherwise float over the newly shown tab (2026-11-14).
 - **`clear` drops the ref too**, not just the state: `toggleFromIndex` reads
   `selectedRangeRef` to decide drill-vs-fresh-select, and a stale range there would make
   the next tap read as a drill into a selection this display no longer owns.

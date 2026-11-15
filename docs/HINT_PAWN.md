@@ -17,7 +17,7 @@ Parent: [DECK_TOWER.md](./DECK_TOWER.md) (the flp runs only inside td). Related:
 | Layer | Code | Role |
 |---|---|---|
 | flp page presentation | `src/features/flashcards/FlashcardsLearnPage/hintPawn/HintPawn.tsx` → `HintPawn` | The stage: platform, pawn, bubble, arrival, swipe-away |
-| flp page presentation | `hintPawn/PawnHintBody.tsx` → `PawnHintBody`, `DismissCue` | The bubble's inside: laid out by the hint's bubble variant (§ Bubble variants), filled per `kind`, plus the tap-to-dismiss cue (a soft introduction — `showDismissCue`) |
+| flp page presentation | `hintPawn/PawnHintBody.tsx` → `PawnHintBody`, `PawnDismissCue` (places the shared `src/components/hintBubble/DismissCue.tsx`, also used by sticky app notifications — docs/NOTIFICATIONS.md) | The bubble's inside: laid out by the hint's bubble variant (§ Bubble variants), filled per `kind`, plus the tap-to-dismiss cue (a soft introduction — `showDismissCue`) |
 | flp page presentation | `hintPawn/PawnBubbleTail.tsx` → `PawnBubbleTail` | The bubble's tail, angled at the pawn's head |
 | flp page presentation hook | `hintPawn/useSpaceBelowCard.ts` → `useSpaceBelowCard` | The free height under the card, which caps the bubble |
 | flp page presentation hook | `hintPawn/useHintPawnIdles.ts` → `useHintPawnIdles`, `pickHintPawnIdle`, `HINT_PAWN_IDLES`, `IDLE_EVERY_MS` | When the pawn plays an idle, and which (§ Idle animations) |
@@ -120,7 +120,7 @@ to fit (2026-11-08), and `src/__tests__/wrongStreakHint.test.ts` enforces the ca
 ## Bubble variants
 
 Code: `pawnHints.ts` → `PawnBubbleVariant`, `PAWN_BUBBLE_VARIANT`; `PawnHintBody.tsx` →
-`PawnHintBody`, `CpcdRowContent`, `DismissCue`.
+`PawnHintBody`, `CpcdRowContent`, `PawnDismissCue`.
 
 Every hint kind picks one of two dialogue-box variants (owner, 2026-11-08). The map is a
 `Record` over `PawnHint["kind"]`, so a new kind does not type-check until it picks one.
@@ -301,9 +301,10 @@ Code: `HintPawn` → `onPointerDown` / `onPointerMove` / `onPointerEnd`, `LEAVE_
   the store on mount, so leaving td (or reloading) brings the pawn back. A module-level
   store, because each world's session is its own `FlashcardsLearnPage` mount.
 - **Tap to dismiss** closes **only the bubble** (owner, 2026-11-08): a tap anywhere on it
-  (`HintBubbleSurface onSelect`) pops that hint's bubble (`closedKey`) and uncovers the More
-  Info pill. The pawn and platform stay, and the next card's hint grows a new bubble. The cue
-  (`PawnHintBody` → `DismissCue`, `pawn-hint-body__dismiss-cue`) is only a cue: "Tap / to / dismiss" on three short right-aligned
+  (`HintBubbleSurface onSelect`) closes that hint's bubble (`closedKey`) and uncovers the More
+  Info pill. Every exit of the hint bubble is a plain **fade** (`HintBubbleSurface exit="fade"`,
+  owner 2026-11-14: the pop + ring was too loud), not the bk chips' pop. The pawn and platform stay, and the next card's hint grows a new bubble. The cue
+  (`PawnHintBody` → `PawnDismissCue` → the shared `src/components/hintBubble/DismissCue.tsx`, `pawn-hint-body__dismiss-cue`) is only a cue: "Tap / to / dismiss" on three short right-aligned
   lines, with a tapping-hand icon beside the middle "to", at 10 px (`DISMISS_CUE_FONT_SIZE`,
   below the type scale's smallest token), in the bubble's bottom-right corner, inset the same 6px from the bottom and right edges (`DISMISS_CUE_INSET`), sharing a row rather than taking
   a row of its own: the line's row in the text variant, the cpcd row in the cpcd variant (§ Bubble variants). Only the swipe sends the pawn away.

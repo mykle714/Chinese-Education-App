@@ -8,7 +8,7 @@ because the dictionary tables differ — pick the section that matches.
 
 | Language | Table | Key | Pipeline |
 |---|---|---|---|
-| Chinese (`zh`) | `dictionaryentries_zh` | `word1` | §A — 10-step CJK pipeline |
+| Chinese (`zh`) | `dictionaryentries_zh` | `word1` | §A — 19-step CJK pipeline |
 | Spanish (`es`) | `dictionaryentries_es` | `word1` | §B — 7-step es pipeline |
 
 If the user doesn't say, infer from the script (Han characters → zh; Latin → es)
@@ -101,6 +101,7 @@ Run all steps in order with `--words=word1,word2,...` (comma-joined hanzi).
 server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-tones.js --words=未来,摸脉
 server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-numbered-pinyin.js --words=未来,摸脉
 server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-max-char-stroke-count.js --words=未来,摸脉
+server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-character-components.js --words=未来,摸脉
 server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-dictionary-breakdown.js --words=未来,摸脉
 server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-process-definitions-array.js --words=未来,摸脉
 server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-parts-of-speech.js --words=未来,摸脉
@@ -119,6 +120,8 @@ server/scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-superpositi
 ```
 
 **`backfill-max-char-stroke-count` NULL is a valid answer, not a miss.** It writes `maxCharStrokeCount` (migration 179) = the stroke count of the word's HARDEST character, read from the committed `scripts/backfill/chinese/lib/hanziStrokeCounts.json` (hanzi-writer-data). It is the writing flp's easiest-first key (docs/MASTERY_REWORK.md § 6 "Ordering"). A word containing any character outside that data (Latin letters as in 卡拉OK, punctuation, a rare variant) gets NULL and simply sorts last in the writing queue; done-ness is its `enrichmentLog` stamp. Deterministic, no API calls, no ordering constraint — it reads only `word1`. Most rows already carry it (migration 179 filled and stamped every row that existed then), so on those it reports "0 rows".
+
+**`backfill-character-components` is a no-op on multi-character words.** It carries `when: 'singleChar'` and writes `components` (migration 125) = the visual parts a single character is written from (想 → `["相","心"]`; an atomic character such as 人 gets `[]`), from the cached decomposition data — deterministic, no API calls, reads only `word1`. A multi-char batch reports "0 rows". Every single-char row on PPE was already filled by an untargeted run on 2026-11-14, so on most rows it re-stamps an unchanged value. If it ever introduces a component not seen before, regenerate the webfont (`generate-component-font.js`, see the script header).
 
 **The two breakdown steps are no-ops on single-character words.** Both carry
 `when: 'multiChar'` in the manifest and gate on `char_length(word1) > 1`, so a
@@ -166,6 +169,8 @@ SELECT word1, tone, difficulty,
   -- NULL is valid (a character outside hanzi-writer-data); the stamp proves the step ran.
   "maxCharStrokeCount",
   "enrichmentLog" ? 'chinese/backfill-max-char-stroke-count' AS has_stroke_count_stamp,
+  -- Single-char rows only ([] = atomic, still done); NULL on a multi-char word is correct.
+  components,
   -- Superposition groups live on the CHARACTERS' rows; on a multi-char word the stamp is the proof.
   "enrichmentLog" ? 'chinese/backfill-superposition-groups' AS has_superposition_stamp,
   "longDefinition" IS NOT NULL AS has_long_def,

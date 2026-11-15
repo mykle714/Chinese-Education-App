@@ -86,7 +86,7 @@ export const challengeMessageSx = {
 // component, which is what react-refresh wants).
 //
 // The 92×132 thumbnail is the app-wide mini preview footprint — MiniVocabCard and
-// QuickMarkCard use the identical box, which is why all three drop into the same grid.
+// acp's DraggableCard use the identical box, which is why they drop into the same grid.
 // The word card IS the app's mini preview card, so its footprint is not a challenge
 // decision — it is taken from the shared face (src/components/miniCardFace.ts). These
 // aliases stay because the grid-height helper below and the panel's layout read them by

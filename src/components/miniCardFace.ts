@@ -3,7 +3,7 @@
  * the app draws.
  *
  * ⚠️ THIS FILE EXISTS BECAUSE THE FACE WAS WRITTEN THREE TIMES. `MiniVocabCard` (td's
- * cards page, the provisional-card previews), `QuickMarkCard` (Quick Mark triage) and
+ * cards page, the provisional-card previews), acp's `DraggableCard` and
  * `ChallengeWordCard` (the challenge word set) each re-declared the same size, radius,
  * fill, elevation and containment, and each one's comment said it was matching the
  * other two. They had already drifted: only `MiniVocabCard` carried the design's 1px
@@ -33,6 +33,8 @@
 import { COLORS } from "../theme/colors";
 import { SHADOW } from "../theme/shadows";
 import { SIZE } from "../theme/scale";
+import { COLUMN_WIDTH, OVERLAP_BY_SIZE, type CPCDSize } from "./cpcdLayout";
+import { isLatinScriptLang } from "./ForeignText";
 
 /** The tile's footprint. Every mini card is exactly this, on every surface. */
 export const MINI_CARD_WIDTH = 92;
@@ -44,9 +46,10 @@ export const MINI_CARD_HEIGHT = 132;
  * re-lays its contents for it with smaller type — rather than a CSS `scale()` of the
  * regular face, so the text stays crisp and legible at the smaller size.
  *
- * Only the acp dock uses it, and only when a FULL 4-card pack would not fit across at
- * the regular size (a phone narrower than ~456px) — then every pack takes it, so the
- * dock's height never changes between packs (see AddCardsPage's `dockCardSize`). Every other surface stays on `regular`; a new caller should
+ * Only the acp dock uses it, and only for a pack whose row would not fit across at the
+ * regular size — in practice a 4-card pack on a phone narrower than ~456px; 1–3-card
+ * packs stay regular (AddCardsPage → `dockCardSize`, whose CardsRow pads a compact row so
+ * the dock's height never changes between packs). Every other surface stays on `regular`; a new caller should
  * only reach for `compact` when a row genuinely cannot fit, never as a style choice.
  *
  * Referenced by docs/SORT_CARDS_REQUIREMENTS.md § 4.5 ("Compact dock").
@@ -186,4 +189,79 @@ export const DEFINITION_MAX_LINES = 2;
  */
 export function miniCardDefinitionBottom(hasMasteryStrip: boolean): number {
     return MINI_CARD_BAR_STRIP.bottom + (hasMasteryStrip ? MINI_CARD_BAR_STRIP.height + 5 : 0) - DEFINITION_DROP;
+}
+
+// ── Long words (docs/CARD_LIBRARY.md § "Long words on the mini card") ───────────────
+// The word is set at cpcd `xs` (22px columns, 18px pitch), so a 4-character word is 76px:
+// exactly the regular face's body and 10px over the compact face's 66px — so on the acp
+// dock's compact face every idiom wrapped 3 + 1. The rule (user decisions 2026-11-14),
+// for the COMPACT face only — the regular face fits 4 at `xs` and is left as it was:
+//   - 4+ characters → the smaller `xxs` size (15px pitch: four fit either face's body);
+//   - more than fit on one line at `xxs` → the word WRAPS onto balanced lines, the icon
+//     (default icon or custom arrangement) is dropped, and the word moves up into the
+//     icon slot so its lines clear the definition.
+// Chinese only: a Latin-script (es) headword keeps its own plain-text path, unchanged.
+
+/** Character count at which the mini card's word steps down from `xs` to `xxs`. */
+export const MINI_CARD_SMALL_WORD_MIN_CHARS = 4;
+/** The size a long word is set at. */
+const SMALL_WORD_SIZE: CPCDSize = "xxs";
+/**
+ * Slack (px) added to a wrapped word's balanced line width, so a line that fits
+ * exactly is never pushed onto the next line by sub-pixel rounding. Far below one
+ * character's pitch, so it never lets an extra character onto a line.
+ */
+const BALANCED_LINE_SLACK_PX = 1;
+
+export interface MiniCardWordFit {
+    /** The cpcd size the word is set at. */
+    cpcdSize: CPCDSize;
+    /** The word runs over more than one line (and the icon is dropped). */
+    wraps: boolean;
+    /** Draw the icon slot's icon / the custom icon layer. False when the word wraps. */
+    showIcon: boolean;
+    /** The word's top edge: `keyTop`, or the icon slot's top when the word wraps. */
+    keyTop: number;
+    /**
+     * Width cap (px) for the cpcd row — the BALANCED line width, so a 5-char word
+     * breaks 3 + 2 rather than 4 + 1. Undefined = capped by the body only.
+     */
+    maxWidth: number | undefined;
+}
+
+/**
+ * How the mini card sets its headword (see the block comment above). Read by MiniCard
+ * (HTML) AND miniCardSvgLayout (its SVG twin), so both pick the same size, drop the icon
+ * on the same words and break lines at the same characters.
+ *
+ * Balanced lines: `lines = ceil(n / capacity)`, `perLine = ceil(n / lines)`, and the row
+ * is capped at exactly `perLine` cells — the browser's greedy wrap then reproduces the
+ * balanced split (5 → 3+2, 6 → 3+3, 7 → 4+3, 9 → 3+3+3). Deterministic arithmetic rather
+ * than CSS `text-wrap: balance`, which the SVG twin could not mirror.
+ */
+export function miniCardWordFit(entryKey: string, language: string | null | undefined, size: MiniCardSize): MiniCardWordFit {
+    const layout = MINI_CARD_CONTENT_LAYOUT[size];
+    const charCount = [...entryKey].length;
+    // Regular face: unchanged (xs, the old greedy wrap, icon kept) — user 2026-11-14.
+    if (size !== "compact" || isLatinScriptLang(language) || charCount < MINI_CARD_SMALL_WORD_MIN_CHARS) {
+        return { cpcdSize: "xs", wraps: false, showIcon: true, keyTop: layout.keyTop, maxWidth: undefined };
+    }
+    const bodyWidth = MINI_CARD_DIMENSIONS[size].width - 2 * layout.sideInset;
+    // CPCDRow: the chars block pads |overlap| on the left; each cell's margin box is
+    // `column + overlap` (overlap is negative).
+    const pad = Math.abs(OVERLAP_BY_SIZE[SMALL_WORD_SIZE]);
+    const pitch = COLUMN_WIDTH[SMALL_WORD_SIZE] + OVERLAP_BY_SIZE[SMALL_WORD_SIZE];
+    const capacity = Math.max(1, Math.floor((bodyWidth - pad) / pitch));
+    if (charCount <= capacity) {
+        return { cpcdSize: SMALL_WORD_SIZE, wraps: false, showIcon: true, keyTop: layout.keyTop, maxWidth: undefined };
+    }
+    const lineCount = Math.ceil(charCount / capacity);
+    const perLine = Math.ceil(charCount / lineCount);
+    return {
+        cpcdSize: SMALL_WORD_SIZE,
+        wraps: true,
+        showIcon: false,
+        keyTop: layout.iconTop,
+        maxWidth: pad + perLine * pitch + BALANCED_LINE_SLACK_PX,
+    };
 }

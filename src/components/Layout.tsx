@@ -2,6 +2,7 @@ import { type ReactNode, useEffect } from "react";
 import { Box } from "@mui/material";
 import { useLocation } from "react-router-dom";
 import MobileDemoFrame from "./MobileDemoFrame";
+import NotificationViewport from "./notifications/NotificationViewport";
 import { routeShell } from "../routes/routeMeta";
 import { clearSkipNextEnter } from "../hooks/usePageSlide";
 import { BootCoverSlot } from "./bootCover/BootCover";
@@ -68,6 +69,8 @@ function Layout({ children }: LayoutProps) {
             }}
         >
             {children}
+            {/* The app notifications on the plain shell, pinned to the window (docs/NOTIFICATIONS.md). */}
+            <NotificationViewport placement="window" />
             {/* The app-opening cover on a plain-shell launch, filling the window. */}
             <BootCoverSlot placement="window" />
         </Box>

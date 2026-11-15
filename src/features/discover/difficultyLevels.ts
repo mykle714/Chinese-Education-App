@@ -1,9 +1,9 @@
 // The generalized 1..6 difficulty scale shared by every language (the server's
 // StarterPacksService.MAX_LEVEL, migration 79). Used by Add Cards' level dropdown
-// (which adds an "Auto" entry on top) and its expanded Quick Mark panel (concrete
-// levels only). One copy, so the two pickers can never offer different ranges.
+// (which adds an "Auto" entry on top). Its second picker, Quick Mark's panel, was
+// deleted 2026-11-14.
 //
-// Both pickers render a level as the six-triangle `DifficultyMeter`
+// The picker renders a level as the six-triangle `DifficultyMeter`
 // (src/components/ScoreMeters.tsx), never as text — the "HSK 3" / "Level 3" label
 // (`difficultyLabel`) was removed 2026-11-07, because the values are an AI estimate
 // and not an HSK-list lookup. `MAX_DIFFICULTY_LEVEL` must equal src/components/scoreMeterScale.ts'

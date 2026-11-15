@@ -4,9 +4,10 @@ import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { lensFromSearch } from "./collectionRef";
 import {
     Box, Alert,
-    Slide, Snackbar, Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
+    Slide, Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
 } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
+import { useNotificationFor } from "../../components/notifications/useNotify";
 import { styled } from "@mui/material/styles";
 import NodePage from "../../components/NodePage";
 import { SLAB_FOOTER_TOTAL_CLEARANCE, ScrollPastSpacer } from "../../components/MobileFooter";
@@ -24,7 +25,7 @@ import { CardFaceSide, ChineseBlock, EnglishBlock } from "./FlashcardsLearnPage/
 import { measureDefaultTextCenters } from "../../cardIcons/cardTextLayout";
 import { useToolbarInset } from "../../cardIcons/editor/useToolbarInset";
 import { isAdvancedLayout } from "../../cardIcons/cardIconLayout";
-import { CARD_BASE_WIDTH, CARD_BASE_HEIGHT, FC_FONT } from "./constants";
+import { CARD_BASE_WIDTH, CARD_BASE_HEIGHT } from "./constants";
 import { cardStockVars } from "./card/cardStock";
 import { useTier2Look } from "../../timeOfDay/useTier2Look";
 import { useCardIconEditor } from "../../cardIcons/editor/useCardIconEditor";
@@ -211,6 +212,10 @@ const VocabCardDetailPage: React.FC = () => {
         redoAdv,
         pushAdvHistory,
     } = useCardIconEditor({ currentEntry: entry, nextEntry: null });
+    // Icon-layout save/reset failure (e.g. a backend PATCH error) — keeps the editor open and
+    // tells the learner the write didn't land. Same id as the flp's: one editor, one message
+    // (docs/NOTIFICATIONS.md).
+    useNotificationFor(saveError, () => setSaveError(null), { id: "card-icon-save-error", tone: "error" });
 
     // A sense pick updates the in-sync display index AND persists the chosen cluster's `sense`
     // LABEL for this saved card (index 0 = default/starred → stored as null). Same contract as
@@ -669,24 +674,6 @@ const VocabCardDetailPage: React.FC = () => {
                     tree does not affect where it paints. */}
                 {compareSheet}
 
-                {/* Icon-layout save/reset failure toast (e.g. backend PATCH error) — keeps
-                    the editor open and tells the user the write didn't land. */}
-                <Snackbar
-                    open={saveError !== null}
-                    autoHideDuration={4000}
-                    onClose={() => setSaveError(null)}
-                    anchorOrigin={{ vertical: "top", horizontal: "center" }}
-                    sx={{ zIndex: 2000 }}
-                >
-                    <Alert
-                        severity="error"
-                        variant="filled"
-                        onClose={() => setSaveError(null)}
-                        sx={{ fontFamily: FC_FONT }}
-                    >
-                        {saveError}
-                    </Alert>
-                </Snackbar>
 
                 {/* Add/change-icon search dialog (download-on-select). docs/CARD_ICON_LAYOUT.md */}
                 <IconPickerDialog

@@ -25,12 +25,12 @@ import type { PointerEvent as ReactPointerEvent } from "react";
  *
  * A `pointercancel` never commits: it means the browser (or the OS) took the gesture away.
  *
- * Used by: `src/features/discover/useQuickMarkGrid.ts` (Learning / Mastered triage,
- * imperative `paint` mode), `src/features/deckTower/DeckTowerPage.tsx` (the world swipe,
+ * Used by: `src/features/deckTower/DeckTowerPage.tsx` (the world swipe,
  * imperative `paint` mode, carrying the release momentum into the pan) and
  * `src/features/flashcards/FlashcardsLearnPage/gameBreak/BreakCardLayer.tsx` (swiping the
  * game-break results card away, unlocked, `paint` mode).
- * Documented in: docs/QUICK_MARK.md § 3, docs/DECK_TOWER.md § Worlds.
+ * (Quick Mark's `useQuickMarkGrid`, its first caller, was deleted 2026-11-14.)
+ * Documented in: docs/DECK_TOWER.md § Worlds; docs/QUICK_MARK.md § 3 (history).
  */
 
 export type SwipeDirection = "left" | "right";

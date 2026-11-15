@@ -14,9 +14,10 @@ specific doc.
 | **Scrollable footer-tab layout** | [MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md) | Every footer-tab page uses `MobileTabScreen` (header scrolls away inside the scroll area). Dictionary uses it scrolling, Lessons (a td Tier-2 placeholder) with `scrollable={false}`; td (`/`) mounts it with `scrollable={false}`. |
 | **Drill-in page archetypes** | [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) | Two back-arrow archetypes. **Leaf** (`LeafPage`): down arrow, no footer, back-arrow-only exit, slides up/down. **Node** (`NodePage`): left arrow, keeps footer, slides in/out to the right. Rule of thumb: no footer ⇒ leaf, has footer ⇒ node. |
 | **eip bottom-sheet gestures** | [EIP_SHEET_GESTURES.md](./EIP_SHEET_GESTURES.md) | `SheetPanel`'s height model: three stops (0 / default / max) with the default height as the floor, one snap rule, the resize-vs-scroll mode lock, and release momentum that stops at the default height instead of dismissing. |
-| **Add Cards (Discover flow)** | [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) | `/discover/sort/:language` drag-to-sort page (acp), a Deck drill-in reached from td's sort platform: node page (back arrow → `/`, keeps the footer with Deck lit), hosting the Quick Mark panel and skipped-cards sheet. |
+| **Add Cards (Discover flow)** | [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) | `/discover/sort/:language` drag-to-sort page (acp), a Deck drill-in reached from td's sort platform: node page (back arrow → `/`, keeps the footer with Deck lit), hosting the skipped-cards sheet and the deck-fill notifications. |
 | **Soft introductions (si)** | [SOFT_INTRODUCTION.md](./SOFT_INTRODUCTION.md) | A minor UI element styled one way (intro) for a learner's first encounters, then another (graduated) once both a visit count and a day count are met. Per-device localStorage only; feature testers pick Auto / Force intro / Force graduated in Settings → "Soft introductions" (under "Enable testing features"). |
 | **Deck Tower** | [DECK_TOWER.md](./DECK_TOWER.md) | `/`, the app's landing page and the footer's Flashcards tab: the Learning deck (off-cooldown cards) drawn as an isometric tower of cards on a platform, in the "Good Job!" art style (flat three-tone shading, no outlines). Built from the iso art framework. Tapping the floor plate switches to the Mastered deck through an animated transition ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md)). Tapping the Learning tower studies it in place — the camera dives onto the top card and the flp is laid over it, no route change (§ Studying the tower). Once per launch it opens behind the **launch screen** ([LAUNCH_SCREEN.md](./LAUNCH_SCREEN.md)): a solid sky colour with a pawn dropping onto a mini platform, which opens with a circle onto td once td is ready. |
+| **Notifications** | [NOTIFICATIONS.md](./NOTIFICATIONS.md) | The app's one notification system (`useNotify`), replacing MUI Snackbar: tailless hint-bubble banners pinned under the page header at the phone frame, auto-hiding or sticky, updated in place by id. |
 | **Iso art framework** | [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md) | The "Good Job!"-style SVG kit in `src/features/deckTower/iso/`: projection and geometry, one component per object (platform, card, card stack, pawn), the single light and the one shadow rule (`IsoShadow`), levitation, and the palette. |
 
 ---
@@ -320,8 +321,7 @@ hook's `translate`, so the two compose — which matters because cards DO pop in
 mid-scroll (a windowed grid mounts rows as it moves; the td cards page's snap glide
 runs while the cascade is still playing).
 
-Applies to `MiniVocabCard`. `QuickMarkCard` opts out of hover
-feedback entirely (deliberate — see its own note).
+Applies to `MiniVocabCard`.
 
 ### Contract for new card lists
 

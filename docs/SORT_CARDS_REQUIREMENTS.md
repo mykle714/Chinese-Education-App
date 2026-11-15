@@ -291,19 +291,27 @@ A **sort pack** is a small group of vocabulary cards shown together:
       pack exit (§4.1) then carries the whole slot off. Undo re-showing a card in a slot
       that is still on deck pops it back into its well (`DraggableCard` → `settleIn`).
       *Code:* `AddCardsPage.tsx` → `CardWell`, `renderSlotBody`.
-- **Compact dock (narrow screens).** Every pack is laid out at the size a **full 4-card
-  pack** needs (`dockCardSize`, `MAX_PACK_CARDS`): regular 92×132 MiniCards when four fit
-  across the on-deck row at that size, else the **compact 78×112 face** — for **every**
-  pack, 1–3-card packs included. In practice a phone narrower than ~456px (4 × 92 + 3 × 24
-  + 16 padding) is always compact, a wider screen always regular. The size depends on the
-  row's measured width only (`onDeckSectionRef`, a ResizeObserver), never on the pack's
-  count: until 2026-11-09 it was decided per pack, so a 4-card pack's shorter dock let the
-  bins above re-centre between packs (user request: "make all packs the 4-pack size").
+- **Compact dock (narrow screens).** Each pack is laid out at the size **its own row**
+  needs (`dockCardSize(cardCount, dockWidth)`): regular 92×132 MiniCards when the pack's
+  cards fit across the on-deck row at that size, else the **compact 78×112 face**. Packs
+  hold at most 4 cards, so in practice a 4-card pack on a phone narrower than ~456px
+  (4 × 92 + 3 × 24 + 16 padding) is compact and every 1–3-card pack is regular. The width
+  comes from `onDeckSectionRef` (a ResizeObserver). History: decided per pack until
+  2026-11-09, then one size for every pack (so the dock height stopped changing), then per
+  pack again 2026-11-14 (user: "larger card size for <=3 pack sizes") — with the height
+  held constant a different way:
+    - **The dock is the same height at both sizes.** A compact `CardsRow` is padded top
+      and bottom by half the face-height difference (`COMPACT_ROW_BLOCK_PAD_PX`, (132 −
+      112) / 2 = 10px). The tier tag and action row are the same height at both sizes, so
+      the card well is the only difference, and the padding makes it up — the bins above
+      never re-centre between a 3-card and a 4-card pack. The leaving-pack overlay sizes
+      its row by the leaving pack's own count, so its slots match the row they replace.
     - The compact face is a **real second geometry** of `MiniCard` (`size="compact"`),
       not a CSS scale of the regular one: the icon slot, word and definition re-lay for
       the smaller box and the type steps down one notch on the existing scales (cpcd
       `compact` 16px/9px, es plain text 12px, definition `SIZE.caption`), so no new font
-      sizes are introduced. Both faces set every glyph (word, pinyin, dd) in 975 Maru SC
+      sizes are introduced (the one exception is a 4+ character word, which the compact
+      face sets at cpcd `xxs` — CARD_LIBRARY.md § "Long words on the mini card"). Both faces set every glyph (word, pinyin, dd) in 975 Maru SC
       (`FONTS.cjk`), which `MiniCard` owns: docs/CJK_TYPEFACE_LAB.md § "The dd follows
       the face too". It is the **only** exception to "every mini card is 92×132";
       no other surface uses it.
@@ -323,7 +331,7 @@ A **sort pack** is a small group of vocabulary cards shown together:
       the screen edges. `clip`, not `hidden`, so the y axis stays visible for dragging.
   *Code:* `src/components/miniCardFace.ts` → `MINI_CARD_DIMENSIONS`, `MiniCardSize`;
   `src/components/miniCardFace.ts` → `MINI_CARD_CONTENT_LAYOUT` (read by `MiniCard` and its SVG twin `MiniCardSvg`); `src/features/discover/AddCardsPage.tsx`
-  → `dockCardSize`, `CARDS_ROW_GAP`, `CARD_ACTIONS_GAP`, `CardsRow`, `CardWell`, `onDeckSectionRef`.
+  → `dockCardSize`, `CARDS_ROW_GAP`, `COMPACT_ROW_BLOCK_PAD_PX`, `CARD_ACTIONS_GAP`, `CardsRow`, `CardWell`, `onDeckSectionRef`.
 - **A pack is shown at most once.** Once the user has **finished** a pack (every card
   sorted) **or skipped** it, that pack never appears again — regardless of whether its
   cards were sorted or skipped. (This is the per-user "seen packs" record; it applies
@@ -434,12 +442,12 @@ Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET
 > **Status: unreachable.** The Tower Tier 2 re-skin (§4.9) removed the ⊞ expand button
 > and all of acp's hosting code for the panel (the `quickMark` state, the preload, the
 > pinned-card sort/undo bridges, `getPlatformRect` / `getSlotRect`). Quick Mark had no
-> other entry point, so **the grid cannot be opened anywhere in the app**. The panel and
-> its hooks are still in the tree, unimported: `src/features/discover/QuickMarkPanel.tsx`,
-> `useQuickMarkGrid.ts`, `useQuickMarkPreload.ts`. Whether to delete them or give Quick
-> Mark a new entry is an open decision ([DEFERRED_WORK.md](./DEFERRED_WORK.md)). The rest
-> of this section describes the hosting as it worked before the removal (recover it from
-> git history at `09f607e`); it no longer matches `AddCardsPage.tsx`.
+> other entry point, so **the grid could not be opened anywhere in the app**, and its client
+> code (`QuickMarkPanel.tsx`, `useQuickMarkGrid.ts`, `useQuickMarkPreload.ts`,
+> `QuickMarkCard.tsx`, `quickMarkSwipe.ts`) was **deleted 2026-11-14** by owner decision
+> ([QUICK_MARK.md](./QUICK_MARK.md)). The rest of this section describes the hosting as it
+> worked before the removal (recover it from git history at `09f607e`, the panel at
+> `7ba6c11`); it no longer matches any code.
 
 The on-deck platform could be **maximized** into Quick Mark, the bulk-triage grid
 ([QUICK_MARK.md](./QUICK_MARK.md) owns the grid; this section owns how acp hosted it).
@@ -539,8 +547,8 @@ project "Tower Tier 2 - Time of Day", the three "Sort ·" artboards, built on th
 | Zone | What | Code |
 |---|---|---|
 | Header | NodePage header: back + "Add Cards" in the look's `ink` (white by day, like the tower's sky ink) and the tower's header type (`TOWER_TYPE_SX`, `src/features/deckTower/towerType.ts`, via `wrapHeader`); `AudioModeChip` (the app-wide outlined skin: pill outline + label) in the same ink, the flame | `AddCardsPage` → `groundChrome` (incl. `wrapHeader`), `headerExtraActions` |
-| Rating prompt | "Rate each card 1–4 on how well you know it", painted straight on the sky in the look's `ink` (white by day) and the tower's header type at `SIZE.subtitle`, centred horizontally and vertically in the gap between the toolbar's bottom and the bins' scene box. The numbers it names are printed on the platforms (§5.3). Not interactive | `SortPrompt`, `TOOLBAR_TOP_PX` |
-| Bins | The four utcm drop targets as iso decks on floating platforms in a tetromino on the iso grid (§5.3), at the **bottom** of the spare height in a box sized to the scene's aspect (`BinsScene`, `SORT_BINS_ASPECT_RATIO`), so the box's top is the scene's top and the prompt takes the height left above it; on a short screen the box shrinks and the SVG scales down inside it, pinned to its bottom (`preserveAspectRatio="xMidYMax meet"`). The box's bottom edge sits 16 viewBox px below the nearest bin's front corner, so the shadows hang past it (the scene is `overflow: visible`) and the platforms sit close above the cards. The scene's top includes the headroom for a full deck on the farthest bin, so the prompt's gap ends ~40 viewBox px above the empty platforms | `BinsArea`, `BinsScene`, `SortBins.tsx` → `LAYOUT`, `SORT_BINS_ASPECT_RATIO` |
+| Rating prompt | "Rate each card 1–4 on how well you know it", painted straight on the sky in the look's `ink` (white by day) and the tower's header type at `SIZE.subtitle`, centred horizontally and vertically in the gap between the toolbar's bottom and the tops of the empty platforms: its box is exactly the space above the platforms (`--sort-above`, see Bins). The numbers it names are printed on the platforms (§5.3). Not interactive | `SortPrompt`, `TOOLBAR_TOP_PX` |
+| Bins | The four utcm drop targets as iso decks on floating platforms in a tetromino on the iso grid (§5.3). **Placement:** the bins area runs from the content's top to the dock; the height the EMPTY platform cluster (highest platform top → nearest underside, `SORT_BINS_CLUSTER_WIDTH_FRACTION`) leaves over splits **5 : 1** between the space ABOVE the platforms (prompt, toolbar, deck growth) and BELOW them (to the dock's tier tags), the space below never under **8px** (`SORT_SPACE_ABOVE_SHARE`, `SORT_SPACE_BELOW_SHARE`, `SORT_MIN_SPACE_BELOW_PX`; user 2026-11-14 — it was all spare height above and a fixed ~24px below). Pure CSS: `BinsArea` is a size container and declares `--sort-scene-w` / `--sort-cluster-h` / `--sort-below` / `--sort-above` in `cqw`/`cqh`. The scene box (`BinsScene`, the scene's aspect) is absolutely placed by its platforms: top = `--sort-above` − the deck headroom it reserves above them (`SORT_BINS_HEADROOM_WIDTH_FRACTION`, ~42 viewBox px for a full deck + margin), so a full deck may rise into the prompt's space and the box's 16-viewBox-px bottom margin (`SCENE_BOTTOM_MARGIN`) hangs into the gap below (`overflow: visible`). On a screen too short for the cluster + 8px, the box narrows so they fit | `BinsArea`, `BinsScene`, `SortBins.tsx` → `LAYOUT`, `SORT_BINS_ASPECT_RATIO`, `SORT_BINS_HEADROOM_WIDTH_FRACTION`, `SORT_BINS_CLUSTER_WIDTH_FRACTION` |
 | Toolbar | Level pill · undo · skip, keycaps in a row at the top-right, above the Mastered bin (Undo moved here from the header). Lettered in 975 Maru SC (`FONTS.cjk`), like the platforms' numbers | `SortToolbar`, `keycapSx` |
 | On deck | The pack's levitating cards (§4.5), their action glyphs sitting right on the slab footer (`ON_DECK_FOOTER_GAP_PX` 0 — the glyphs are inset 4px in their 36px targets; the section's negative margin hands back the ScrollArea's **slab** reservation, `SLAB_FOOTER_TOTAL_CLEARANCE`), `SLOT_ACTIONS_GAP_PX` (12px) below the card | `OnDeckSection` |
 | Footer | The floating **slab** footer (`footerStyle: "slab"` on the route), casting its shadow on the ground | `src/routes/routeMeta.ts`, `setFooterCastShadow` |
@@ -618,6 +626,14 @@ production), so the card sits mid-band rather than on a cut line and has no lops
 "weak track" on day one. *Code:* `server/contracts/mastery.ts` →
 `SORT_BUCKET_CORE_POSITIVES`, `coreSeededTypedMarkHistory`; `server/contracts/wire.ts` →
 `DiscoverSortBucket`, `DISCOVER_SORT_BUCKETS`.
+
+**When the seeded card's clock starts** (2026-11-14). **Target** and **Comfortable** seeds
+are stamped `now − their band's cooldown window` (12 h / 14 d), so the card is off cooldown
+the moment it is sorted. It joins the Deck Tower's Learning deck at once, and the tower grows
+by it when the learner comes back (DECK_TOWER.md § "Back from Add Cards"). A **Mastered**
+seed is stamped `now` and rests its full 180-day window. Unfamiliar seeds nothing, so it has
+no clock. *Code:* `server/contracts/cooldown.ts` → `sortSeedTypedMarkHistory`,
+`SORT_BUCKETS_SEEDED_RESTED` (tested in `server/__tests__/sortSeedCooldown.test.ts`).
 
 **Skip is no longer a destination** — it is a de-emphasized action (§5.1), deliberately
 removed from the drag targets so the user reaches for a real destination first.
@@ -844,8 +860,43 @@ The Learning tally pill's yellow "you arrived short of cards" halo went with the
 while core Learning is under `LEARN_NOW_LOW_THRESHOLD` (`DeckTowerPage` → `learningLow`;
 [DECK_TOWER.md](./DECK_TOWER.md) § The sort platform). The glow recipe
 (`src/theme/lowSupplyGlow.ts`) outlived it as the dictionary cdp's `LearningToggle` add nudge
-until both were deleted 2026-11-10. acp no longer
-signals when a short learner has sorted enough.
+until both were deleted 2026-11-10. Since 2026-11-14 acp's deck-fill goal notification
+counts the learner up to a full deck (§5.4).
+
+### 5.4 Deck-fill notifications (added 2026-11-14)
+
+acp aims a learner at a deck of about **25 cards at the start of the day** and warns them
+off building one too large. Both messages are sticky app notifications
+([NOTIFICATIONS.md](./NOTIFICATIONS.md)) under the page header.
+
+**Today's deck** = the core world's off-cooldown cards in **all four** utcm bands (the Deck
+Tower's Learning-deck figure) + the cooling cards that come off cooldown **before the next
+04:00 local** reset + this visit's sorts into **Unfamiliar, Target or Comfortable**.
+**Mastered sorts do not count** (owner, 2026-11-14), because they start a 180-day cooldown.
+The arrival figure is one read of `GET /api/onDeck/flpReadyCounts?ignoreFocus=1` on mount:
+focus mode would scope it to today's 25-card set, and this is about the whole deck. Cooling
+cards are filtered to the 04:00 boundary on the client from the response's 24 h `upcoming`
+schedule. The visit's sorts are added on the client from the bins' session decks (§5.3),
+so Undo is accounted for, and nothing is re-read.
+
+| Notice | Fires when | Leaves when | Draft copy (owner to edit) |
+|---|---|---|---|
+| **Goal** (info, `style` icon) | on arrival, if today's deck < `DECK_FILL_TARGET` (25) | the target is reached (it pops), the warning replaces it, or it is tapped | "Sort at least {n} new cards to fill today's deck.", then "{n} more cards to fill today's deck." as counted sorts land |
+| **Warning** (warning icon) | today's deck ≥ `DECK_FILL_WARN_AT` (40): on arrival, or when a counted sort carries it over (owner, 2026-11-14) | tapped, or Undo drops the deck back under 40 | On arrival: "Your deck already has {total} cards due today. You don't need to add any more." After sorting: "Your deck has {total} cards due today. Adding many more may be hard to keep up with." |
+
+- A notice the learner **taps away** stays away for the rest of the visit. Other exits are
+  state changes, so the notice can come back (e.g. Undo back under 25 re-shows the goal).
+- **Off** in set mode (§5.2.1), and when the route's language is not the account's: the
+  ready counts are read for the account's language.
+- A failed read shows nothing rather than a wrong number.
+
+*Code:* `src/features/discover/deckFillNotices.ts` → `DECK_FILL_TARGET`,
+`DECK_FILL_WARN_AT`, `DECK_FILL_COUNTED_BUCKETS`, `nextStudyDayStart`, `deckSizeToday`,
+`countedSessionSorts`, `deckFillState`, `deckFillGoalCopy`, `deckFillWarningCopy`;
+`useDeckFillNotices.ts` → `useDeckFillNotices`; `AddCardsPage.tsx` → `deckFillSorts`;
+`src/api/flpReadyCounts.ts` → `fetchFlpReadyCounts` (`ignoreFocus`);
+`server/controllers/OnDeckVocabController.ts` → `getFlpReadyCounts`. *Tests:*
+`src/__tests__/deckFillNotices.test.ts`.
 
 ### 5.1 Skip is a de-emphasized action, not a drag target
 - Skip is a small lowercase **"skip" keycap at the right end of the toolbar** (level pill ·
@@ -1017,13 +1068,13 @@ the user **chooses** to bring it back, in one of three ways:
   (`COLORS.onSurface`, aria-label from `difficultyAriaLabel`), never as text. The
   "HSK 3" / "Level 3" label was removed 2026-11-07 because `difficulty` is an AI
   estimate, not an HSK-list lookup.
-- A **"DIFFICULTY →"** caption to the **left** of the pill, vertically centred on it and
-  pointing at it (`add-cards__level-caption`, `LevelCaption`), is a **soft introduction** (si `sortDifficultyCaption`,
+- A **"DIFFICULTY"** caption **under** the pill, horizontally centred on it, 9px below
+  (`add-cards__level-caption`, `LevelCaption`), is a **soft introduction** (si `sortDifficultyCaption`,
   docs/SOFT_INTRODUCTION.md): shown for a learner's first visits, gone once they have
   made **7 visits over at least 7 days** — the artboard draws the pill alone. It is drawn
   like the Deck Tower sort platform's si print ("ADD MORE / CARDS →"): bold caps in
   `FONTS.cjk`, the look's full `ink`, 9px. Absolutely placed, so it never widens the
-  toolbar or pushes the rating prompt down (it sat under the pill until 2026-11-09).
+  toolbar or pushes the rating prompt down (2026-11-09 → 11-14 it sat left of the pill as "DIFFICULTY →").
 - The **Auto** entry always just reads "Auto" — it never shows the live target level
   number, since the target can change every pack and a fluctuating number in the
   dropdown would be noisy rather than informative.
@@ -1054,10 +1105,10 @@ the user **chooses** to bring it back, in one of three ways:
 
 ## 6.7 Client API module — `src/features/discover/starterPacksApi.ts`
 
-acp (`AddCardsPage.tsx`), its Quick Mark grid (`useQuickMarkGrid.ts`) and its
-`SkippedCardsSheet.tsx` reach the server through this one module. It exports
-`fetchStarterPacks` / `fetchNextPack` / `sortCard` / `skipPack` / `undoSort` /
-`fetchSkippedCards` / `recycleSkips` / `recycleSkip` / `fetchQuickMarkPage`.
+acp (`AddCardsPage.tsx`) and its `SkippedCardsSheet.tsx` reach the server through this
+one module. It exports `fetchStarterPacks` / `fetchNextPack` / `sortCard` / `skipPack` /
+`undoSort` / `fetchSkippedCards` / `recycleSkips` / `recycleSkip` (`fetchQuickMarkPage` was
+deleted with Quick Mark, 2026-11-14).
 (`recycleSkip` is used only by `SkippedCardsSheet.tsx`, acp's hidden sheet — §5.1a.)
 
 Two rules it exists to enforce:

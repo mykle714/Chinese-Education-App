@@ -91,6 +91,7 @@ import ForcedBreakPicker from "./ForcedBreakPicker";
 import type { Language } from "../../types";
 import TowerCoverCard from "./TowerCoverCard";
 import { readTowerHeight, writeTowerHeight } from "./towerHeightStore";
+import { usePageDashRunning } from "../../hooks/usePageDashRunning";
 import { useHideFooter } from "../../hooks/useHideFooter";
 import { useThemeColor } from "../../hooks/useThemeColor";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
@@ -1038,6 +1039,10 @@ const DeckTowerPage: React.FC = () => {
     const launchReady = towerWeather.settled && readyCounts[worldId].loaded;
     useHoldBootCover(!launchReady);
     const { up: launchUp, covering: launchCovering } = useBootCover();
+    // A page dash bringing td in (acp's Back, docs/DECK_TOWER.md § "Back from Add Cards"):
+    // td mounts hidden under the dash's sky, so a grow started now would play unseen.
+    // Recounts and cooldown releases wait for it to land, as they wait for the launch screen.
+    const dashArriving = usePageDashRunning();
     // `launchCovering` is true until the circle starts to open: while td is fully hidden its
     // sky takes every change at once (SpaceBackdrop `snapSky`), so the circle opens onto the
     // true time of day and the real weather if it has arrived, else clear.
@@ -1272,11 +1277,13 @@ const DeckTowerPage: React.FC = () => {
         startResize(r.heldCards ?? 0, toCards);
     };
     // Held while the launch screen is up: the opening grow plays once the circle has opened,
-    // where it can be seen (docs/LAUNCH_SCREEN.md § "What waits").
+    // where it can be seen (docs/LAUNCH_SCREEN.md § "What waits"). Held likewise while a
+    // page dash is still bringing td in: the cards gained in acp drop once td has slid into
+    // view (docs/DECK_TOWER.md § "Back from Add Cards").
     useEffect(() => {
-        if (launchUp) return;
+        if (launchUp || dashArriving) return;
         for (const id of WORLD_ORDER) resolveRecount.current(id);
-    }, [readyCounts.core.version, readyCounts.reading.version, readyCounts.writing.version, launchUp]);
+    }, [readyCounts.core.version, readyCounts.reading.version, readyCounts.writing.version, launchUp, dashArriving]);
     // ── Cooldown releases (docs/DECK_TOWER.md § "Cooldown releases") ────────────────
     // A card whose cooldown ends while the page is up joins the tower then, as its OWN sky
     // drop: useFlpReadyCounts holds the release schedule and reports cards that came due
@@ -1300,7 +1307,7 @@ const DeckTowerPage: React.FC = () => {
                 continue;
             }
             const fromCards = towerCounts[id];
-            if (pan.busy || launchUp || fromCards === undefined) continue;
+            if (pan.busy || launchUp || dashArriving || fromCards === undefined) continue;
             startResize(fromCards, fromCards + 1);
             r.applyReleases(1);
         }
@@ -1312,7 +1319,7 @@ const DeckTowerPage: React.FC = () => {
         resizes.core.busy, resizes.reading.busy, resizes.writing.busy,
         swaps.core.busy, swaps.reading.busy, swaps.writing.busy,
         swaps.core.towerDeck, swaps.reading.towerDeck, swaps.writing.towerDeck,
-        pan.busy, study.active, worldId, launchUp,
+        pan.busy, study.active, worldId, launchUp, dashArriving,
     ]);
     // Back from a hidden tab: re-read every world (timers sleep in the background, and
     // another device may have marked cards meanwhile). The tower shown is held first, so

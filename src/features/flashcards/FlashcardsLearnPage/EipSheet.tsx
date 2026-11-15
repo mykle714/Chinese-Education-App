@@ -1,9 +1,9 @@
 import InfoCardSection from "./InfoCardSection";
 import EipTabStrip from "./EipTabStrip";
-import TooManyTabsSnackbar from "./TooManyTabsSnackbar";
+import { useEipOverflowNotice } from "./useEipOverflowNotice";
 import type { useEipTabs } from "./useEipTabs";
 import { useFlashcardLearnSettings } from "../../../hooks/useFlashcardLearnSettings";
-import { Alert, Snackbar } from "@mui/material";
+import { useNotificationFor } from "../../../components/notifications/useNotify";
 import WordToolsRail from "../../../components/WordToolsRail";
 import { useLearningToggle } from "../../../hooks/useLearningToggle";
 import type { Language, VocabEntry } from "../../../types";
@@ -78,6 +78,10 @@ const EipSheet: React.FC<EipSheetProps> = ({
         learningShown ? entryTab?.entry ?? null : null,
         (entryTab?.entry.language ?? "zh") as Language,
     );
+    // The trail-full notice, and Learning failures only — a successful add/remove is shown
+    // by the toggle (docs/NOTIFICATIONS.md).
+    useEipOverflowNotice(eip.overflowSignal);
+    useNotificationFor(learning.error, learning.clearError, { id: "eip-sheet-learning-error", tone: "error", autoHideMs: 2500 });
 
     return (
         <>
@@ -143,19 +147,6 @@ const EipSheet: React.FC<EipSheetProps> = ({
                     ) : undefined}
                 />
             )}
-            <TooManyTabsSnackbar signal={eip.overflowSignal} />
-            {/* Learning failures only — a successful add/remove is shown by the toggle. */}
-            <Snackbar
-                className="eip-sheet__learning-error-snackbar"
-                open={learning.error !== null}
-                autoHideDuration={2500}
-                onClose={learning.clearError}
-                anchorOrigin={{ vertical: "top", horizontal: "center" }}
-            >
-                <Alert severity="error" variant="filled" onClose={learning.clearError}>
-                    {learning.error}
-                </Alert>
-            </Snackbar>
         </>
     );
 };

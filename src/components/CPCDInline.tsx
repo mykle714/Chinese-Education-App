@@ -56,10 +56,10 @@ interface CPCDInlineProps {
  * ForeignText is the public container (see its header).
  *
  */
-const CHAR_FONT_SIZE: Record<CPCDSize, string> = { xs: "14px", sm: "18px", smd: "21px", md: "24px", lg: "28px", xl: "36px" };
-const PINYIN_FONT_SIZE: Record<CPCDSize, string> = { xs: "10px", sm: "12px", smd: "14px", md: "15px", lg: "17px", xl: "21px" };
+const CHAR_FONT_SIZE: Record<CPCDSize, string> = { xxs: "12px", xs: "14px", sm: "18px", smd: "21px", md: "24px", lg: "28px", xl: "36px" };
+const PINYIN_FONT_SIZE: Record<CPCDSize, string> = { xxs: "9px", xs: "10px", sm: "12px", smd: "14px", md: "15px", lg: "17px", xl: "21px" };
 /** Space between the glyph run and the reading beside it. */
-const READING_GAP_PX: Record<CPCDSize, number> = { xs: 4, sm: 5, smd: 6, md: 6, lg: 7, xl: 9 };
+const READING_GAP_PX: Record<CPCDSize, number> = { xxs: 3, xs: 4, sm: 5, smd: 6, md: 6, lg: 7, xl: 9 };
 
 const CPCDInline: React.FC<CPCDInlineProps> = ({
     items,

@@ -2677,9 +2677,11 @@ than derived from `glyph-words.bin` at runtime, because the word pool loads
 separately and later — hints would otherwise not appear until it landed. Regenerate
 after a `frequencyScore` backfill moves, or the tiers go stale.
 
-⚠️ **The generator needs `dictionaryentries_zh.components` populated.** A PPE →
-dev data pull can leave it empty on a dev box (found empty 2026-09-24 and 2026-10-31); re-run
-`backfill-character-components.js` first. On that date the re-run reproduced
+⚠️ **The generator needs `dictionaryentries_zh.components` populated.** Until
+2026-11-14 PPE had never run the components backfill, so a PPE → dev data pull left it
+empty on a dev box (found empty 2026-09-24 and 2026-10-31). PPE is now filled (every
+single-char row) and the step is in the zh manifest (`requiredScripts.js`), so a pull
+carries it. If it is ever empty, re-run `backfill-character-components.js` first. On that date the re-run reproduced
 the committed bags **byte for byte** — only `frequencyScore` / discoverable
 drift differed.
 
@@ -2705,7 +2707,8 @@ drift differed.
 - `src/features/beginnerKeyboard/HintBubble.tsx` — the bk wrapper: positions the bubble
   over its chip and commits on tap. The look lives in the shared
   `src/components/hintBubble/HintBubbleSurface.tsx`, which the flp hint pawn's speech bubble
-  also uses (`docs/HINT_PAWN.md`); the grow / pop / ring keyframes in
+  also uses (`docs/HINT_PAWN.md`) and the app notifications (`docs/NOTIFICATIONS.md`) —
+  those two leave with a plain fade (`exit="fade"`), the bk chips keep the pop; the grow / pop / ring keyframes in
   `src/components/hintBubble/bubbleKeyframes.ts`, also played by `CpcdPopup`
   (docs/EIP_SHEET_GESTURES.md § "CpcdPopup motion")
 - `src/components/hintBubble/useHintBubblePresence.ts` → `reconcilePresence`

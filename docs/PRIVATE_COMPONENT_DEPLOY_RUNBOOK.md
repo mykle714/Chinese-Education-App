@@ -3,7 +3,8 @@
 > **TEMPORARY.** Delete this file (and its row in [DEPLOY_RUNBOOKS.md](./DEPLOY_RUNBOOKS.md))
 > once PPE is verified.
 >
-> **Status: NOT DEPLOYED.** Code and assets are on dev (uncommitted as of 2026-11-15).
+> **Status: DEPLOYED 2026-11-15 (`75ee4fb`).** Step 2 run on PPE (8 rows written);
+> V1–V3 passed. **Still open:** the in-app check below (keyboard chip + Word Search hint).
 > Dev's eight rows were rewritten directly so the bundled assets could be built from them.
 
 ## What ships
@@ -26,11 +27,14 @@ leave already-stamped rows alone — "patch, don't bump": no `SCRIPT_VERSION` ch
 ## Steps
 
 1. **Deploy** with `/deploy` as usual. No migration to run or hold back.
-2. **Re-run the components step for the eight characters on PPE** (inside the backend
-   container, after the rebuild so it runs the new `decompose.js`):
+2. **Re-run the components step for the eight characters on PPE**, after the pull so it
+   runs the new `decompose.js`. On the PPE **host**, through `run-ppe.sh` — the PPE backend
+   image ships neither `scripts/backfill/` nor tsx, so `docker exec cow-backend …` fails
+   with `ERR_MODULE_NOT_FOUND` (it did on 2026-11-15, as first written here):
 
    ```bash
-   docker exec cow-backend npx tsx scripts/backfill/chinese/backfill-character-components.js \
+   cd ~/vocabulary-app/server
+   scripts/backfill/run-ppe.sh scripts/backfill/chinese/backfill-character-components.js \
      --words=然,祭,察,擦,蔡,嚓,镲,炙 --force
    ```
 
@@ -60,7 +64,8 @@ SELECT word1, components
 -- V3: bystanders unchanged — 肰 alone keeps ⺼, 燃 keeps 然 whole.
 SELECT word1, components FROM dictionaryentries_zh
  WHERE language = 'zh' AND word1 IN ('肰','燃');
--- expect 肰 → ["⺼","犬"] (or its frequency order), 燃 → ["火","然"].
+-- expect 燃 → ["火","然"], and 肰 → ["⺼","犬"] if the row exists (PPE has no 肰 row as of
+-- 2026-11-15, so only 燃 comes back there).
 ```
 
 **In the app:** on the beginner keyboard, drawing 然's top-left (4 strokes) offers a chip
@@ -68,8 +73,8 @@ drawn as 夕-with-two-dots (2nd chip on an empty buffer, 1st once 犬 and 灬 ar
 + that chip finds 然. In a Word Search flp break on the No Pinyin board, 然's parts reveal
 the same outline (not an empty box).
 
-**If V1 returns fewer than 8:** the container ran old code — confirm the deploy rebuilt
-`cow-backend`, then repeat step 2.
+**If V1 returns fewer than 8:** the host checkout ran old code — confirm `git pull` reached
+`75ee4fb` or later in `~/vocabulary-app`, then repeat step 2.
 
 ## Rollback
 

@@ -16,13 +16,13 @@ CLAUDE.md § "Nonstandard deploys need a temp runbook"; the deploy procedure its
 > `schema_migrations` and `migrate.sh --dry-run`, and treat any disagreement as this
 > file (or the runbook banner) being stale.
 
-PPE is current through migration **186** (2026-11-09). Latest code deploy: `fe8347c` (2026-11-12, no migrations).
+PPE is current through migration **192** (2026-11-15). Latest code deploy: `75ee4fb` (2026-11-15, migrations 190–192).
 
 ## Open runbooks
 
 | Runbook | What | Status | Still open because |
 |---|---|---|---|
-| [PRIVATE_COMPONENT_DEPLOY_RUNBOOK.md](./PRIVATE_COMPONENT_DEPLOY_RUNBOOK.md) | Private-use component U+E000 (the two-dot ⺼ of 然 祭 炙). **No migration**; after the rebuild, re-run `backfill-character-components.js --words=然,祭,察,擦,蔡,嚓,镲,炙 --force` on PPE | Not deployed (on dev, uncommitted, 2026-11-15) | Whole runbook |
+| [PRIVATE_COMPONENT_DEPLOY_RUNBOOK.md](./PRIVATE_COMPONENT_DEPLOY_RUNBOOK.md) | Private-use component U+E000 (the two-dot ⺼ of 然 祭 炙). **No migration**; after the pull, re-run `backfill-character-components.js --words=然,祭,察,擦,蔡,嚓,镲,炙 --force` on PPE via `run-ppe.sh` | Deployed 2026-11-15 (`75ee4fb`; 8 rows written; V1–V3 passed) | In-app check: the keyboard chip and a Word Search No Pinyin hint for 然 |
 | [LOGIN_REWORK_DEPLOY_RUNBOOK.md](./LOGIN_REWORK_DEPLOY_RUNBOOK.md) | Login rework: expand **188** (username, phone, verified-at, `email_codes`) BEFORE the rebuild, contract **189** (drop `users."isPublic"`) AFTER it; new env `RESEND_API_KEY` (+ optional `FIREBASE_PROJECT_ID`, `VITE_FIREBASE_*`) | Deployed 2026-11-14 (`b242d8a`; 187 + 188 before the rebuild, 189 after; V1–V4 + HTTP checks passed) | V5, V7, V8 in the app; V6 waits for `RESEND_API_KEY` (DEFERRED_WORK item 50) |
 | [NM_IW_REMOVAL_DEPLOY_RUNBOOK.md](./NM_IW_REMOVAL_DEPLOY_RUNBOOK.md) | Night Market + Immersive World removal: drop migration **185** (8 tables, `users."isTemplateAuthor"`, `nightmarket_unlocks_for_minutes`) AFTER the rebuild; `install-timers.sh` required (maintenance unit loses its prune step) | Deployed 2026-11-09 (`6a227da`; 185 + 186 applied after the rebuild; checks 1–5 passed) | Check 6: the first `cow-maintenance` run on the new unit (00:01 tick) must succeed |
 | [CLUSTER_V11_DEPLOY_RUNBOOK.md](./CLUSTER_V11_DEPLOY_RUNBOOK.md) | Clusterer zh v11 / es v5 (translation-test prompt). **No migration**; re-stamp unflagged zh rows on PPE | Deployed 2026-10-30 (28,210 re-stamped, 93 held back; manifest sync ✅; 0 `selectedSense` on flagged words) | Step 3 heals (est `senseDict` re-tags, flagged words' `longDefinition`) await a user decision |
@@ -32,6 +32,8 @@ PPE is current through migration **186** (2026-11-09). Latest code deploy: `fe83
 | [GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md](./GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md) | Gloss phase-2 half B, the runtime guard (**no migration**) | Deployed 2026-08-24; infrastructure checks passed | Someone must open a real game board and confirm it fills rather than coming back short (the one over-blocking symptom the checks cannot see) |
 
 ## Deploy history and lessons
+
+Deployed 2026-11-15 (`75ee4fb`), migrations **190–192** (username shape, passwords for any channel, nonbinary gender — all loosen `users` CHECKs, applied after the pull and BEFORE the rebuild, as their headers ask), plus the U+E000 private component (runbook above, still open for its in-app check). **Lesson:** a runbook that runs a backfill on PPE must call it through `server/scripts/backfill/run-ppe.sh` on the host. The PPE backend image has no `scripts/backfill/` and no tsx, so `docker exec cow-backend npx tsx scripts/…` fails with `ERR_MODULE_NOT_FOUND`; the U+E000 runbook was first written that way.
 
 Deployed 2026-11-15 (`ac4cef6`), **no migration**, no runbook. Ships `chinese/backfill-long-definitions` **v16** with the manifest bumped in `server/scripts/backfill/shared/lib/requiredScripts.js` — a deliberate choice: every v15-stamped discoverable zh row is now version-stale and heals in place (on-first-sort worker / cron) rather than via a one-off re-run. Also adds the `chinese/backfill-character-components` manifest step (`singleChar`), whose rows PPE had already filled by an untargeted run on 2026-11-14. **Lesson:** `database/deploy/migrate.sh --dry-run` run from the PPE host has no DB password (`fe_sendauth`); use `schema_migrations` MAX vs the highest numbered file instead.
 

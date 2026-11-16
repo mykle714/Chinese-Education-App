@@ -3,7 +3,7 @@ import { Box, Button, Dialog, DialogContent, InputAdornment, TextField, Typograp
 import { SettingsSection } from "../../components/primitives";
 import { useAuth } from "../../AuthContext";
 import { changeName, changePhone, changeUsername, checkUsername, confirmEmailChange, startEmailChange } from "../../api/auth";
-import { normalizeUsername, usernameProblem } from "../../../server/contracts/wire";
+import { USERNAME_MAX_LENGTH, normalizeUsername, usernameProblem } from "../../../server/contracts/wire";
 import { phoneAuthConfigured, sendSmsCode, type PendingSms } from "../../utils/firebasePhone";
 import { formatPhone, parseEmail, parsePhone } from "../login/identifier";
 import { COLORS } from "../../theme/colors";
@@ -136,7 +136,7 @@ function UsernameField({ current, onSaved }: { current: string; onSaved: (u: Use
                     fullWidth
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
-                    inputProps={{ autoCapitalize: "none", autoCorrect: "off", spellCheck: false, maxLength: 21, "data-beginner-keyboard": "off" }}
+                    inputProps={{ autoCapitalize: "none", autoCorrect: "off", spellCheck: false, maxLength: USERNAME_MAX_LENGTH + 1 /* room for a typed "@" */, "data-beginner-keyboard": "off" }}
                     InputProps={{ startAdornment: <InputAdornment position="start">@</InputAdornment> }}
                 />
                 <Button className="account-identity-section__username-save" variant="outlined" onClick={save} disabled={!changed || !ok || busy} sx={{ borderRadius: "14px", height: 40 }}>

@@ -78,28 +78,110 @@ platform at rest (`useBootScene` → App.tsx → `BootSceneStill` → `LaunchScr
 `LaunchSceneStill`, so the page never imports the Deck Tower kit), and the form in a raised white
 card. The scene stays **exactly where the drop left it**: `LaunchSceneStill` places it as the
 cover does (feet `FEET_AT_SCREEN_Y` = 0.8 down the box, pawn centred across), and the form goes in
-the region above it (`BootSceneRenderProps.children`, ending just over the pawn's head). The form
-centres in that sky when it fits and scrolls inside it when it does not (the details step on a
-short phone), so it never covers the pawn. The card **slides in from the top** once the boot
-cover has gone (after the circle on a cold start, at once otherwise): a 600 ms ease-out, no
-gravity, no bounce (`src/pages/login/useCardSlideIn.ts`; off under reduced motion; once per
-visit, not per step).
+the region above it (`BootSceneRenderProps.children`, ending just over the pawn's head).
+
+**Layout: a fixed title, windows hung below it** (owner, 2026-11-15). The **app title** has one
+spot and never moves: `TITLE_TOP_SHARE` (14 %) of the way down the sky region, never above
+`TITLE_MIN_TOP` (`LoginPage.tsx`). It is a **placeholder**: the app name (`usePageTitle.ts` →
+`APP_NAME`) in plain bold display type, until a wordmark is designed. Every window hangs from
+16 px below it (`TITLE_TO_CARD_GAP_PX`) and grows **downward only**, covering the pawn when it
+must ("Other ways to sign in" opening, a longer step). **Create account** (the details step) is
+the exception: tall enough to need the screen, it starts near the top (`TALL_CARD_TOP`) and
+covers the title. The title sits outside `login-page__scroller`, under it, so it stays put while
+a window scrolls; the scroller reaches the bottom of the screen (`belowPx`, measured with a
+ResizeObserver along with the sky height `skyPx`), so a grown window covers the pawn instead of
+being clipped. Title and card **slide in from the top** together once the boot cover has gone
+(after the circle on a cold start, at once otherwise): a 600 ms ease-out, no gravity, no bounce,
+the slide distance measured to the card's bottom
+(`src/pages/login/useCardSlideIn.ts`; off under reduced motion; once per visit, not per step).
+
+**Test sign-up identifiers** (owner, 2026-11-15): the phone number `444 444 4444` and the email
+`4444@4444.com` always walk that channel's sign-up flow and never create an account
+(`src/pages/login/testSignUp.ts` → `TEST_SIGN_UP_PHONE`, `TEST_SIGN_UP_EMAIL`,
+`testSignUpNext`). Both are pure client-side dry runs that read **exactly** like the real flow: a
+pretend send (`TEST_SEND_DELAY_MS`), the server's own wording for every failure, and the code
+(`444444`, `TEST_SIGN_UP_CODE`) never shown.
+- **Phone:** step 1 lets it continue even without phone sign-in configured
+  (`IdentifierStep.tsx` → `phoneIsTest`); `PhoneStep.tsx` sends no SMS, plays the "Sending a
+  code…" beat, and takes only `444444` (else "That code is wrong").
+- **Email:** `CodeStep.tsx`'s "Sign in with password" answers "Wrong email or password" (an
+  unknown address), and "Send code" / "Forgot password?" play a pretend send
+  (`TEST_CODE_SENT`); `CodeStep.tsx` takes only `444444` for sign-in (else "That code is wrong
+  or has expired"), and a reset always fails as it would for an address with no account (new
+  password checked first, as the server does).
+- **Both:** `DetailsStep.tsx` skips `completeSignUp` on "Create account" (`onTestFinished`; an
+  email sign-up's password is checked first with `wire.ts` → `passwordProblem`, the server's
+  own rule, reported in the form message where the server's rejection lands), and
+  `LoginPage.tsx` returns to step 1 with "Test sign-up finished. No account was created."
+  (`testFinished`), the only giveaway. The only server call on either path is the read-only
+  username check.
+- The server replies are copied into `testSignUp.ts` (`TEST_CODE_SENT`,
+  `TEST_BAD_EMAIL_CODE_MESSAGE`, `TEST_WRONG_CREDENTIALS_MESSAGE`); keep them in step with
+  `SignInService.ts` (`RESEND_AFTER_S`, `CODE_TTL_MIN`, `BAD_CODE_MESSAGE`) and
+  `UserService.ts` (`WRONG_CREDENTIALS_MESSAGE`).
+- The phone field is still disabled while phone sign-in is not configured, so on such a build
+  the test number cannot be typed (the email works everywhere).
+
+**Window changes slide left** (owner, 2026-11-15): every change of window (a new step, back steps
+included, and step 1's phone ⇄ email swap) translates the card left: the old card slides off
+to the left as the new one comes in from the right, side by side (320 ms, the page slide's
+ease-out). `src/pages/login/WindowSlide.tsx` wraps `LoginCard`; `LoginPage.tsx` → `windowKey`
+names the window (`identifier-phone` / `identifier-email` / the step kind; step 1 reports its
+swaps through `IdentifierStep` → `onModeChange`). The outgoing card is a DOM clone taken in
+`getSnapshotBeforeUpdate` and laid over `.login-page` at its old rect (inert, aria-hidden, ids
+stripped). The title does not move. A swap folds "Other ways to sign in" at once
+(`Disclosure` → `animate={false}`) so the new window arrives folded. The scroller is
+`overflow-x: hidden` and resets any sideways scroll a mid-slide autofocus causes. Off under
+reduced motion.
+
+**Verification windows** (owner, 2026-11-15; supersedes the email password window). After the
+identifier, BOTH channels land on a verification window that sends **nothing until tapped**
+("Send code" / "Text me a code": a text costs money, and a password user should not trigger a
+send). The window is **"Continue with email"** over the address with an inline **"Change"**
+(`loginUi.tsx` → `IdentifierLine`, back to step 1), or **"Continue with phone"** with no number
+shown, just **"Use a different phone number"** (owner, 2026-11-15), then a proper
+**accordion** (`loginUi.tsx` → `Accordion`) bleeding to the card's edges: two sections, each a
+full-width header row (label + chevron) over its content, exactly ONE open at a time (the open
+header is `aria-disabled`; tapping the closed one swaps them, both folding at 250 ms). Closed
+headers sit on paper, the open section on white.
+- **Same height, both sections** (owner, 2026-11-15): switching sections never resizes the
+  card. Both are built from the same pieces in the same order, a field with its reserved note
+  line, a plate button, a row of text links, all spaced by `loginUi.tsx` →
+  `ACCORDION_SECTION_GAP`. On sign-in the code field's note line carries its error (and, on
+  email, the status "We'll email you…" / "We emailed you…" / "New code sent…"), exactly where
+  the password field keeps its error, so neither an error nor a send grows a section. (Reset
+  windows keep their boxed form message: their errors can be about the new password.)
+- **"Email me a code" / "Text me a 6-digit code"** (open by default): the code field
+  (always laid out, disabled until a send) and the primary button whose label swaps "Send code"
+  / "Text me a code" → "Continue", so sending moves nothing; then the resend row.
+- **"Sign in with password"** (`PasswordSignInForm.tsx`): password, gold "Sign in",
+  "Forgot password?". Offered for every identifier whether or not it has an account; the
+  server answers every failure identically (`SignInService.passwordSignIn` →
+  `UserService.authenticateWithPassword`: one bcrypt compare, "Wrong email or password" /
+  "Wrong phone number or password"), so it reveals nothing. Its "Forgot password?" leads to that
+channel's reset window: email sends a reset code (`CodeStep` purpose `reset`); phone moves to the
+reset version of the phone window (`PhoneStep` purpose `reset`: SMS code + new password →
+`POST /api/auth/password/resetWithPhone`). The **password is optional for every account**, chosen
+on Create account or later in Settings ("Set a password", `SetPasswordSection.tsx`, step-up
+gated); migration 191 dropped 188's `chk_users_password_needs_email`.
 
 ```
-identifier ─ email ─▶ password │ "Email me a code" │ "Forgot password?"   (same for every address)
-           │              └─▶ code ─▶ signed in (known) │ details (new)   (verify first)
-           │              └─▶ reset code + new password ─▶ signed in
-           └ phone ─▶ SMS code (Firebase) ─▶ signed in (known) │ details (new)
-details: @username (live check) · name (optional) · password (email only) · gender · DOB
+identifier ─ email ─▶ verify: "Send code" ─▶ code ─▶ signed in (known) │ details (new)   (verify first)
+           │                └ "Sign in with password" ─▶ signed in │ "Forgot password?" ─▶ reset code + new password ─▶ signed in
+           └ phone ─▶ verify: "Text me a code" ─▶ SMS code (Firebase) ─▶ signed in (known) │ details (new)
+                            └ "Sign in with password" ─▶ signed in │ "Forgot password?" ─▶ SMS code + new password ─▶ signed in
+details: @username (live check) · name (optional) · password (optional, either channel) · gender (optional) · DOB (optional)
 ```
 
 | File | Role |
 |---|---|
 | `src/pages/LoginPage.tsx` | Step state, the session-expired notice, the one post-sign-in redirect (a sign-in made on the page leaves through the reverse boot circle, closing onto the platform: LAUNCH_SCREEN.md § "Leaving the login screen") |
-| `src/pages/login/loginUi.tsx` | `PlateButton` (gold action plate / white outlined plate), `Field`, `LoginCard` (rounded edge), `TextAction`, `FormMessage`, `OrDivider`, `StepHeading` |
+| `src/pages/login/loginUi.tsx` | `PlateButton` (gold action plate / white outlined plate), `Field`, `LoginCard` (rounded edge), `TextAction`, `FormMessage`, `OrDivider`, `Disclosure` (the card's pull-down bottom section), `Accordion` (the verification windows' exactly-one-open sections), `IdentifierLine` (identifier + inline "Change"), `StepHeading`, `SwapText` (a status line whose wording changes without reflowing: all wordings share one grid cell), `CodeLinksRow` (the code steps' never-wrapping "Resend code in 30s · Back / Change number" row, its countdown width reserved) |
 | `src/pages/login/identifier.ts` | `parseEmail`, `parsePhone` (E.164, no guessed country; the settings change-email / change-phone field), `spreadDigits` + `parseUsPhoneDigits` (the login screen's ten phone boxes), `formatPhone` (display), `errorMessage` |
 | `src/pages/login/PhoneDigitsField.tsx` | The ten-box +1 phone field: auto-advance, Backspace back, paste / autofill fills all ten |
-| `src/pages/login/IdentifierStep.tsx`, `EmailPasswordStep.tsx`, `CodeStep.tsx`, `PhoneStep.tsx`, `DetailsStep.tsx` | The steps |
+| `src/pages/login/IdentifierStep.tsx`, `CodeStep.tsx` (email verification + reset), `PhoneStep.tsx` (phone verification + reset), `DetailsStep.tsx` | The steps |
+| `src/pages/login/PasswordSignInForm.tsx` | "Sign in with password" + "Forgot password?", the verification windows' second accordion section |
+| `src/pages/account/SetPasswordSection.tsx` | Settings → "Set a password" for an account without one (step-up → `POST /api/auth/password/set`) |
 | `src/pages/login/useResendCountdown.ts` | The 30 s resend timer |
 | `src/pages/login/useCardSlideIn.ts` | The card's slide in from the top after the boot cover |
 | `src/api/auth.ts` | Every sign-in / channel call (through `http.ts`) |
@@ -190,7 +272,7 @@ before revoking sessions (the old handler revoked first). Tests:
 
 | Change | Rule |
 |---|---|
-| `+ username` text NOT NULL | UNIQUE; CHECK `^[a-z][a-z0-9_]{2,19}$`; stored lowercase; backfilled from `name` (Q22) |
+| `+ username` text NOT NULL | UNIQUE; CHECK `chk_users_username_shape` (188: `^[a-z][a-z0-9_]{2,19}$`; **migration 190** replaced it with Instagram's rules, see Q21); stored lowercase; backfilled from `name` (Q22) |
 | `+ phone` text NULL | UNIQUE; CHECK E.164 `^\+[1-9][0-9]{6,14}$` |
 | `+ "emailVerifiedAt"` timestamptz | Existing email accounts are stamped `now()` (Q4) |
 | `+ "phoneVerifiedAt"` timestamptz | |
@@ -243,28 +325,28 @@ storage under Capacitor is held ([DEFERRED_WORK.md](./DEFERRED_WORK.md) item 47)
 |---|---|---|
 | Q1 | Should the boot cover play on **every** cold start, including deep links and a signed-out launch to `/register`? Today it only plays when the launch lands on `/` | **Every cold start** (owner, 2026-11-13). The circle opens onto whatever route resolved underneath. `launchDueOnMount`'s "landed on `/`" rule goes away |
 | Q2 | After a **mid-session** expiry, should the user get a plain redirect with no cover? Does return-to apply there, or only to cold-start deep links? (Returning into a game starts it fresh) | **Plain redirect, no cover, and after login always to `/`** (owner, 2026-11-13). Return-to (R1) applies **only** to a cold-start deep link. The interceptor's path into `/login` passes no `from` |
-| Q3 | Phone auth style: passwordless SMS code, or phone + password? Should email also allow a code login? | **Passwordless SMS code** for phone accounts (owner, 2026-11-13): a phone account has no password, and a code signs it in for 180 days (§ 4e). Email code login: Q8 |
+| Q3 | Phone auth style: passwordless SMS code, or phone + password? Should email also allow a code login? | **Passwordless SMS code** for phone accounts (owner, 2026-11-13): a phone account has no password, and a code signs it in for 180 days (§ 4e). Email code login: Q8. **Amended (owner, 2026-11-15):** a phone account MAY have an optional password (migration 191), used through "Sign in with password" on the phone verification window; the SMS code remains the default |
 | Q4 | Verification policy: does it block using the app, or is it a soft prompt? What happens to existing unverified accounts? | **Block until verified** (owner, 2026-11-13). A new signup cannot use the app until it enters the code. Existing accounts are **marked verified** by the migration that adds the verified-at column (owner, 2026-11-13), so no existing user hits the verification screen |
 | Q5 | Email sender: SES / Resend / Postmark? | **Resend** (owner, 2026-11-13): API key plus SPF/DKIM records in Cloudflare; the free tier covers this app's volume |
 | Q6 | Phone: Firebase Phone Auth or Twilio Verify? | **Firebase Phone Auth** (owner, 2026-11-13), used only to check the phone is real (§ 4c) |
 | Q7 | Should new signups still default to `isPublic = true`? | **Remove `isPublic` as a concept; every account is always public** (owner, 2026-11-13). Its one live effect was hiding a private user's streak on the leaderboard; the client's "demo account" reading (`ProtectedRoute` `requireFullAccount`, `access: "account"`, games `requiresAuth`) was dead code. In scope: § 7 |
-| Q8 | Can an email account also sign in with an emailed code? | **Yes, either** (owner, 2026-11-13): the password step offers "Email me a code instead" |
-| Q10 | Entry screen structure | **One screen, identifier first** (owner, 2026-11-13): one "email or phone" field; the server says whether the account exists, then sign-in (password / code) or sign-up continues. One route replaces `/login` + `/register`. **Amended (owner, 2026-11-14): phone first.** Step 1 opens on a ten-box US / Canada phone field (fixed "+1", boxes grouped 3·3·4; `PhoneDigitsField.tsx`, `identifier.ts` → `spreadDigits`, `parseUsPhoneDigits`) and its gold Continue. Below an "or": "Continue with email" swaps the phone field for the Email box ("Use phone instead" swaps back), then reserved single-sign-on slots (Apple, Google: disabled placeholders, `IdentifierStep.tsx` → `SSO_PROVIDERS`). While phone sign-in is not configured the phone field stays first but greyed out with "Phone sign-in is coming soon." This reverses the earlier "no guessed country" rule for the login screen only; the settings change-phone field still takes any E.164 number (`parsePhone`). (Superseded the same day's two-box Email + Phone layout.) |
+| Q8 | Can an email account also sign in with an emailed code? | **Yes, either** (owner, 2026-11-13): the password step offers "Email me a code instead". **Amended (owner, 2026-11-15):** the code is now the default and the password the folded alternative (§ 3 "Verification windows") |
+| Q10 | Entry screen structure | **One screen, identifier first** (owner, 2026-11-13): one "email or phone" field; the server says whether the account exists, then sign-in (password / code) or sign-up continues. One route replaces `/login` + `/register`. **Amended (owner, 2026-11-14): phone first.** Step 1 opens on a ten-digit US / Canada phone field (fixed "+1", boxes grouped 3·3·4; `PhoneDigitsField.tsx`, `identifier.ts` → `spreadDigits`, `parseUsPhoneDigits`) and its gold Continue. Below an "or": "Continue with email" swaps the phone field for the Email box (a mirror "Continue with phone" swaps back), then reserved single-sign-on slots (Apple, Google: disabled placeholders, `IdentifierStep.tsx` → `SSO_PROVIDERS`). While phone sign-in is not configured the phone field stays first but greyed out with "Phone sign-in is coming soon." This reverses the earlier "no guessed country" rule for the login screen only; the settings change-phone field still takes any E.164 number (`parsePhone`). (Superseded the same day's two-box Email + Phone layout.) **Quietened (owner, 2026-11-15):** no subline under "Welcome", no "US and Canada numbers" hint under the phone boxes, the ten digit boxes became **underlined spots** (a 2 px rule, `border` when empty and ink when focused / filled / in error; `PhoneDigitsField.tsx` → `SPOT_*`), and "Continue with email" + the SSO slots fold into the card's closed-by-default bottom section, "Other ways to sign in" (`loginUi.tsx` → `Disclosure`: a full-bleed paper strip under one hairline with a quiet centred caption + chevron that rides the bottom edge: the options unroll at the top seam under the hairline and push the caption down; it replaces the "or" divider on this step). **No "+1" (owner, 2026-11-15):** the fixed country code was dropped too. In its place: the first spot swallows a typed 0 or 1 (the habitual country code; no NANP area code starts with either), typing always starts from the first empty spot (a tap past it lands there; `spreadDigits` never fills past it), the digit that completes the number releases focus (`PhoneDigitsField.tsx` → `put`) rather than leaving the last spot selected, a "Clear" button sits in the field's top-right corner on the label's line while any spot holds a digit (`login-phone-digits__clear`; empties all ten, caret to the first), and a number failing the NANP shape check is told "Only US and Canada numbers work right now" (`identifier.ts` → `US_ONLY_MESSAGE`), the field's only US-only cue. On the email side, the old "Use phone instead" text link under the form became a "Continue with phone" plate inside "Other ways to sign in", mirroring "Continue with email" on the phone side. **Continue gated (owner, 2026-11-15):** the phone Continue stays greyed out until the ten spots hold a valid number (`IdentifierStep.tsx` → `phoneValid`); since a submit can then no longer explain a bad number, a full-but-invalid one shows its error live (`phoneError`), while a partly typed one shows nothing. The email Continue is gated the same way (`emailValid`); its error (`emailError`) shows once the learner leaves the box with an invalid address, and clears when they type again. **Errors never grow the card (owner, 2026-11-15):** the note line of every field that can show an error (`loginUi.tsx` → `FieldNote`; the caller passes `error`, `null` when clear) is always laid out, one caption line tall even when empty, with the hint and the error stacked in one grid cell (the inactive one invisible), so an error appearing or clearing moves nothing. A field that can never error and has no hint (Name) draws no line, so no blank gap. |
 | Q11 | Forgot password for email accounts? | **In scope** (owner, 2026-11-13): reset via an emailed code, on the same code table and screen |
 | Q12 | Look | **Continue the launch sky** (owner, 2026-11-13): the circle opens onto the same day sky (`COLORS.bluMk`) with the pawn on its platform; the form sits below as outlined, rounded-edge cards |
 | Q13 | Account enumeration | **Hide it** (owner, 2026-11-13): no response may reveal whether an email or phone has an account. Flow in Q17 |
 | Q14 | Sign-up order | **Verify first, then details** (owner, 2026-11-13): identifier → code → name / gender / DOB (+ password for email) → account created. An unverified account never exists, so "block until verified" needs no gate inside the app |
 | Q15 | Route | **Keep `/login`** as the one screen; `/register` redirects to it (owner, 2026-11-13) |
 | Q16 | Emailed-code rules | **Defaults** (owner, 2026-11-13): 6 digits, valid 10 min, 5 wrong tries kills the code, resend after 30 s, max 5 codes per address per hour, stored hashed. Firebase applies its own rules to SMS |
-| Q17 | The hidden-enumeration sign-in flow | **Accepted** (owner, 2026-11-13). After the identifier, every email sees the same step: a password field, "Email me a code" and "Forgot password?". A wrong password and an unknown account give the same error ("Wrong email or password. New here? Email me a code"), and the password check runs a dummy hash for unknown accounts so timing matches. "Email me a code" always sends: a known account signs in, an unknown address continues to sign-up. Phone is code-only; the server decides known vs new after Firebase confirms the number |
+| Q17 | The hidden-enumeration sign-in flow | **Superseded in form, kept in substance (owner, 2026-11-15):** there is no password window; every identifier lands on the same verification window, sends nothing until tapped, and "Sign in with password" is shown for every identifier with one identical failure message per channel. Original: **Accepted** (owner, 2026-11-13). After the identifier, every email sees the same step: a password field, "Email me a code" and "Forgot password?". A wrong password and an unknown account give the same error ("Wrong email or password. New here? Email me a code"), and the password check runs a dummy hash for unknown accounts so timing matches. "Email me a code" always sends: a known account signs in, an unknown address continues to sign-up. Phone is code-only; the server decides known vs new after Firebase confirms the number |
 | Q18 | SMS fraud without a region allowlist | **Layered defenses** (owner, 2026-11-13): Firebase App Check (reCAPTCHA Enterprise); reCAPTCHA SMS fraud scoring (Identity Platform SMS defense); a GCP budget alert on SMS spend; and a runbook step to switch on a region **denylist** for the countries an attack comes from. ⚠️ Feature names and pricing to be verified before building |
-| Q19 | Sign-up details | **Name optional; username required (see Q20); gender and DOB as today** (required, with "Prefer not to answer") (owner, 2026-11-13) |
+| Q19 | Sign-up details | **Name optional; username required (see Q20); gender and DOB as today** (required, with "Prefer not to answer") (owner, 2026-11-13). **Amended (owner, 2026-11-15): gender and DOB are optional** ("Gender (optional)", "Date of birth (optional)"); the date of birth lost its "Prefer not to answer" checkbox, and a blank sends null (`DetailsStep.tsx`). Gender is Female · Male · **Non-binary** (migration 192 widened `chk_users_gender`; Settings → About you shows it too) · **Prefer not to answer** (a chip again; it and a blank both send null). The password box ("Password (optional)", a two-line hint: "At least 8 characters, with a letter and a number." / "A password lets you sign in without a code.") unrolls a **Confirm password** box once it has content, checked on submit ("The passwords don't match"). **Start over** sits in the card's top-right corner, on the heading's line. The step also lost the "Verified <email / phone>" subline, the Immersive World purpose line and the name hint, and the username hint is just "You can change it any time." |
 | Q20 | Username | **Required, a public handle and an add-friend key** (owner, 2026-11-13). It is shown on leaderboards and friends in place of the name, and the add-friend field accepts it as well as the friend code. Email and phone are never shown to other users, and the leaderboard wire stops sending `email` |
-| Q21 | Username rules | **3–20 characters of a–z, 0–9 and `_`, starting with a letter, stored lowercase, unique across all users, with a small reserved list (admin, support, …). Changeable at any time, no cooldown** (owner, 2026-11-13) |
+| Q21 | Username rules | **3–20 characters of a–z, 0–9 and `_`, starting with a letter, stored lowercase, unique across all users, with a small reserved list (admin, support, …). Changeable at any time, no cooldown** (owner, 2026-11-13). **Amended (owner, 2026-11-15): Instagram's rules** — 1–30 characters of a–z, 0–9, `_` and `.`; no period at the start or end; no two periods in a row; may start with a digit or `_`. Still lowercase, unique, reserved list, changeable any time. `server/contracts/wire.ts` → `USERNAME_PATTERN` + `usernameProblem` (tests: `server/__tests__/usernameRules.test.ts`) and the `chk_users_username_shape` CHECK of **migration 190** (a superset of 188's, so it auto-runs before the rebuild in a standard `/deploy`; applied on dev 2026-11-15, **not yet on PPE**). `UserService.suggestUsername` no longer adds a `u_` prefix or pads to 3. |
 | Q22 | Usernames for existing accounts | **Auto-generated, no prompt** (owner, 2026-11-13): the migration derives one from `name` (lowercased, other characters → `_`, a digit suffix on collision); users change it in settings |
 | Q23 | Overlap with the in-progress friends rework | **Edit alongside** (owner, 2026-11-13): small, targeted edits to `FriendsService` / the friends screens to accept a username in add-friend |
 | Q24 | Settings editing in scope | **All four** (owner, 2026-11-13): change username, change name, add the other channel (email ↔ phone), change email / phone. The last two bring step-up re-auth (formerly DEFERRED_WORK item 46) into scope: password or a fresh code before the change, and a code to the new address |
-| Q9 | What does signup ask for? | **Email OR phone** (owner, 2026-11-13). An email account has a password; a phone account is passwordless. Adding the other channel to an existing account is a follow-up |
+| Q9 | What does signup ask for? | **Email OR phone** (owner, 2026-11-13). An email account has a password; a phone account is passwordless. Adding the other channel to an existing account is a follow-up. **Amended (owner, 2026-11-15):** the password is OPTIONAL for either channel (Create account → "Password (optional)"; Settings → "Set a password"); migration 191 |
 
 ## 7. Scope
 
@@ -275,7 +357,7 @@ storage under Capacitor is held ([DEFERRED_WORK.md](./DEFERRED_WORK.md) item 47)
 - One identifier-first `/login` screen in the launch sky; `/register` redirects to it (Q10, Q12, Q15).
 - Email accounts: password **or** emailed code sign-in, forgot password, hidden enumeration (Q8, Q11, Q13, Q17).
 - Phone accounts: passwordless, through Firebase Phone Auth with the layered SMS-fraud defenses (Q3, Q6, Q18).
-- Verify-first sign-up: name optional, username required, gender + DOB as today (Q14, Q19–Q21).
+- Verify-first sign-up: name, gender and DOB optional, username required (Q14, Q19–Q21).
 - Settings: change username / name, add the other channel, change email / phone, with step-up re-auth (Q24).
 - Add-friend by username (Q20, Q23).
 - Remove `isPublic` everywhere: leaderboard streak masking, `ProtectedRoute` `requireFullAccount`,

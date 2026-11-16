@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
-const APP_NAME = "Cow";
+/** The app's name: the tab title, and the login screen's placeholder title (LoginPage.tsx). */
+export const APP_NAME = "Cow";
 
 /**
  * Sets the browser tab title for a page.

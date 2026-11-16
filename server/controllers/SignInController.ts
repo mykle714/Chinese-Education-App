@@ -12,7 +12,9 @@ import { respondWithError } from './httpErrors.js';
  *
  *   POST /api/auth/email/sendCode        { email, purpose: 'sign-in' | 'reset' }
  *   POST /api/auth/email/verifyCode      { email, code }            → signed-in | sign-up
+ *   POST /api/auth/password/signIn       { email | phone, password } → signed-in
  *   POST /api/auth/password/reset        { email, code, newPassword } → signed-in
+ *   POST /api/auth/password/resetWithPhone { idToken, newPassword } → signed-in
  *   POST /api/auth/phone/verify          { idToken }                → signed-in | sign-up
  *   POST /api/auth/signUp                { signUpTicket, username, name?, password?, gender?, birthDate?, tz? }
  *   GET  /api/auth/usernameAvailable     ?username=
@@ -26,6 +28,7 @@ import { respondWithError } from './httpErrors.js';
  *   POST /api/auth/email/startChange     { email, stepUpToken }
  *   POST /api/auth/email/confirmChange   { email, code }            → user
  *   POST /api/auth/phone/change          { idToken, stepUpToken }   → user
+ *   POST /api/auth/password/set          { newPassword, stepUpToken } → user (accounts with no password)
  *   PUT  /api/users/username             { username }               → user
  *   PUT  /api/users/name                 { name }                   → user
  *   DELETE /api/auth/deleteAccount       { password } | { stepUpToken }
@@ -47,7 +50,10 @@ export class SignInController {
   methods = (req: Request, res: Response): Promise<void> => this.run(req, res, this.methodsImpl);
   sendEmailCode = (req: Request, res: Response): Promise<void> => this.run(req, res, this.sendEmailCodeImpl);
   verifyEmailCode = (req: Request, res: Response): Promise<void> => this.run(req, res, this.verifyEmailCodeImpl);
+  passwordSignIn = (req: Request, res: Response): Promise<void> => this.run(req, res, this.passwordSignInImpl);
   resetPassword = (req: Request, res: Response): Promise<void> => this.run(req, res, this.resetPasswordImpl);
+  resetPasswordWithPhone = (req: Request, res: Response): Promise<void> => this.run(req, res, this.resetPasswordWithPhoneImpl);
+  setPassword = (req: Request, res: Response): Promise<void> => this.run(req, res, this.setPasswordImpl);
   phoneVerify = (req: Request, res: Response): Promise<void> => this.run(req, res, this.phoneVerifyImpl);
   devSendPhoneCode = (req: Request, res: Response): Promise<void> => this.run(req, res, this.devSendPhoneCodeImpl);
   devConfirmPhoneCode = (req: Request, res: Response): Promise<void> => this.run(req, res, this.devConfirmPhoneCodeImpl);
@@ -105,6 +111,21 @@ export class SignInController {
   private async verifyEmailCodeImpl(req: Request, res: Response): Promise<void> {
     const { email, code } = req.body ?? {};
     await this.sendOutcome(req, res, await this.signInService.redeemSignInCode(email, code));
+  }
+
+  private async passwordSignInImpl(req: Request, res: Response): Promise<void> {
+    const { email, phone, password } = req.body ?? {};
+    await this.sendSignedIn(req, res, await this.signInService.passwordSignIn({ email, phone }, password));
+  }
+
+  private async resetPasswordWithPhoneImpl(req: Request, res: Response): Promise<void> {
+    const { idToken, newPassword } = req.body ?? {};
+    await this.sendSignedIn(req, res, await this.signInService.resetPasswordWithPhone(idToken, newPassword));
+  }
+
+  private async setPasswordImpl(req: Request, res: Response): Promise<void> {
+    const { newPassword, stepUpToken } = req.body ?? {};
+    res.json(await this.signInService.setPassword(this.userIdOf(req), newPassword, stepUpToken));
   }
 
   private async resetPasswordImpl(req: Request, res: Response): Promise<void> {

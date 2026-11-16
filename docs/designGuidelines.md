@@ -32,13 +32,13 @@ object's wall:
 
 | Wall | Helpers | Rim light on | Users |
 |---|---|---|---|
-| Diagonal, outset (the tower style's (1, 1) extrusion) | `roundedEdgeFillet`, `roundedEdgeRimLight` | top + left edges | td filter keys (`TowerFilterKeys` → `keyShadow`), card-stock mini cards (`sortCardStock.ts`), the footer slab (`MobileFooter` → `slabLipShadow`) |
+| Diagonal, outset (the tower style's (1, 1) extrusion) | `roundedEdgeFillet`, `roundedEdgeRimLight` | top + left edges | td filter keys (`TowerFilterKeys` → `keyShadow`), card-stock mini cards (`sortCardStock.ts`), the footer slab (`MobileFooter` → `slabLipShadow`), the Account band spines (`Spine` → `spineShadow`) |
 | Diagonal, inset (a key set into a slab) | `roundedEdgeInsetFillet`, `roundedEdgeRimLight` | top + left edges | none since 2026-11-10 (the footer's active tab, its one user, became a flat sliding selector) |
-| Straight lip (`0 Npx 0 wall`, the wall head-on) | `roundedEdgeFilletDown`, `roundedEdgeRimLightTop` | top edge | flp plate buttons + game-break plates (`towerPlate.ts`), the game-break token (`GameBreakCard`), eip Add key + headword tile, acp keycaps, Dictionary keycaps, tone-keyboard keys, Match Speed cards |
+| Straight lip (`0 Npx 0 wall`, the wall head-on) | `roundedEdgeFilletDown`, `roundedEdgeRimLightTop` | top edge | flp plate buttons + game-break plates (`towerPlate.ts`), the game-break token (`GameBreakCard`), eip Add key + headword tile, acp keycaps, Dictionary keycaps, every beginner-keyboard key (`keycapStyle.ts` → `keycapShadow`), Match Speed cards |
 | Iso solid (SVG) | `IsoSolid` `roundedEdge={palette.edgeLight}` | the top's back edge | IsoCard, IsoPaperStack, raised IsoFloorLabel, IsoLever base, acp bins' top layers — [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md) § "The rounded edge" |
 
 Rules:
-- List the fillet before the wall; omit it when the wall is 0 (a key held flush keeps only
+- List the fillet before the wall (the diagonal INSET form lists it after its wall steps instead, so they cover all but its last 0.5px); omit it when the wall is 0 (a key held flush keeps only
   its rim light).
 - A key with an inset outline ring lists the ring FIRST and passes `insideRingPx` (the
   ring's width) to `roundedEdgeRimLightTop`, so the highlight sits just inside the outline.

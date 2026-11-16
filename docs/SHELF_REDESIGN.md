@@ -242,8 +242,8 @@ real ramp entry to build from.
   19–22 use off-palette pinyin hexes (`#0B8AD9`, `#F4A700`) and artboard 17 swaps
   tone 1 and 2. Both read as drafting slips against the `current` set; confirm with
   the user before acting on either.
-- **Not converted, deliberately:** the Dark / Ocean / Nature branches in
-  `ThemeContext.tsx` still hold old literals. D4 parks them.
+- **Not converted, deliberately:** the Dark branch in `ThemeContext.tsx` still holds old
+  literals. D4 parks it. (Ocean / Nature were removed 2026-11-15.)
 - **`TONE_COLORS` are ink, not fills.** Tone-colored pinyin is TEXT, so the four tones
   take the `*A` members even though the categories take pastels. Tones are their own
   semantic axis — a tone color does not mean "this syllable is comfortable"; the hue
@@ -865,7 +865,7 @@ Its first host, entry 2's Decks shelf, was deleted with the fdp on 2026-11-04.
 | `ShelfNote` | `.shnote` | A sentence under a row. |
 | `ShelfRow` `board={false}` | — | A row without a board also drops its 12px board gap. Used by the utcm band row (`DeckBuckets`), which `LibraryShelfWithVelocity` closes with a plain section divider instead. |
 | `Spine` | `.sp` and all its modifiers | The set-of-cards atom. |
-| `spineHeight(count)` | — | The count→height band function. |
+| `relativeSpineHeights(counts)` | — | A row's count→height mapping: relative to the row's max, with a minimum step between different counts (`spineGeometry.ts`). |
 
 The five spine variants — `base` 74×116, `tall` 140, `short` 52 (the design's 96; 64 from 2026-11-13, so a small band reads compact; 52 since 2026-11-14, once every band label fit one line — one name line plus the foot row plus ~4px of air. A two-line label would overflow it),
 `uni` 126, `vol` 86×134 — exist, as are the three slots (`pin`, `caption`,
@@ -877,16 +877,22 @@ The five spine variants — `base` 74×116, `tall` 140, `short` 52 (the design's
 - **The spine is a rounded bar, not a book (user, 2026-11-13).** The design's `.sp`
   draws a book seen edge-on: `11px 11px 4px 4px` corners and a dark strap down the left
   edge (`.sp::after`). Both are gone: the radius is `SPINE_SIZES.cornerRadius` (11px) on
-  all four corners and there is no `::after`. The inset white highlight down the right
-  face (`SHADOW.spine`) stays — it was briefly removed the same day and restored.
+  all four corners and there is no `::after`. (The inset white highlight down the right
+  face was briefly removed the same day and restored; it went for good 2026-11-15 — next item.)
   The spine's one host is `LibraryShelfPanel`
   (`src/components/velocity/LibraryShelfPanel.tsx`), where the band row reads as a bar
   chart. The choice was made while the spines sat in a white `SectionCard` box, where the
-  book cues read as noise; the box was dropped 2026-11-14 (user) and the bar stayed. The sideways shadow
-  offset stays (shadows.ts rule 2's one exception).
-  Code: `src/components/shelf/Spine.tsx` → `SpineRoot`;
+  book cues read as noise; the box was dropped 2026-11-14 (user) and the bar stayed.
+- **The spine is RAISED, not shadowed (user, 2026-11-15).** The soft sideways drop shadow
+  (the old `SHADOW.spine`, deleted along with the unused `spineSwatch`) became a solid
+  4px DIAGONAL wall showing below and to the right, like td's filter keys and the other
+  raised objects in the app, plus the hairline rounded edge (rim light + 0.5px fillet).
+  The wall is the face shaded 0.15 (`bandMaterial`'s right-wall step). No cast shadow.
+  The inset white highlight down the right face was removed with it (user): it implied
+  light from the right, against the wall's top-left light.
+  Code: `src/components/shelf/Spine.tsx` → `SpineRoot`, `spineShadow`, `SPINE_WALL_PX`;
   `src/components/shelf/spineGeometry.ts` → `SPINE_SIZES.cornerRadius`;
-  `src/theme/shadows.ts` → `SHADOW.spine`.
+  `src/theme/roundedEdge.ts`; `src/theme/shadeHex.ts` → `shadeHex`.
 - **The "make a new one" spine (`.sp.add`) was its own component (`AddSpine`), not a
   `Spine` variant** — it shared only the box. Its one host (the fdp's "+ new deck") went
   with Decks on 2026-11-04 and the component was deleted.
@@ -920,9 +926,16 @@ The five spine variants — `base` 74×116, `tall` 140, `short` 52 (the design's
 
 ### Consequences worth a second look
 
-- **The `spineHeight` cutoffs are a first cut** — `< 20` short, `< 100` base, `100+`
-  tall. The design specifies the three heights but not where a set moves between
-  them. Chosen against the app's actual spreads; wants real accounts on screen.
+- **Spine heights are relative to the row, not banded (user, 2026-11-15).** The first
+  cut (`spineHeight`: `< 20` short, `< 100` base, `100+` tall, absolute) drew 9 and 12
+  cards at the identical height. `relativeSpineHeights` now maps each count linearly
+  from the floor (`short`, 52px) to the ceiling (`tall`, 140px) by `count / max`, then
+  opens every gap between DISTINCT counts to at least `SPINE_MIN_HEIGHT_STEP` (14px),
+  pulling back under the ceiling if that overshoots. Ties stay level; order is kept.
+  Example: 43 / 9 / 12 / 9 → 140 / 70 / 84 / 70. Consequence: the largest band is always
+  the full 140px, even on a brand-new account with 3 cards.
+  Code: `src/components/shelf/spineGeometry.ts` → `relativeSpineHeights`,
+  `SPINE_MIN_HEIGHT_STEP`; `src/components/DeckBuckets.tsx` (passes `height`).
 - **Two counts on Account.** A3 warns against encoding the count as both height and
   numeral by reflex. Account keeps both (it is a stats block — the height compares the
   four bands, the numeral is the figure you went there for).
@@ -943,7 +956,8 @@ rather than two absolutely-positioned corners, so the two cannot overlap however
 the numeral gets. `collectionIcon.tsx` became `collectionGlyph.ts` in the process: it
 returns a Material Symbols NAME rather than a `@mui/icons-material` element (D3),
 because the spine scales the glyph against its own width and cannot do that to an
-opaque element. `DeckBuckets`' `BUCKET_GLYPHS` did the same.
+opaque element. `DeckBuckets`' `BUCKET_GLYPHS` did the same (since removed, 2026-11-15: the
+utcm band spines now carry no glyph, only the count).
 
 Three more things only a browser showed:
 
@@ -2185,8 +2199,8 @@ results*. It **supersedes several decisions above** — the full-bleed rows, the
 - **Slab footer** — the artboard draws the Deck Tower's floating slab (`.ft`), not the
   flat bar, so `/dictionary` carries `footerStyle: "slab"` in
   `routeMeta`. No cast shadow and no wash: the page sets neither footer channel, so the
-  slab shows only its own lip, as in the artboard. Its colours follow the time of day
-  (below) — cream by day, slate at night. The bottom clearance and
+  slab shows only its own lip, as in the artboard. Its colours follow the Settings
+  theme only (`src/theme/footerChrome.ts`) — cream on Light, slate on Dark, never the clock. The bottom clearance and
   edge fade follow the route's style (`MobileTabScreen`, `FooterSpacer`).
 - **Time of day** (added 2026-10-29). The page follows the Deck Tower's clock
   (`src/timeOfDay/useDayClock.ts`, the tester pin included) via `useTier2Look`, called once
@@ -2197,21 +2211,28 @@ results*. It **supersedes several decisions above** — the full-bleed rows, the
     and the slab footer are the app's day colours. (Dawn and sunset tints were cut
     2026-11-04 — [TOWER_WEATHER_SKY.md](./TOWER_WEATHER_SKY.md) § 1.)
   - **Night** turns the page slate: #1E2735 ground, #2A3446 field / slabs / keycaps on a
-    #121822 lip, light ink (#EEF0F6 / #C3C8D6 / #8F97AA) — the slab footer and the
-    beginner keyboard's keys included. The owner chose the design's CSS over its artboard
+    #121822 lip, light ink (#EEF0F6 / #C3C8D6 / #8F97AA). The slab footer and its Menu popover
+    are **not** included since 2026-11-15 (owner: the footer must never go dark on its own;
+    it is dark only on the Dark theme, everywhere — `src/theme/footerChrome.ts`).
+    (The beginner keyboard used to follow it too; since 2026-11-15 it is always the
+    standard grey, BEGINNER_KEYBOARD.md § 6z-11.) The owner chose the design's CSS over its artboard
     note ("keycaps, cards and footer keep their day colours"), which the CSS contradicts.
   - **`CpcdPopup`** (`src/components/CpcdPopup.tsx`, the copy toast and definition popup)
     reads the `tier2Var` surface / ink / outline, so it turns #2A3446 at night too.
-  - Grounds **blend** across the hour-long day ↔ night twilights; surfaces and ink **flip** together
-    once night holds the larger share (`dark`). (The eip no longer follows the clock — it
+  - **No twilight** (since 2026-11-15; grounds used to blend across the hour-long
+    twilights). Only the Deck Tower (and acp, whose ground is the tower's sky) shows the
+    gradual day ↔ night blend. `useTier2Look` snaps the clock to its majority phase
+    (`src/timeOfDay/dayPhase.ts` → `snappedPhase`), so ground, surfaces and ink all cut
+    from day to night together at the sunrise / sunset itself, the moment the tower's sky
+    is half-way. (The eip no longer follows the clock — it
     follows the Settings theme since 2026-11-05, EIP_SHEET_GESTURES.md § "Light / dark theme".)
   - **Outside the framework** on purpose, like the tower's skies: the phase grounds and
     every night value are the design's hexes (`tier2Look.ts` header).
-  - **Chrome outside the page** (the slab footer, the beginner keyboard) reads the look
+  - **Chrome outside the page** (`CpcdPopup`) reads the look
     through root CSS variables (`tier2Chrome.ts` → `tier2Var`), so it is themed only while
     a Tier 2 page is up; claims are counted so a slide between two Tier 2 pages never clears
     the newcomer's look. `useTier2Look` also claims the browser-chrome strip (`useThemeColor`).
-  - **Not themed:** the es `PinyinKeypad`, the AI suggestion card (its own AI surface) and
+  - **Not themed:** the slab footer + Menu popover (Settings theme only since 2026-11-15), the beginner keyboard (always grey since 2026-11-15), the es `PinyinKeypad`, the AI suggestion card (its own AI surface) and
     the `DelayedCircularProgress` spinner. (The read-only card page `/dictionary/card/:word`
     that also wore the ground was deleted 2026-11-10.)
 
@@ -2229,9 +2250,9 @@ results*. It **supersedes several decisions above** — the full-bleed rows, the
 `src/components/MobileTabScreen.tsx` → `footerFootprint`, `footerClearance`;
 `src/components/MobileFooter.tsx` → `FooterSpacer`, `SLAB_FOOTER_TOTAL_CLEARANCE`.
 Time of day: `src/timeOfDay/tier2Look.ts` → `tier2LookAt`, `Tier2Look`;
+`src/timeOfDay/dayPhase.ts` → `snappedPhase`;
 `src/timeOfDay/tier2Chrome.ts` → `tier2Var`, `claimTier2Chrome`, `writeTier2Chrome`;
-`src/timeOfDay/useTier2Look.ts`; `src/components/DictionaryEntryRow.tsx` → `tones`;
-`src/features/beginnerKeyboard/keyboardColors.ts` → `KEYBOARD_COLORS`.
+`src/timeOfDay/useTier2Look.ts`; `src/components/DictionaryEntryRow.tsx` → `tones`.
 **Docs:** `docs/DICTIONARY_NUMBERED_PINYIN_SEARCH.md`,
 `docs/DICTIONARY_AI_FALLBACK_SEARCH.md`, `docs/WORD_COMPARE_FEATURE.md`.
 
@@ -3298,9 +3319,11 @@ redesign. Add an `<Icon name="..."/>` wrapper so no page writes a bare ligature 
 
 ### D4 · Light theme only, for now
 `ThemeContext` stays in place, but the shelf system ships **one** palette and the
-app effectively runs light during the migration. Dark / Ocean / Nature are not
-derived yet — revisit once the system is proven on real pages. Do not spend effort
-keeping the other three working mid-Part-B.
+app effectively runs light during the migration. Dark is not derived yet — revisit
+once the system is proven on real pages. Do not spend effort keeping it working
+mid-Part-B. The Ocean (`'blue'`) and Nature (`'green'`) themes were **removed**
+2026-11-15; `ThemeMode` is `'light' | 'dark'`, and a device that saved either falls back
+to Light. (Older entries below still say "Dark / Ocean / Nature" — read it as Dark.)
 
 ### D5 · Footer: text labels only, no icons
 `.fbar` is followed exactly — four text labels, active one in ink at weight 600 with
@@ -3492,14 +3515,14 @@ Every shadow in `shelf-system.css` obeys three rules, and the app's old ones obe
 The hue matters because the ground is warm (`--paper` #FBFAF8): a pure-black shadow on a
 warm ground reads as a grey smudge rather than as absence of light — the same reasoning the
 border tokens already followed. The direction matters because a diagonal offset on every
-surface implies a light source the design does not have; the ONE exception is the spine (and
-its 26×34 swatch), which keeps a sideways cast because it is a physical object standing on a
-board rather than a plane floating over one.
+surface implies a light source the design does not have. (The spine was once the one
+sideways exception; since 2026-11-15 it carries no `SHADOW` token at all — it is a raised
+bar with a solid diagonal wall, `Spine.tsx` → `spineShadow`, § A3.)
 
 **The tokens are ROLES, not a numeric ladder.** `lifted` (the full card face) has a bigger
 offset than `float` (a small rail) but a LOWER alpha, because at card size a `float` alpha
 reads as dirt under the card. Pick by what the thing is: `rest` · `raised` · `chip` ·
-`float` · `lifted` · `menu` · `popover` · `board` · `spine`/`spineSwatch`, plus the three
+`float` · `lifted` · `menu` · `popover` · `board`, plus the three
 upward ones for bottom-anchored surfaces (`peekUp` · `sheetUp` · `panelUp`). One
 app-authored role has no artboard source: `recessed`, an inset shadow for an empty well
 pressed into a surface (the sort page's card crater, `AddCardsPage.tsx` → `CardCrater`).

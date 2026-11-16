@@ -5,7 +5,8 @@ import Icon from "../Icon";
 import { COLORS } from "../../theme/colors";
 import { FONTS, DATA_TYPE } from "../../theme/fonts";
 import { SPINE_SIZES, SPINE_VARIANTS, spineScale, type SpineVariant } from "./spineGeometry";
-import { SHADOW } from "../../theme/shadows";
+import { shadeHex } from "../../theme/shadeHex";
+import { roundedEdgeFillet, roundedEdgeRimLight } from "../../theme/roundedEdge";
 
 /**
  * Spine — the app's single visual for *a set of cards*, and the atom of the shelf
@@ -13,13 +14,13 @@ import { SHADOW } from "../../theme/shadows";
  * there is no coexistence period and no second "set of cards" visual.
  *
  * A spine is a ROUNDED BAR: a mid-tier body with the same 11px radius on all four
- * corners, a soft drop shadow, a white highlight down its right side, a title at the top
+ * corners, a raised diagonal wall (bottom + right — see `spineShadow`), a title at the top
  * and an optional mono count at the foot. (Until 2026-11-13 it was drawn as a book seen
  * edge-on — 11/11/4/4 corners and a dark strap down its left edge (`.sp::after`). The
  * user chose the bar: inside the then-boxed `LibraryShelfPanel` the book cues read as
  * noise next to the white card, and the band row reads as a bar chart. The box went on
- * 2026-11-14; the bar stayed. The right-edge highlight was kept.) Its HEIGHT carries how big the set is, in three bands —
- * see `spineHeight` in ./spineGeometry.
+ * 2026-11-14; the bar stayed. The right-edge highlight was kept until 2026-11-15.) Its HEIGHT carries how big the set is, relative
+ * to the rest of its row — see `relativeSpineHeights` in ./spineGeometry.
  *
  * Purely presentational. It knows a label, a colour, an optional count and some
  * optional slots; it knows nothing about collections, decks, mastery bands or
@@ -59,9 +60,8 @@ export interface SpineProps {
      */
     count?: number;
     /**
-     * Which `.sp` modifier to render. Defaults to `base`. For a count-banded shelf,
-     * pass `spineHeight(count)` rather than choosing by hand, so every shelf in the
-     * app agrees on where the cutoffs sit.
+     * Which `.sp` modifier to render. Defaults to `base`. A row whose heights encode
+     * counts passes `height` from `relativeSpineHeights` instead (./spineGeometry).
      */
     variant?: SpineVariant;
     /**
@@ -120,6 +120,45 @@ export interface SpineProps {
     className?: string;
 }
 
+/**
+ * The spine's wall depth, px — how far the bar stands off the page along (1, 1). 4px,
+ * one less than td's filter keys (`TowerFilterKeys` → `WALL_UP_PX` 5): the spines are
+ * narrower and sit four in a row, so a 5px wall reads heavy.
+ */
+const SPINE_WALL_PX = 4;
+
+/**
+ * How much darker the wall is than the face — `bandMaterial`'s RIGHT wall step
+ * (features/deckTower/iso/palette.ts, 0.15), so a band spine's side matches the iso
+ * band plates'. Duplicated as a literal because components/ must not import features/.
+ */
+const SPINE_WALL_SHADE = 0.15;
+
+/**
+ * The spine's box-shadow: a RAISED BAR in the tower style, replacing the soft drop
+ * shadow it had until 2026-11-15 (user). Reading order (first listed paints on top):
+ *   1. the rim light — 1px inset highlight on the face's top-left edge (roundedEdge);
+ *   2. the rounded edge's 0.5px fillet over the wall's first step;
+ *   3. the wall — the face outline stepped 1px at a time along (1, 1), one copy per px,
+ *      so it shows below AND to the right (box-shadow cannot slant; same technique as
+ *      features/deckTower/towerKeycap.ts → `towerKeyShadow`, minus its cast shadow).
+ * No cast/drop shadow: the wall alone carries the height. The old inset white highlight
+ * down the right face was dropped the same day (user): it implied light from the right,
+ * against the rim light and wall's top-left light.
+ *
+ * `face` must be a HEX colour (`shadeHex` parses it) — every caller passes a ramp tier.
+ * Docs: docs/SHELF_REDESIGN.md § A3; docs/designGuidelines.md § "The rounded edge".
+ */
+const spineShadow = (face: string): string => {
+    const wall = shadeHex(face, SPINE_WALL_SHADE);
+    const steps = Array.from({ length: SPINE_WALL_PX }, (_, i) => `${i + 1}px ${i + 1}px 0 ${wall}`);
+    return [
+        roundedEdgeRimLight(face),
+        roundedEdgeFillet(face, wall),
+        ...steps,
+    ].join(", ");
+};
+
 const SpineRoot = styled(Box, {
     shouldForwardProp: (prop) => prop !== "color" && prop !== "tappable",
 })<{ color: string; tappable: boolean }>(({ color, tappable }) => ({
@@ -128,16 +167,14 @@ const SpineRoot = styled(Box, {
     // standing on its foot (see the component doc for the 2026-11-13 change).
     borderRadius: SPINE_SIZES.cornerRadius,
     background: color,
-    // Two shadows in one: an outer drop shadow that lifts the spine off the row, and a
-    // wide INSET white highlight on the right edge that gives the bar a soft roundness
-    // rather than a flat swatch.
-    boxShadow: SHADOW.spine,
+    // A raised bar: a diagonal wall down-right plus the rounded edge (`spineShadow`).
+    boxShadow: spineShadow(color),
     display: "flex",
     flexDirection: "column",
     justifyContent: "space-between",
     overflow: "hidden",
     // Spines never shrink — a row that runs out of width wraps or scrolls. A shrunk
-    // spine would break the height banding, since the reader compares heights across
+    // spine would break the height encoding, since the reader compares heights across
     // the row and a narrowed spine reads as a different kind of thing.
     flexShrink: 0,
     cursor: tappable ? "pointer" : "default",

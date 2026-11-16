@@ -34,7 +34,7 @@ export interface CodeSent {
 /** Which sign-in methods the server can run (phone needs Firebase configured). */
 export const fetchSignInMethods = () => apiGet<{ email: boolean; phone: boolean }>('/api/auth/methods');
 
-/** "Email me a code" / "Forgot password?". Same response whether or not the address has an account. */
+/** The verification window's "Send code" / "Forgot password?". Same response whether or not the address has an account. */
 export const sendEmailCode = (email: string, purpose: 'sign-in' | 'reset') =>
     apiPost<CodeSent>('/api/auth/email/sendCode', { email, purpose });
 
@@ -43,6 +43,21 @@ export const verifyEmailCode = (email: string, code: string) =>
 
 export const resetPassword = (email: string, code: string, newPassword: string) =>
     apiPost<SignedIn>('/api/auth/password/reset', { email, code, newPassword });
+
+/**
+ * "Sign in with password" on the verification window, for an email OR a phone (owner,
+ * 2026-11-15). Every failure reads the same, whether or not the identifier has an account.
+ */
+export const passwordSignIn = (identifier: { email: string } | { phone: string }, password: string) =>
+    apiPost<SignedIn>('/api/auth/password/signIn', { ...identifier, password });
+
+/** Forgot password for a phone: the Firebase ID token proves the number. */
+export const resetPasswordWithPhone = (idToken: string, newPassword: string) =>
+    apiPost<SignedIn>('/api/auth/password/resetWithPhone', { idToken, newPassword });
+
+/** Settings → "Set a password" for an account without one (step-up gated). */
+export const setPassword = (newPassword: string, stepUpToken: string) =>
+    apiPost<UserProfile>('/api/auth/password/set', { newPassword, stepUpToken });
 
 /** After Firebase's SMS step: the ID token proves the number. */
 /** DEV ONLY (DevConsolePhoneVerifier): "text" a code, printed to the backend log. */

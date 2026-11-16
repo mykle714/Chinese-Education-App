@@ -32,6 +32,18 @@ depends on the answer:
   `schema_migrations` + `migrate.sh --dry-run` rather than a runbook banner, and record
   each hand-applied migration in `schema_migrations`.
 
+## ⚠️ SECOND: Check the open runbooks
+
+Before deploying, read the **Open runbooks** table in
+[docs/DEPLOY_RUNBOOKS.md](../../docs/DEPLOY_RUNBOOKS.md). Any runbook marked **not
+deployed** whose change is in the commits being shipped must be followed step by step:
+its pre-deploy steps, any held-back migrations, its **post-deploy steps** (a targeted
+backfill, a cron install) and its verification. Then update its status in both the
+runbook banner and that table. A plain `/deploy` that succeeds can still leave a
+runbook's post-deploy step undone with nothing visibly broken — e.g. a pipeline change
+whose existing PPE rows only change on a targeted re-run — so this check is not
+optional just because the deploy itself went cleanly.
+
 ## Environment
 
 - **Server**: 174.127.171.187 (hostname `beech-2025`) — a **separate machine from dev**, reachable over SSH (see [`/ssh-ppe`](./ssh-ppe.md)). Both machines use the same `cow-*` container names, so tell them apart by `hostname`

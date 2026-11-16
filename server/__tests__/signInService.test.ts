@@ -63,10 +63,12 @@ function makeService(opts: { phone?: Partial<PhoneVerifier> } = {}) {
   const userDAL = {
     findByEmail: async (email: string) => (email === ACCOUNT.email ? { id: ACCOUNT.id } : null),
     findByPhone: async (phone: string) => (phone === '+15550001111' ? { id: ACCOUNT.id } : null),
+    findPasswordHashById: async (id: string) => (id === ACCOUNT.id ? 'hash' : null),
     findById: async (id: string) => (id === ACCOUNT.id ? { ...ACCOUNT } : created.length ? { id, ...(created[0] as object) } : null),
     update: async () => ({}),
   };
   const passwords: Record<string, string> = {};
+  const signIns: { identifier: object; password: string }[] = [];
   const userService = {
     issueSession: (user: { id: string }) => ({ user, token: `session-for-${user.id}` }),
     suggestUsername: async (seed: string | null) => `${seed ?? 'learner'}_s`,
@@ -86,6 +88,10 @@ function makeService(opts: { phone?: Partial<PhoneVerifier> } = {}) {
       return { id: 'new-user', ...input };
     },
     deleteUserUnchecked: async () => {},
+    authenticateWithPassword: async (identifier: object, p: string) => {
+      signIns.push({ identifier, password: p });
+      return { user: { id: ACCOUNT.id }, token: 'session-for-u1' };
+    },
   };
   const phone: PhoneVerifier = {
     configured: true,
@@ -93,7 +99,7 @@ function makeService(opts: { phone?: Partial<PhoneVerifier> } = {}) {
     ...opts.phone,
   };
   const service = new SignInService(userService as any, userDAL as any, codes, sender, phone);
-  return { service, codes, sender, created, passwords };
+  return { service, codes, sender, created, passwords, signIns };
 }
 
 describe('SignInService — hidden enumeration (Q13/Q17)', () => {
@@ -195,12 +201,20 @@ describe('SignInService — sign-up tickets (Q14)', () => {
     expect(created[0]).toMatchObject({ email: 'fresh@example.com', phone: null, username: 'fresh', password: 'pw-123456' });
   });
 
-  it('never gives a phone account a password', async () => {
+  it('gives a phone account its optional password (migration 191)', async () => {
     const { service, created } = makeService();
     const outcome = await service.phoneSignIn('tok-new');
     if (outcome.status !== 'sign-up') throw new Error('expected sign-up');
-    await service.completeSignUp({ signUpTicket: outcome.signUpTicket, username: 'phoney', password: 'ignored-1' });
-    expect(created[0]).toMatchObject({ phone: '+15550002222', email: null, password: null });
+    await service.completeSignUp({ signUpTicket: outcome.signUpTicket, username: 'phoney', password: 'chosen-pw1' });
+    expect(created[0]).toMatchObject({ phone: '+15550002222', email: null, password: 'chosen-pw1' });
+  });
+
+  it('leaves the password empty when none is chosen, for either channel', async () => {
+    const { service, created } = makeService();
+    const outcome = await service.phoneSignIn('tok-new');
+    if (outcome.status !== 'sign-up') throw new Error('expected sign-up');
+    await service.completeSignUp({ signUpTicket: outcome.signUpTicket, username: 'phoney', password: '' });
+    expect(created[0]).toMatchObject({ password: null });
   });
 
   it('rejects a forged or foreign ticket', async () => {
@@ -236,5 +250,44 @@ describe('SignInService — step-up (Q24)', () => {
   it('gates an email change on a step-up token', async () => {
     const { service } = makeService();
     await expect(service.startEmailChange('u1', 'next@example.com', 'bogus')).rejects.toMatchObject({ statusCode: 403 });
+  });
+});
+
+describe('SignInService — password on the verification window (owner, 2026-11-15)', () => {
+  it('signs in by email (normalized) or by phone', async () => {
+    const { service, signIns } = makeService();
+    await service.passwordSignIn({ email: ' Known@Example.com ' }, 'pw');
+    await service.passwordSignIn({ phone: '+15550001111' }, 'pw');
+    expect(signIns).toEqual([
+      { identifier: { email: 'known@example.com' }, password: 'pw' },
+      { identifier: { phone: '+15550001111' }, password: 'pw' },
+    ]);
+  });
+
+  it('answers a malformed phone like a wrong password', async () => {
+    const { service, signIns } = makeService();
+    await expect(service.passwordSignIn({ phone: '555' }, 'pw')).rejects.toThrow('Wrong phone number or password');
+    expect(signIns).toHaveLength(0);
+  });
+
+  it('resets a phone account\'s password with a Firebase token, checking the password first', async () => {
+    const { service, passwords } = makeService();
+    await expect(service.resetPasswordWithPhone('tok-known', 'short')).rejects.toThrow('at least 8');
+    const auth = await service.resetPasswordWithPhone('tok-known', 'a-good-password1');
+    expect(passwords.u1).toBe('a-good-password1');
+    expect(auth.token).toBe('session-for-u1');
+  });
+
+  it('tells the owner of a number with no account to sign up instead', async () => {
+    const { service } = makeService();
+    await expect(service.resetPasswordWithPhone('tok-new', 'a-good-password1')).rejects.toThrow('No account uses this number');
+  });
+
+  it('sets a password only behind a step-up, and only for an account without one', async () => {
+    const { service } = makeService();
+    await expect(service.setPassword('u1', 'a-good-password1', 'forged')).rejects.toThrow();
+    const token = await service.verifyStepUp('u1', { password: 'right-password1' });
+    // u1 already has a password in the fake DAL.
+    await expect(service.setPassword('u1', 'a-good-password1', token)).rejects.toThrow('already has a password');
   });
 });

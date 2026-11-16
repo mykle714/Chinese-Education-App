@@ -754,13 +754,16 @@ export const FLASHCARD_CATEGORIES: readonly FlashcardCategory[] = [
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Usernames (migration 188, docs/LOGIN_REWORK.md Q21): 3–20 characters of a–z, 0–9 and `_`,
- * starting with a letter, stored lowercase, unique across all users, changeable at any time.
- * The SAME shape is the `chk_users_username_shape` CHECK in migration 188; change both.
+ * Usernames (migration 188, reshaped by migration 190; docs/LOGIN_REWORK.md Q21) follow
+ * Instagram's rules (owner, 2026-11-15): 1–30 characters of a–z, 0–9, `_` and `.`, no period at
+ * the start or end, no two periods in a row; stored lowercase, unique across all users,
+ * changeable at any time. USERNAME_PATTERN is the character set + length; usernameProblem adds
+ * the period rules. The SAME rule is the `chk_users_username_shape` CHECK in migration 190;
+ * change both.
  */
-export const USERNAME_PATTERN = /^[a-z][a-z0-9_]{2,19}$/;
-export const USERNAME_MIN_LENGTH = 3;
-export const USERNAME_MAX_LENGTH = 20;
+export const USERNAME_PATTERN = /^[a-z0-9._]{1,30}$/;
+export const USERNAME_MIN_LENGTH = 1;
+export const USERNAME_MAX_LENGTH = 30;
 
 /**
  * Handles nobody may take. Migration 188's backfill skips the same list (keep the two in
@@ -782,11 +785,28 @@ export function normalizeUsername(raw: string): string {
  * before the round-trip.
  */
 export function usernameProblem(username: string): string | null {
-  if (username.length < USERNAME_MIN_LENGTH) return `At least ${USERNAME_MIN_LENGTH} characters`;
-  if (username.length > USERNAME_MAX_LENGTH) return `At most ${USERNAME_MAX_LENGTH} characters`;
-  if (!/^[a-z]/.test(username)) return 'Start with a letter';
-  if (!USERNAME_PATTERN.test(username)) return 'Only letters, numbers and _';
+  if (username.length < USERNAME_MIN_LENGTH) return 'Enter a username';
+  if (username.length > USERNAME_MAX_LENGTH) return `Please use at most ${USERNAME_MAX_LENGTH} characters`;
+  if (!USERNAME_PATTERN.test(username)) return 'Only letters, numbers, underscores and periods';
+  if (username.startsWith('.') || username.endsWith('.')) return "Can't start or end with a period";
+  if (username.includes('..')) return "Can't have two periods in a row";
   if (RESERVED_USERNAMES.includes(username)) return 'That username is reserved';
+  return null;
+}
+
+/**
+ * Why a new password is not allowed, or null when it is: 8–128 characters with at least one
+ * letter and one number, and not one of COMMON_PASSWORDS. The ONE copy of the rule: the server's
+ * UserService.validatePasswordStrength throws this message, and the client's test sign-up dry
+ * run (src/pages/login/testSignUp.ts) checks it locally so it fails exactly as the server would.
+ */
+const COMMON_PASSWORDS: readonly string[] = ['password', '12345678', 'qwerty123', 'password123'];
+
+export function passwordProblem(password: string): string | null {
+  if (password.length < 8) return 'Password must be at least 8 characters long';
+  if (password.length > 128) return 'Password is too long (maximum 128 characters)';
+  if (!/[a-zA-Z]/.test(password) || !/\d/.test(password)) return 'Password must contain at least one letter and one number';
+  if (COMMON_PASSWORDS.includes(password.toLowerCase())) return 'Password is too common. Please choose a stronger password';
   return null;
 }
 
@@ -882,11 +902,12 @@ export interface UserProfile {
 }
 
 /**
- * Every storable `users."gender"` value (migration 164's CHECK mirrors this list).
+ * Every storable `users."gender"` value (the `chk_users_gender` CHECK, migrations 164 + 192,
+ * mirrors this list).
  * `null` — not told — is the third state and is deliberately not a member: it is the
  * absence of an answer, not an answer. Extend BOTH this and the CHECK together.
  */
-export const USER_GENDERS = ['male', 'female'] as const;
+export const USER_GENDERS = ['male', 'female', 'nonbinary'] as const;
 export type UserGender = typeof USER_GENDERS[number];
 
 // ─── Friend codes (migration 187, docs/FRIENDS_FEATURE.md § "Friend codes") ───────────

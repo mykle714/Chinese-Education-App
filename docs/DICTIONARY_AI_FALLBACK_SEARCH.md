@@ -38,12 +38,12 @@ Given a search term, results are resolved in this order; the first stage that yi
    │                     query, one ranking. Real det rows, rendered normally.
    │  (0 rows)
 2. AI cache lookup       exact-match the term against ai_dictionary_cache (see below).
-   │                     · non-empty hit  → render the orange synthetic card (unclickable)
+   │                     · non-empty hit  → render the synthetic AI card (unclickable)
    │                     · empty hit, fresh (<3 mo) → aiNoMatch: show the "couldn't find a match"
    │                                                   note (no button — the AI already checked)
    │                     · empty hit, stale (>3 mo) → treat as a miss (offer the AI button again)
    │                     · miss           → if the query qualifies (§ Trigger), offer the "AI" button
-   └─ AI button tap →    POST /api/dictionary/aiEntry → Sonnet → write cache → render orange card
+   └─ AI button tap →    POST /api/dictionary/aiEntry → Sonnet → write cache → render AI card
                          (a network/server failure surfaces `aiError` — the button stays for retry)
 ```
 
@@ -122,14 +122,21 @@ to every novel zero-result query.
 
 The prompt (`DictionaryService.buildAiSystemPrompt(language)`) is **per language** but always asks
 for the **same flat JSON shape** (`{word1, pinyin, definition}`) so the cache row, client type, and
-orange card stay language-agnostic. The query may arrive in the target language **or in English**;
+AI card stay language-agnostic. The query may arrive in the target language **or in English**;
 the model infers which and always resolves to a single **target-language** headword + English gloss.
-For `es`, `pinyin` is returned empty (Spanish has no such field) and the orange card renders the
+For `es`, `pinyin` is returned empty (Spanish has no such field) and the AI card renders the
 Latin headword in the Latin UI font (`AiDictionaryEntryCard` picks the font from the word's script).
 
-The zh prompt **trusts the query as written**: it is told to assume the pinyin is spelled correctly and
-must NOT correct apparent typos or substitute a similar-sounding / similar-looking word — if nothing
-matches the query exactly, it returns an empty result rather than a near-miss. It accepts Chinese
+The zh prompt **silently corrects misspellings** (since 2026-11-15; before that it trusted the query
+as written and returned an empty result for a near-miss). A query that is clearly a misspelling of a
+real word/name/phrase — a typo, missing spaces, a near-miss romanization (`dintaifung` → 鼎泰豐
+"Din Tai Fung …", `ni hoa` → 你好) — is answered **exactly as if the user had typed the correct
+spelling**: the correction is never mentioned in any field, and the gloss writes names with their
+correct spelling rather than echoing the user's form (owner's call: "just pretend like that's what the
+user queried"). A query that is already a valid word is not treated as a typo, and nothing is
+corrected unless one intended target is clearly the most likely. Pinyin tones the user typed are
+still honoured. **The es prompt still trusts the query as written** — Spanish is paused, so it was
+left alone (docs/DEFERRED_WORK.md). It accepts Chinese
 characters too, and **returns a result for anything that maps to a valid concept** — ordinary words,
 expressions, and proper nouns.
 
@@ -180,8 +187,9 @@ modes. Net: a blue results pill, optionally followed by an orange **AI** pill.
      complete gloss** — the prompt asks for a single phrase/clause (~12 words) that stops at the core
      meaning and never trails off. The column is unbounded `text` (migration 98) so an occasional
      longer answer isn't truncated, but the prompt steers toward concise glosses.
-   - Trust the query as written (no pinyin-typo reconciliation); identify real referents (searching
-     when needed); return null only for a meaningless jumble.
+   - zh: silently correct an obvious misspelling and answer as if it were spelled correctly (no
+     trace of the correction in the output); es: trust the query as written. Identify real referents
+     (searching when needed); return null only for a meaningless jumble.
 5. Once a model call **completes** (before parsing, regardless of word/empty/unparseable outcome),
    **increment `dictionary_ai_usage`** for the caller's streak-day — the call was billed, so it counts.
    A model call that throws (network error) never reaches this and does not count.
@@ -196,7 +204,7 @@ Each user may make **`DICTIONARY_AI_DAILY_LIMIT` completed model calls per day**
 via env; `server/constants.ts`). "Per day" is the same **4 AM-bounded local streak-day** used by
 streaks/minute points (`streakDateOf` + the client-supplied `tz`), so the allowance resets at 4 AM
 local time. Only **cache misses that reach the model** count — re-viewing a cached answer or any
-auto-rendered orange card is always free.
+auto-rendered AI card is always free.
 
 State lives in `dictionary_ai_usage` (`"userId"`, `"usageDate"`, `count`; migration 99). The service
 reads the count before the model call and increments after it completes. When the cap is hit the
@@ -224,13 +232,21 @@ The synthetic entry is adapted to the `DictionaryEntry` client type but flagged 
 with **no id / no metadata** — it is **display-only**:
 - not clickable (no cdp navigation),
 - not add-to-library-able,
-- rendered in the app's **AI-provenance orange** (`COLORS.aiGenerated` = `#FF9E5A`, deliberately
-  off-ramp so it is not confused with a mastery band — see SHELF_REDESIGN.md A1) so it's
-  visually distinct from real dictionary rows. The border/tint + sparkle-badge treatment lives in
-  the shared `src/theme/aiGeneratedStyling.ts` (`aiGeneratedSurfaceSx`) +
-  `src/components/AiGeneratedBadge.tsx` (`AiGeneratedBadge`),
-  which the est's unapproved-sentence styling reuses (docs/DATA_VALIDATION_SYSTEM.md), so the two
-  AI-content surfaces cannot drift apart.
+- drawn as a plain rounded **result slab** (`AiDictionaryEntryCard` takes the page's time-of-day
+  `look`: `look.surface` fill — white by day, slate at night — 18px corner, 1px `look.outline`,
+  matching `DictionaryPageParts` → `DictionaryResultSlab`). Its only AI marker is the orange
+  sparkle badge (`src/components/AiGeneratedBadge.tsx` → `AiGeneratedBadge`, label
+  "AI SUGGESTION") in the app's **AI-provenance orange** (`COLORS.aiGenerated` = `#FF9E5A`,
+  deliberately off-ramp so it is not confused with a mastery band — see SHELF_REDESIGN.md A1).
+  Until 2026-11-15 the card was an MUI `Card` on the orange-tinted `aiGeneratedSurfaceSx`
+  (`src/theme/aiGeneratedStyling.ts`); it left that treatment because MUI's elevation shadow and
+  4px corner clashed with the slabs around it.
+- **Loading phase.** An "Ask AI" tap mounts the same card in a compact loading row (orange
+  spinner + "Asking AI…"). `DictionaryPage` keeps that ONE instance mounted until the answer
+  lands, and the card's height eases from the loading row up to the full entry
+  (`src/hooks/useAnimatedHeight.ts` → `useAnimatedHeight`: a ResizeObserver drives an explicit
+  pixel height with a CSS `transition: height`). A cached answer mounts straight at full height.
+  On a no-match / error the card unmounts and the plain-text note takes its place.
 
 <a id="per-language-search-routing"></a>
 ## Per-language search routing (`searchByWord1`) — prerequisite for the es fallback
@@ -300,7 +316,7 @@ All logic lives in the shared **`src/hooks/useDictionarySearch.ts`** so both con
   result).
 - The server `GET /api/dictionary/search` response gains `canAskAi: boolean` and an optional
   `aiCacheEntry` (a fresh non-empty cache hit, auto-shown without a button).
-- **`DictionaryPage.tsx`** renders the orange unclickable card **at the top of the results** (above
+- **`DictionaryPage.tsx`** renders the unclickable AI card **at the top of the results** (above
   the breakdown / regular result rows) so a just-generated answer is immediately visible without
   scrolling — for a cache hit or after an AI tap. The inline orange **"AI"** pill sits next to the
   blue results pill when `canAskAi`; tapping it shows an "Asking AI…" spinner (also at the top), then
@@ -333,9 +349,9 @@ All logic lives in the shared **`src/hooks/useDictionarySearch.ts`** so both con
 | Routes | `server/routes/dictionaryRoutes.ts` | `POST /api/dictionary/aiEntry` |
 | Types | `server/types/*`, client `src/types.ts` | `DictionaryEntry.source?: 'ai'`; AI-entry response types |
 | Client hook | `src/hooks/useDictionarySearch.ts` | `aiEntry`, `canAskAi`, `askAi()` (sends `tz`); `aiLimitReached` + `aiLimitMessage` (429) |
-| Client UI | `src/features/dictionary/DictionaryPage.tsx` | orange unclickable card + inline orange "AI" pill; daily-limit note; results-count pill → blue, segment-count prefix removed |
-| Client UI | `src/components/AiDictionaryEntryCard.tsx` | orange synthetic card; headword font chosen from its script (CJK vs Latin) so es words render in the Latin UI font |
-| Theme | `src/theme/colors.ts` (`COLORS.aiGenerated` `#FF9E5A`) | orange for AI cards; its own token, outside the ramp |
+| Client UI | `src/features/dictionary/DictionaryPage.tsx` | unclickable AI card + inline orange "AI" pill; daily-limit note; results-count pill → blue, segment-count prefix removed |
+| Client UI | `src/components/AiDictionaryEntryCard.tsx` | synthetic AI card as a slab-matched rounded surface (takes `look`); headword font chosen from its script (CJK vs Latin) so es words render in the Latin UI font |
+| Theme | `src/theme/colors.ts` (`COLORS.aiGenerated` `#FF9E5A`) | orange for the AI badge/pill; its own token, outside the ramp |
 
 ## Resolved decisions
 

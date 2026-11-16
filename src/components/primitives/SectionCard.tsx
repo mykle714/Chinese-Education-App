@@ -35,8 +35,9 @@ import { COLORS } from "../../theme/colors";
 export interface SectionCardProps {
     children: React.ReactNode;
     /**
-     * Overrides the white ground. For the one case where a card's FILL is the message —
-     * the arena's results banner going green on a promotion — not for decoration.
+     * Overrides the white ground. For cases where a card's FILL is the message — the
+     * arena's results banner going green on a promotion; the Friends page's "Your friend
+     * code" card in org MID, the app's "this is you" colour — not for decoration.
      */
     background?: string;
     className?: string;

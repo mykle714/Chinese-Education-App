@@ -54,7 +54,7 @@ describe('buildDebugSnapshot', () => {
     const ink = inkFromMedians('木');
     const snapshot = buildDebugSnapshot({ ...base, ink, buffer: submit('日'), mode: 'glyph' });
 
-    expect(snapshot.v).toBe(3);
+    expect(snapshot.v).toBe(4);
     // A non-empty buffer withholds the § 6z-8 direct chip.
     expect(snapshot.direct).toBeNull();
     expect(snapshot.strokeCount).toBe(ink.length);

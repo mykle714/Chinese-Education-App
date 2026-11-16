@@ -41,7 +41,8 @@ const words = parseGlyphWords(read('glyph-words.bin'), index);
 
 describe('glyph lookup index', () => {
   it('parses the shape the keyboard expects', () => {
-    expect(index.components.length).toBe(895);
+    // 896 since 2026-11-15: § 6z-15 added the private-use two-dot ⺼ (U+E000).
+    expect(index.components.length).toBe(896);
     expect(index.chars.length).toBe(index.freq.length);
     expect(index.chars.length).toBeGreaterThan(9000);
     // Every component id stored in a bag must address the component table, or
@@ -275,9 +276,9 @@ describe('§ 6z-4 hint search', () => {
       if (tier >= COMMON_TIER) common++;
       else if (tier > 0) fallback++;
     }
-    // Measured on dev 2026-11-14 (asset rebuilt; the discoverable corpus grows hourly): characters in a zh headword scored 4–5, and 1–3.
-    expect(common).toBe(987);
-    expect(fallback).toBe(55);
+    // Measured on dev 2026-11-15 (asset rebuilt for § 6z-15; the discoverable corpus moves with every PPE pull): characters in a zh headword scored 4–5, and 1–3.
+    expect(common).toBe(978);
+    expect(fallback).toBe(56);
     expect(index.readings.length).toBe(index.chars.length);
     expect(index.readings[index.charIndex.get('是')!]).toBe('shì');
   });

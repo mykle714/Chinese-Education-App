@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { IUserDAL } from '../../dal/interfaces/IUserDAL.js';
 import { IEmailCodeDAL, EmailCodePurpose } from '../../dal/interfaces/IEmailCodeDAL.js';
-import { UserService } from '../UserService.js';
+import { UserService, WRONG_PHONE_CREDENTIALS_MESSAGE } from '../UserService.js';
 import { AuthResponse, User } from '../../types/index.js';
 import { DALError, DuplicateError, NotFoundError, RateLimitError, ValidationError } from '../../types/dal.js';
 import type { UserGender } from '../../contracts/wire.js';
@@ -55,6 +55,8 @@ const STEP_UP_TTL = '10m';
 
 /** One message for every failed redemption: wrong, expired, used or unknown. */
 const BAD_CODE_MESSAGE = 'That code is wrong or has expired';
+/** Phone password reset for a number with no account (the learner has just proved they own it). */
+const NO_PHONE_ACCOUNT_MESSAGE = 'No account uses this number. Use the code to sign up instead';
 
 const JWT_SECRET = process.env.JWT_SECRET as string;
 
@@ -186,6 +188,56 @@ export class SignInService {
   }
 
   /**
+   * "Sign in with password" on the verification window (owner, 2026-11-15), for an email OR a
+   * phone. Offered for every identifier whether or not it has an account, so every failure reads
+   * the same (UserService.authenticateWithPassword: one bcrypt compare, one message).
+   */
+  async passwordSignIn(raw: { email?: unknown; phone?: unknown }, password: unknown): Promise<AuthResponse> {
+    const pw = typeof password === 'string' ? password : '';
+    if (typeof raw.phone === 'string' && raw.phone) {
+      const phone = raw.phone.trim();
+      // A malformed number cannot have an account: same message as a wrong password.
+      if (!/^\+[1-9]\d{6,14}$/.test(phone)) throw new ValidationError(WRONG_PHONE_CREDENTIALS_MESSAGE);
+      return this.userService.authenticateWithPassword({ phone }, pw);
+    }
+    return this.userService.authenticateWithPassword({ email: this.normalizeEmail(raw.email) }, pw);
+  }
+
+  /**
+   * Forgot password, phone edition (owner, 2026-11-15: "Forgot password?" stays in the password
+   * section, and a phone account may now have a password). The Firebase ID token proves the
+   * number, as for phone sign-in; then the same as resetPassword: set it, end every other
+   * session, sign this device in. The learner has just proved they own the number, so saying
+   * there is no account for it reveals nothing to a stranger.
+   */
+  async resetPasswordWithPhone(idToken: unknown, newPassword: unknown): Promise<AuthResponse> {
+    // Check the new password BEFORE spending the token, as resetPassword does with its code.
+    if (typeof newPassword !== 'string') throw new ValidationError('New password is required');
+    this.userService.validatePasswordStrength(newPassword);
+    const phone = await this.verifyPhone(typeof idToken === 'string' ? idToken : '');
+    const known = await this.userDAL.findByPhone(phone);
+    if (!known) throw new ValidationError(NO_PHONE_ACCOUNT_MESSAGE);
+    await this.userService.setPassword(known.id, newPassword);
+    await this.userService.revokeAllRefreshTokens(known.id);
+    return this.userService.issueSession(await this.requireUser(known.id));
+  }
+
+  /**
+   * Settings → "Set a password" for an account without one (owner, 2026-11-15; the password is
+   * optional at sign-up). Step-up gated like every other sensitive change; an account that
+   * already has a password changes it through UserService.changePassword instead.
+   */
+  async setPassword(userId: string, newPassword: unknown, stepUpToken: unknown): Promise<User> {
+    this.assertStepUp(userId, stepUpToken);
+    if (typeof newPassword !== 'string') throw new ValidationError('New password is required');
+    if (await this.userDAL.findPasswordHashById(userId)) {
+      throw new ValidationError('This account already has a password. Change it instead');
+    }
+    await this.userService.setPassword(userId, newPassword);
+    return this.requireUser(userId);
+  }
+
+  /**
    * Forgot password: redeem a 'reset' code, set the new password, end every other session
    * (whoever knew the old password is signed out everywhere), and sign this device in.
    */
@@ -231,7 +283,8 @@ export class SignInService {
     const user = await this.userService.createUser({
       email: ticket.channel === 'email' ? ticket.value : null,
       phone: ticket.channel === 'phone' ? ticket.value : null,
-      password: ticket.channel === 'email' ? input.password ?? null : null,
+      // Optional for both channels (migration 191).
+      password: input.password || null,
       username: input.username,
       name: input.name ?? null,
       gender: input.gender ?? null,
@@ -320,7 +373,7 @@ export class SignInService {
     return this.requireUser(userId);
   }
 
-  /** Delete the account after a step-up (the only way for a phone account, which has no password). */
+  /** Delete the account after a step-up (the way for an account with no password, which is optional). */
   async deleteAccountWithStepUp(userId: string, stepUpToken: unknown): Promise<void> {
     this.assertStepUp(userId, stepUpToken);
     await this.userService.deleteUserUnchecked(userId);

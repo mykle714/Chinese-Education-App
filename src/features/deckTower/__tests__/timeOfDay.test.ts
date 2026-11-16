@@ -3,6 +3,7 @@ import { sunDay } from "../../../timeOfDay/sunTimes";
 import { phaseSky, timeOfDayAt, towerLight } from "../timeOfDay";
 import { NO_WASH, hexToOklch } from "../iso";
 import { TZ_COORDINATES } from "../../../timeOfDay/tzCoordinates";
+import { snappedPhase } from "../../../timeOfDay/dayPhase";
 
 const CHICAGO = { lat: 41.9, lon: -87.6 };
 const MIN = 60_000;
@@ -132,5 +133,19 @@ describe("TZ_COORDINATES", () => {
     it("resolves canonical zones and legacy aliases", () => {
         expect(TZ_COORDINATES["America/Chicago"]).toEqual([41.9, -87.6]);
         expect(TZ_COORDINATES["Asia/Calcutta"]).toEqual(TZ_COORDINATES["Asia/Kolkata"]);
+    });
+});
+
+// Tier 2 pages do not honour twilight (useTier2Look): the blend snaps at the sun event.
+describe("snappedPhase", () => {
+    it("holds the phase being left until half-way, then the phase being entered", () => {
+        expect(snappedPhase({ from: "day", to: "night", t: 0.49 })).toBe("day");
+        expect(snappedPhase({ from: "day", to: "night", t: 0.51 })).toBe("night");
+        expect(snappedPhase({ from: "night", to: "day", t: 0.49 })).toBe("night");
+        expect(snappedPhase({ from: "night", to: "day", t: 0.51 })).toBe("day");
+    });
+    it("passes a held phase through", () => {
+        expect(snappedPhase({ from: "night", to: "night", t: 0 })).toBe("night");
+        expect(snappedPhase({ from: "day", to: "day", t: 0 })).toBe("day");
     });
 });

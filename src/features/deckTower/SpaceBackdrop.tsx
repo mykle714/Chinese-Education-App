@@ -50,6 +50,8 @@ import { heightAbovePlatform, towerSceneOf } from "./towerScroll";
  *     whatever weather is known by then). Only the backdrop (and
  *     the footer's cast shadow, which is derived from it) fades: the iso scene's own
  *     sky-derived tones (the ground plane under the platform) take the new colour at once.
+ *     The platform's shadow on that plane still follows the fade: it is drawn see-through
+ *     (IsoShadow `seeThrough`), darkening this backdrop rather than painting over it.
  *
  * ⚡ Scroll handling writes the styles directly to the DOM (rAF-throttled), NOT through
  * React state. A state update per scroll frame would re-render the whole scene (tower,

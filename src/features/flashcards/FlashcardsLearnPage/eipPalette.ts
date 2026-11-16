@@ -5,7 +5,7 @@ import type { ThemeMode } from "../../../contexts/ThemeContext";
 /**
  * eipPalette.ts — the eip's colours for the app's colour THEME (Settings → Theme, the
  * `ThemeMode` in src/contexts/ThemeContext.tsx). Two palettes:
- *   LIGHT — every theme but Dark (Light, Ocean, Nature). The Tower Tier 2 design's Day
+ *   LIGHT — the Light theme. The Tower Tier 2 design's Day
  *           artboard: a pale-sky upper panel over the app's day keys, shelf and ink.
  *   DARK  — the Dark theme. The design's "Night–inverted" artboard: slate panels, light ink.
  *

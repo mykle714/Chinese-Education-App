@@ -89,9 +89,10 @@ export interface DebugSnapshot {
   /**
    * Bumped to 2 when the buffer became a flat component list (2026-09-09), and to
    * 3 when `suggested` moved to ROW order and gained `rankCost`/`variant`/`hint`
-   * (§ 6z-5 / § 6z-6, 2026-09-27).
+   * (§ 6z-5 / § 6z-6, 2026-09-27), and to 4 when `suggested` and `target.match`
+   * gained `displayForm` (§ 6z-14, 2026-11-15).
    */
-  v: 3;
+  v: 4;
   at: string;
   mode: CandidateMode;
   canvasSize: number;
@@ -110,7 +111,8 @@ export interface DebugSnapshot {
    *
    * `cost` is the matcher's own (variant prior included); `rankCost` is what the
    * row sorted by — they differ only for a glyph with a buffer-fit `hint`.
-   * `variant` marks a win by an in-context template (§ 6z-5). `hint` is the
+   * `variant` marks a win by an in-context template (§ 6z-5), `displayForm` a win
+   * by the template traced from the chip's display outline (§ 6z-14). `hint` is the
    * bubble's character and how many components it is still short (`你+0` =
    * tapping this glyph completes 你).
    */
@@ -120,6 +122,7 @@ export interface DebugSnapshot {
     rankCost: number;
     kind: number;
     variant: boolean;
+    displayForm: boolean;
     hint: string | null;
     action: 'append' | 'commit';
   }[];
@@ -196,7 +199,7 @@ export function buildDebugSnapshot({
   const results = allResults.slice(0, DEBUG_CANDIDATE_LIMIT);
 
   return {
-    v: 3,
+    v: 4,
     at: new Date().toISOString(),
     mode,
     canvasSize,
@@ -210,6 +213,7 @@ export function buildDebugSnapshot({
       rankCost: Number(cost.toFixed(6)),
       kind: match.kind,
       variant: match.variant,
+      displayForm: match.displayForm,
       hint: hint ? `${hint.text}+${hint.distance}` : null,
       // § 6x: the glyph row does exactly one thing now. Kept in the dump anyway
       // so a reader does not have to remember which side of that change it is on.

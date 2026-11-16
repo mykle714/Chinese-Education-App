@@ -31,7 +31,7 @@ const PLATE_LIP = 4;
  */
 function LessonsPage() {
     usePageTitle("Lessons");
-    // Call once per page (see useTier2Look): it claims the footer/keyboard/status-bar chrome.
+    // Call once per page (see useTier2Look): it claims the CpcdPopup/status-bar chrome.
     const look = useTier2Look();
 
     return (

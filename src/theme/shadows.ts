@@ -9,9 +9,9 @@
 //      ground reads as a grey smudge rather than as absence of light. This is the same
 //      reasoning the border tokens in colors.ts already follow.
 //   2. THE LIGHT IS DIRECTLY ABOVE — the offset is `0 Ypx`, never diagonal. The app's old
-//      `2px 4px` cast everything to the lower-right, as if lit from the upper-left. The
-//      ONE exception is the spine (and its swatch), which is a physical object standing on
-//      a board rather than a plane floating above one, so it keeps a sideways offset.
+//      `2px 4px` cast everything to the lower-right, as if lit from the upper-left. (The
+//      spine used to be the one sideways exception; since 2026-11-15 it is a raised bar
+//      with a solid diagonal wall instead — components/shelf/Spine.tsx → `spineShadow`.)
 //   3. BLUR IS ~3x THE OFFSET, AND ALPHA STAYS LOW — the old `2px 4px 4px @ 0.25` is a
 //      tight, dark, hard-edged drop. Every shadow here is wide and faint (`0 3px 10px @
 //      0.10` for the same object). Height is read from how far the shadow SPREADS, not
@@ -90,14 +90,6 @@ export const SHADOW = {
      */
     board: `0 2px 5px ${INK(0.14)}`,
 
-    /**
-     * `.sp`, `.phd .sw` — a SPINE. The set's only diagonal shadow, and the only one with
-     * an inset: a spine is a solid object standing on a board, so it casts sideways and
-     * catches a highlight down its right face.
-     */
-    spine: `2px 3px 9px ${INK(0.14)}, inset -6px 0 12px rgba(255, 255, 255, 0.5)`,
-    /** `.phd .sw` — the spine reduced to a 26x34 identity swatch. Same shape, smaller. */
-    spineSwatch: `2px 2px 6px ${INK(0.14)}, inset -3px 0 7px rgba(255, 255, 255, 0.5)`,
 
     /**
      * A RECESS — an empty well pressed into a surface, lit from above so the shadow

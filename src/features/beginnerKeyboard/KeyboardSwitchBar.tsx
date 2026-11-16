@@ -18,9 +18,15 @@
  * both states, and the close chevron came up with it so that dismissing works
  * identically whichever keyboard is on screen.
  *
- * The toggle shows EVERY destination (写 · ā · ABC) rather than flipping one
- * label, so the choice is legible before the learner needs it. The active
- * segment is filled.
+ * The toggle shows EVERY destination (写 · ā · abc) rather than flipping one
+ * label, so the choice is legible before the learner needs it.
+ *
+ * THREE RAISED KEYS (restyled 2026-11-15, owner's choice; was a sunken well with one
+ * filled segment). Each destination is its own hued keycap (写 blu · ā grn · abc red,
+ * keycapStyle.ts → hueKeySx), the same object as the keys below it. The keyboard on
+ * screen is the key LATCHED DOWN — sitting where a pressed key sits, lip gone, ink
+ * label — the way a hardware mode key stays down; the others stand on their lips. The
+ * close chevron is a raised white key, so everything tappable reads as a key.
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * ⚠️ THE SLOT CLIPS, AND THAT IS THE WHOLE ANIMATION
@@ -32,7 +38,7 @@
  * pixels are:
  *
  *   • over our keyboard, the slot sits directly on top of the surface, so the
- *     hidden row is behind the keyboard's own first 40px
+ *     hidden row is behind the keyboard's own first KEYBOARD_SWITCH_BAR_HEIGHT px
  *   • over the OS keyboard, the slot is anchored at the keyboard's measured top
  *     edge, so the hidden row is inside the occluded band the browser is not
  *     painting anyway
@@ -46,38 +52,76 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { FONTS, SIZE, WEIGHT } from '../../theme';
 import { switchBarTransition } from './transition';
 import { KEYBOARD_COLORS } from './keyboardColors';
+import { KEY_LIP, hueKeySx, keyWidthForShownAspect, latchedKeySx, whiteKeySx } from './keycapStyle';
+import { RAMP, type RampHue } from '../../theme/colors';
 
 /**
- * The slot's height in CSS px.
+ * The slot's height in CSS px — FIXED at 44, and the key is what gives (owner,
+ * 2026-11-15: "bring the size back, just add 4px of padding" — the bar keeps its 44 and
+ * the 4px the 40px experiment took off the keys goes into the air around them instead).
+ * A flat 40 before the keys were raised.
  *
  * A constant rather than a measurement because the host has to reserve the space
  * and position the OS-mode slot BEFORE the bar has rendered anything to measure.
  */
-export const KEYBOARD_SWITCH_BAR_HEIGHT = 40;
+export const KEYBOARD_SWITCH_BAR_HEIGHT = 44;
+
+/** The 1px top rule that separates the bar from whatever is above it. */
+const SWITCH_BAR_RULE = 1;
+
+/**
+ * The air above a key's face and below its LIP, px. Equal on purpose: the lip is part of
+ * the key's visual mass, so a key centred on its box alone would look low. 8px — the
+ * original 6 plus 2 a side, the 4px of padding the owner asked for.
+ */
+const SWITCH_BAR_PAD = 8;
+
+/**
+ * The key face's height: whatever the slot leaves after the rule, both airs and the
+ * lip — 44 − 1 − 8 − 3 − 8 = 24.
+ */
+const SWITCH_KEY_HEIGHT = KEYBOARD_SWITCH_BAR_HEIGHT - SWITCH_BAR_RULE - SWITCH_BAR_PAD - KEY_LIP - SWITCH_BAR_PAD;
+
+/**
+ * EVERY key in the bar is one shape, locked (owner, 2026-11-15): 11 : 7 AS SHOWN — face
+ * plus lip, keycapStyle.ts → keyWidthForShownAspect — with the width solved from the
+ * face height: (24 + 3 lip) × 11/7 ≈ 42.43 wide, so a raised key shows ≈42.43×27.
+ * (Earlier that day, on a 28px face: 40×28, then 56×28 at 2 : 1 and 42×28 at 3 : 2
+ * measured on the face alone, then 3 : 2, 2 : 1, 5 : 4, 5 : 3, 10 : 7 and 11 : 7 shown;
+ * the flat bar's segments were 44×28.)
+ */
+const SWITCH_KEY_SHOWN_ASPECT = 11 / 7;
+const SWITCH_KEY_WIDTH = keyWidthForShownAspect(SWITCH_KEY_HEIGHT, SWITCH_KEY_SHOWN_ASPECT);
 
 /**
  * Which keyboard is currently on screen.
  *
  *   ours    — the 写 handwriting IME (BeginnerKeyboard)
  *   pinyin  — the ā tone-vowel pad (PinyinToneKeyboard, added 2026-10-29). Vowels
- *             only: the learner types consonants on ABC and comes here for the
+ *             only: the learner types consonants on abc and comes here for the
  *             tone-marked vowel. Suppresses the OS keyboard exactly like `ours`.
  *   os      — the system keyboard; all that is ours is this bar
  */
 export type KeyboardSource = 'ours' | 'pinyin' | 'os';
 
-/** The switch bar's segments, left to right: 写 · ā · ABC (artboard "Dictionary · keyboard, pinyin mode"). */
-const SEGMENTS: { source: KeyboardSource; label: string; ariaLabel: string; cjk: boolean; modifier: string }[] = [
-  { source: 'ours', label: '写', ariaLabel: 'Handwriting keyboard', cjk: true, modifier: 'handwriting' },
-  { source: 'pinyin', label: 'ā', ariaLabel: 'Pinyin tone keyboard', cjk: false, modifier: 'pinyin' },
-  { source: 'os', label: 'ABC', ariaLabel: 'System keyboard', cjk: false, modifier: 'abc' },
+/** The switch bar's segments, left to right: 写 · ā · abc (artboard "Dictionary · keyboard, pinyin mode"). */
+//
+// Each keyboard has its own hue, in the Friends page's tile order left to right —
+// Send blu · Accept grn · Remove red (owner, 2026-11-15: "blue green red order like
+// they are on the friends page"). The hue is positional, not a meaning: 写 blu, ā grn,
+// abc red. The label is lowercase `abc` (owner, 2026-11-15) — it names the Latin
+// keyboard, not an acronym.
+const SEGMENTS: { source: KeyboardSource; label: string; ariaLabel: string; cjk: boolean; modifier: string; hue: RampHue }[] = [
+  { source: 'ours', label: '写', ariaLabel: 'Handwriting keyboard', cjk: true, modifier: 'handwriting', hue: 'blu' },
+  { source: 'pinyin', label: 'ā', ariaLabel: 'Pinyin tone keyboard', cjk: false, modifier: 'pinyin', hue: 'grn' },
+  { source: 'os', label: 'abc', ariaLabel: 'System keyboard', cjk: false, modifier: 'abc', hue: 'red' },
 ];
 
 interface KeyboardSwitchBarProps {
   /** The keyboard the learner is on now; the other segment is the offer. */
   source: KeyboardSource;
   /**
-   * False hides the 写 · ā · ABC toggle and leaves only the close chevron — for a
+   * False hides the 写 · ā · abc toggle and leaves only the close chevron — for a
    * field locked to one keyboard (§ 6z-3b, `data-beginner-keyboard-lock`), where a
    * toggle with one usable segment would be a control that does nothing.
    */
@@ -111,11 +155,15 @@ export default function KeyboardSwitchBar({ source, showToggle = true, up, onSel
           top: 0,
           height: KEYBOARD_SWITCH_BAR_HEIGHT,
           display: 'flex',
-          alignItems: 'center',
+          // Hung from the top padding rather than centred, so the air below is
+          // measured from the LIP (SWITCH_BAR_PAD) — see KEYBOARD_SWITCH_BAR_HEIGHT.
+          alignItems: 'flex-start',
+          pt: `${SWITCH_BAR_PAD}px`,
+          boxSizing: 'border-box',
           gap: 1,
           px: 1.25,
           backgroundColor: KEYBOARD_COLORS.ground,
-          borderTop: `1px solid ${KEYBOARD_COLORS.outline}`,
+          borderTop: `${SWITCH_BAR_RULE}px solid ${KEYBOARD_COLORS.outline}`,
           // A keyboard is a fixed surface; nothing in this row scrolls or selects.
           touchAction: 'none',
           userSelect: 'none',
@@ -128,14 +176,9 @@ export default function KeyboardSwitchBar({ source, showToggle = true, up, onSel
             className="keyboard-switch-bar__toggle"
             role="group"
             aria-label="Keyboard"
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              p: '2px',
-              gap: '2px',
-              borderRadius: 2,
-              backgroundColor: KEYBOARD_COLORS.well,
-            }}
+            // Separate keys 6px apart: raised keys need air between their lips, and
+            // the gap is what makes them three choices rather than one split slab.
+            sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}
           >
             {SEGMENTS.map((segment) => (
               <SwitchSegment
@@ -147,6 +190,7 @@ export default function KeyboardSwitchBar({ source, showToggle = true, up, onSel
                 // CAP, not a word the learner is being taught, so it must not carry
                 // pinyin above it.
                 fontFamily={segment.cjk ? FONTS.cjk : FONTS.sans}
+                hue={segment.hue}
                 active={source === segment.source}
                 onClick={() => onSelect(segment.source)}
               />
@@ -169,16 +213,15 @@ export default function KeyboardSwitchBar({ source, showToggle = true, up, onSel
           onMouseDown={(event: React.MouseEvent) => event.preventDefault()}
           onClick={onDismiss}
           sx={{
-            width: 40,
-            height: 28,
+            // A plain white key (owner, 2026-11-15): it is not a keyboard, so it
+            // takes none of the three destination hues. Briefly org "gold" that day.
+            ...whiteKeySx(),
+            width: SWITCH_KEY_WIDTH,
+            height: SWITCH_KEY_HEIGHT,
             p: 0,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            border: 'none',
-            borderRadius: 2,
-            backgroundColor: 'transparent',
-            cursor: 'pointer',
             color: KEYBOARD_COLORS.ink2,
           }}
         >
@@ -189,12 +232,13 @@ export default function KeyboardSwitchBar({ source, showToggle = true, up, onSel
   );
 }
 
-/** One side of the segmented toggle. Filled when it is the keyboard on screen. */
+/** One switch key. Latched down (keycapStyle → latchedKeySx) when it is the keyboard on screen. */
 function SwitchSegment({
   className,
   label,
   ariaLabel,
   fontFamily,
+  hue,
   active,
   onClick,
 }: {
@@ -202,6 +246,7 @@ function SwitchSegment({
   label: string;
   ariaLabel: string;
   fontFamily: string;
+  hue: RampHue;
   active: boolean;
   onClick: () => void;
 }) {
@@ -217,18 +262,21 @@ function SwitchSegment({
       // key: a segmented control that greys out half of itself reads as broken.
       onClick={active ? undefined : onClick}
       sx={{
-        minWidth: 44,
-        height: 28,
-        px: 1.25,
-        border: 'none',
-        borderRadius: '6px',
-        backgroundColor: active ? KEYBOARD_COLORS.key : 'transparent',
+        // Raised when on offer, latched down when it is the keyboard on screen.
+        ...hueKeySx(hue),
+        ...(active ? latchedKeySx(RAMP[hue].mid) : null),
+        width: SWITCH_KEY_WIDTH,
+        height: SWITCH_KEY_HEIGHT,
+        flexShrink: 0,
+        p: 0,
         cursor: active ? 'default' : 'pointer',
         fontFamily,
         fontSize: SIZE.caption,
         fontWeight: WEIGHT.semibold,
         lineHeight: 1,
-        color: active ? KEYBOARD_COLORS.ink : KEYBOARD_COLORS.muted,
+        // Ink on every hued face (the framework's rule: text on a ramp fill is ink);
+        // the offers are a step lighter so the latched key still leads.
+        color: active ? KEYBOARD_COLORS.ink : KEYBOARD_COLORS.ink2,
       }}
     >
       {label}

@@ -10,7 +10,7 @@ const SLIDE_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 const SLIDE_START_MARGIN_PX = 16;
 
 /**
- * The login card slides in from the top of the screen (owner, 2026-11-14: "it should just slide
+ * The login card (with the app title above it) slides in from the top of the screen (owner, 2026-11-14: "it should just slide
  * in", not fall under gravity; docs/LOGIN_REWORK.md § 3).
  *
  * When: once per mount of the login page, as soon as the boot cover is gone. On a cold start
@@ -38,9 +38,12 @@ export function useCardSlideIn(mounted: boolean): { ref: (el: HTMLDivElement | n
         if (up || !mounted || !el || played.current) return;
         played.current = true;
         if (prefersReducedMotion() || typeof el.animate !== "function") return;
-        // From just above the top of the screen (the login page's box) to where it rests.
+        // From just above the top of the screen (the login page's box) to where it rests. The
+        // sliding element is the whole layer (title + scroller, filling the sky), so the distance
+        // is measured to the CARD's bottom: just enough to start it out of sight, not the layer's.
         const screenTop = (el.closest(".login-page") ?? document.body).getBoundingClientRect().top;
-        const fromPx = el.getBoundingClientRect().bottom - screenTop + SLIDE_START_MARGIN_PX;
+        const card = el.querySelector(".login-card") ?? el;
+        const fromPx = card.getBoundingClientRect().bottom - screenTop + SLIDE_START_MARGIN_PX;
         const slide = el.animate([{ transform: `translateY(${-fromPx}px)` }, { transform: "none" }], {
             duration: SLIDE_MS,
             easing: SLIDE_EASING,

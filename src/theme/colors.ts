@@ -164,7 +164,7 @@ export const COLORS = {
 
     // ── Surfaces ──────────────────────────────────────────────────
     // The app runs on ONE light palette during the redesign (decision D4); the
-    // Dark / Ocean / Nature themes in ThemeContext are not derived yet.
+    // Dark theme in ThemeContext is not derived yet.
     background: "#FBFAF8",       // --paper — the app's ground. Warm, not neutral grey.
     header: "#F2F2F4",           // --header — unchanged; the design uses this exact value
     white: "#FFFFFF",            // --white — cards, rows, sheets sit ON the paper ground

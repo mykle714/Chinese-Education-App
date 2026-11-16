@@ -2,7 +2,7 @@
 // in one place so no shelf in the app invents its own numbers.
 //
 // This is a plain module rather than exports on Spine.tsx because it exports
-// FUNCTIONS (`spineHeight`, `scaled`), which break fast refresh for a component
+// FUNCTIONS (`relativeSpineHeights`, `spineScale`), which break fast refresh for a component
 // in the same file — the same reason phoneGeometry.ts exists.
 //
 // See docs/SHELF_REDESIGN.md § A3.
@@ -10,8 +10,8 @@
 /**
  * The spine variants, each a `.sp` modifier in the design.
  *
- * `base` / `tall` / `short` are ONE spine at three heights — the count→height
- * banding (see `spineHeight`). `uni` is a fourth height used by rows where height
+ * `base` / `tall` / `short` are ONE spine at three heights. `short` and `tall` are
+ * also the floor and ceiling of a count-encoding row (`relativeSpineHeights`). `uni` is a fourth height used by rows where height
  * must deliberately NOT encode a count. `vol` is a different object: wider, taller,
  * and laid out from its own slots (a title plate rather than a plain name).
  */
@@ -130,27 +130,54 @@ export const spineScale = (renderedWidth: number, referenceWidth: number) =>
     renderedWidth / referenceWidth;
 
 /**
- * Where the count→height bands sit, and the whole reason a shelf reads as a shelf.
- *
- * A spine's height encoding how big the set is only works if the heights are
- * BANDED. Continuous height (height = f(count) as a smooth curve) gives a row of
- * near-identical spines that look like sloppy alignment rather than information,
- * and it makes two decks of 40 and 43 cards visibly different for no reason a
- * learner can act on. Three bands are legible; a fourth is not.
- *
- * ⚠️ THE CUTOFFS ARE A FIRST CUT. The design specifies the three heights but not
- * where a set moves between them. These are chosen against the app's actual spreads
- * — a new user's deck is single digits, a worked collection is dozens, and "All
- * Cards" / a mastery band on an established account runs to hundreds — so each band
- * holds a recognisable class of set rather than a third of the range. Revisit with
- * real accounts on screen.
+ * The minimum height difference between two spines whose counts differ, in px. Below
+ * ~10px two bars side by side read as sloppy alignment rather than as "this one is
+ * bigger"; 14 is clearly a step at phone size.
  */
-export const SPINE_BANDS = { short: 20, tall: 100 } as const;
+export const SPINE_MIN_HEIGHT_STEP = 14;
 
-/** The variant a set of `count` cards should render at. */
-export function spineHeight(count: number | undefined): SpineVariant {
-    if (count === undefined) return "base";
-    if (count < SPINE_BANDS.short) return "short";
-    if (count < SPINE_BANDS.tall) return "base";
-    return "tall";
+/**
+ * Heights for a ROW of spines whose heights encode their counts (user, 2026-11-15),
+ * index-aligned with `counts`. Replaced the absolute three-band `spineHeight`
+ * (< 20 short, < 100 base, else tall), under which 9 and 12 cards rendered at the
+ * identical height.
+ *
+ * The heights are RELATIVE to the row, in two passes:
+ *   1. PROPORTIONAL — each count maps linearly from the floor (`short`, 52 — the least
+ *      the spine's content fits in) to the ceiling (`tall`, 140) by `count / max`, so
+ *      the biggest set is always the tallest bar and an empty set sits on the floor.
+ *   2. SEPARATED — walking the DISTINCT counts upward, each is pushed to at least
+ *      `SPINE_MIN_HEIGHT_STEP` above the one below it; if that pushes the top past the
+ *      ceiling, a downward walk from the ceiling pulls them back under it. The step
+ *      shrinks to fit when there are too many distinct counts for the range (never
+ *      for the four bands: 3 × 14 = 42 < 88).
+ * Equal counts always get equal heights, and order is always preserved.
+ *
+ * Example: counts 43 / 9 / 12 / 9 → proportional 140 / 70 / 77 / 70 → separated
+ * 140 / 70 / 84 / 70.
+ *
+ * Used by: src/components/DeckBuckets.tsx (passes each result as `Spine`'s `height`).
+ * Docs: docs/SHELF_REDESIGN.md § A3.
+ */
+export function relativeSpineHeights(counts: readonly number[]): number[] {
+    const floor = SPINE_VARIANTS.short.height;
+    const ceiling = SPINE_VARIANTS.tall.height;
+    const range = ceiling - floor;
+    // Negative / NaN counts are treated as empty rather than trusted.
+    const safe = counts.map((c) => (Number.isFinite(c) && c > 0 ? c : 0));
+    const max = Math.max(0, ...safe);
+    if (max === 0) return safe.map(() => floor);
+
+    // One height per DISTINCT count, ascending, so ties stay level.
+    const distinct = [...new Set(safe)].sort((a, b) => a - b);
+    const step = distinct.length > 1 ? Math.min(SPINE_MIN_HEIGHT_STEP, range / (distinct.length - 1)) : 0;
+    const heights = distinct.map((c) => floor + (range * c) / max);
+    // Upward pass: open every gap to at least `step`.
+    for (let i = 1; i < heights.length; i++) heights[i] = Math.max(heights[i], heights[i - 1] + step);
+    // Downward pass: the top may now be over the ceiling — pin it and pull the rest under.
+    heights[heights.length - 1] = Math.min(heights[heights.length - 1], ceiling);
+    for (let i = heights.length - 2; i >= 0; i--) heights[i] = Math.min(heights[i], heights[i + 1] - step);
+
+    const byCount = new Map(distinct.map((c, i) => [c, Math.round(heights[i])]));
+    return safe.map((c) => byCount.get(c) ?? floor);
 }

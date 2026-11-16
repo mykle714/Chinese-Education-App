@@ -11,7 +11,7 @@ import { SAFE_BOTTOM } from "../theme/safeArea";
 import Icon from "./Icon";
 import { SLAB_CAST_SHADOW_VAR } from "./footerCastShadow";
 import { routeFooterStyle } from "../routes/routeMeta";
-import { tier2Var } from "../timeOfDay/tier2Chrome";
+import { footerVar } from "../theme/footerChrome";
 import { CARD_SURFACE_RADIUS } from "../theme/surfaces";
 import { roundedEdgeFillet, roundedEdgeRimLight } from "../theme/roundedEdge";
 import { registerDictionaryTabTap, requestDictionarySearchFocus } from "../features/dictionary/dictionarySearchFocus";
@@ -87,7 +87,7 @@ const SLAB_KEY_RADIUS = SLAB_FOOTER_RADIUS - SLAB_FOOTER_PADDING + 2;
 // The face's perimeter is a hairline ROUNDED edge (theme/roundedEdge.ts, 2026-11-08 — the
 // filter keys' and card stock's edge): a 1px rim light on the face's top-left edge and a
 // 0.5px fillet, half-way between face and wall colour, over the lip's first step. Both
-// colours are `tier2Var(…)` CSS variables; the helper mixes them with `color-mix`.
+// colours are `footerVar(…)` CSS variables; the helper mixes them with `color-mix`.
 const slabLipShadow = (face: string, wall: string) =>
     [
         roundedEdgeRimLight(face),
@@ -212,9 +212,9 @@ const FooterItem = styled(Box, {
 //     (diagonal — below and right, see `slabLipShadow`).
 //     (It used to be drawn through the Deck Tower's time-of-day wash as an SVG `url()`
 //     filter; cut 2026-10-30 — WebKit rasterises that on the CPU on every repaint.)
-//   Every slab colour reads `tier2Var(…, its card colour)`: a Tier 2 page under the slab
-//   (the Dictionary, src/timeOfDay/tier2Chrome.ts) turns it slate at night; with no Tier 2
-//   page up the variables are unset and the slab is the card stock above.
+//   Every slab colour reads `footerVar(…, its card colour)` (src/theme/footerChrome.ts):
+//   the Dark theme in Settings turns it slate on every page; on Light the variables are
+//   unset and the slab is the card stock above. It never follows the time of day.
 const SlabFooter = styled(Box)(() => ({
     position: "absolute",
     left: SLAB_FOOTER_SIDE_INSET,
@@ -230,9 +230,9 @@ const SlabFooter = styled(Box)(() => ({
 
 const SlabFooterFace = styled(Box)(() => ({
     height: "100%",
-    backgroundColor: tier2Var("footerFace", COLORS.cardFace),
+    backgroundColor: footerVar("face", COLORS.cardFace),
     borderRadius: "inherit",
-    boxShadow: slabLipShadow(tier2Var("footerFace", COLORS.cardFace), tier2Var("footerWall", COLORS.cardWall)),
+    boxShadow: slabLipShadow(footerVar("face", COLORS.cardFace), footerVar("wall", COLORS.cardWall)),
     display: "grid",
     // One equal column per tab — `grid-auto-flow: column` rather than a fixed count, so
     // the slab stays balanced if a tab is ever flagged off.
@@ -249,8 +249,8 @@ const SlabFooterFace = styled(Box)(() => ({
 // rather than each tab drawing its own background. It was a keycap with a 3px inset
 // diagonal lip + rounded edge until 2026-11-10; the user asked for the plain rectangle the
 // app's other selectors use, so it is flat now (no lip, no rim light, no fillet — it is
-// not a raised object any more). The outline reads Tier 2's `outline` so the night slate
-// gets its white-12% ring.
+// not a raised object any more). The outline reads the footer's themed `outline` so the
+// Dark theme's slate gets its white-12% ring.
 //
 // Geometry: it sits in the face's padding box, one column wide (the face is `1fr`
 // columns, so a column = (inner width) / tab count), and moves by `translateX(i * 100%)`
@@ -264,8 +264,8 @@ const SlabFooterSelector = styled(Box)(() => ({
     left: SLAB_FOOTER_PADDING,
     boxSizing: "border-box",
     borderRadius: SLAB_KEY_RADIUS,
-    backgroundColor: tier2Var("footerKey", COLORS.cardBeige),
-    border: `1px solid ${tier2Var("outline", COLORS.border)}`,
+    backgroundColor: footerVar("key", COLORS.cardBeige),
+    border: `1px solid ${footerVar("outline", COLORS.border)}`,
     transition: `${SLAB_SELECTOR_SLIDE}, opacity 150ms ease`,
     pointerEvents: "none",
     "@media (prefers-reduced-motion: reduce)": { transition: "none" },
@@ -405,8 +405,8 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "deck", varian
                             // `displayedTab`, not `activePage`: the ink moves with the selector.
                             const active = displayedTab === tab;
                             const tone = active
-                                ? tier2Var("footerInkActive", COLORS.onSurface)
-                                : tier2Var("footerInk", COLORS.textSecondary);
+                                ? footerVar("inkActive", COLORS.onSurface)
+                                : footerVar("ink", COLORS.textSecondary);
                             return (
                                 <SlabFooterItem
                                     key={tab}

@@ -121,16 +121,6 @@ const VOICE_SAMPLE: Record<Language, { text: string; pronunciation?: string }> =
  */
 
 /**
- * The swatch each theme is represented by in the four-across row.
- *
- * ⚠️ THESE ARE NOT THE THEMES' REAL PALETTES. Each is the one colour that best says
- * "this is what the app will look like" at 44px — the ground for Light and Dark, the
- * accent hue for Ocean and Nature — because the themes' own tokens (D4: Dark, Ocean and
- * Nature are not re-derived for this design yet) would render three near-identical
- * off-whites. Revisit when those palettes land; until then a swatch is a signpost, not
- * a preview.
- */
-/**
  * The weather row's subtitle: its description, or why switching it on did not stick.
  * Location stays as precise as the Arena's (a ~5 km cell, cut down on the device).
  */
@@ -140,11 +130,21 @@ const WEATHER_SUBTITLE: Record<WeatherEnableError | 'none', string> = {
     failed: "Couldn't turn on weather right now. Please try again.",
 };
 
+/** Gap between theme swatches; also feeds each swatch's quarter-row width. */
+const SWATCH_GAP_PX = 9;
+
+/**
+ * The swatch each theme is represented by in the swatch row (Light and Dark since the
+ * Ocean and Nature themes were removed 2026-11-15).
+ *
+ * ⚠️ THESE ARE NOT THE THEMES' REAL PALETTES. Each is the one colour that best says
+ * "this is what the app will look like" at 44px — the ground for each theme. Dark's own
+ * tokens are not re-derived for this design yet (D4). Until then a swatch is a signpost,
+ * not a preview.
+ */
 const THEME_SWATCHES: Record<ThemeMode, string> = {
     light: COLORS.background,
-    dark: COLORS.onSurface, // artboard 11: the swatch row is SURFACE — blu, grn, paper, ink
-    blue: COLORS.blu,
-    green: COLORS.grn,
+    dark: COLORS.onSurface, // artboard 11: the ink swatch
 };
 
 function SettingsBody() {
@@ -263,7 +263,7 @@ function SettingsBody() {
                         <SwitchRow
                             className="settings-page__testing-features-row"
                             title="Enable testing features"
-                            subtitle="Shows tester-only controls such as the Deck Tower chips, the Tester Dashboard, Allow anytime for challenges and the Soft introductions setting. Saved on this device only."
+                            subtitle="Shows tester-only controls such as the Deck Tower chips, the Tester Dashboard, Allow anytime for challenges, the handwriting keyboard's debug dump and the Soft introductions setting. Saved on this device only."
                             control={
                                 <Switch
                                     checked={testingFeaturesOn}
@@ -303,10 +303,10 @@ function SettingsBody() {
                     </SettingsSection>
                 )}
 
-                {/* ── Colour theme — a four-swatch row ────────────────────────────
-                    The artboard's argument, and it is a good one: four full option
-                    cards cost a third of the screen for a choice made once. The row
-                    is a radiogroup so arrow keys still move between the four. */}
+                {/* ── Colour theme — a swatch row (Light · Dark) ───────────────────
+                    The artboard's argument, and it is a good one: full option cards
+                    cost a third of the screen for a choice made once. The row is a
+                    radiogroup so arrow keys still move between the swatches. */}
                 <SettingsSection
                     className="settings-page__theme-section"
                     icon="palette"
@@ -317,7 +317,8 @@ function SettingsBody() {
                         className="settings-page__theme-swatches"
                         role="radiogroup"
                         aria-label="Color theme"
-                        sx={{ display: 'flex', gap: '9px', marginTop: '11px' }}
+                        // Centred: the quarter-width swatches don't fill the row, so they sit in its middle.
+                        sx={{ display: 'flex', justifyContent: 'center', gap: `${SWATCH_GAP_PX}px`, marginTop: '11px' }}
                     >
                         {availableThemes.map((theme, index) => {
                             const selected = themeMode === theme.value;
@@ -335,7 +336,11 @@ function SettingsBody() {
                                     // Roving tabindex — see handleSwatchKeyDown.
                                     tabIndex={selected ? 0 : -1}
                                     sx={{
-                                        flex: 1,
+                                        // A QUARTER of the row, not `flex: 1`: the row held four
+                                        // themes until Ocean and Nature were removed (2026-11-15),
+                                        // and the chips keep that original aspect (user) rather than
+                                        // stretching to half the row each. Width = (row − 3 gaps) / 4.
+                                        flex: `0 0 calc((100% - ${3 * SWATCH_GAP_PX}px) / 4)`,
                                         minWidth: 0,
                                         textAlign: 'center',
                                         background: 'none',
@@ -351,7 +356,7 @@ function SettingsBody() {
                                             borderRadius: '12px',
                                             backgroundColor: THEME_SWATCHES[theme.value],
                                             // Selection is a RING rather than a border so the
-                                            // swatch's own 44px height never changes — four
+                                            // swatch's own 44px height never changes — the
                                             // chips in a row must stay on one baseline.
                                             boxShadow: selected ? `0 0 0 1.5px ${COLORS.onSurface}` : 'none',
                                             border: selected ? 'none' : `1px solid ${COLORS.rowBorder}`,

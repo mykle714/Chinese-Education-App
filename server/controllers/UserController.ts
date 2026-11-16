@@ -274,7 +274,7 @@ export class UserController {
 
   /**
    * Set or clear the learner's gender / date of birth (migration 164).
-   * PUT /api/users/demographics — Body: { gender?: 'male' | 'female' | null, birthDate?: 'YYYY-MM-DD' | null }
+   * PUT /api/users/demographics — Body: { gender?: 'male' | 'female' | 'nonbinary' | null, birthDate?: 'YYYY-MM-DD' | null }
    *
    * Both optional; at least one required; `null` = "Prefer not to answer". Validation is
    * entirely UserService.validateDemographics (shared with signup), whose ValidationError

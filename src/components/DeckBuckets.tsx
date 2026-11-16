@@ -1,5 +1,5 @@
 import { styled } from "@mui/material/styles";
-import { Shelf, ShelfRow, Spine, spineHeight, SPINE_VARIANTS } from "./shelf";
+import { Shelf, ShelfRow, Spine, relativeSpineHeights, SPINE_VARIANTS } from "./shelf";
 import { BAND_COLORS } from "../utils/categoryColors";
 
 // The four utcm bands as a shelf row on the Account page — one spine per band.
@@ -128,31 +128,9 @@ const BUCKET_LABELS: Record<(typeof BUCKETS)[number], string> = {
  */
 const NAME_FIT_WIDTHS: Partial<Record<(typeof BUCKETS)[number], number>> = { Comfortable: 72 };
 
-/**
- * The glyph each band's spine carries, as one ascending progression: a question mark
- * (don't know it) → a target (working on it) → a check (comfortable) → a trophy
- * (done).
- *
- * ⚠️ The trophy is NOT the glyph the Mastered collection wears elsewhere: that is
- * `check_circle` (`features/flashcards/collectionGlyph.ts`, read by the Deck Tower's
- * cards-page filter keys), which this row already spends on *Comfortable* — so the two
- * disagree and this row cannot simply follow without colliding with itself.
- *
- * Material Symbols names rather than icon elements (decision D3) — the spine sizes
- * the glyph in `cqw` against its own width, which it cannot do to an opaque
- * `@mui/icons-material` element.
- *
- * Kept local rather than shared with `features/flashcards/collectionGlyph.ts`:
- * components/ must not import from features/ (docs/FRONTEND_LAYERING.md), and these
- * are utcm BANDS — a property of one card's progress — not the collections that
- * module maps.
- */
-const BUCKET_GLYPHS: Record<(typeof BUCKETS)[number], string> = {
-    Unfamiliar: "help",
-    Target: "adjust",
-    Comfortable: "check_circle",
-    Mastered: "trophy",
-};
+// ⚠️ The spines carried a per-band corner glyph (help → adjust → check_circle → trophy,
+// `BUCKET_GLYPHS`) until 2026-11-15; the user removed them. The count numeral alone
+// fills the spine's foot now. Spine's `glyph` prop is still supported for other callers.
 
 interface DeckBucketsProps {
     // Per-category library card counts, keyed by category label.
@@ -173,7 +151,7 @@ interface DeckBucketsProps {
  * (`src/features/friends/FriendExpandedDetail.tsx`). The expanded row is the narrow host
  * that the `gutter` prop and the fitted spine width exist for.
  *
- * The row carries the count TWICE on purpose — as each spine's banded height and as
+ * The row carries the count TWICE on purpose — as each spine's relative height and as
  * its mono numeral — which A3 warns against by reflex but is right here: the height
  * makes the four bands comparable at a glance (the shape of the user's library),
  * while the numeral is the figure someone reads a stats block to get. On a shelf
@@ -182,6 +160,9 @@ interface DeckBucketsProps {
 const DeckBuckets: React.FC<DeckBucketsProps> = ({ counts, gutter = true }) => {
     const spineWidth = fittedSpineWidth(BUCKETS.length, WIDE_SPINE_CAP);
     const interiorWidth = fittedSpineWidth(BUCKETS.length, SPINE_VARIANTS.base.width);
+    // Heights relative to the row, with a minimum step between different counts, so
+    // 9 vs 12 still reads as a difference (`relativeSpineHeights`).
+    const heights = relativeSpineHeights(BUCKETS.map((category) => counts[category] ?? 0));
 
     return (
         <BucketsContainer className="decks-buckets-container" gutter={gutter}>
@@ -200,8 +181,7 @@ const DeckBuckets: React.FC<DeckBucketsProps> = ({ counts, gutter = true }) => {
                         label={BUCKET_LABELS[category]}
                         nameFitWidth={NAME_FIT_WIDTHS[category]}
                         count={counts[category] ?? 0}
-                        glyph={BUCKET_GLYPHS[category]}
-                        variant={spineHeight(counts[category] ?? 0)}
+                        height={heights[index]}
                         color={BAND_COLORS[category].main}
                         // CSS lengths against the row (`fittedSpineWidth`): the spine
                         // widens up to 86px when there is room, but its interior stays

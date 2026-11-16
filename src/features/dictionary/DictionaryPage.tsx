@@ -6,11 +6,9 @@ import {
     Typography,
     Box,
     Alert,
-    CircularProgress,
 } from '@mui/material';
 import DelayedCircularProgress from '../../components/DelayedCircularProgress';
 import AiDictionaryEntryCard from '../../components/AiDictionaryEntryCard';
-import { COLORS } from '../../theme/colors';
 import { useAuth } from '../../AuthContext';
 import type { DictionaryEntry, Language } from '../../types';
 import DictionaryEntryRow from '../../components/DictionaryEntryRow';
@@ -268,17 +266,14 @@ function DictionaryPage() {
 
             {/* AI synthetic entry — rendered at the TOP of the results (above breakdown / regular
                 results) so a just-generated answer is immediately visible. A cached answer shows
-                without a tap; an "Ask AI" tap shows the spinner, then the card or a no-match note.
+                without a tap. An "Ask AI" tap mounts the card in its compact loading phase
+                ("Asking AI…"); the SAME instance then grows into the answer, so the white card
+                never blinks out between the two (AiDictionaryEntryCard → useAnimatedHeight). On
+                a no-match / error the card unmounts and the note below takes its place.
                 See docs/DICTIONARY_AI_FALLBACK_SEARCH.md. */}
-            {!loading && aiEntry && (
+            {((!loading && aiEntry) || askingAi) && (
                 <Box className="dictionary-page__ai-result" sx={{ mb: 3 }}>
-                    <AiDictionaryEntryCard entry={aiEntry} />
-                </Box>
-            )}
-            {askingAi && (
-                <Box className="dictionary-page__ai-loading" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3, color: COLORS.aiGenerated }}>
-                    <CircularProgress size={20} sx={{ color: COLORS.aiGenerated }} />
-                    <Typography variant="body2" sx={{ color: COLORS.aiGenerated }}>Asking AI…</Typography>
+                    <AiDictionaryEntryCard entry={aiEntry} look={look} />
                 </Box>
             )}
             {!askingAi && aiNoMatch && (

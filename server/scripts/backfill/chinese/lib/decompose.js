@@ -74,6 +74,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { MEAT_TWO_DOT_FORM } from '../../../../contracts/privateComponents.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // lib/ is at server/scripts/backfill/chinese/lib → server/ is four levels up.
@@ -112,7 +113,43 @@ const RADICALS = new Set([
     ...KANGXI_RADICALS,
     ...Array.from({ length: 0x2ef3 - 0x2e80 + 1 }, (_, i) => String.fromCodePoint(0x2e80 + i)),
     ...'氵亻忄扌艹辶讠钅阝彳纟饣犭牜礻衤月覀罒爫',
+    // A bound form Unicode cannot encode (see WRITTEN_FORM_OVERRIDES). It must count as a
+    // solid radical, or RULE 2 would refuse 肰's expansion and 然 would keep 肰 whole.
+    MEAT_TWO_DOT_FORM,
 ]);
+
+/**
+ * WRITTEN-FORM OVERRIDES — a part the source names by ETYMOLOGY where the learner sees a
+ * different SHAPE, replaced by the shape (this file's rule: "the shape as it actually
+ * appears is what we want").
+ *
+ * Each row: inside `parent`, the part `from` becomes `to`. `notAsRoot` skips the row when
+ * `parent` is itself the character being decomposed — 肰 on its own is written with a
+ * plain 月, and only takes the two-dot form as the top of 然.
+ *
+ * The ⺼ ("meat", 4 strokes) at the top-left of 然 / 祭 and the top of 炙 is written like
+ * 夕 with a second dot (cjkvi IDS ⿴𠂊冫). makemeahanzi stores it as ⺼ (然 via 肰, 祭) or 月
+ * (炙); a learner copying the character draws neither. No codepoint exists for the shape,
+ * so it takes the private-use MEAT_TWO_DOT_FORM (server/contracts/privateComponents.ts).
+ * Reaches 然 祭 炙 and, through 祭, 察 擦 蔡 嚓 镲.
+ *
+ * Applied inside `decompose`, the one recursion behind both `componentsOf` (the stored
+ * column) and `componentStrokesOf` (stroke labels for the handwriting templates), so the
+ * column and the templates agree. Spec: docs/BEGINNER_KEYBOARD.md § 6z-15.
+ */
+const WRITTEN_FORM_OVERRIDES = [
+    { parent: '肰', from: '⺼', to: MEAT_TWO_DOT_FORM, notAsRoot: true },
+    { parent: '祭', from: '⺼', to: MEAT_TWO_DOT_FORM, notAsRoot: false },
+    { parent: '炙', from: '月', to: MEAT_TWO_DOT_FORM, notAsRoot: false },
+];
+
+/** `part` as written inside `parent` (see WRITTEN_FORM_OVERRIDES). */
+function writtenForm(parent, part, parentIsRoot) {
+    const row = WRITTEN_FORM_OVERRIDES.find(
+        (candidate) => candidate.parent === parent && candidate.from === part && !(candidate.notAsRoot && parentIsRoot)
+    );
+    return row ? row.to : part;
+}
 
 // Kangxi radicals 1-6 (一 丨 丶 丿 乙 亅) and their variants are single STROKES. They
 // are legitimate PARTS — 尽 really does contain 丶 — but an expansion that yields only
@@ -253,7 +290,8 @@ function decompose(char, idsOf, matchesOf) {
     return expand(char, 0, new Set([char]));
 
     function expand(current, depth, seen) {
-        const partsHere = rawParts(current, idsOf);
+        // depth 0 is the character being decomposed; WRITTEN_FORM_OVERRIDES needs to know.
+        const partsHere = rawParts(current, idsOf).map((part) => writtenForm(current, part, depth === 0));
         const parts = [];
         // Per raw part: where its output starts in `parts`, and its sub-labels when
         // it was opened up.

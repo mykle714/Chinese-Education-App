@@ -10,11 +10,16 @@
  * rather than disappearing, because unmounting it would change the strip's width and shunt
  * the chips sideways underneath the thumb that is paging them.
  *
+ * `sx` lets the owner restyle the button's face without this shared component importing
+ * feature code: the candidate row passes the beginner keyboard's raised keycap
+ * (features/beginnerKeyboard/keycapStyle.ts → whiteKeySx), merged over the defaults below.
+ *
  * `accentColor` is a prop rather than a token because the candidate row's arrows take that
  * row's per-MODE accent (blue while drawing, green when idle), so there is no single
  * correct colour to bake in.
  */
 import { Box } from '@mui/material';
+import type { SxProps, Theme } from '@mui/material/styles';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { COLORS } from '../theme';
@@ -32,6 +37,8 @@ export interface ScrollArrowProps {
   accentColor?: string;
   /** Read by a screen reader in place of the chevron; name what is being scrolled. */
   label: string;
+  /** Face overrides, merged last (e.g. a raised keycap). */
+  sx?: SxProps<Theme>;
 }
 
 export default function ScrollArrow({
@@ -41,6 +48,7 @@ export default function ScrollArrow({
   classBlock,
   accentColor = COLORS.textSecondary,
   label,
+  sx,
 }: ScrollArrowProps) {
   const side = direction === -1 ? 'left' : 'right';
   return (
@@ -51,7 +59,7 @@ export default function ScrollArrow({
       className={`${classBlock}-arrow ${classBlock}-arrow--${side}`}
       disabled={!enabled}
       onClick={onClick}
-      sx={{
+      sx={[{
         flexShrink: 0,
         width: 28,
         height: 44,
@@ -66,7 +74,7 @@ export default function ScrollArrow({
         opacity: enabled ? 1 : 0.25,
         cursor: enabled ? 'pointer' : 'default',
         '&:hover': { backgroundColor: enabled ? COLORS.rowHoverBg : 'transparent' },
-      }}
+      }, ...(Array.isArray(sx) ? sx : [sx])]}
     >
       {direction === -1 ? <ChevronLeftIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
     </Box>

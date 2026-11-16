@@ -45,7 +45,7 @@
  */
 import type { Ink } from './types';
 import type { GlyphTemplates } from './glyphTemplates';
-import { KIND_COMPONENT, KIND_CHARACTER, KIND_VARIANT } from './glyphTemplates';
+import { KIND_COMPONENT, KIND_CHARACTER, KIND_VARIANT, KIND_DISPLAY_FORM } from './glyphTemplates';
 import { POINTS_PER_STROKE, normalizeStrokes, resampleStroke, type Point, type PolyStroke } from './inkGeometry';
 // The scoring primitives live in their own asset-free module so the offline
 // generator can select variants by the same distance (§ 6z-5).
@@ -77,10 +77,16 @@ const CANDIDATE_POOL = 200;
  */
 const VARIANT_COST_FACTOR = 1.15;
 
-/** A template's raw cost, adjusted for whether it is a variant. */
+/**
+ * A template's raw cost, adjusted for whether it is a variant. A § 6z-14 display
+ * form is NOT penalized: it is the shape the chip shows.
+ */
 function templateCost(kind: number, raw: number): number {
   return kind & KIND_VARIANT ? raw * VARIANT_COST_FACTOR : raw;
 }
+
+/** The bits that say which TEMPLATE a glyph matched by, not what the glyph is. */
+const TEMPLATE_SOURCE_BITS = KIND_VARIANT | KIND_DISPLAY_FORM;
 
 export interface GlyphCandidate {
   /** The glyph. */
@@ -88,9 +94,10 @@ export interface GlyphCandidate {
   /** Match cost — LOWER is better. Not a probability; only the ordering is meaningful. */
   cost: number;
   /**
-   * KIND_COMPONENT | KIND_CHARACTER — the glyph's roles. The KIND_VARIANT bit is
-   * stripped here and reported as `variant` instead, because it describes which
-   * TEMPLATE won, not what the glyph is.
+   * KIND_COMPONENT | KIND_CHARACTER — the glyph's roles. The KIND_VARIANT and
+   * KIND_DISPLAY_FORM bits are stripped here and reported as `variant` /
+   * `displayForm` instead, because they describe which TEMPLATE won, not what the
+   * glyph is.
    */
   kind: number;
   /**
@@ -99,6 +106,11 @@ export interface GlyphCandidate {
    * standalone drawing. Carried for the debug dump; the row does not care.
    */
   variant: boolean;
+  /**
+   * True when the winning template was traced from the glyph's § 6z-13 display
+   * outline (§ 6z-14). Carried for the debug dump; the row does not care.
+   */
+  displayForm: boolean;
 }
 
 export interface MatchOptions {
@@ -191,8 +203,9 @@ export function matchGlyphs(
     const kind = templates.kinds[index];
     return {
       char: templates.chars[index],
-      kind: kind & ~KIND_VARIANT,
+      kind: kind & ~TEMPLATE_SOURCE_BITS,
       variant: (kind & KIND_VARIANT) !== 0,
+      displayForm: (kind & KIND_DISPLAY_FORM) !== 0,
       cost: templateCost(
         kind,
         assignmentCost(drawn.length, strokeCount, used, (d, j) =>
@@ -242,6 +255,8 @@ export interface MatchExplanation {
    * variant (§ 6z-5). The pairings describe THAT template.
    */
   variant: boolean;
+  /** True when the best of the glyph's templates was its § 6z-14 display form. */
+  displayForm: boolean;
   pairings: StrokePairing[];
 }
 
@@ -276,6 +291,7 @@ export function explainGlyphMatch(
     drawnStrokes: drawn.length,
     templateStrokes: 0,
     variant: false,
+    displayForm: false,
     pairings: [],
   };
   if (drawn.length === 0) return empty;
@@ -317,8 +333,9 @@ export function explainGlyphMatch(
     drawnStrokes: drawn.length,
     templateStrokes: templates.strokeCounts[best.index],
     variant: (templates.kinds[best.index] & KIND_VARIANT) !== 0,
+    displayForm: (templates.kinds[best.index] & KIND_DISPLAY_FORM) !== 0,
     pairings: best.pairings,
   };
 }
 
-export { POINTS_PER_STROKE, KIND_COMPONENT, KIND_CHARACTER, KIND_VARIANT, CANDIDATE_POOL, VARIANT_COST_FACTOR };
+export { POINTS_PER_STROKE, KIND_COMPONENT, KIND_CHARACTER, KIND_VARIANT, KIND_DISPLAY_FORM, CANDIDATE_POOL, VARIANT_COST_FACTOR };

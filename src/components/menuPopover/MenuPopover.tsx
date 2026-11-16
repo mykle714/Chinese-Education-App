@@ -5,7 +5,7 @@ import { Box, Typography } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import Icon from "../Icon";
 import { useScreenOverlayHost } from "../../hooks/useScreenOverlayHost";
-import { tier2Var } from "../../timeOfDay/tier2Chrome";
+import { footerVar } from "../../theme/footerChrome";
 import { COLORS, RAMP } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { LEADING, WEIGHT } from "../../theme/scale";
@@ -26,9 +26,9 @@ import { isCurrentDestination, useMenuDestinations, type MenuDestination } from 
  *     `cardWall` lip), so "you are here" uses the same mark the footer uses;
  *   - each row leads with a chip in its destination's ramp hue, three-tone like a tower
  *     object: `mid` face over a `mark` lip, ink icon on top.
- * Every card colour reads `tier2Var(…)` exactly as the slab does, so on a Tier 2 page (the
- * Dictionary at night) popover and slab turn slate together. The hue chips keep their
- * ramp colours.
+ * Every card colour reads `footerVar(…)` (theme/footerChrome.ts) exactly as the slab does,
+ * so on the Dark theme popover and slab turn slate together — never on the clock. The hue
+ * chips keep their ramp colours.
  *
  * ⚠️ No `1px COLORS.border` outline on the rows or the card, which departs from the app's
  * "every tappable button and card carries the outline" rule (CLAUDE.md § Buttons & cards).
@@ -92,10 +92,10 @@ const Card = styled(Box)(() => ({
     padding: 6,
     boxSizing: "border-box",
     borderRadius: CARD_RADIUS,
-    backgroundColor: tier2Var("footerFace", COLORS.cardFace),
+    backgroundColor: footerVar("face", COLORS.cardFace),
     // Lip first, then the cast shadow beyond it. The cast is `COLORS.scrim`, a translucent ink,
     // so it darkens the dimmed page the way the slab's translucent cast darkens the sky.
-    boxShadow: `0 ${CARD_LIP}px 0 ${tier2Var("footerWall", COLORS.cardWall)}, ${CAST_X}px ${CAST_Y + CARD_LIP}px 0 ${COLORS.scrim}`,
+    boxShadow: `0 ${CARD_LIP}px 0 ${footerVar("wall", COLORS.cardWall)}, ${CAST_X}px ${CAST_Y + CARD_LIP}px 0 ${COLORS.scrim}`,
     transformOrigin: "bottom right",
     touchAction: "none",
 }));
@@ -105,8 +105,8 @@ const Row = styled(Box, {
 })<{ current?: boolean }>(({ current }) => {
     // The keycap: the slab's active tab, byte for byte (MobileFooter → SlabFooterItem).
     const keycap = {
-        backgroundColor: tier2Var("footerKey", COLORS.cardBeige),
-        boxShadow: `inset 0 -3px 0 ${tier2Var("footerWall", COLORS.cardWall)}`,
+        backgroundColor: footerVar("key", COLORS.cardBeige),
+        boxShadow: `inset 0 -3px 0 ${footerVar("wall", COLORS.cardWall)}`,
     };
     return {
         display: "flex",
@@ -138,7 +138,7 @@ const GroupRule = styled(Box)(() => ({
     height: 1,
     flexShrink: 0,
     margin: "6px 10px",
-    backgroundColor: tier2Var("footerWall", COLORS.cardWall),
+    backgroundColor: footerVar("wall", COLORS.cardWall),
 }));
 
 interface MenuPopoverProps {
@@ -230,8 +230,8 @@ const MenuPopover: React.FC<MenuPopoverProps> = ({ open, onClose, footerClearanc
                         fontWeight: WEIGHT.semibold,
                         lineHeight: LEADING.tight,
                         color: current
-                            ? tier2Var("footerInkActive", COLORS.onSurface)
-                            : tier2Var("footerInk", COLORS.onSurface),
+                            ? footerVar("inkActive", COLORS.onSurface)
+                            : footerVar("ink", COLORS.onSurface),
                     }}
                 >
                     {dest.title}

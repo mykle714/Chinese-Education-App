@@ -7,11 +7,13 @@
  * Spec: docs/BEGINNER_KEYBOARD.md § 6w.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * ⚠️ GATED ON `users.isFeatureTester`, AND THE GATE IS NOT HERE
+ * ⚠️ GATED ON `useTestingFeatures()`, AND THE GATE IS NOT HERE
  *
  * The provider decides (it is the only layer in this feature holding auth) and
- * passes `debug` down. This is a tool for whoever is tuning the recognizer, not a
- * user-facing feature. (It rode `users.isTemplateAuthor` until migration 185.)
+ * passes `debug` down: the `users.isFeatureTester` grant AND Settings' "Enable
+ * testing features" switch (docs/FEATURE_TESTING.md). This is a tool for whoever is
+ * tuning the recognizer, not a user-facing feature. (It rode `users.isTemplateAuthor`
+ * until migration 185.)
  *
  * It is UX-only, exactly like every other `isFeatureTester` check on the client:
  * there is no server call behind it and nothing here is privileged. A determined

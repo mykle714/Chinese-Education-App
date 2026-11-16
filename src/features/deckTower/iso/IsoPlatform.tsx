@@ -51,7 +51,9 @@ interface IsoPlatformProps {
     /**
      * The surface far below that the platform's shadow falls on. Omitted = no ground
      * shadow: a platform floating over DOM content rather than a sky plane (the flp's
-     * hint pawn, docs/HINT_PAWN.md) has no surface to paint one on.
+     * hint pawn, docs/HINT_PAWN.md) has no surface to paint one on. The shadow is drawn
+     * see-through (IsoShadow `seeThrough`): this plane is the page's backdrop, not an svg
+     * fill, and the backdrop can lag `ground.color` (the Deck Tower's sky fade).
      */
     ground?: IsoSurface;
     /** Bob up and down (IsoLevitate). */
@@ -114,11 +116,11 @@ const IsoPlatform: React.FC<IsoPlatformProps> = ({ rect, thickness, ground, floa
             {swungShadow ? (
                 swungShadow.opacity > 0 ? (
                     <g className="iso-platform__shadow-fade" opacity={swungShadow.opacity}>
-                        <IsoShadow solid={swungShadow.solid} receiver={ground} className="iso-platform__shadow" />
+                        <IsoShadow solid={swungShadow.solid} receiver={ground} seeThrough className="iso-platform__shadow" />
                     </g>
                 ) : null
             ) : (
-                <IsoShadow footprint={rect} casterZ={-thickness} receiver={ground} className="iso-platform__shadow" />
+                <IsoShadow footprint={rect} casterZ={-thickness} receiver={ground} seeThrough className="iso-platform__shadow" />
             )}
         </g>
     ) : null;

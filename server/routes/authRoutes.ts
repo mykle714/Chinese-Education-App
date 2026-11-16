@@ -49,7 +49,9 @@ router.delete('/api/auth/deleteAccount', authenticateToken, handle(signInControl
 router.get('/api/auth/methods', handle(signInController.methods));
 router.post('/api/auth/email/sendCode', authLimiter, handle(signInController.sendEmailCode));
 router.post('/api/auth/email/verifyCode', authLimiter, handle(signInController.verifyEmailCode));
+router.post('/api/auth/password/signIn', authLimiter, handle(signInController.passwordSignIn));
 router.post('/api/auth/password/reset', authLimiter, handle(signInController.resetPassword));
+router.post('/api/auth/password/resetWithPhone', authLimiter, handle(signInController.resetPasswordWithPhone));
 router.post('/api/auth/phone/verify', authLimiter, handle(signInController.phoneVerify));
 // DEV ONLY: the Firebase stand-in's send / confirm (DevConsolePhoneVerifier). Not mounted at all
 // unless that verifier is active, which never happens with NODE_ENV=production.
@@ -66,6 +68,7 @@ router.post('/api/auth/stepUp/verify', authenticateToken, authLimiter, handle(si
 router.post('/api/auth/email/startChange', authenticateToken, authLimiter, handle(signInController.startEmailChange));
 router.post('/api/auth/email/confirmChange', authenticateToken, authLimiter, handle(signInController.confirmEmailChange));
 router.post('/api/auth/phone/change', authenticateToken, authLimiter, handle(signInController.changePhone));
+router.post('/api/auth/password/set', authenticateToken, authLimiter, handle(signInController.setPassword));
 router.put('/api/users/username', authenticateToken, handle(signInController.changeUsername));
 router.put('/api/users/name', authenticateToken, handle(signInController.changeName));
 

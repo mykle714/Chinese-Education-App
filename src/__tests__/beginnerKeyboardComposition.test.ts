@@ -237,7 +237,7 @@ describe('end to end — draw, append, commit', () => {
 
 describe('§ 6z-4 fallback tiers', () => {
   const glyph = (char: string, hint: HintCharacter | null = null): RankedGlyph => ({
-    match: { char, cost: 0.1, kind: 1, variant: false },
+    match: { char, cost: 0.1, kind: 1, variant: false, displayForm: false },
     hint,
     cost: 0.1,
   });
@@ -291,7 +291,7 @@ describe('§ 6z-4 hint bubbles', () => {
 });
 
 describe('§ 6z-6 buffer-fit re-ranking', () => {
-  const match = (char: string, cost: number): GlyphCandidate => ({ char, cost, kind: 1, variant: false });
+  const match = (char: string, cost: number): GlyphCandidate => ({ char, cost, kind: 1, variant: false, displayForm: false });
   const hint = (text: string, distance: number): HintCharacter => ({ text, pronunciation: '', distance });
 
   it("keeps the matcher's order untouched while the buffer is empty", () => {
@@ -328,6 +328,24 @@ describe('§ 6z-6 buffer-fit re-ranking', () => {
     // And against real ink, 囗 never takes a chip of its own.
     expect(glyphRow(inkFromMedians('囗'), []).map((c) => c.text)).not.toContain('囗');
     expect(glyphRow(inkFromMedians('囗'), [])[0].text).toBe('口');
+  });
+
+  it('§ 6z-7: a merged chip says what it covers, buffer or not; other chips do not', () => {
+    const ranked = rankGlyphs([match('士', 0.05), match('口', 0.08), match('木', 0.1)], [], null);
+    const row = toGlyphCandidates(ranked);
+    expect(row.map((c) => [c.text, c.covers])).toEqual([['土', '士'], ['口', '囗'], ['木', undefined]]);
+    // Mid-character too, and alongside a hint (the row gives covers priority).
+    const withBuffer = toGlyphCandidates(rankGlyphs([match('土', 0.05)], ['口'], () => hint('吐', 0)));
+    expect(withBuffer[0]).toMatchObject({ text: '土', covers: '士', hint: { text: '吐' } });
+  });
+
+  it('§ 6z-13: a chip drawn as a cut outline covers its own compact font glyph', () => {
+    // ⺈'s chip shows 尔's flat hat, so its bubble carries the font's compact ⺈. The
+    // chip's text — what enters the buffer — is still the real codepoint.
+    const row = toGlyphCandidates(rankGlyphs([match('⺈', 0.05), match('冖', 0.08)], [], null));
+    expect(row.map((c) => [c.text, c.covers])).toEqual([['⺈', '⺈'], ['冖', undefined]]);
+    // 卯's chip shows 留's top half, so its bubble carries the font's 卯.
+    expect(toGlyphCandidates(rankGlyphs([match('卯', 0.05)], [], null))[0]).toMatchObject({ text: '卯', covers: '卯' });
   });
 
   it('puts ⺈ first for the real 2026-09-27 sample, carrying the bubble that explains why', () => {
@@ -380,8 +398,8 @@ describe('§ 6z-8 the direct-commit chip', () => {
 
   it('only ever repeats the first chip the blue section shows', () => {
     const ranked = [
-      { match: { char: '亻', cost: 0.1, kind: 1, variant: false }, hint: null, cost: 0.1 },
-      { match: { char: '我', cost: 0.2, kind: 2, variant: false }, hint: null, cost: 0.2 },
+      { match: { char: '亻', cost: 0.1, kind: 1, variant: false, displayForm: false }, hint: null, cost: 0.1 },
+      { match: { char: '我', cost: 0.2, kind: 2, variant: false, displayForm: false }, hint: null, cost: 0.2 },
     ];
     // 我 qualifies, but it is not the top guess — no chip.
     expect(directCommitCandidate(ranked, [], (char) => char === '我')).toBeNull();

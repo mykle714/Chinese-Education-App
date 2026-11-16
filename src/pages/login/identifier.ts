@@ -36,6 +36,9 @@ export function parsePhone(raw: string): Extract<ParsedIdentifier, { kind: "phon
     return E164_PATTERN.test(compact) ? { kind: "phone", value: compact } : { kind: "invalid", message: "That phone number doesn't look right" };
 }
 
+/** The login Phone field's shape error: the only place the field says it is US / Canada only. */
+export const US_ONLY_MESSAGE = "Only US and Canada numbers work right now";
+
 /** How many boxes the login Phone box has: a NANP number without its +1. */
 export const US_PHONE_DIGITS = 10;
 
@@ -48,19 +51,27 @@ export function emptyPhoneDigits(): string[] {
  * Put `input` (one typed key, or a pasted / autofilled number) into the digit boxes starting at
  * box `at`, and say which box should take focus next.
  *
- * A whole number (10 digits, or 11 starting with the country code 1, with any separators) always
- * fills from the first box, whichever box it landed in: that is what iOS / Android autofill and a
- * paste of "+1 (555) 123-4567" look like. Anything shorter fills forward from `at`.
+ * - A whole number (10 digits, or 11 starting with the country code 1, with any separators)
+ *   always fills from the first box, whichever box it landed in: that is what iOS / Android
+ *   autofill and a paste of "+1 (555) 123-4567" look like.
+ * - Anything shorter fills forward from `at`, but never from PAST the first empty box (owner,
+ *   2026-11-15: typing always starts from the first cell; a number has no gaps). A filled box
+ *   before the first empty one can still be retyped in place.
+ * - The first box drops a 0 or 1 (owner, 2026-11-15). The field shows no "+1", so a learner may
+ *   type the country code by habit; no NANP area code starts with 0 or 1, so this can never eat
+ *   a real digit.
  */
 export function spreadDigits(boxes: readonly string[], at: number, input: string): { boxes: string[]; focus: number } {
     let digits = input.replace(/\D/g, "");
-    let start = at;
+    const firstEmpty = boxes.findIndex((b) => !b);
+    let start = firstEmpty === -1 ? at : Math.min(at, firstEmpty);
     if (digits.length === US_PHONE_DIGITS + 1 && digits.startsWith("1")) digits = digits.slice(1);
     if (digits.length >= US_PHONE_DIGITS) start = 0;
     const next = [...boxes];
     let i = start;
     for (const d of digits) {
         if (i >= US_PHONE_DIGITS) break;
+        if (i === 0 && (d === "0" || d === "1")) continue; // the habitual leading 1 (see above)
         next[i++] = d;
     }
     return { boxes: next, focus: Math.min(i, US_PHONE_DIGITS - 1) };
@@ -68,13 +79,14 @@ export function spreadDigits(boxes: readonly string[], at: number, input: string
 
 /**
  * The ten boxes → an E.164 US / Canada number. NANP area codes and exchanges never start with 0
- * or 1, which catches the commonest slip (typing the leading 1 into the first box).
+ * or 1. The field shows no "+1" or "US and Canada" note (owner, 2026-11-15), so a number that
+ * fails this shape check (most often a non-NANP number) is told which countries work instead.
  */
 export function parseUsPhoneDigits(boxes: readonly string[]): Extract<ParsedIdentifier, { kind: "phone" | "invalid" }> {
     const digits = boxes.join("");
     if (!digits) return { kind: "invalid", message: "Enter your phone number" };
     if (digits.length < US_PHONE_DIGITS || !/^\d+$/.test(digits)) return { kind: "invalid", message: "Enter all 10 digits" };
-    if (!/^[2-9]\d{2}[2-9]\d{6}$/.test(digits)) return { kind: "invalid", message: "That phone number doesn't look right" };
+    if (!/^[2-9]\d{2}[2-9]\d{6}$/.test(digits)) return { kind: "invalid", message: US_ONLY_MESSAGE };
     return { kind: "phone", value: `+1${digits}` };
 }
 

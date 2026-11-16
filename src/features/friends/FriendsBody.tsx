@@ -348,8 +348,17 @@ function FriendsBody() {
                         {view === "accept" && <IncomingRequestsBody onChanged={handleFriendsChanged} />}
                         {view === "remove" && <RemoveFriendsBody onChanged={handleFriendsChanged} />}
                         {view === "board" && <>
-                            {/* Your own ID — the shareable friend handle. */}
-                            <SectionCard className="friends-page__my-id">
+                            {/* Your own ID — the shareable friend handle. Filled with the org MID
+                                tier (owner, 2026-11-15): the "gold" this board used to mark the
+                                viewer's own row with (FriendPersonRow `highlighted`, removed
+                                2026-11-13), so "this is you" keeps its colour. The border goes
+                                transparent like that row's did — a fill and a grey ring would
+                                say the same edge twice. */}
+                            <SectionCard
+                                className="friends-page__my-id"
+                                background={RAMP.org.mid}
+                                sx={{ borderColor: "transparent" }}
+                            >
                                 {/* Same header as SentRequestsBody's "Add a friend", centred. */}
                                 <Typography component="h2" className="friends-page__my-id-heading" sx={{ ...sectionHeadingSx, textAlign: "center" }}>
                                     Your friend code
@@ -393,7 +402,9 @@ function FriendsBody() {
                                             top: "50%",
                                             transform: "translateY(-50%)",
                                             ml: 0.5,
-                                            color: copied ? COLORS.onSurface : COLORS.textSecondary,
+                                            // Icon ink, not the muted grey: textSecondary washes out
+                                            // on the org fill.
+                                            color: copied ? COLORS.onSurface : COLORS.iconColor,
                                         }}
                                     >
                                         <Icon name={copied ? "check" : "content_copy"} size={18} />

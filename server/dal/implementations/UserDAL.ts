@@ -99,7 +99,7 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
   }
 
   /**
-   * The password hash for an account, by id (null when it has none: a phone-only account).
+   * The password hash for an account, by id (null when it has none: the password is optional).
    * Replaces the old `findByEmailWithPassword(findById(id).email)` round-trip in
    * changePassword / deleteUser, which cannot work for an account with no email.
    */
@@ -111,6 +111,21 @@ export class UserDAL extends BaseDAL<User, UserCreateData, UserUpdateData> imple
       return await client.query('SELECT password FROM users WHERE id = $1', [id]);
     });
     return result.recordset[0]?.password ?? null;
+  }
+
+  /**
+   * The full row (password hash included) for an E.164 phone number, or null: password sign-in
+   * with a phone (migration 191: a phone account may have a password). Served by `uq_users_phone`.
+   */
+  async findByPhoneWithPassword(phone: string): Promise<User | null> {
+    if (!phone) {
+      throw new ValidationError('Phone is required');
+    }
+    const result = await this.dbManager.executeQuery<User>(async (client) => {
+      return await client.query('SELECT * FROM users WHERE phone = $1', [phone]);
+    });
+    // SELECT * — birthDate normalized as in findByEmailWithPassword.
+    return withIsoBirthDate(result.recordset[0] || null);
   }
 
   /**

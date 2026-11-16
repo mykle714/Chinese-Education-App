@@ -53,8 +53,7 @@ import { COLORS, FONTS, SIZE, WEIGHT } from '../../theme';
 import { RAMP, type RampHue } from '../../theme/colors';
 import { deleteBeforeCaret, insertAtCaret, moveCaret } from './insertAtCaret';
 import { KEYBOARD_COLORS } from './keyboardColors';
-import { keycapPressSx } from '../../theme/keycapPress';
-import { roundedEdgeFilletDown, roundedEdgeRimLightTop } from '../../theme/roundedEdge';
+import { KEY_RADIUS, keyPressSx, whiteKeySx } from './keycapStyle';
 import type { EditableField } from './eligibility';
 
 /** One vowel's four tones, and the ramp hue the group is painted in. */
@@ -78,34 +77,13 @@ const KEY_GAP = 4;
 const GROUP_GAP = 16;
 const ROW_GAP = 12;
 const GRID_MAX_WIDTH = KEY_MAX_WIDTH * 8 + KEY_GAP * 6 + GROUP_GAP;
-/** The keycap's bottom lip — the "raised key" read, the same 3px the artboard uses. */
-const LIP = 3;
-
 // Hold-to-repeat (backspace and the ← → caret keys), matching the feel of an OS
 // keyboard's held delete.
 const REPEAT_DELAY_MS = 400;
 const REPEAT_INTERVAL_MS = 70;
 
-/**
- * The keycap outline: the app's 1px `COLORS.border` ring (CLAUDE.md § Buttons &
- * cards — every tappable carries it) drawn as an inset shadow so it does not
- * change the key's box, the hairline rounded edge just inside it (theme/roundedEdge.ts,
- * straight-lip form), plus the raised lip beneath.
- */
-const keycapShadow = (face: string, lip: string, outline: string = COLORS.border) =>
-  `inset 0 0 0 1px ${outline}, ${roundedEdgeRimLightTop(face, 1)}, ${roundedEdgeFilletDown(face, lip)}, 0 ${LIP}px 0 ${lip}`;
-
-/**
- * A key's resting shadow + the app's raised-key press (theme/keycapPress.ts): it snaps
- * down onto its lip while held, keeping its outline, and snaps back on release — no
- * transition.
- */
-const keyPressSx = (face: string, lip: string, outline: string = COLORS.border) =>
-  keycapPressSx({
-    restShadow: keycapShadow(face, lip, outline),
-    pressedShadow: `inset 0 0 0 1px ${outline}, ${roundedEdgeRimLightTop(face, 1)}`,
-    pressedY: LIP,
-  });
+// The keycap look (outline ring, rounded edge, lip, snap press) lives in keycapStyle.ts,
+// shared with the 写 surface and the switch bar.
 
 /**
  * What the action key says and does, read off the FIELD rather than hard-coded
@@ -211,7 +189,6 @@ export default function PinyinToneKeyboard({ field, height, onCommit, onDismiss 
         pb: 1,
         // Same ground + top rule as BeginnerKeyboard, so switching 写 ⇄ ā swaps
         // only the keys and never the surface.
-        // A Tier 2 page's ground over the Dictionary (keyboardColors).
         backgroundColor: KEYBOARD_COLORS.ground,
         borderTop: `1px solid ${KEYBOARD_COLORS.outline}`,
         touchAction: 'none',
@@ -243,7 +220,7 @@ export default function PinyinToneKeyboard({ field, height, onCommit, onDismiss 
                     minWidth: 0,
                     p: 0,
                     border: 'none',
-                    borderRadius: '9px',
+                    borderRadius: KEY_RADIUS,
                     backgroundColor: RAMP[group.hue].surface,
                     fontFamily: FONTS.sans,
                     fontSize: SIZE.subtitle,
@@ -317,24 +294,20 @@ export default function PinyinToneKeyboard({ field, height, onCommit, onDismiss 
 }
 
 /**
- * The white utility keycap (backspace, ← →, action) — artboard `.tp .tpl b`. Slate at night
- * over a Tier 2 page (keyboardColors); the vowel keys keep their ramp colours.
+ * The white utility keycap (backspace, ← →, action) — artboard `.tp .tpl b`. The vowel
+ * keys keep their ramp colours.
  */
 function utilityKeySx(extra: Record<string, unknown>) {
   return {
+    ...whiteKeySx(),
     height: KEY_HEIGHT,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    border: 'none',
-    borderRadius: '9px',
-    backgroundColor: KEYBOARD_COLORS.key,
     fontFamily: FONTS.sans,
     fontSize: SIZE.body,
     fontWeight: WEIGHT.semibold,
     color: KEYBOARD_COLORS.ink2,
-    cursor: 'pointer',
-    ...keyPressSx(KEYBOARD_COLORS.key, KEYBOARD_COLORS.keyEdge, KEYBOARD_COLORS.outline),
     ...extra,
   } as const;
 }

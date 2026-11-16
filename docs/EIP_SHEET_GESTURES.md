@@ -496,7 +496,7 @@ read it with `useEipColors()` (the LIGHT palette outside a provider). The sheet
 (`InfoCardSection`) mounts the provider — the eip's only host since the inline dictionary-cdp
 panel was deleted (2026-11-10).
 
-- **Light** — every theme but Dark (Light, Ocean, Nature). The design's Day artboard: a
+- **Light** — the Light theme. The design's Day artboard: a
   pale-sky tint on the upper panel's ground and wells; keys, shelf, cards and ink are the
   app's light colours.
 - **Dark** — the Dark theme. The design's *Night–inverted* artboard: slate panels (#2A3446

@@ -18,8 +18,8 @@ were NodePages before that.
 
 | View | Component | What it is |
 |---|---|---|
-| *(none selected)* | `src/features/friends/FriendsBody.tsx` | The friends **leaderboard** (§ 1a), read-only. Shows the viewer's own **friend code** (§ "Friend codes") under a centred **"Your friend code"** header, with a bare copy icon hung off its right edge (no pill; the code alone is centred), above the board. A friend's row **expands in place** (§ "Expand in place"). |
-| **Send** selected | `src/features/friends/SentRequestsBody.tsx` | Pending **outgoing** requests (name only, no "Sent …" date), each with a blue **Withdraw** pill — `bluM` fill, no icon (`friendStyles.ts` → `withdrawButtonSx`; the server calls this a *revoke*). Above the list, the compose card — an **"Add a friend"** header (`SIZE.subtitle`, bold) over the "Paste friend code here" field — the only place a friendship is created. |
+| *(none selected)* | `src/features/friends/FriendsBody.tsx` | The friends **leaderboard** (§ 1a), read-only. Shows the viewer's own **friend code** (§ "Friend codes") in a card filled with `RAMP.org.mid` (transparent border; 2026-11-15 — the "this is you" gold the board's own row used to wear) under a centred **"Your friend code"** header, with a bare copy icon hung off its right edge (no pill; the code alone is centred), above the board. A friend's row **expands in place** (§ "Expand in place"). |
+| **Send** selected | `src/features/friends/SentRequestsBody.tsx` | Pending **outgoing** requests (name only, no "Sent …" date), each with a gold **Withdraw** pill — `gld` fill, no icon (`friendStyles.ts` → `withdrawButtonSx`; the server calls this a *revoke*). Above the list, the compose card — an **"Add a friend"** header (`SIZE.subtitle`, bold) over the "Friend code or @username" field and a blue **Send** button (`bluM`, matching the Send tile — `sendButtonSx`) — the only place a friendship is created. |
 | **Accept** selected | `src/features/friends/IncomingRequestsBody.tsx` | Pending **incoming** requests (name only, no "Received …" timestamp), each with **Accept** / **Decline** pills — `grnM` / `redM` fill, ink text, the button outline, no icon (`friendStyles.ts` → `acceptButtonSx` / `declineButtonSx`, built from the same `filledRowButtonSx` as Remove). |
 | **Remove** selected | `src/features/friends/RemoveFriendsBody.tsx` | The plain friend list (name only, no secondary line), each row with a red **Remove** box — `redM` fill, ink text, the button outline, no icon (`friendStyles.ts` → `removeButtonSx`). The board deliberately has no per-row Remove: a destructive control on a ranking row invites a mis-tap while reading scores. |
 
@@ -247,8 +247,11 @@ heading: it starts directly under the friend code card (`src/features/friends/Fr
   `isCurrentUser`, so `FriendPersonRow` renders the avatar/name half inert (no pointer
   cursor, no expand). Every friend row expands in place (§ 1 "Expand in place").
 * **The rank is the row's whole left section**, not a chip: `FriendPersonRow`'s `leading`
-  slot renders a full-height column (min 40px wide) divided from the rest of the row by one
-  `COLORS.rowBorder` hairline. It runs the row's full height, so an expanded friend's
+  slot renders a full-height column (min 40px wide). The tint (`leadingFill`) is painted on
+  the ROW and the body sits over it as a white panel rounded on all four corners (15px),
+  so the tint wraps into the body's left corners; the divider is the body's own curved
+  `COLORS.rowBorder` left border (user 2026-11-15 — until then the section carried the
+  fill, squared against a straight hairline). It runs the row's full height, so an expanded friend's
   detail sits to the RIGHT of it (indented by the section). The numeral (`RankNumeral`,
   17px `DATA_TYPE` bold ink) stays level with the main line rather than re-centring as the
   detail opens. (A 28px chip left of the avatar until 2026-11-13.)

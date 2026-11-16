@@ -1,39 +1,34 @@
 /**
- * keyboardColors — the beginner keyboard's chrome colours, each one a Tier 2 page's
- * time-of-day colour with the keyboard's own default behind it.
+ * keyboardColors — the beginner keyboard's chrome colours: the standard grey keyboard,
+ * on every page and at every time of day.
  *
- * LAYER: client feature constants. The values are CSS strings
- * (`var(--tier2-…, <default>)`, src/timeOfDay/tier2Chrome.ts → tier2Var): over a Tier 2 page
- * (the Dictionary) the keyboard takes that page's ground, keys and ink — a pale sky tint
- * by day, slate at night — and everywhere else the variables are unset and it keeps
- * the grey `COLORS.header` surface it always had (owner's choice 2026-10-29: "only on Tier 2
- * pages").
+ * LAYER: client feature constants. Plain `COLORS` tokens under keyboard-role names, so
+ * the four surfaces that draw keyboard chrome agree on what "a key" or "the ground" is.
  *
- * Deliberately NOT themed: the vowel keys' ramp colours (content, like a card's tone
- * colours), the handwriting canvas (stays white paper — the stroke ink is dark), and the
- * candidate row's blue/green mode tints (the tint IS the mode signal).
+ * NOT THEMED (owner, 2026-11-15). The keyboard used to borrow a Tier 2 page's time-of-day
+ * look over the Dictionary (sky tint by day, slate at night, via `tier2Var`), § 6z-11.
+ * That was removed: the keyboard is one consistent grey object everywhere. Its only
+ * colour signals are content and mode — the ā pad's vowel ramp hues and the candidate
+ * row's gold / blue mode grounds (org mid — the friend-code card's gold — and blu mid, the 写 switch key's face) — neither of which lives here.
  *
- * Read by: BeginnerKeyboard, ComponentBuffer, KeyboardSwitchBar, PinyinToneKeyboard.
- * Docs: docs/BEGINNER_KEYBOARD.md § 6z-11.
+ * Read by: BeginnerKeyboard, ComponentBuffer, KeyboardSwitchBar, PinyinToneKeyboard,
+ * CandidateRow, keycapStyle.
+ * Docs: docs/BEGINNER_KEYBOARD.md § 6z-11, § 6z-12 (the keycap look).
  */
 import { COLORS } from '../../theme';
-import { tier2Var } from '../../timeOfDay/tier2Chrome';
 
 export const KEYBOARD_COLORS = {
   /** The keyboard surface and the switch bar. */
-  ground: tier2Var('ground', COLORS.header),
-  /** The switch bar's sunken segment track. */
-  well: tier2Var('well', COLORS.card),
-  /** A white key / chip, and the active switch segment. */
-  key: tier2Var('surface', COLORS.white),
+  ground: COLORS.header,
+  /** A white key's face (every utility key, parts chip and switch key — keycapStyle.ts). */
+  key: COLORS.white,
   /** A raised key's drop lip. */
-  keyEdge: tier2Var('surfaceEdge', COLORS.grey),
+  keyEdge: COLORS.grey,
   /** Every key's 1px outline, and the keyboard's top rule. */
-  outline: tier2Var('outline', COLORS.border),
-  /** A pressed chip's tint. */
-  pressed: tier2Var('pressed', COLORS.rowHoverBg),
-  /** Glyphs: primary, icons, muted labels. */
-  ink: tier2Var('ink', COLORS.onSurface),
-  ink2: tier2Var('ink2', COLORS.iconColor),
-  muted: tier2Var('muted', COLORS.textSecondary),
+  outline: COLORS.border,
+  /** Glyphs: primary, icons, muted labels, and the faintest caption (the buffer's "Parts"). */
+  ink: COLORS.onSurface,
+  ink2: COLORS.iconColor,
+  muted: COLORS.textSecondary,
+  faint: COLORS.textFaint,
 } as const;

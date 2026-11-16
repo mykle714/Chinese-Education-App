@@ -52,7 +52,9 @@ interface FriendPersonRowProps {
      * stays level with the main line (it does not drift down as the detail opens).
      */
     leading?: ReactNode;
-    /** Ground of the `leading` section (the leaderboard's podium tint). Omit for white. */
+    /** Tint behind the `leading` section (the leaderboard's podium tint). Painted on the
+     *  ROW, with the body as a white panel rounded on all four corners over it, so the tint
+     *  wraps into the body's left corners. Omit for a plain white row. */
     leadingFill?: string;
     /**
      * What tapping the PERSON (avatar + name) does. When given, that area becomes
@@ -119,6 +121,11 @@ function FriendPersonRow({ name, username, avatarIconId, secondary, actions, lea
     // Name is optional on the account, so the username is the fallback label AND the
     // source of the initial — never render an empty avatar (docs/LOGIN_REWORK.md Q19–Q20).
     const label = displayName({ name, username });
+
+    // A tinted rank section flips which half is shaped: the row takes the tint and the
+    // body becomes a white panel rounded on all four corners. Untinted rows (and rows with
+    // no `leading` at all) stay a plain white `.rw`.
+    const hasTintedLeading = leading !== undefined && leadingFill !== undefined;
     const initialSource = name?.trim() || username;
 
     // A whole-row button owns the tap, so the person half must not also be one — two
@@ -165,13 +172,21 @@ function FriendPersonRow({ name, username, avatarIconId, secondary, actions, lea
                 // `highlighted` prop, removed 2026-11-13 by user request); "(you)" after
                 // the name is now the only marker.
                 border: `1px solid ${COLORS.rowBorder}`,
-                backgroundColor: COLORS.white,
+                // With a tinted left section, the ROW wears the tint and the body sits on
+                // it as a white panel rounded on all four corners (see `hasTintedLeading`),
+                // so the tint shows in the body's two left corners. `padding-box` keeps that
+                // tint from bleeding under the translucent `rowBorder` outline.
+                backgroundColor: hasTintedLeading ? leadingFill : COLORS.white,
+                backgroundClip: "padding-box",
             }}
         >
-            {/* The left section. Its fill is clipped to the row's left corners by its own
-                radius (15 = the row's 16 minus the 1px border) rather than `overflow:
-                hidden` on the row, so nothing inside the expanded detail gets clipped.
-                The divider is the same `rowBorder` hairline as the row's outline. */}
+            {/* The left section. It draws no fill of its own: the tint is the ROW's
+                ground, and it is the WHITE body that is shaped — rounded on all four
+                corners, so the tint wraps into the body's left corners (user, 2026-11-15;
+                until then this section carried the fill, rounded on its left corners only,
+                squared against a straight `rowBorder` divider). The divider is now the
+                body's own left border, which curves with those corners. Nothing uses
+                `overflow: hidden`, so nothing inside the expanded detail gets clipped. */}
             {leading !== undefined && (
                 <Box
                     className="friend-person-row__leading"
@@ -180,9 +195,6 @@ function FriendPersonRow({ name, username, avatarIconId, secondary, actions, lea
                         minWidth: 40,
                         px: 1,
                         pt: `${ROW_PAD_Y_PX}px`,
-                        backgroundColor: leadingFill ?? "transparent",
-                        borderRadius: "15px 0 0 15px",
-                        borderRight: `1px solid ${COLORS.rowBorder}`,
                     }}
                 >
                     <Box
@@ -210,6 +222,14 @@ function FriendPersonRow({ name, username, avatarIconId, secondary, actions, lea
                     columnGap: 1.5,
                     rowGap: 0,
                     p: `${ROW_PAD_Y_PX}px 13px`,
+                    // The white panel over a tinted row. 15px = the row's 16 minus its 1px
+                    // outline, so the right corners sit flush in the row's own; the left
+                    // corners round INTO the tint. The left border is the rank divider.
+                    ...(hasTintedLeading && {
+                        backgroundColor: COLORS.white,
+                        borderRadius: "15px",
+                        borderLeft: `1px solid ${COLORS.rowBorder}`,
+                    }),
                 }}
             >
 

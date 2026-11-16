@@ -12,10 +12,14 @@ import type { UserGender } from '../types';
  * (Collected for Immersive World, removed 2026-11-09 — docs/ARCHIVED_FEATURES.md.)
  */
 
-/** The two answers, in the order both forms list them. `null` — "Prefer not to answer" — is the third. */
+/**
+ * The answers, in the order both forms list them (migration 192 added Non-binary). `null` —
+ * "Prefer not to answer", or simply skipped — is the remaining state, listed last by each form.
+ */
 export const GENDER_CHOICES: readonly { value: UserGender; label: string }[] = [
     { value: 'female', label: 'Female' },
     { value: 'male', label: 'Male' },
+    { value: 'nonbinary', label: 'Non-binary' },
 ];
 
 export const PREFER_NOT_LABEL = 'Prefer not to answer';

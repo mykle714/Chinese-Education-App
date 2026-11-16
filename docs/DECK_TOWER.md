@@ -136,7 +136,7 @@ start while the camera dashes between worlds (the ones already out finish crossi
 (`TOWER_DECKS[…].label`) is printed twice: across the top card's coloured head band
 (`TOWER_DECKS[…].band`, DeckTowerPlatform `stack.label` / `stack.bandColor`, carried by the
 study cover card too — TowerCoverCard `deck`; restored 2026-10-24 after a short stretch as
-bare card stock), and on the label plate, an `IsoFloorLabel` on the floor in front of the stack (as wide as the card,
+bare card stock), and on the label plate, an `IsoFloorLabel` on the floor in front of the stack (centred on the card but narrower — `LABEL_PLATE_W` in towerPlatforms.ts,
 between its front-left face and the platform edge), raised slightly off the floor as a push
 button (`IsoFloorLabel` `raised`; [DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md)
 § "The plate button"). It is part of the floor: it is passed
@@ -242,9 +242,11 @@ docs/SHELF_REDESIGN.md § 7b), without a cast shadow or wash, and so do the vet 
 (`/flashcards/card/:id`, also on the Tier 2 ground) and acp. Every Menu-reached page
 (`/friends/*`, `/users/:id`, `/reader`, `/community`) and `/arena` keeps
 the bar. The Menu tab's popover (`src/components/menuPopover/MenuPopover.tsx`, docs/NAVIGATION.md
-§ 3) is cut from the same card stock as the slab, on both footer styles. Every slab colour is written `tier2Var(<key>, <card colour>)`
-(`src/timeOfDay/tier2Chrome.ts`): unset on the tower, so the slab is the card stock below;
-a Tier 2 page sets them (slate at night).
+§ 3) is cut from the same card stock as the slab, on both footer styles. Every slab colour is written `footerVar(<key>, <card colour>)`
+(`src/theme/footerChrome.ts`): unset on the Light theme, so the slab is the card stock below
+on every page; the **Dark theme** in Settings sets them (the design's night slate) on every
+page. The footer **never follows the time of day** (it read the Tier 2 clock until 2026-11-15
+and turned slate at night over the Dictionary).
 
 - **Opt-in per route.** The `/` row (and the two Dictionary rows, the vet cdp's and acp's) in `src/routes/routeMeta.ts` carries
   `footerStyle: "slab"`; `routeFooterStyle` defaults every other row to `"bar"`.
@@ -266,8 +268,8 @@ a Tier 2 page sets them (slate at night).
   outline stepped 1px along (1, 1), so the wall shows below *and* to the right, like td's
   filter keys and the mini cards' card stock (`sortCardStock.ts` → `panelWall`), and the face's
   perimeter has the same hairline **rounded edge** (`src/theme/roundedEdge.ts`: a 0.5px fillet
-  half-way between `footerFace` and `footerWall`, a 1px rim light on the top-left edge — mixed
-  with CSS `color-mix` so the Tier 2 night slate carries through). The active tab is marked by ONE sliding selector (`SlabFooterSelector`) rather than a per-tab background: a FLAT rounded rectangle in `COLORS.cardBeige` (the card's face panel, `ISO.cardPanel`) with a 1px outline in `tier2Var("outline", COLORS.border)`, radius 11 (`SLAB_KEY_RADIUS`: the concentric 15 − 6px padding = 9, plus 2). It sits absolutely in the face's padding box, one `1fr` column wide, and moves by `translateX(index × 100%)` with a 280ms transform transition (`SLAB_SELECTOR_SLIDE`; none under `prefers-reduced-motion`), so switching between two slab routes slides it from the old cell to the new one — the footer is mounted once by `FooterPresenter`, so it survives the navigation. A bar↔slab style swap remounts it and does not slide. The slide starts **on the tap, not when the page arrives**: React Router v7 runs navigations as React transitions, so while a lazy route chunk loads or the page mounts, the location (and `activePage`) still reads the old tab. A tap therefore records the tab it is heading to (`pendingTab`, an urgent state update tagged with the current `location.key`), and the selector and tab ink follow `displayedTab` = that record while the location is unchanged, else `activePage`. Menu records nothing (it opens the popover). It has no side face or rounded edge: until 2026-11-10 it was a keycap with a 3px inset diagonal `cardWall` lip, which was dropped for the app's plain selected-rectangle look. Tabs, left to right, are a filled Material Symbol (`stacks` Deck,
+  half-way between the face and wall colours, a 1px rim light on the top-left edge — mixed
+  with CSS `color-mix` so the Dark theme's slate carries through). The active tab is marked by ONE sliding selector (`SlabFooterSelector`) rather than a per-tab background: a FLAT rounded rectangle in `COLORS.cardBeige` (the card's face panel, `ISO.cardPanel`) with a 1px outline in `footerVar("outline", COLORS.border)`, radius 11 (`SLAB_KEY_RADIUS`: the concentric 15 − 6px padding = 9, plus 2). It sits absolutely in the face's padding box, one `1fr` column wide, and moves by `translateX(index × 100%)` with a 280ms transform transition (`SLAB_SELECTOR_SLIDE`; none under `prefers-reduced-motion`), so switching between two slab routes slides it from the old cell to the new one — the footer is mounted once by `FooterPresenter`, so it survives the navigation. A bar↔slab style swap remounts it and does not slide. The slide starts **on the tap, not when the page arrives**: React Router v7 runs navigations as React transitions, so while a lazy route chunk loads or the page mounts, the location (and `activePage`) still reads the old tab. A tap therefore records the tab it is heading to (`pendingTab`, an urgent state update tagged with the current `location.key`), and the selector and tab ink follow `displayedTab` = that record while the location is unchanged, else `activePage`. Menu records nothing (it opens the popover). It has no side face or rounded edge: until 2026-11-10 it was a keycap with a 3px inset diagonal `cardWall` lip, which was dropped for the app's plain selected-rectangle look. Tabs, left to right, are a filled Material Symbol (`stacks` Deck,
   `school` Lessons, `translate` Dictionary, `apps` Menu; 22px, weight 500) over an 11px/600 label, `textSecondary` idle and
   `onSurface` active. The bar stays text-only.
 - **Not lit by the wash** (since 2026-10-30). From 2026-10-25 the slab's face was drawn
@@ -722,6 +724,9 @@ is now the only twilight.
   linear day ↔ night blend, half-way at the sun event (yesterday's, today's and tomorrow's
   keyframes are all built, so a night is always bracketed). A day too short for any plain
   day blends up to day at its midday and straight back; a polar day / night holds day / night.
+- **Who honours twilight.** The tower and acp blend. The Tier 2 pages (Dictionary, Lessons,
+  cdp — `useTier2Look`) do not (since 2026-11-15): they snap to the majority phase
+  (`src/timeOfDay/dayPhase.ts` → `snappedPhase`) and flip at the sun event itself.
 - **Sampling** (`useTimeOfDay`). Once a minute and on `visibilitychange` → visible; a sample
   with the same look (blend within 0.005) keeps the old `TowerLight`, so nothing re-renders.
 - **Skies** (`phaseSky`, `NIGHT_SKY`, `TowerWorld.nightSky`). Day is the token itself. Night

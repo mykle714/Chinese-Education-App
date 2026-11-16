@@ -6,7 +6,7 @@ import { IRefreshTokenDAL } from '../dal/interfaces/IRefreshTokenDAL.js';
 import { User, AuthResponse, Language } from '../types/index.js';
 import { ValidationError, DuplicateError, NotFoundError, DALError } from '../types/dal.js';
 import { resolveTimezone } from '../utils/streakDate.js';
-import { CHINESE_FONT_IDS, ISO_DATE_PATTERN, USER_GENDERS, normalizeUsername, usernameProblem, USERNAME_MAX_LENGTH, RESERVED_USERNAMES, type UserGender } from '../contracts/wire.js';
+import { CHINESE_FONT_IDS, ISO_DATE_PATTERN, USER_GENDERS, normalizeUsername, passwordProblem, usernameProblem, USERNAME_MAX_LENGTH, RESERVED_USERNAMES, type UserGender } from '../contracts/wire.js';
 
 // JWT secret key - should be in environment variables in PPE
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -26,6 +26,8 @@ function dummyPasswordHash(): Promise<string> {
 
 /** The one message for a wrong password AND an unknown email (Q17): it must not say which. */
 export const WRONG_CREDENTIALS_MESSAGE = 'Wrong email or password';
+/** The phone twin of WRONG_CREDENTIALS_MESSAGE (password sign-in with a phone, migration 191). */
+export const WRONG_PHONE_CREDENTIALS_MESSAGE = 'Wrong phone number or password';
 
 /**
  * Everything needed to create an account (docs/LOGIN_REWORK.md § 4d, Q14). An account is only
@@ -153,8 +155,9 @@ export class UserService {
    * (docs/LOGIN_REWORK.md Q14: verify first, then details). Called by SignInService once a
    * sign-up ticket checks out; never directly from an HTTP body.
    *
-   * Email accounts carry a password (Q9); phone accounts never do (Q3). The username is
-   * required, unique and validated (Q20–Q21); the name is optional (Q19).
+   * The password is OPTIONAL for every account, email or phone (owner, 2026-11-15; migration
+   * 191 dropped the rule that a password needs an email): checked for strength when given. The
+   * username is required, unique and validated (Q20–Q21); the name is optional (Q19).
    */
   async createUser(input: NewAccountInput): Promise<User> {
     const email = input.email ? input.email.trim().toLowerCase() : null;
@@ -164,13 +167,9 @@ export class UserService {
     }
     if (email) {
       this.validateEmail(email);
-      if (!input.password) throw new ValidationError('Password is required');
-      this.validatePasswordStrength(input.password);
       if (await this.userDAL.findByEmail(email)) throw new DuplicateError('Email already exists');
-    } else if (input.password) {
-      // A password belongs to the email channel (chk_users_password_needs_email).
-      throw new ValidationError('A phone account has no password');
     }
+    if (input.password) this.validatePasswordStrength(input.password);
     if (phone && (await this.userDAL.findByPhone(phone))) {
       throw new DuplicateError('Phone number already in use');
     }
@@ -241,14 +240,16 @@ export class UserService {
 
   /**
    * A free username derived from `seed` (a name or an email's local part), for prefilling
-   * the sign-up form. The same derivation as migration 188's backfill: lowercase, runs of
-   * other characters → "_", "u_" prefix when it does not start with a letter, "learner" when
-   * empty, cut to 20, lowest free numeric suffix on a clash.
+   * the sign-up form. Migration 188's backfill derivation, loosened for migration 190's
+   * Instagram rules: lowercase, runs of characters other than a–z / 0–9 → "_", "learner" when
+   * empty, cut to USERNAME_MAX_LENGTH (30), lowest free numeric suffix on a clash. (It no longer
+   * needs a "u_" prefix or 3-character padding: a username may now start with a digit and be
+   * 1 character long. Periods are allowed but never generated, so no period rule can trip.)
    */
   async suggestUsername(seed: string | null | undefined): Promise<string> {
     let base = (seed ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-    if (!/^[a-z]/.test(base)) base = base === '' ? 'learner' : `u_${base}`;
-    base = base.slice(0, USERNAME_MAX_LENGTH).padEnd(3, '_');
+    if (base === '') base = 'learner';
+    base = base.slice(0, USERNAME_MAX_LENGTH);
     let candidate = base;
     // Bounded: a real collision run is a handful; the cap only guards a pathological table.
     for (let n = 2; n < 10000; n++) {
@@ -281,6 +282,24 @@ export class UserService {
   /**
    * Authenticate user and generate JWT token
    */
+  /**
+   * Password sign-in by email OR phone (the verification window's "Sign in with password",
+   * docs/LOGIN_REWORK.md). Shown for every identifier whether or not an account exists, so an
+   * unknown identifier, an account with no password and a wrong password all pay one bcrypt
+   * compare and read the same message: nothing says whether the identifier is registered.
+   */
+  async authenticateWithPassword(identifier: { email: string } | { phone: string }, password: string): Promise<AuthResponse> {
+    if (!password) throw new ValidationError('Enter your password');
+    const byPhone = 'phone' in identifier;
+    const user = byPhone ? await this.userDAL.findByPhoneWithPassword(identifier.phone) : await this.userDAL.findByEmailWithPassword(identifier.email);
+    const hash = user?.password ?? (await dummyPasswordHash());
+    const isPasswordValid = await bcrypt.compare(password, hash);
+    if (!user || !user.password || !isPasswordValid) {
+      throw new ValidationError(byPhone ? WRONG_PHONE_CREDENTIALS_MESSAGE : WRONG_CREDENTIALS_MESSAGE);
+    }
+    return this.issueSession(user);
+  }
+
   async authenticateUser(email: string, password: string): Promise<AuthResponse> {
     // Validation
     if (!email) {
@@ -479,8 +498,8 @@ export class UserService {
     // Business rule: validate new password strength
     this.validatePasswordStrength(newPassword);
     
-    // The hash by id (an account with no email still has an id). A phone-only account has no
-    // password to change.
+    // The hash by id (an account with no email still has an id). An account that never set its
+    // optional password has none to change: it sets one with SignInService.setPassword.
     const passwordHash = await this.userDAL.findPasswordHashById(userId);
     if (!passwordHash) {
       throw new ValidationError('This account has no password');
@@ -537,8 +556,8 @@ export class UserService {
 
   /**
    * Delete an account with NO credential check. ONLY for SignInService.deleteAccountWithStepUp,
-   * which checked a step-up token first (the one path for a phone account, which has no
-   * password). CASCADE deletes the account's data.
+   * which checked a step-up token first (the path for an account with no password, the
+   * password being optional). CASCADE deletes the account's data.
    */
   async deleteUserUnchecked(userId: string): Promise<void> {
     if (!userId) throw new ValidationError('User ID is required');
@@ -558,7 +577,7 @@ export class UserService {
       throw new ValidationError('Password is required for account deletion');
     }
     
-    // The hash by id. A phone-only account has none: it deletes through the step-up path
+    // The hash by id. An account without a password deletes through the step-up path
     // (SignInService, docs/LOGIN_REWORK.md Q24), not this one.
     const passwordHash = await this.userDAL.findPasswordHashById(userId);
     if (!passwordHash) {
@@ -781,26 +800,8 @@ export class UserService {
    * Validate password strength
    */
   validatePasswordStrength(password: string): void {
-    if (password.length < 8) {
-      throw new ValidationError('Password must be at least 8 characters long');
-    }
-    
-    if (password.length > 128) {
-      throw new ValidationError('Password is too long (maximum 128 characters)');
-    }
-    
-    // Business rule: password must contain at least one letter and one number
-    const hasLetter = /[a-zA-Z]/.test(password);
-    const hasNumber = /\d/.test(password);
-    
-    if (!hasLetter || !hasNumber) {
-      throw new ValidationError('Password must contain at least one letter and one number');
-    }
-    
-    // Business rule: check for common weak passwords
-    const commonPasswords = ['password', '12345678', 'qwerty123', 'password123'];
-    if (commonPasswords.includes(password.toLowerCase())) {
-      throw new ValidationError('Password is too common. Please choose a stronger password');
-    }
+    // The rule lives in wire.ts (shared with the client's test sign-up dry run).
+    const problem = passwordProblem(password);
+    if (problem) throw new ValidationError(problem);
   }
 }

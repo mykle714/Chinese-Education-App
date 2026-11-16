@@ -15,8 +15,8 @@ import { COLORS } from "./colors";
  * The wall itself stays the caller's solid wall colour, so the side still reads as a side.
  * Every colour derives from the caller's face + wall pair (and `COLORS.white`), so nothing
  * leaves the framework. The blends are CSS `color-mix(in srgb, …)` rather than `mixHex`
- * so a caller may pass CSS variables — the footer slab's colours are `tier2Var(…)`
- * (src/timeOfDay/tier2Chrome.ts), which turn slate at night; the browser resolves the mix.
+ * so a caller may pass CSS variables — the footer slab's colours are `footerVar(…)`
+ * (src/theme/footerChrome.ts), which turn slate on the Dark theme; the browser resolves the mix.
  *
  * ── Three wall shapes ──
  *  - DIAGONAL, outset (the tower style's extrusion: td filter keys, card stock, footer slab):
@@ -42,6 +42,7 @@ import { COLORS } from "./colors";
  * Used by: src/features/deckTower/TowerFilterKeys.tsx (`keyShadow`),
  *          src/features/discover/sortCardStock.ts (`cardStockShadow`, the pressed stock),
  *          src/components/MobileFooter.tsx (`slabLipShadow`, the footer slab),
+ *          src/components/shelf/Spine.tsx (`spineShadow`, the Account band spines),
  *          src/features/deckTower/iso/IsoSolid.tsx (`roundedEdge` — the SVG form of the same edge
  *          on the iso solids: cards, raised plates, the notebook, the lever base, the acp bins'
  *          top layers; it reuses these constants).
@@ -50,7 +51,7 @@ import { COLORS } from "./colors";
  *          gameBreak/GameBreakCard.tsx (the game token), FlashcardsLearnPage/EipAddKey.tsx,
  *          FlashcardsLearnPage/EipEntryHeader.tsx (headword tile), discover/AddCardsPage.tsx
  *          (`keycapShadow`), dictionary/DictionaryPageParts.tsx (`Keycap`),
- *          beginnerKeyboard/PinyinToneKeyboard.tsx (`keycapShadow`), games/match-speed/
+ *          beginnerKeyboard/keycapStyle.ts (`keycapShadow`, every bk key), games/match-speed/
  *          MatchSpeedCard.tsx (`keyShadow`).
  * Docs: docs/designGuidelines.md § Buttons → "The rounded edge"; docs/DECK_TOWER.md § "The filter keys", § "Footer"; docs/TOWER_STYLE_SHIFT.md § "Card stock";
  *       docs/ISO_ART_FRAMEWORK.md § "The rounded edge";

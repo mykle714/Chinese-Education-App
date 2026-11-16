@@ -15,7 +15,8 @@
 // (features/discover/AddCardsPage.tsx → `keycapSx`), td's cards-page filter keys
 // (features/deckTower/TowerFilterKeys.tsx — diagonal, `restX`/`pressedX`), the Dictionary page's keycaps
 // (features/dictionary/DictionaryPageParts.tsx → `Keycap`), the beginner keyboard's
-// keys (features/beginnerKeyboard/PinyinToneKeyboard.tsx → `keyPressSx`) and Match Speed's
+// keys (features/beginnerKeyboard/keycapStyle.ts → `keyPressSx` — every key on the ā pad,
+// the 写 surface and the switch bar) and Match Speed's
 // cards (games/match-speed/MatchSpeedCard.tsx → `cardKeySx`), and td's cards-page mini
 // cards (features/discover/sortCardStock.ts → `cardStockPressSx`, diagonal and
 // `translate`-driven). A new raised key

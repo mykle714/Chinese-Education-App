@@ -610,7 +610,7 @@ together. Faces follow `src/theme/fonts.ts`'s roles:
 |---|---|---|---|
 | gloss list | `FONTS.sans` | `WEIGHT.medium` | `WordSearchWordList.tsx` |
 | pinyin reveal | `DATA_TYPE` — ⚠️ was `FONTS.mono` because the blanks need a fixed pitch; since 2026-11-13 only digits are fixed-width, so letters may shift as the mask fills | `WEIGHT.regular` | `WordSearchHintRow.tsx` |
-| component reveal | `FONTS.hanziComponents` (the only face with the rare component glyphs) | `WEIGHT.regular` | `WordSearchHintRow.tsx` |
+| component reveal | `FONTS.hanziComponents` (the only face with the rare component glyphs); each part drawn through `ComponentGlyph` (outline display forms, docs/BEGINNER_KEYBOARD.md § 6z-13 / § 6z-15) | `WEIGHT.regular` | `WordSearchHintRow.tsx` |
 
 Line heights are `LEADING.tight`.
 
@@ -1249,6 +1249,11 @@ Code: `componentUnits.ts` (the counterpart to `pinyinUnits.ts`),
   the grid) or render as tofu. `src/assets/fonts/hanzi-components.woff2` is a
   self-hosted subset of the **same face**, listed first in
   `FONTS.hanziComponents` so the browser falls back per glyph seamlessly.
+- **Parts no font can print.** The private-use component U+E000 (the two-dot ⺼ of
+  然 祭 炙, docs/BEGINNER_KEYBOARD.md § 6z-15) has no glyph in any face, so the hint row
+  renders every part of a parts island through `ComponentGlyph`
+  (`src/components/handwriting/ComponentGlyph.tsx`), which draws an outline for it — and
+  for the § 6z-13 display forms (flat ⺈, 卯 as in 留) — and plain text for the rest.
 
 **Regenerating the data + font** (both deterministic, no AI, free to re-run — and
 they must run in that order, since the font subset is built from the column):

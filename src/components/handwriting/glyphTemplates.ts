@@ -56,6 +56,15 @@ export const KIND_CHARACTER = 2;
  * correctly, it merely reports a variant as if it were the standalone drawing.
  */
 export const KIND_VARIANT = 4;
+/**
+ * § 6z-14: this template is traced from the component's § 6z-13 DISPLAY outline —
+ * the shape its chip draws (⺈ as Noto Sans SC's 尔 hat), and so the shape a learner
+ * copies. Scored WITHOUT the variant penalty: it is the form we teach.
+ *
+ * Like KIND_VARIANT, a flag bit rather than a format bump.
+ * Mirrored by `KIND_DISPLAY_FORM` in generate-handwriting-templates.js.
+ */
+export const KIND_DISPLAY_FORM = 8;
 
 export interface GlyphTemplates {
   /** The glyph for template i. NOT unique — a component's variants repeat it (§ 6z-5). */

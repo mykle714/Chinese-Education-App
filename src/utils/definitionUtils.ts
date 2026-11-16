@@ -435,14 +435,40 @@ export function resolveDefaultPronunciation(
 }
 
 /**
+ * The full gloss list of a word with NO choice of sense (fewer than two displayable clusters),
+ * for `resolveSearchRowView`'s single-sense branch. Source: the lone displayable cluster's
+ * `glosses` when one exists (the clusterer's ordered, pruned list), else the flat `definitions`
+ * (unclustered words). Each gloss is `stripParentheses`-ed exactly like the dd, empties are
+ * dropped, and duplicates that only differed by an aside ("beautiful (lit.)" / "beautiful") are
+ * collapsed, keeping the first, so element 0 is the dd.
+ * Referenced by: docs/DEFINITION_MAPPING.md § "Where each form surfaces", docs/SHELF_REDESIGN.md § 7b.
+ */
+function singleSenseGlossList(
+  entry: Pick<DictionaryEntry, 'definitionClusters' | 'definitions'>,
+): string[] {
+  const lone = Array.isArray(entry.definitionClusters)
+    ? entry.definitionClusters.find((c) => c && Array.isArray(c.glosses) && ddt(c) !== '') ?? null
+    : null;
+  const source = lone?.glosses ?? (Array.isArray(entry.definitions) ? entry.definitions : []);
+  return [...new Set(source.map((g) => stripParentheses(g ?? '')).filter(Boolean))];
+}
+
+/**
  * **What a dictionary SEARCH row shows** — its pinyin and its sense list, honouring the sense
  * the search term hit.
  *
- * The list is the one the eip's Definition tab opens with (`EipSenseList`): each sense's
- * dd, in `sortedSenseClusters` order, or the plain dd for a word with no choice of sense
- * (owner's call 2026-10-31). The flat `definitions` no longer reach the screen here, but they
- * still drive the search itself, so a hit on a later gloss ("pretty" → 漂亮) can show a row
- * that does not print the word searched for.
+ * A multi-sense word lists the one the eip's Definition tab opens with (`EipSenseList`): each
+ * sense's dd, in `sortedSenseClusters` order (owner's call 2026-10-31).
+ *
+ * A word with no choice of sense (single cluster, or unclustered) lists EVERY gloss of that one
+ * sense instead of only its dd (owner's call 2026-11-15): 我 reads "I · me · my", not just "I".
+ * The glosses come from the lone displayable cluster when there is one, else the flat
+ * `definitions`; each is paren-stripped the way the dd is and de-duplicated, so the list still
+ * opens with the dd the eip header shows. `EipSenseList` renders nothing for such a word, so
+ * nothing in the eip contradicts the longer row. `singleSenseGlossList` owns this branch.
+ *
+ * The flat `definitions` still drive the search itself, so on a MULTI-sense word a hit on a
+ * later gloss can show a row that does not print the word searched for.
  *
  * The server sets `matchedSense` (`resolveMatchedSense`, server/utils/searchSenseMatch.ts) when
  * the term hit a sense other than the default one: "ma2" hits 吗's 吗啡 sense, "row" hits 行's
@@ -457,10 +483,8 @@ export function resolveDefaultPronunciation(
 export function resolveSearchRowView(
   entry: Pick<DictionaryEntry, 'pronunciation' | 'definitionClusters' | 'definitions'> & { matchedSense?: string | null },
 ): { pronunciation: string | null; definitions: string[] } {
-  // No choice of sense → the plain dd, stripped the way `resolveDisplayDefinition` strips it,
-  // so the row agrees with the eip header it opens.
-  const legacyDd = stripParentheses(Array.isArray(entry.definitions) ? entry.definitions[0] ?? '' : '');
-  const senses = sortedSenseClusters(entry)?.map(ddt) ?? (legacyDd ? [legacyDd] : []);
+  // Multi-sense → each sense's dd; no choice of sense → every gloss of the one sense.
+  const senses = sortedSenseClusters(entry)?.map(ddt) ?? singleSenseGlossList(entry);
   const cluster = entry.matchedSense && Array.isArray(entry.definitionClusters)
     ? entry.definitionClusters.find((c) => c?.sense === entry.matchedSense) ?? null
     : null;

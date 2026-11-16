@@ -25,18 +25,37 @@ describe('resolveSearchRowView', () => {
     expect(resolveSearchRowView({ ...xing, matchedSense: 'row / line' }).definitions).toEqual(['row', 'to walk']);
   });
 
-  it('falls back to the plain dd for a single-sense word', () => {
+  it('lists every gloss of the one sense for a single-sense word, dd first', () => {
     const view = resolveSearchRowView({
-      pronunciation: 'piàoliang',
-      definitions: ['beautiful (lit.)', 'pretty'],
-      definitionClusters: [cluster('beautiful', 5, ['beautiful', 'pretty'])],
+      pronunciation: 'wǒ',
+      definitions: ['I', 'me', 'my'],
+      definitionClusters: [cluster('I, me', 5, ['I', 'me', 'my'])],
     });
-    expect(view.definitions).toEqual(['beautiful']);
+    expect(view.definitions).toEqual(['I', 'me', 'my']);
   });
 
-  it('falls back to the plain dd for an unclustered word', () => {
-    expect(resolveSearchRowView({ pronunciation: null, definitions: ['to go'], definitionClusters: null }).definitions)
-      .toEqual(['to go']);
+  it('reads the lone cluster, not the flat definitions, and collapses stripped duplicates', () => {
+    const view = resolveSearchRowView({
+      pronunciation: 'piàoliang',
+      definitions: ['stale flat list'],
+      definitionClusters: [cluster('beautiful', 5, ['beautiful (lit.)', 'beautiful', 'pretty'])],
+    });
+    expect(view.definitions).toEqual(['beautiful', 'pretty']);
+  });
+
+  it('lists every flat gloss for an unclustered word', () => {
+    expect(resolveSearchRowView({ pronunciation: null, definitions: ['to go', 'to leave (sth)'], definitionClusters: null }).definitions)
+      .toEqual(['to go', 'to leave']);
+  });
+
+  it('a matched lone sense keeps its full list', () => {
+    const view = resolveSearchRowView({
+      pronunciation: 'wǒ',
+      definitions: ['I', 'me'],
+      definitionClusters: [cluster('I, me', 5, ['I', 'me'])],
+      matchedSense: 'I, me',
+    });
+    expect(view.definitions).toEqual(['I', 'me']);
   });
 
   it('joins into the row line', () => {

@@ -3,4 +3,4 @@
 // vocabulary — container, header, row, note, spine — in one import.
 export { default as Shelf, ShelfRow, ShelfHeader, ShelfNote } from "./Shelf";
 export { default as Spine, type SpineProps } from "./Spine";
-export { spineHeight, SPINE_VARIANTS, SPINE_BANDS, type SpineVariant } from "./spineGeometry";
+export { relativeSpineHeights, SPINE_VARIANTS, type SpineVariant } from "./spineGeometry";

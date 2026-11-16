@@ -169,17 +169,10 @@ function ReaderDocumentPage() {
         textSelection.handleTextSelectionChange(event);
     }, [textSelection]);
 
-    const selectionColors = useMemo(() => {
-        switch (customTheme.themeMode) {
-            case 'dark':
-                return { backgroundColor: theme.palette.primary.main + '40' }; // 25% opacity
-            case 'blue':
-            case 'green':
-            case 'light':
-            default:
-                return { backgroundColor: theme.palette.primary.main + '30' }; // ~19% opacity
-        }
-    }, [customTheme.themeMode, theme.palette.primary.main]);
+    // Selection tint: a touch stronger on the Dark theme so it reads on the dark ground.
+    const selectionColors = useMemo(() => ({
+        backgroundColor: theme.palette.primary.main + (customTheme.themeMode === 'dark' ? '40' : '30'), // 25% / ~19% opacity
+    }), [customTheme.themeMode, theme.palette.primary.main]);
 
     // Vocabulary update listeners: keep loadedPersonalCards in sync with entries
     // added/edited/removed elsewhere in the app while this document is open.

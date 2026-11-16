@@ -26,7 +26,7 @@ import { sunDay, type GeoPoint } from "./sunTimes";
  * 2026-11-04, when they were cut app-wide (docs/TOWER_WEATHER_SKY.md § 1): the night ↔ day
  * blend is now the only twilight.
  *
- * Depends on: sunTimes.ts. Depended on by: useDayClock.ts, wash.ts, tier2Look.ts,
+ * Depends on: sunTimes.ts. Depended on by: useDayClock.ts, useTier2Look.ts, wash.ts, tier2Look.ts,
  * features/deckTower/timeOfDay.ts, features/discover/sortTimeOfDay.ts.
  */
 
@@ -90,4 +90,17 @@ export function timeOfDayAt(nowMs: number, where: GeoPoint): TimeOfDay {
 /** How much of `phase` is in the blend: 1 holding it, 1 − t leaving it, t entering it. */
 export function phaseShare(time: TimeOfDay, phase: DayPhase): number {
     return (time.from === phase ? 1 - time.t : 0) + (time.to === phase ? time.t : 0);
+}
+
+/**
+ * The phase holding the larger share of `time`, as a held (unblended) time of day — the
+ * blend snapped to whichever side of the sun event it is on (t < 0.5 → `from`, else `to`).
+ * So a reader that does NOT honour twilight cuts straight from day to night at the
+ * sunrise / sunset itself, the same moment a blending reader is half-way.
+ *
+ * Only the Deck Tower (and acp, whose ground is the tower's sky) shows the gradual
+ * twilight; the Tier 2 pages snap (owner's call 2026-11-15) — useTier2Look.ts.
+ */
+export function snappedPhase(time: TimeOfDay): DayPhase {
+    return phaseShare(time, "night") > 0.5 ? "night" : "day";
 }

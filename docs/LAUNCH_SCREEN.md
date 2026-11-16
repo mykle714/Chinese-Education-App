@@ -210,10 +210,13 @@ While the cover is up (`useBootCover().up`, read by td as `launchUp`):
   cancels a fade in progress, so a pan started mid-fade jumps to the pan's blend.
 - A fade repaints on a slow frame (`SKY_FADE_FRAME_MS`, 50 ms), since `apply` measures layout.
 - ⚠️ **Only the backdrop and the footer's cast shadow fade.** Everything else that reads
-  the sky takes the new colour at once: the iso scene's ground plane (`litWorld` → `ground`,
-  which tones the platform's shadow on the sky), `MobileTabScreen` `surfaceColor`, the
-  cards page's `sky`, and the theme-colour meta tag. Fading those too would re-render the
-  whole scene every step.
+  the sky takes the new colour at once: the iso scene's ground plane (`litWorld` → `ground`),
+  `MobileTabScreen` `surfaceColor`, the cards page's `sky`, and the theme-colour meta tag.
+  Fading those too would re-render the whole scene every step. The platform's shadow on the
+  sky still follows the fade, because it is drawn **see-through** (`IsoPlatform` →
+  `IsoShadow` `seeThrough`: translucent black tuned from `ground.color`), so it darkens
+  whatever sky is on screen. Until 2026-11-15 it was an opaque fill in the new sky's shade,
+  which showed as a wrong-coloured patch for the whole ten seconds.
 
 ## Weather prefetch
 

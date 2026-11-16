@@ -683,7 +683,7 @@ launch (rate limit).
 **Cost to leave.** The login rework cannot ship: on PPE every email code send fails (503).
 That means no new sign-ups, no code sign-in and no password reset. Password sign-in still works.
 
-**Done when.** Runbook check V6 passes: a real "Email me a code" reaches the inbox, not spam.
+**Done when.** Runbook check V6 passes: a real "Send code" (email verification window) reaches the inbox, not spam.
 
 **Trigger.** Before the login-rework deploy.
 
@@ -755,6 +755,16 @@ boxes on `/login` are enabled.
 | **Cost of leaving it** | None while Community is off; on revival it would show the one off-framework MUI toast in the app |
 | **Trigger** | Switching the `community` feature flag on, or any work on Community |
 | **References** | `src/features/community/ApplyDesignButton.tsx` → `toast` state + `<Snackbar>` |
+
+### 54. The es dictionary-AI prompt still refuses to correct typos
+
+Since 2026-11-15 the **zh** Ask-AI prompt silently corrects an obvious misspelling and
+answers as if the query were spelled correctly (owner's call). The **es** prompt was left on
+the old "treat the query as CORRECT exactly as written" rule because Spanish is paused, so a
+misspelled Spanish/English query on an es account still gets an empty result. When Spanish
+resumes, port the zh typo rule into the es branch of the prompt.
+Code: `server/services/DictionaryService.ts` → `buildAiSystemPrompt`.
+Doc: [DICTIONARY_AI_FALLBACK_SEARCH.md](./DICTIONARY_AI_FALLBACK_SEARCH.md).
 
 ## Recently closed
 

@@ -5,6 +5,7 @@ import { FONTS, DATA_TYPE } from "../../theme/fonts";
 import { HINT_ACCENT_COLOR, HINT_LETTER_BLANK } from "./constants";
 import { wordToPinyinUnits } from "./pinyinUnits";
 import { buildComponentReveals } from "./componentUnits";
+import ComponentGlyph from "../../components/handwriting/ComponentGlyph";
 import type { PlacedWord } from "./types";
 
 interface WordSearchHintRowProps {
@@ -237,7 +238,13 @@ const WordSearchHintRow: React.FC<WordSearchHintRowProps> = ({ word, revealCount
                                 lineHeight: LEADING.tight,
                             }}
                         >
-                            {reveal.text}
+                            {/* A whole character prints as text; a parts island draws each part
+                                through ComponentGlyph, which swaps in an outline for parts the
+                                font draws wrong (⺈, 卯) or cannot draw at all (the private-use
+                                two-dot ⺼ of 然, U+E000) — docs/BEGINNER_KEYBOARD.md § 6z-15. */}
+                            {reveal.isCharacter
+                                ? reveal.text
+                                : [...reveal.text].map((part, j) => <ComponentGlyph key={j} glyph={part} />)}
                         </Box>
                     ))}
                 </Box>

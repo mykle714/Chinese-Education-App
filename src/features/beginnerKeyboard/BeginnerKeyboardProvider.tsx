@@ -68,6 +68,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../AuthContext';
+import { useTestingFeatures } from '../../hooks/useTestingFeatures';
 import BeginnerKeyboardHost from './BeginnerKeyboardHost';
 import type { KeyboardSource } from './KeyboardSwitchBar';
 import { EMPTY_DRAFT, type CompositionDraft } from './compositionRules';
@@ -129,11 +130,14 @@ export default function BeginnerKeyboardProvider({ children }: { children: React
   // keyboard on the desktop Night Market / Immersive World authoring editors; it went with
   // those features on 2026-11-09.)
   const enabled = user?.selectedLanguage === SUPPORTED_LANGUAGE;
-  // § 6w: the recognizer debug dump rides the `isFeatureTester` grant (it rode
-  // `isTemplateAuthor` until that column was dropped, migration 185). The check is
-  // here because this is the only layer in the feature that touches auth — pushing
+  // § 6w: the recognizer debug dump is a feature-tester surface, so it rides
+  // `useTestingFeatures()` — the `isFeatureTester` grant AND Settings' per-device
+  // "Enable testing features" switch (docs/FEATURE_TESTING.md). It read the account
+  // flag alone until 2026-11-15, so a tester demoing as a learner still saw it. (It
+  // rode `isTemplateAuthor` until that column was dropped, migration 185.) The check
+  // is here because this is the only layer in the feature that touches auth — pushing
   // it down would make the keyboard itself untestable without an auth context.
-  const debug = !!user?.isFeatureTester;
+  const debug = useTestingFeatures();
 
   // The field text is inserted into, and whether the surface is currently up.
   // They are separate because the exit is animated; see the header note.

@@ -13,6 +13,9 @@
  *
  * LAYER: shared UI. Knows nothing about the tower — any page behind a slab may set it.
  * Docs: docs/DECK_TOWER.md § Footer.
+ * `translucentShadow` is also used by the iso framework's see-through shadows
+ * (deckTower/iso/IsoShadow.tsx `seeThrough` — the platform's shadow on the sky;
+ * docs/ISO_ART_FRAMEWORK.md § "Light and shadows").
  */
 export const SLAB_CAST_SHADOW_VAR = "--footer-slab-cast-shadow";
 

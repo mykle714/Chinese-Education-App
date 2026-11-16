@@ -45,17 +45,20 @@
  */
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { Box, Typography } from '@mui/material';
+import Icon from '../../components/Icon';
 import WritingCanvas from '../../components/handwriting/WritingCanvas';
 import type { Ink, WritingCanvasHandle } from '../../components/handwriting/types';
-import { COLORS, FONTS, SIZE, WEIGHT } from '../../theme';
+import { COLORS, FONTS, SIZE } from '../../theme';
 import CandidateRow from './CandidateRow';
 import ComponentBuffer from './ComponentBuffer';
 import { KEYBOARD_COLORS } from './keyboardColors';
+import { CHAR_KEY_FACE, KEY_LIP, whiteKeySx } from './keycapStyle';
 import { useComposition, type Candidate } from './useComposition';
 import { hintCommit, type CompositionDraft } from './compositionRules';
 import type { HintCharacter } from '../../components/handwriting/glyphLookup';
 import { useGlyphAssets } from './useGlyphAssets';
 import DebugDumpButton from './DebugDumpButton';
+import { PARTS_COLUMN_MIN_WIDTH, PARTS_COLUMN_PAD } from './ComponentBuffer';
 
 interface BeginnerKeyboardProps {
   /** Fires with the character or word to insert at the caret. */
@@ -71,8 +74,36 @@ interface BeginnerKeyboardProps {
   draft?: { current: CompositionDraft };
 }
 
-/** Padding around the canvas inside its half of the lower region. */
+/**
+ * The canvas's margin on its top, right and bottom — EQUAL on all three (owner,
+ * 2026-11-15). The left side has NO inset: the gap to the parts is the parts column's own
+ * padding (ComponentBuffer → PARTS_COLUMN_PAD), so the parts sit as far from the canvas
+ * as from the screen's left edge.
+ */
 const CANVAS_INSET = 10;
+
+/*
+ * The canvas's WIDTH cap is the parts column's floor (ComponentBuffer →
+ * PARTS_COLUMN_MIN_WIDTH, 152px): the canvas slot takes whatever is left once three part
+ * chips fit on one row (owner, 2026-11-15). It replaced CANVAS_MAX_WIDTH_SHARE (0.68 of
+ * the width; 0.6 before that), which on a 390px phone left a ~125px column that wrapped
+ * the third part. On that phone the canvas is now width-bound at 218px (was up to
+ * 245px), so a little spare height collects above it (the bottom-alignment rule keeps
+ * its bottom edge fixed). The column floor also gives the three ink keys their full
+ * CHAR_KEY_FACE (they need 122px; the controls' PARTS_COLUMN_PAD a side leaves 132).
+ * On a phone wide enough that the canvas is height-bound, the extra width goes to the
+ * parts column, so the gap to the canvas stays PARTS_COLUMN_PAD there too.
+ */
+
+/**
+ * The ink keys are SQUARE (owner, 2026-11-15): INK_KEY_SIZE on a side when the column has
+ * room, shrinking AS A SQUARE (aspect-ratio) to a 30px floor on a narrow phone. The ā
+ * pad's 4px key gap between them. The size is the candidate chips' face (CHAR_KEY_FACE,
+ * 38; was 36), so the tool keys and the character keys read as one size (owner,
+ * 2026-11-15).
+ */
+const INK_KEY_SIZE = CHAR_KEY_FACE;
+const INK_KEY_GAP = 4;
 
 /**
  * Chrome shared by the three ink keys (`Clear`, `Undo`, `Redo`). All act only on
@@ -80,27 +111,48 @@ const CANVAS_INSET = 10;
  * key that appears and disappears as the learner draws is a moving target in the
  * one row they reach for without looking.
  *
- * The keys split the column's width EQUALLY (`flex: 1`) with tight padding: the
- * left column can be as narrow as ~40% of a phone's width, and three
- * natural-width keys with the old 10px padding did not fit in it.
+ * Raised white keycaps (keycapStyle.ts → whiteKeySx), the same object as the ā pad's
+ * ⌫ / ← → keys, and icon-only like them (2026-11-15, owner's choice). The accessible
+ * names carry the words.
+ *
+ * Square keys pushed to the column's RIGHT edge, so they sit against the canvas
+ * (owner, 2026-11-15; they used to split the column with `flex: 1`). Three 38px keys
+ * + two 4px gaps = 122px, which the parts column's floor (PARTS_COLUMN_MIN_WIDTH, 152px
+ * minus the controls' 10px margin) always leaves — so they are full size on every phone;
+ * the 30px flex floor is only a backstop.
+ * Clear is the `ink_eraser` glyph (the writing notebook's Eraser tool), not ⌫ — ⌫ on
+ * the ā pad deletes a character from the field, and clear wipes ink.
+ * A disabled key sits flat at rest: the delegate skips it (keycapPressDelegate.ts)
+ * and `:active` is cancelled here, so a dead key never moves under the finger.
  */
 function inkKeySx(enabled: boolean) {
+  const raised = whiteKeySx();
   return {
-    flex: 1,
-    minWidth: 0,
-    px: 0.5,
-    height: 32,
-    border: `1px solid ${KEYBOARD_COLORS.outline}`,
-    borderRadius: 2,
-    backgroundColor: KEYBOARD_COLORS.key,
-    fontFamily: FONTS.sans,
-    fontSize: SIZE.caption,
-    fontWeight: WEIGHT.semibold,
-    color: KEYBOARD_COLORS.muted,
+    ...raised,
+    // Square: the width flexes (38px, shrinking toward 30px only if the column were
+    // ever narrower than 122px — PARTS_COLUMN_MIN_WIDTH prevents that) and the height
+    // follows it.
+    flex: `0 1 ${INK_KEY_SIZE}px`,
+    minWidth: 30,
+    aspectRatio: '1 / 1',
+    height: 'auto',
+    p: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: KEYBOARD_COLORS.ink2,
     cursor: enabled ? 'pointer' : 'default',
     opacity: enabled ? 1 : 0.4,
+    '&:disabled:active': { transform: raised.transform, boxShadow: raised.boxShadow },
   } as const;
 }
+
+/**
+ * The ink keys' glyph size — the ā pad's ⌫ is 22. All three are Material Symbols
+ * through the app's Icon primitive (`ink_eraser` has no @mui/icons-material twin), so
+ * the three glyphs share one stroke weight.
+ */
+const INK_ICON_PX = 22;
 
 /**
  * Every keyboard key swallows `mousedown`: a tap must never move focus off the
@@ -129,10 +181,12 @@ export default function BeginnerKeyboard({ onCommit, height, debug, draft }: Beg
     if (!element) return;
     const measure = () => {
       const box = element.getBoundingClientRect();
-      // Never exceed half the width, or the buffer column collapses on a narrow
-      // phone before the canvas stops growing.
-      const limit = Math.min(box.height, box.width * 0.6);
-      setCanvasSize(Math.max(0, Math.floor(limit) - CANVAS_INSET * 2));
+      // Height-driven, so top / right / bottom margins are all CANVAS_INSET; capped so
+      // the parts column keeps room for three chips on a row (PARTS_COLUMN_MIN_WIDTH).
+      // Vertically the slot insets top + bottom; horizontally only the right (no left
+      // inset — the parts column's padding is the gap).
+      const limit = Math.min(box.height - CANVAS_INSET * 2, box.width - PARTS_COLUMN_MIN_WIDTH - CANVAS_INSET);
+      setCanvasSize(Math.max(0, Math.floor(limit)));
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -245,13 +299,27 @@ export default function BeginnerKeyboard({ onCommit, height, debug, draft }: Beg
               above by a divider rule. The author-only § 6w debug tools get their
               own row ABOVE the key row, so the learner-facing keys keep a fixed
               position whether or not the account is a feature tester. */}
+          {/* No divider above it any more (removed 2026-11-15, owner): the raised keys
+              separate themselves from the parts. PARTS_COLUMN_PAD on both sides: the
+              canvas slot has no left inset, so this margin IS the gap to the canvas,
+              the same as the chips'.
+
+              ⚠️ THE BOTTOM-ALIGNMENT RULE (owner, 2026-11-15): the bottom of the key
+              row's LIPS sits on the canvas's bottom edge. Two halves keep it true at any
+              keyboard size: the canvas is pinned to the BOTTOM of its slot (canvas-slot
+              alignItems: flex-end), so its bottom edge is always CANVAS_INSET above the
+              keyboard's; and this row's bottom padding is CANVAS_INSET + KEY_LIP, since
+              the lip paints KEY_LIP below the key's box. Change either inset and both
+              move together. */}
           <Box
             className="beginner-keyboard__controls"
             sx={{
-              mx: 1.25,
+              // The parts column's padding on BOTH sides (2026-11-15): the canvas slot
+              // has no left inset now, so the keys need their own right margin to keep
+              // the same gap to the canvas the chips have.
+              mx: `${PARTS_COLUMN_PAD}px`,
               pt: 0.75,
-              pb: 1,
-              borderTop: `1px solid ${KEYBOARD_COLORS.outline}`,
+              pb: `${CANVAS_INSET + KEY_LIP}px`,
               display: 'flex',
               flexDirection: 'column',
               gap: 0.75,
@@ -275,7 +343,8 @@ export default function BeginnerKeyboard({ onCommit, height, debug, draft }: Beg
             )}
             <Box
               className="beginner-keyboard__footer"
-              sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}
+              // Right-aligned against the canvas; the ā pad's 4px key gap.
+              sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: `${INK_KEY_GAP}px` }}
             >
               <Box
                 component="button"
@@ -287,7 +356,7 @@ export default function BeginnerKeyboard({ onCommit, height, debug, draft }: Beg
                 disabled={!composition.hasInk}
                 sx={inkKeySx(composition.hasInk)}
               >
-                Clear
+                <Icon name="ink_eraser" size={INK_ICON_PX} />
               </Box>
               <Box
                 component="button"
@@ -299,7 +368,7 @@ export default function BeginnerKeyboard({ onCommit, height, debug, draft }: Beg
                 disabled={!composition.hasInk}
                 sx={inkKeySx(composition.hasInk)}
               >
-                Undo
+                <Icon name="undo" size={INK_ICON_PX} />
               </Box>
               <Box
                 component="button"
@@ -311,7 +380,7 @@ export default function BeginnerKeyboard({ onCommit, height, debug, draft }: Beg
                 disabled={!canRedo}
                 sx={inkKeySx(canRedo)}
               >
-                Redo
+                <Icon name="redo" size={INK_ICON_PX} />
               </Box>
             </Box>
           </Box>
@@ -319,7 +388,18 @@ export default function BeginnerKeyboard({ onCommit, height, debug, draft }: Beg
 
         <Box
           className="beginner-keyboard__canvas-slot"
-          sx={{ p: `${CANVAS_INSET}px`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          // Equal inset top / right / bottom; the canvas hangs from the BOTTOM (flex-end) so
+          // its bottom edge meets the ink keys' lips (the bottom-alignment rule on
+          // .beginner-keyboard__controls). When the width cap binds, the spare height
+          // collects ABOVE the canvas instead of splitting around it.
+          // No LEFT inset: the parts column's padding is the whole gap (CANVAS_INSET doc).
+          sx={{
+            p: `${CANVAS_INSET}px`,
+            pl: 0,
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+          }}
         >
           <Box
             className="beginner-keyboard__canvas"
@@ -327,7 +407,9 @@ export default function BeginnerKeyboard({ onCommit, height, debug, draft }: Beg
               width: canvasSize,
               height: canvasSize,
               position: 'relative',
-              borderRadius: 2,
+              // 20px (owner, 2026-11-15; was MUI `2` = 16px against the theme's 8px
+              // shape unit). Explicit px so it doesn't silently follow a theme change.
+              borderRadius: '20px',
               backgroundColor: COLORS.white,
               border: `1px solid ${COLORS.border}`,
               // The writing guides: a box with a cross, as a character is taught.

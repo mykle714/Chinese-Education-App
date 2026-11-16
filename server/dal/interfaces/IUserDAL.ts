@@ -9,11 +9,13 @@ export interface IUserDAL extends IBaseDAL<User, UserCreateData, UserUpdateData>
   // User-specific query operations
   findByEmail(email: string): Promise<User | null>;
   findByEmailWithPassword(email: string): Promise<User | null>;
+  /** The full row (password hash included) for an E.164 phone, for password sign-in (migration 191). */
+  findByPhoneWithPassword(phone: string): Promise<User | null>;
   /** Migration 188. `username` normalized (wire.ts → normalizeUsername). */
   findByUsername(username: string): Promise<{ id: string } | null>;
   /** Migration 188. `phone` in E.164. */
   findByPhone(phone: string): Promise<{ id: string } | null>;
-  /** The bcrypt hash, or null for an account with no password (phone-only). */
+  /** The bcrypt hash, or null for an account with no password (optional for every account, migration 191). */
   findPasswordHashById(id: string): Promise<string | null>;
   /** The account holding this friend code (migration 187), or null. `code` must already be
    *  normalised (wire.ts → normalizeFriendCode): uppercase, no hyphen. */

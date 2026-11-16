@@ -231,6 +231,14 @@ from what it falls on.
   `IsoPaperStack` and `IsoSortPlatform` pass a height; every other caster takes the full lift.
 - **Tone comes from the receiver.** Shadows on the sky, the floor and a floor plate read as the
   same strength of shade. There are no per-receiver shadow colours in the palette.
+- **A shadow on the backdrop is see-through.** The platform's ground plane is not an svg
+  fill: it is the page's backdrop behind the svg, which can lag `ground.color`
+  (SpaceBackdrop eases a new sky over `SKY_FADE_MS`). So `IsoPlatform` draws its ground shadow
+  with `IsoShadow` `seeThrough`: translucent black whose alpha darkens `ground.color` to its
+  shadow tone (`components/footerCastShadow.ts` → `translucentShadow`, the footer's cast-shadow
+  rule). It then darkens whatever sky is actually on screen. On a settled sky it is the same
+  shade as the opaque tone, minus `shadeHex`'s small saturation boost. What lies under it shows
+  through darkened: a cloud's ground shadow (`groundDecals`) and the night's stars.
 - **Flat things are part of their surface.** A flush floor label receives shadows but casts none.
   A shadow is an opaque fill in the *floor's* shade, so a decal it crosses (a floor label) must be
   shaded in its own tones: the caster draws the decal's `shaded` variant clipped to its shadow

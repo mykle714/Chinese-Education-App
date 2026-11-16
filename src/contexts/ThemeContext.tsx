@@ -10,6 +10,7 @@ import { DD_TONES } from '../utils/cardTextColor';
 import { COLORS } from '../theme/colors';
 import { SHADOW } from '../theme/shadows';
 import { dialogContainer } from '../components/overlayHost';
+import { applyFooterChrome } from '../theme/footerChrome';
 
 // The default theme's `md` split: full-bleed below it, the desktop phone card above it.
 const MOBILE_MEDIA_QUERY = createTheme().breakpoints.down('md');
@@ -55,7 +56,9 @@ declare module '@mui/material/styles' {
 }
 
 // Define available theme options
-export type ThemeMode = 'light' | 'dark' | 'blue' | 'green';
+// Ocean ('blue') and Nature ('green') were removed 2026-11-15. A device that saved one of
+// them falls back to Light: the localStorage load below accepts only listed values.
+export type ThemeMode = 'light' | 'dark';
 
 interface ThemeContextType {
     themeMode: ThemeMode;
@@ -105,10 +108,10 @@ const createAppTheme = (mode: ThemeMode): Theme => {
         // saying. Anything with no explicit `color` defaults to primary and so picks up
         // the design's ink automatically.
         //
-        // ⚠️ These live on the SHARED base theme, so the Dark / Ocean / Nature themes
-        // inherit an ink-black button on their own grounds. That is knowingly wrong and
-        // knowingly deferred: decision D4 runs the app on one light palette during the
-        // redesign and the other three are not re-derived yet.
+        // ⚠️ These live on the SHARED base theme, so the Dark theme inherits an ink-black
+        // button on its own ground. That is knowingly wrong and knowingly deferred:
+        // decision D4 runs the app on one light palette during the redesign and Dark is
+        // not re-derived yet.
         components: {
             // Every Dialog re-centres in the space ABOVE a keyboard rather than being
             // covered by it. `--keyboard-inset` is the union of the handwriting
@@ -389,118 +392,6 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                 },
             });
 
-        case 'blue':
-            return createTheme({
-                ...baseTheme,
-                palette: {
-                    mode: 'light',
-                    // The app's OWN red, not MUI's #d32f2f. Without this, `color="error"`
-                    // controls (the delete button in its dialog) render a different red from
-                    // the `COLORS.dangerInk` border and heading of the section they sit in —
-                    // two reds on one modal. One token, so red means one thing.
-                    error: { main: COLORS.dangerInk },
-                    // Same reasoning for green: MUI's default `success` is #2e7d32, which is
-                    // not the design's `--grnA`. `color="success"` buttons, `success.main`
-                    // icons and success Alerts must match `COLORS.successInk` everywhere else.
-                    success: { main: COLORS.successInk },
-                    primary: {
-                        main: '#1976d2',
-                        light: '#42a5f5',
-                        dark: '#1565c0',
-                    },
-                    secondary: {
-                        main: '#dc004e',
-                        light: '#ff5983',
-                        dark: '#9a0036',
-                    },
-                    background: {
-                        default: '#f5f7fa',
-                        paper: '#ffffff',
-                    },
-                    text: {
-                        primary: '#333333',
-                        secondary: 'rgba(0, 0, 0, 0.6)',
-                    },
-                    eic: { header: '#B5C7E3' },
-                    flashcard: {
-                        background:         '#F9F7F2',
-                        flashCard:          '#BACFE6',
-                        border:             'rgba(92,92,102,0.18)',
-                        onSurface:          COLORS.onSurface,
-                        dd:                 DD_TONES.dark,
-                        textSecondary:      '#8A8480',
-                        toggleActiveBg:     '#C8D9EF',   // old light-blue surface, now the accent
-                        toggleInactiveBg:   '#D7D7D4',
-                        scrim:              'rgba(20,17,12,0.45)',
-                        subtleBg:           'rgba(0,0,0,0.03)',
-                        moreInfoPill:       'rgba(255,255,255,0.6)',
-                        audioBtn:           'rgba(29,27,32,0.06)',
-                        grabber:            'rgba(29,27,32,0.18)',
-                        tabUnderline:       '#C8D9EF',   // old light-blue surface, now the accent
-                        imagePlaceholder:   '#ffffff',
-                        cardShadow:         '2px 4px 4px rgba(0,0,0,0.25)',
-                        cardShadowSubtle:   '1px 2px 3px rgba(0,0,0,0.15)',
-                        sheetShadow:        '0 -8px 32px rgba(0,0,0,0.18)',
-                    },
-                },
-            });
-
-        case 'green':
-            return createTheme({
-                ...baseTheme,
-                palette: {
-                    mode: 'light',
-                    // The app's OWN red, not MUI's #d32f2f. Without this, `color="error"`
-                    // controls (the delete button in its dialog) render a different red from
-                    // the `COLORS.dangerInk` border and heading of the section they sit in —
-                    // two reds on one modal. One token, so red means one thing.
-                    error: { main: COLORS.dangerInk },
-                    // Same reasoning for green: MUI's default `success` is #2e7d32, which is
-                    // not the design's `--grnA`. `color="success"` buttons, `success.main`
-                    // icons and success Alerts must match `COLORS.successInk` everywhere else.
-                    success: { main: COLORS.successInk },
-                    primary: {
-                        main: '#2e7d32',
-                        light: '#4caf50',
-                        dark: '#1b5e20',
-                    },
-                    secondary: {
-                        main: '#ff6f00',
-                        light: '#ff8f00',
-                        dark: '#e65100',
-                    },
-                    background: {
-                        default: '#f1f8e9',
-                        paper: '#ffffff',
-                    },
-                    text: {
-                        primary: '#333333',
-                        secondary: 'rgba(0, 0, 0, 0.6)',
-                    },
-                    eic: { header: '#BFD3BF' },
-                    flashcard: {
-                        background:         '#F9F7F2',
-                        flashCard:          '#CCDFC5',
-                        border:             'rgba(92,92,102,0.18)',
-                        onSurface:          COLORS.onSurface,
-                        dd:                 DD_TONES.dark,
-                        textSecondary:      '#8A8480',
-                        toggleActiveBg:     '#BDD9B5',   // old light-green surface, now the accent
-                        toggleInactiveBg:   '#D7D7D4',
-                        scrim:              'rgba(20,17,12,0.45)',
-                        subtleBg:           'rgba(0,0,0,0.03)',
-                        moreInfoPill:       'rgba(255,255,255,0.6)',
-                        audioBtn:           'rgba(29,27,32,0.06)',
-                        grabber:            'rgba(29,27,32,0.18)',
-                        tabUnderline:       '#BDD9B5',   // old light-green surface, now the accent
-                        imagePlaceholder:   '#ffffff',
-                        cardShadow:         '2px 4px 4px rgba(0,0,0,0.25)',
-                        cardShadowSubtle:   '1px 2px 3px rgba(0,0,0,0.15)',
-                        sheetShadow:        '0 -8px 32px rgba(0,0,0,0.18)',
-                    },
-                },
-            });
-
         case 'light':
         default:
             return createTheme({
@@ -539,7 +430,7 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         background:         COLORS.background,
                         // The card face. Warm cream since 2026-08-24 (was COLORS.card,
                         // #E7E7EA) — see the `cardFace` note in theme/colors.ts. Only the
-                        // LIGHT theme moved; Dark / Ocean / Nature keep their own faces
+                        // LIGHT theme moved; Dark keeps its own face
                         // and are not re-derived yet (docs/SHELF_REDESIGN.md § D4).
                         flashCard:          COLORS.cardFace,
                         border:             'rgba(92,92,102,0.18)',
@@ -559,7 +450,7 @@ const createAppTheme = (mode: ThemeMode): Theme => {
                         // docs/SHELF_REDESIGN.md § D13) — ink-tinted, straight down, wide
                         // and faint. The old values here were pure black, cast diagonally
                         // to the lower-right, and three times too dark. LIGHT THEME ONLY;
-                        // Dark / Ocean / Nature keep theirs and are not re-derived (D4).
+                        // Dark keeps its own and is not re-derived (D4).
                         cardShadow:         SHADOW.lifted,
                         cardShadowSubtle:   SHADOW.raised,
                         sheetShadow:        SHADOW.panelUp,
@@ -578,8 +469,6 @@ interface ThemeContextProviderProps {
 const availableThemes = [
     { value: 'light' as ThemeMode, label: 'Light', description: 'Clean and bright theme' },
     { value: 'dark' as ThemeMode, label: 'Dark', description: 'Easy on the eyes in low light' },
-    { value: 'blue' as ThemeMode, label: 'Ocean', description: 'Professional blue theme' },
-    { value: 'green' as ThemeMode, label: 'Nature', description: 'Calming green theme' },
 ];
 
 export function ThemeContextProvider({ children }: ThemeContextProviderProps) {
@@ -598,6 +487,13 @@ export function ThemeContextProvider({ children }: ThemeContextProviderProps) {
         setThemeModeState(mode);
         localStorage.setItem('vocabularyAppTheme', mode);
     };
+
+    // The slab footer (and its Menu popover) goes dark ONLY on the Dark theme — never on
+    // the clock. It reads root CSS variables (theme/footerChrome.ts), so this one write
+    // restyles it on every page without re-rendering it.
+    useEffect(() => {
+        applyFooterChrome(themeMode === 'dark');
+    }, [themeMode]);
 
     const theme = createAppTheme(themeMode);
 

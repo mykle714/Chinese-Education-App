@@ -17,20 +17,35 @@ import { LEADING, SIZE, WEIGHT } from "../../theme/scale";
 // app instead of a friends-only fragment. Do not reinstate either; if another screen
 // needs a counted destination, it needs a Bento tile.
 
-/** The Send button on SentRequestsBody — the one affirmative action in the feature. */
+/**
+ * The Send button on SentRequestsBody's "Add a friend" row.
+ *
+ * Fill: `bluM` — the same `RAMP.blu.mid` ground the Friends tab's Send tile wears
+ * (FriendActionTiles → BentoTile), so the tile and the button it opens onto share one
+ * "send" blue. v2: a button is a MID-tier fill with ink text (hue never carries text).
+ *
+ * Geometry is pinned to the small outlined TextField beside it: 40px tall and the same
+ * 16px radius (`borderRadius: 2` = 2 × theme.shape.borderRadius there too), so the two
+ * read as one row instead of a short button floating next to a taller field. The start
+ * icon's MUI default margins (−4px / 8px) are replaced with a tighter 6px gap.
+ * Carries the app's button outline (CLAUDE.md § "Buttons & cards").
+ */
 export const sendButtonSx = {
     textTransform: "none",
     fontFamily: FONTS.sans,
     fontSize: SIZE.body,
     fontWeight: WEIGHT.semibold,
+    lineHeight: 1,
     color: COLORS.onSurface,
-    // v2: a button is a MID-tier fill (the near-white tint it used to take reads as a
-    // disabled control next to the mid-tier rows around it).
-    backgroundColor: COLORS.grnM,
+    backgroundColor: COLORS.bluM,
+    border: `1px solid ${COLORS.border}`,
     borderRadius: 2,
     flexShrink: 0,
-    px: 1.5,
-    "&:hover": { backgroundColor: COLORS.grnM, filter: "brightness(0.97)" },
+    height: 40,
+    minWidth: 0,
+    px: 1.75,
+    "& .MuiButton-startIcon": { marginLeft: 0, marginRight: "6px" },
+    "&:hover": { backgroundColor: COLORS.bluM, filter: "brightness(0.97)" },
 } as const;
 
 /**
@@ -72,9 +87,11 @@ export const acceptButtonSx = filledRowButtonSx(COLORS.grnM, "999px");
 /** Decline (a friend request) — Accept's red twin: same pill, `redM` ground. */
 export const declineButtonSx = filledRowButtonSx(COLORS.redM, "999px");
 
-/** Withdraw (your own pending request) — a blue PILL: neutral, since it only takes back
- *  your own ask and nothing is lost on either side. */
-export const withdrawButtonSx = filledRowButtonSx(COLORS.bluM, "999px");
+/** Withdraw (your own pending request) — a GOLD pill (`gld`, the action metal). Was
+ *  `bluM` until 2026-11-15, then briefly `yelM`; the user chose gold. ⚠️ `gld` breaks the
+ *  ramp's lightness bands on purpose (colors.ts § `--gld`) and was the Arena's
+ *  single-action colour, so this is a second, deliberate use of it. */
+export const withdrawButtonSx = filledRowButtonSx(COLORS.gld, "999px");
 
 /** A Friends section card's header — "Your friend code" (FriendsBody) and "Add a friend"
  *  (SentRequestsBody). `SIZE.subtitle` is the scale's sub-header step; the two share this

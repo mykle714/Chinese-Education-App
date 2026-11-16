@@ -14,12 +14,13 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { parseGlyphTemplates, KIND_COMPONENT, KIND_CHARACTER } from '../components/handwriting/glyphTemplates';
+import { parseGlyphTemplates, KIND_COMPONENT, KIND_CHARACTER, KIND_DISPLAY_FORM } from '../components/handwriting/glyphTemplates';
 import { explainGlyphMatch, matchGlyphs } from '../components/handwriting/glyphMatcher';
 import { POINTS_PER_STROKE } from '../components/handwriting/inkGeometry';
 import type { Ink } from '../components/handwriting/types';
 import { hasMedians, inkFromMedians } from './support/inkFromMedians';
 import realInk from './support/realInk.json';
+import { COMPONENT_DISPLAY_PATHS } from '../components/handwriting/componentDisplayForms.generated';
 
 const ASSET = path.resolve(__dirname, '../assets/handwriting/glyph-templates.bin');
 
@@ -235,7 +236,7 @@ describe('real hand-drawn ink (§ 6y)', () => {
    * only evidence in the repo about how the matcher behaves on a human hand, so
    * they are checked in verbatim — never regenerate them from medians.
    */
-  it('ranks 尔 first for both captured samples', () => {
+  it('ranks every captured sample first on ink alone (尔 ×2, the flat ⺈ hat)', () => {
     const templates = loadTemplates();
     for (const sample of realInk.samples) {
       const ink: Ink = sample.strokes.map((stroke) => ({
@@ -262,12 +263,12 @@ describe('real hand-drawn ink (§ 6y)', () => {
     }
   });
 
-  it('lifts an in-context ⺈ into the visible row through its § 6z-5 variant', () => {
+  it('lifts an in-context ⺈ into the visible row without needing a standalone match', () => {
     // Before variants, the 2026-09-27 sample ranked ⺈ 589th: its only template
     // was the tall standalone drawing, and the learner drew the flat form ⺈ takes
-    // inside 你 / 尔. Ink alone still prefers 冖 — the buffer settles it (§ 6z-6,
-    // covered in beginnerKeyboardComposition.test.ts) — but ⺈ must at least
-    // reach the displayed 12 on its own merits, via a variant.
+    // inside 你 / 尔. § 6z-5 variants lifted it to rank 8 (冖 still first, the
+    // buffer settling it — § 6z-6); since § 6z-14 the template traced from the
+    // chip's own display outline wins outright on ink alone.
     const templates = loadTemplates();
     for (const sample of realInk.inContext) {
       const ink: Ink = sample.strokes.map((stroke) => ({
@@ -276,8 +277,20 @@ describe('real hand-drawn ink (§ 6y)', () => {
         ts: stroke.x.map((_, i) => i * 16),
       }));
       const explained = explainGlyphMatch(ink, templates, sample.glyph);
-      expect(explained.variant, sample.note).toBe(true);
+      expect(explained.variant || explained.displayForm, sample.note).toBe(true);
       expect(explained.rank, sample.note).toBeLessThan(12);
+    }
+  });
+
+  it('§ 6z-14: carries a template traced from every display outline the chips draw', () => {
+    // The chip shows the display form; a learner copies it. A display path with no
+    // matching template means re-running generate-component-display-forms.js
+    // without re-running generate-handwriting-templates.js.
+    const templates = loadTemplates();
+    for (const glyph of Object.keys(COMPONENT_DISPLAY_PATHS)) {
+      const index = templates.chars.findIndex((char, i) => char === glyph && (templates.kinds[i] & KIND_DISPLAY_FORM) !== 0);
+      expect(index, `${glyph} has a display outline but no display-form template`).toBeGreaterThanOrEqual(0);
+      expect(templates.kinds[index] & KIND_COMPONENT).toBe(KIND_COMPONENT);
     }
   });
 

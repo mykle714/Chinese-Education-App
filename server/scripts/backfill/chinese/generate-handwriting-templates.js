@@ -91,6 +91,10 @@
  *   --discoverable   narrow to glyphs reachable from discoverable words
  *                    (smaller, and NOT what the client expects — diagnostic only)
  *   --no-variants    skip the § 6z-5 in-context variants (diagnostic A/B only)
+ *
+ * INPUTS BEYOND THE DB: src/components/handwriting/componentDisplayForms.generated.ts
+ * (§ 6z-14 — every display outline is also a template). Re-run this script whenever
+ * generate-component-display-forms.js changes that file.
  */
 import fs from 'fs';
 import path from 'path';
@@ -98,6 +102,7 @@ import { REPO_ROOT } from '../shared/lib/repoRoot.js';
 import db from '../../../db.js';
 import { loadDecompositionEntries, componentStrokesOf } from './lib/decompose.js';
 import { cutComponents, selectVariants } from './lib/componentVariants.js';
+import { outlineMedians } from './lib/outlineMedians.js';
 
 // Host vs container layout (repo root mounted at /app/project-root): shared/lib/repoRoot.js.
 
@@ -111,6 +116,8 @@ const LICENSE_FILE = path.join(OUTPUT_DIR, 'hanzi-writer-data-ARPHICPL.txt');
 const GEOMETRY_MODULE = path.join(REPO_ROOT, 'src', 'components', 'handwriting', 'inkGeometry.ts');
 // Likewise the scorer: variants are chosen by the distance the runtime ranks with (§ 6z-5).
 const SCORING_MODULE = path.join(REPO_ROOT, 'src', 'components', 'handwriting', 'strokeScoring.ts');
+// § 6z-14: the outlines the chips DRAW, so each becomes a template the matcher scores.
+const DISPLAY_FORMS_MODULE = path.join(REPO_ROOT, 'src', 'components', 'handwriting', 'componentDisplayForms.generated.ts');
 
 const discoverableOnly = process.argv.includes('--discoverable');
 // Diagnostic: emit the standalone templates only, to A/B the § 6z-5 variants.
@@ -138,6 +145,13 @@ const KIND_CHARACTER = 2;
  * Mirrored by `KIND_VARIANT` in src/components/handwriting/glyphTemplates.ts.
  */
 const KIND_VARIANT = 4;
+/**
+ * § 6z-14: a template traced from the component's § 6z-13 DISPLAY outline — the
+ * shape the chip shows, and so the shape a learner copies. Unlike KIND_VARIANT it
+ * takes no cost penalty: it is the form we teach, not a squeezed in-context one.
+ * Mirrored by `KIND_DISPLAY_FORM` in src/components/handwriting/glyphTemplates.ts.
+ */
+const KIND_DISPLAY_FORM = 8;
 
 /**
  * Collect the glyph inventory: every distinct component, every single-character
@@ -221,9 +235,10 @@ async function loadGlyphInventory() {
  *                        table grows past it — see § 7b)
  *   then, per glyph:
  *     codepoint  u32    (u32 rather than u16 — some radicals sit outside the BMP)
- *     kind       u8     KIND_COMPONENT | KIND_CHARACTER | KIND_VARIANT bitfield
- *                       (a glyph may repeat: its variants follow the sorted
- *                       standalone block, § 6z-5)
+ *     kind       u8     KIND_COMPONENT | KIND_CHARACTER | KIND_VARIANT |
+ *                       KIND_DISPLAY_FORM bitfield (a glyph may repeat: its
+ *                       variants follow the sorted standalone block, § 6z-5,
+ *                       and its display form comes last, § 6z-14)
  *     strokes    u8
  *     coords     i8 × strokes × points × 2   (x, y interleaved)
  *
@@ -254,9 +269,8 @@ function readMedians(glyph) {
  * sample of a component's shape as a simplified one. Det headwords go first,
  * commonest first, so the per-component sample cap drops rare characters.
  */
-async function appendVariants({ templates, inventory, charactersByFrequency, toTemplateSpace }) {
+async function appendVariants({ templates, inventory, charactersByFrequency, toTemplateSpace, entries }) {
   const { shapeCost } = await import(SCORING_MODULE);
-  const entries = await loadDecompositionEntries();
 
   const componentKinds = new Map(inventory.filter(([, kind]) => kind & KIND_COMPONENT));
   const standalone = new Map(templates.map((t) => [t.char, t.strokes]));
@@ -309,6 +323,42 @@ async function appendVariants({ templates, inventory, charactersByFrequency, toT
 
   const top = supported.sort((a, b) => b.support - a.support).slice(0, 12).map((s) => s.label);
   return { variantCount, componentsWithVariants, sampleCount, sourceCount, rescued, top };
+}
+
+/**
+ * § 6z-14 — append one template per § 6z-13 display form, traced from the outline
+ * the chip draws. Mutates `templates`.
+ *
+ * The stroke-order GUIDE is the component's hanzi-writer strokes cut out of the same
+ * host character the outline came from (尔 for ⺈): same strokes, same order and
+ * direction, different proportions. lib/outlineMedians.js does the tracing and
+ * throws when it cannot map contours onto strokes — a failure here must stop the
+ * build, or the chip would show a shape the matcher cannot read.
+ */
+async function appendDisplayForms({ templates, inventory, toTemplateSpace, entries }) {
+  const { COMPONENT_DISPLAY_PATHS, COMPONENT_DISPLAY_HOSTS } = await import(DISPLAY_FORMS_MODULE);
+  const kinds = new Map(inventory);
+  const added = [];
+  // Sorted, so the appended block is byte-stable across runs.
+  for (const component of Object.keys(COMPONENT_DISPLAY_PATHS).sort()) {
+    const host = COMPONENT_DISPLAY_HOSTS?.[component];
+    if (!host) throw new Error(`§ 6z-14: display form ${component} has no host in ${path.basename(DISPLAY_FORMS_MODULE)} — re-run generate-component-display-forms.js`);
+    const medians = readMedians(host);
+    if (!medians) throw new Error(`§ 6z-14: host ${host} (for ${component}) has no hanzi-writer stroke data`);
+    const { parts, labels } = componentStrokesOf(host, entries);
+    const guide = cutComponents(parts, labels, medians, (glyph) => glyph === component)[0]?.medians;
+    if (!guide) throw new Error(`§ 6z-14: cannot cut ${component} out of ${host} — makemeahanzi has no clean stroke labels for it`);
+
+    templates.push({
+      char: component,
+      codePoint: component.codePointAt(0),
+      // A display form only exists for a component, but keep any other role it has.
+      kind: (kinds.get(component) ?? KIND_COMPONENT) | KIND_DISPLAY_FORM,
+      strokes: toTemplateSpace(outlineMedians(COMPONENT_DISPLAY_PATHS[component], guide)),
+    });
+    added.push(`${component}←${host}(${guide.length} strokes)`);
+  }
+  return added;
 }
 
 function serialize(templates, pointsPerStroke, quantScale) {
@@ -397,9 +447,13 @@ async function generateHandwritingTemplates() {
   // Counted before the variant pass, so the standalone figures below stay
   // comparable with every earlier run of this script.
   const standaloneCount = templates.length;
+  const entries = await loadDecompositionEntries();
   const variantReport = skipVariants
     ? null
-    : await appendVariants({ templates, inventory, charactersByFrequency, toTemplateSpace });
+    : await appendVariants({ templates, inventory, charactersByFrequency, toTemplateSpace, entries });
+  // Not skipped by --no-variants: a display form is the shape the chip TEACHES, so
+  // an A/B of the § 6z-5 variants should still be able to read it.
+  const displayForms = await appendDisplayForms({ templates, inventory, toTemplateSpace, entries });
 
   const buffer = serialize(templates, POINTS_PER_STROKE, QUANT_SCALE);
 
@@ -427,6 +481,7 @@ async function generateHandwritingTemplates() {
   } else {
     console.log('  variants:      SKIPPED (--no-variants — diagnostic only)');
   }
+  console.log(`  display forms: ${displayForms.length ? displayForms.join('  ') : 'none'} (§ 6z-14)`);
   if (missing.component.length) {
     console.log(`\n  ⚠️ ${missing.component.length} COMPONENT(s) have no stroke data and are UNRECOGNIZABLE:`);
     console.log(`     ${missing.component.join(' ')}`);

@@ -174,7 +174,7 @@ a **different** sense, the search response names it, and the row shows that sens
 - **Client.** `resolveSearchRowView` (`src/utils/definitionUtils.ts`) returns the row's pinyin
   (the matched cluster's reading via `clusterReadingOrColumn`, else `resolveDefaultPronunciation`)
   and its sense list (each sense's dd, as the eip's Definition-tab sense list shows it, with the matched cluster's dd
-  moved to the front; the plain dd when there is no choice of sense). Used by `src/components/DictionaryEntryRow.tsx` (dictionary page
+  moved to the front; every gloss of the one sense, dd first, when there is no choice of sense — `singleSenseGlossList`). Used by `src/components/DictionaryEntryRow.tsx` (dictionary page
   and Compare slot B) and `src/features/community/CommunitySearchBar.tsx`.
 - **Click-through.** `DictionaryPage` → `handleEntryClick` looks the word up and opens the eip
   sheet with `selectedSense` overridden to the hit's `matchedSense`, so `useEipTabs.openForRoot`

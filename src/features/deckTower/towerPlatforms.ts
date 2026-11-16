@@ -40,13 +40,20 @@ const CARD: WorldRect = {
 
 /**
  * The deck's name plate, printed on the floor in front of the tower (the strip between
- * the stack's front-left face and the platform edge), as wide as the card. It names the
- * deck while a tall tower's top card is scrolled off screen, and it is the deck switch:
- * tapping it swaps the world's tower to its other deck (towerDecks.ts).
+ * the stack's front-left face and the platform edge), centred along the card's width but
+ * narrower than it (`LABEL_PLATE_W`). It names the deck while a tall tower's top card is
+ * scrolled off screen, and it is the deck switch: tapping it swaps the world's tower to its
+ * other deck (towerDecks.ts).
  * It is part of the floor — a floor decal, not an obstacle — so pawns walk over it,
  * stepping up onto the slightly raised push button (DeckTowerPlatform → `pawnSteps`).
  */
-const LABEL_PLATE: WorldRect = { x: CARD.x, y: CARD.y + CARD_D + 0.5, w: CARD_W, d: 1.1, r: 0.25 };
+/**
+ * The plate's width (world units). Was the full card width (CARD_W = 4.8) until 2026-11-15;
+ * narrowed so the plate reads as a button rather than a strip. Keep it wide enough for the
+ * longer label, "LEARNING"/"MASTERED" at IsoFloorLabel's 0.58 font (~3.6 units of print).
+ */
+const LABEL_PLATE_W = 4.0;
+const LABEL_PLATE: WorldRect = { x: CARD.x + (CARD_W - LABEL_PLATE_W) / 2, y: CARD.y + CARD_D + 0.5, w: LABEL_PLATE_W, d: 1.1, r: 0.25 };
 
 /**
  * The focus lever's hatch centre (IsoLever, docs/FOCUS_MODE.md § 5): the LEFT corner of the

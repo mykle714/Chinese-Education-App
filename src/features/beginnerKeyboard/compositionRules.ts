@@ -8,12 +8,15 @@
  *
  * Spec: docs/BEGINNER_KEYBOARD.md § 6r (modality, commit semantics), § 6n, § 6x,
  * § 6z-4 (hint bubbles), § 6z-6 (buffer-fit re-ranking), § 6z-7 (look-alike
- * components share one chip), § 6z-8 (the direct-commit chip).
+ * components share one chip, and the "covers" bubble that says so), § 6z-8 (the
+ * direct-commit chip).
  */
 import type { GlyphCandidate } from '../../components/handwriting/glyphMatcher';
 import type { Ink } from '../../components/handwriting/types';
 import type { HintCharacter, LookupCandidate } from '../../components/handwriting/glyphLookup';
-import { canonicalComponent } from '../../components/handwriting/componentAliases';
+import { aliasClass, canonicalComponent } from '../../components/handwriting/componentAliases';
+import { COMPONENT_DISPLAY_PATHS } from '../../components/handwriting/componentDisplayForms.generated';
+import { isPrivateComponent } from '../../../server/contracts/privateComponents';
 
 export type CandidateMode = 'glyph' | 'result';
 
@@ -49,6 +52,15 @@ export interface Candidate {
    * non-empty; the row paints it as a tappable bubble over the chip.
    */
   hint?: HintCharacter;
+  /**
+   * § 6z-7 "covers" bubble: the look-alike component(s) this chip also stands for
+   * (土's chip → '士'). Present on every GLYPH-mode chip whose glyph heads a § 6z-7
+   * class, whatever the buffer — and, per § 6z-13, on a chip drawn as a cut outline,
+   * where it carries the component's own font glyph (⺈'s chip shows 尔's flat hat;
+   * its bubble shows the compact ⺈). The row paints it as a bubble that takes PRIORITY
+   * over `hint` (one bubble per chip), and tapping it selects the chip.
+   */
+  covers?: string;
 }
 
 /**
@@ -184,19 +196,19 @@ function mergeLookAlikes(matches: readonly GlyphCandidate[]): GlyphCandidate[] {
 }
 
 /**
- * § 6z-8 — the direct-commit chip: the green section leading the glyph row, so a
+ * § 6z-8 — the direct-commit chip: the blue section leading the glyph row, so a
  * learner who drew a whole character can send it straight to the field.
  *
  * WHY: since § 6x every glyph chip APPENDS — drawing 我 puts 我's parts in the
- * buffer, and the learner then finds 我 again in the (green) result row. Two taps
+ * buffer, and the learner then finds 我 again in the (blue) result row. Two taps
  * for one character they drew whole. § 6x rejected a per-glyph "commit if it is a
  * character" rule because no predicate can tell "meant as a part" from "meant as a
  * word". This does not try to: it offers BOTH. The same glyph stays first in the
- * blue section for the learner who wanted its parts.
+ * gold section for the learner who wanted its parts.
  *
  * The rule (confirmed 2026-09-28):
- *   - ONLY the top guess — the first chip the blue section shows (after § 6z-7's
- *     merge), so the green chip always repeats something visible beside it;
+ *   - ONLY the top guess — the first chip the gold section shows (after § 6z-7's
+ *     merge), so the blue direct chip always repeats something visible beside it;
  *   - only when that character appears in a multi-character det word
  *     (`appearsInWord`, injected) — 我 and 口 qualify, 亻 氵 冖 do not;
  *   - only with an EMPTY buffer. A commit clears the buffer (§ 6r), so offering it
@@ -263,7 +275,7 @@ export function activeMode(hasInk: boolean): CandidateMode {
  * ─────────────────────────────────────────────────────────────────────────────
  * ⚠️ EVERY GLYPH CHIP APPENDS (§ 6x, decided 2026-09-07 — this REPLACES the
  * earlier `glyphAction` rule.) Committing while drawing is offered SEPARATELY,
- * by the one green direct-commit chip in front of these (§ 6z-8,
+ * by the one blue direct-commit chip in front of these (§ 6z-8,
  * `directCommitCandidate`) — never by changing what a glyph chip does.
  *
  * The old rule was "carries the component bit → append, otherwise commit". It
@@ -280,11 +292,20 @@ export function activeMode(hasInk: boolean): CandidateMode {
  * one-tap shortcut beside it for the empty-buffer case.
  */
 export function toGlyphCandidates(ranked: readonly RankedGlyph[]): Candidate[] {
-  return ranked.map(({ match, hint }) =>
-    hint
-      ? { text: match.char, action: 'append', isWord: false, hint }
-      : { text: match.char, action: 'append', isWord: false },
-  );
+  return ranked.map(({ match, hint }) => {
+    const candidate: Candidate = { text: match.char, action: 'append', isWord: false };
+    if (hint) candidate.hint = hint;
+    // § 6z-7: the chip's glyph is already canonical (rankGlyphs merged it), so its
+    // class minus itself is exactly what the chip silently stands in for.
+    // § 6z-13: a chip DRAWN as a cut outline (⺈ → 尔's flat hat) stands in for its
+    // own font glyph too — the compact form — so the covers bubble shows that.
+    // § 6z-15: except a private-use part (U+E000), which HAS no font glyph to show.
+    const covered =
+      aliasClass(match.char).slice(1).join('') ||
+      (match.char in COMPONENT_DISPLAY_PATHS && !isPrivateComponent(match.char) ? match.char : '');
+    if (covered) candidate.covers = covered;
+    return candidate;
+  });
 }
 
 /** Adapt lookup output to row chips. Results always commit — that is the point of them. */

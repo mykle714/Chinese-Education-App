@@ -200,7 +200,9 @@ export default function BeginnerKeyboardHost({
    * SIZE HINT that falls back to a default so our own surface never collapses on
    * a desktop with a hardware keyboard. Only the boolean means real occlusion —
    * and when there is none (desktop) the bar simply sits at the bottom of the
-   * app frame, which is where the field's keyboard would have been.
+   * app frame, which is where the field's keyboard would have been. (On a phone,
+   * a MINIMIZED OS keyboard also reads as none — that case closes instead; see
+   * the effect below.)
    *
    * § 7a's warning applies: on the web this is inferred from `visualViewport`
    * and reports nothing until the keyboard has actually opened, so expect a frame
@@ -208,6 +210,41 @@ export default function BeginnerKeyboardHost({
    * budgeted for, not a bug; Capacitor's `keyboardWillShow` removes it.
    */
   const osPerch = viewport.osKeyboardVisible ? viewport.height : 0;
+
+  /**
+   * The learner minimized the OS keyboard — so close, rather than strand the bar.
+   *
+   * ⚠️ THE "BAR SITTING AT THE BOTTOM" FIX (2026-11-15). Hiding the system
+   * keyboard from its own controls (Android's back button, a keyboard's hide
+   * key) leaves the field FOCUSED, so nothing reaches the provider's dismissal
+   * listeners and this host stays mounted. `osPerch` then falls to 0 and the bar
+   * drops to the bottom of the frame — the desktop fallback, on a phone, with
+   * no keyboard under it.
+   *
+   * So a visible → hidden edge in OS mode is treated as the close chevron
+   * (`onDismiss` blurs the field; a re-tap refocuses and reopens normally).
+   *
+   * EDGE-triggered, never level: the OS keyboard reads hidden for its whole
+   * rise after `ABC` is tapped, and forever on a desktop with a hardware
+   * keyboard. Only a keyboard we have SEEN up can be minimized. The flag resets
+   * whenever we leave OS mode, so the blur that drops the OS keyboard on a
+   * switch to 写 / ā is not mistaken for a minimize.
+   */
+  const osKeyboardSeenRef = useRef(false);
+  useEffect(() => {
+    if (source !== 'os' || !open) {
+      osKeyboardSeenRef.current = false;
+      return;
+    }
+    if (viewport.osKeyboardVisible) {
+      osKeyboardSeenRef.current = true;
+      return;
+    }
+    if (osKeyboardSeenRef.current) {
+      osKeyboardSeenRef.current = false;
+      onDismiss();
+    }
+  }, [source, open, viewport.osKeyboardVisible, onDismiss]);
 
   // Where to portal: always frame level, so the keyboard out-stacks the footer
   // (see the header). Still computed per field — a field inside an MUI dialog is

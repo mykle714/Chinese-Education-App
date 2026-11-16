@@ -4,9 +4,12 @@
 > lookup (§ 6u), the keyboard surface (§ 6v), its appear/dismiss model (§ 6z) and
 > the switch bar (§ 6z-2) all ship, as do in-context component variants (§ 6z-5)
 > and buffer-fit re-ranking of the glyph row (§ 6z-6), look-alike components
-> sharing one chip (§ 6z-7), the green direct-commit chip (§ 6z-8), and the
+> sharing one chip (§ 6z-7), the blue direct-commit chip (§ 6z-8), and the
 > half-built character surviving a change of field (§ 6z-9), and the ā tone-vowel
-> pad as a third keyboard (§ 6z-10). §§ 1–4 are the ORIGINAL investigation — how
+> pad as a third keyboard (§ 6z-10), and display forms for components whose font
+> glyph is the wrong shape (§ 6z-13, ⺈ and 卯), each also traced into a handwriting
+> template so the matcher reads the shape the chip teaches (§ 6z-14), and the private-use
+> two-dot ⺼ of 然 祭 炙 (§ 6z-15). §§ 1–4 are the ORIGINAL investigation — how
 > small a unit the decomposition system can hand us, and the complete inventory of
 > those units — kept because the numbers still describe the corpus; read them as
 > the record of how the design was reached, not as open questions. What genuinely
@@ -958,6 +961,24 @@ up: a bar that is *sometimes* long is honest, whereas a bar that disappears when
 the system is unsure is a feature that appears broken exactly when the learner
 most needs feedback that their stroke was understood.
 
+#### The empty row teaches what a component is (2026-11-15)
+
+With the canvas and buffer both clean the bar has no chips, and its whole width
+carries the keyboard's one instruction: **"To write 你, draw 亻 then 尔"**, in
+`SIZE.bodyLg` (16px) semibold in the muted grey (`COLORS.textSecondary`, ~3.7 : 1 on `orgM` — under AA's 4.5 : 1), centred in the band; the characters are plain inline text. A learner already knows to draw in
+the canvas; what they don't know is how this differs from the OS Chinese keyboard
+(you build a character out of its **components**, one at a time) or what a
+"component" is. A worked example answers both where the word could not. The row
+sits on the drawing **gold** (`EMPTY_GROUND`), not the idle blue, because nothing on
+it commits. The example is the character's left and right **halves**, not the three leaves
+`components` stores (`[亻, ⺈, 小]`): drawing 尔 works because `expandGlyph`
+expands it to `[⺈, 小]` on entry. (The first example was 好 = 女 + 子.) It
+replaced the grey caption "Draw a component or a whole character".
+While the handwriting assets load, the same slot says "Loading handwriting data…".
+
+Code: `src/features/beginnerKeyboard/CandidateRow.tsx` → `EMPTY_GROUND`,
+`EXAMPLE_TARGET`, `EXAMPLE_COMPONENTS`.
+
 #### What it has to hold
 
 From § 6j, the real sizes this bar must render:
@@ -1241,8 +1262,11 @@ returns when they submit or clear. Two consequences to design for:
 2. **Some visual difference between the two modes is required** — otherwise a
    learner cannot tell whether the cell they are about to tap will commit a
    character or submit a component, and those are very different actions.
-   **Settled:** a per-mode ground tint (blue while drawing, green when idle) plus
-   the chip's border weight. A third cue, a vertical text label on the left of the
+   **Settled:** a per-mode ground (gold while drawing — `orgM`, the friend-code card's
+   gold — and blue when idle — `bluM`, the 写 switch key's face — since 2026-11-15; pale blue /
+   green tints before; the EMPTY row — canvas and buffer both clean — is gold too,
+   `CandidateRow.tsx` → `EMPTY_GROUND`, because nothing on it commits)
+   plus the chip's border weight (the border weight was retired 2026-11-15, § 6z-12). A third cue, a vertical text label on the left of the
    row ("What you drew" / "Tap to insert"), shipped first and was **removed
    2026-09-09** by product decision so the chips get the full width — the bar now
    carries no label at all.
@@ -1265,9 +1289,10 @@ gated on the buffer being non-empty in some other sense.
 `undo`, `redo`, `canRedo` and its `redoRef` stack; `src/components/handwriting/types.ts`
 → `WritingCanvasHandle`.
 
-The left column, under the component buffer, ends in a **controls section** set off
-from the parts above by a 1px divider rule (`.beginner-keyboard__controls`,
-`borderTop: COLORS.border`). Its key row holds three ink keys, left to right:
+The left column, under the component buffer, ends in a **controls section**
+(`.beginner-keyboard__controls`; the 1px divider rule that set it off from the parts
+was removed 2026-11-15 — the raised keys separate themselves). Its key row holds three
+ink keys, left to right:
 
 | key | does | live when |
 |---|---|---|
@@ -1279,9 +1304,27 @@ All three act on **the canvas ink only — never the component buffer.** The buf
 keeps its own per-chip tap-to-remove, so the controls are orthogonal and neither
 undoes the other's work. The redo stack is **dropped by a new stroke and by
 `clear()`** (which also covers submitting a candidate), so redo only ever replays a
-straight run of undos; a clear itself is not undoable. The keys split the column
-width equally (`flex: 1`, tight padding) because the column can be as narrow as
-~40% of a phone's width.
+straight run of undos; a clear itself is not undoable.
+
+**Placement (2026-11-15):** **square** keys (38×38 — the candidate chip face,
+`keycapStyle.ts` → `CHAR_KEY_FACE` — able to shrink *as squares* via `aspect-ratio`
+to a 30px floor, which the parts column's 152px floor means they never need; 4px apart) **right-aligned against
+the canvas** — the row's right margin is `PARTS_COLUMN_PAD`, the same gap to the canvas
+the part chips have (the canvas slot has no left inset). They used to split the column width with `flex: 1`.
+
+**⚠️ The bottom-alignment rule:** the bottom of the key row's lips sits on the canvas's
+bottom edge, at every keyboard size. Two halves keep it: the canvas hangs from the
+**bottom** of its slot (`.beginner-keyboard__canvas-slot` `alignItems: flex-end`), so its
+bottom edge is always `CANVAS_INSET` above the keyboard's; and the controls row pads its
+bottom by `CANVAS_INSET + KEY_LIP`, because the lip paints `KEY_LIP` below the key's box.
+When the width cap binds, the spare height collects above the canvas. (PPE before this
+had the canvas vertically centred, so on a width-bound phone it floated above the keys.)
+
+**Look (2026-11-15, § 6z-12):** raised white **square** keycaps (38×38), **icon-only** like the
+ā pad's ⌫ / ← → keys — Material Symbols `ink_eraser` for Clear (the writing notebook's
+Eraser glyph; deliberately *not* ⌫, which on the ā pad deletes a character from the
+field), `undo`, `redo`, all through `src/components/Icon.tsx` so they share one weight. The words live in
+each key's `aria-label`. A disabled key sits flat at rest and does not press.
 
 For feature testers the § 6w debug chips (dump, 🎯 target) sit on their **own row
 inside the controls section, directly above** the ink keys
@@ -1626,7 +1669,7 @@ component→character lookup exists yet.
 |---|---|
 | `src/components/handwriting/inkGeometry.ts` | `resampleStroke`, `normalizeStrokes`, `fingerprint`, and the two build constants `POINTS_PER_STROKE` (8) and `QUANT_SCALE` (254) |
 | `server/scripts/backfill/chinese/generate-handwriting-templates.js` | offline generator → `src/assets/handwriting/glyph-templates.bin` |
-| `src/components/handwriting/glyphTemplates.ts` | `parseGlyphTemplates`, `loadGlyphTemplates` (lazy, session-cached), `KIND_COMPONENT`/`KIND_CHARACTER`/`KIND_VARIANT` |
+| `src/components/handwriting/glyphTemplates.ts` | `parseGlyphTemplates`, `loadGlyphTemplates` (lazy, session-cached), `KIND_COMPONENT`/`KIND_CHARACTER`/`KIND_VARIANT`/`KIND_DISPLAY_FORM` |
 | `src/components/handwriting/strokeScoring.ts` | `UNMATCHED_STROKE_COST`, `strokeCost`, `assignmentCost`, `shapeCost` — asset-free so the generator scores variants with the runtime's own metric (§ 6z-5) |
 | `src/components/handwriting/glyphMatcher.ts` | `fingerprintInk`, `matchGlyphs` (keeps each glyph's best template), `explainGlyphMatch`, `CANDIDATE_POOL`, `VARIANT_COST_FACTOR` |
 | `src/__tests__/glyphMatcher.test.ts` | 16 tests, all passing |
@@ -1635,7 +1678,8 @@ Renamed from `component*` on 2026-09-07 when the asset stopped being
 components-only; `component-templates.bin` was deleted in the same pass.
 
 **The asset shipped at 1,252 KB** for 7,258 glyphs / 77,416 strokes (1,275.5 KB
-since § 6z-5 appended 317 in-context variants). That is 12×
+since § 6z-5 appended 317 in-context variants; § 6z-14 adds one display-form
+template per display outline, 7,576 templates as of 2026-11-15). That is 12×
 the components-only asset, and it is the right trade: it is a one-off download
 cached for the session, § 7b expects the det table to keep growing anyway, and it
 is what makes whole-character recognition possible at all.
@@ -1749,7 +1793,9 @@ radicals sit outside the BMP), a `u8` **kind** bitfield, a `u8` stroke count, an
 `int8` interleaved x/y. Since § 6z-5 a codepoint may repeat: the sorted standalone
 block is followed by in-context variants carrying `KIND_VARIANT` (bit 2) on top of
 the glyph's own role bits. That is a new flag, not a format change — a reader that
-ignores the bit still scores correctly — so the version stayed at 2. The client decodes into one flat `Float32Array` rather
+ignores the bit still scores correctly — so the version stayed at 2. § 6z-14 appends
+one more block after the variants: display-form templates carrying
+`KIND_DISPLAY_FORM` (bit 3), same reasoning, same version. The client decodes into one flat `Float32Array` rather
 than ~620k small arrays, so the scoring loop walks memory instead of chasing
 pointers.
 
@@ -2004,10 +2050,13 @@ it from a description of what happened. The dump closes that gap: it is **the
 exact ink**, so `matchGlyphs` can be re-run against it offline and the ranking
 inspected.
 
-**The gate is `users.isFeatureTester`** (migration 178; until migration 185 dropped it, the
-gate was `users.isTemplateAuthor`). It is decided in `BeginnerKeyboardProvider` (the only
-layer in the feature holding auth) and passed down as `debug`. Like every other
-client-side `isFeatureTester` check it is **UX only**: nothing here is
+**The gate is `useTestingFeatures()`** (`src/hooks/useTestingFeatures.ts`,
+docs/FEATURE_TESTING.md): the `users.isFeatureTester` grant (migration 178) **and** the
+per-device Settings switch "Enable testing features". Until 2026-11-15 it read the account
+flag alone, so a tester demoing the app as a learner still saw the button; until migration
+185 the gate was `users.isTemplateAuthor`. It is decided in `BeginnerKeyboardProvider` (the
+only layer in the feature holding auth) and passed down as `debug`. Like every other
+client-side tester check it is **UX only**: nothing here is
 privileged, there is no server call behind it, and the same payload is derivable
 from the console. The gate exists so the button is not in everyone's way.
 
@@ -2031,10 +2080,10 @@ secure, copied to the clipboard (the label says which):
 | `ink` | the strokes, in canvas px, timestamps rebased onto the first sample |
 | `canvasSize` | scale context — separates "drew it tiny in a corner" from a matcher failure |
 | `buffer` | the components already submitted — flat, and so also the exact list the lookup searched (there was a separate `leaves` field until the buffer went flat; see § 6x) |
-| `suggested` | the glyph row **in row order** (after § 6z-6's buffer-fit re-ranking), 40 deep: `cost` (matcher), `rankCost` (what the row sorted by), `variant` (§ 6z-5 template won), `hint` (`你+0` = the bubble's character + components still missing) — snapshot `v: 3` |
+| `suggested` | the glyph row **in row order** (after § 6z-6's buffer-fit re-ranking), 40 deep: `cost` (matcher), `rankCost` (what the row sorted by), `variant` (§ 6z-5 template won), `displayForm` (§ 6z-14 template won), `hint` (`你+0` = the bubble's character + components still missing) — snapshot `v: 4` |
 | `direct` | the § 6z-8 green direct-commit chip the row led with, or `null` |
 | `results` | buffer lookup output, 40 deep |
-| `target` | the intended character: its expansion, its rank in the **full** result list, its own cost, and the per-stroke pairings the scorer chose |
+| `target` | the intended character: its expansion, its rank in the **full** result list, its own cost, and the per-stroke pairings the scorer chose. ⚠️ The target is the author's **persisted** choice (`localStorage`, `beginnerKeyboard.debugTarget`) — it survives reloads, so a dump can carry a stale target from an earlier session; tap the `dump→X` chip to change it |
 | `assets` | which of the three assets had loaded, so a thin dump is not read as a bad match |
 
 **Setting the target.** A 🎯 chip beside the dump button opens `window.prompt`,
@@ -2282,6 +2331,7 @@ tapping back into the field.
 | focusin or pointerdown inside **our own surface** | nothing |
 | focusin or pointerdown inside a **`data-beginner-keyboard="keep"`** region | nothing |
 | the **close chevron** in the switch bar | closes (it moved out of the keyboard's footer — § 6z-2) |
+| in `ABC` mode, the **OS keyboard minimized** from its own controls (Android back, a hide key) while the field keeps focus | closes, as the chevron would — § 6z-2 "Minimizing the OS keyboard" |
 | pointerdown or focus **anywhere else** | closes |
 | route change, language switch, target field disconnected | closes immediately, no transition |
 
@@ -2402,20 +2452,47 @@ in, and where it is anchored), `transition.ts` → `switchBarTransition`,
 
 ```
 ┌──────────────────────────────────────────────┐
-│ [ 写 | ā | ABC ]                          ⌄  │   ← the bar, 40px
+│ [写] [ā] [abc]                          [⌄]  │   ← the bar, 44px
 ├──────────────────────────────────────────────┤
 │  the handwriting keyboard, OR nothing of      │
 │  ours at all (the OS keyboard is up here)     │
 └──────────────────────────────────────────────┘
 ```
 
-A **segmented toggle** showing every destination with the active side filled
-(two segments until 2026-10-29, when the ā pad made it three — § 6z-10),
-rather than one key whose label flips. A flipping label is invisible until it is
-read, and it is read as a state ("I am on ABC") exactly as often as an action
-("go to ABC"). The close chevron sits at the **far** edge: the two are different
+A **row of switch keys** showing every destination (two until 2026-10-29, when
+the ā pad made it three — § 6z-10), rather than one key whose label flips. A flipping label is invisible until it is
+read, and it is read as a state ("I am on abc") exactly as often as an action
+("go to abc"). The Latin key's label is lowercase **`abc`** (2026-11-15, owner). The close chevron sits at the **far** edge: the two are different
 kinds of exit — one changes how you type, the other stops you typing — and a
 mis-tap between them is expensive.
+
+**Look (restyled 2026-11-15, § 6z-12).** Each destination is its own raised **hued**
+keycap, ≈42.43×24 face (11 : 7 as shown, lip included) and 6px apart, in the Friends page's Send / Accept / Remove tile hues
+in that page's left-to-right order (owner's pick): **写 blu · ā grn · abc red** —
+positional, not a meaning — ramp MID face on MARK lip
+(`keycapStyle.ts` → `hueKeySx`). The keyboard on screen is the key **latched down**
+(`latchedKeySx`: sunk 3px, lip gone, ink label) while the offers stand on their lips
+with `ink2` labels. The close chevron is a plain raised **white** key — it is not a
+keyboard, so it takes no destination hue (briefly org "gold" on 2026-11-15). Until
+2026-11-15 the bar was a segmented control: a sunken `well` track with the active
+segment filled white, and a bare chevron.
+
+**Height (2026-11-15):** `KEYBOARD_SWITCH_BAR_HEIGHT` is **fixed at 44px** and the key
+face is what gives: 44 − 1px top rule − 8px air − 3px lip − 8px air = **24px face**
+(`SWITCH_KEY_HEIGHT`, derived). The owner wanted the keys smaller but the bar's height
+kept, so the 4px taken off the keys went into the air around them (6px → 8px a side).
+The bar was a flat 40 before the keys were raised. The keys hang from the top padding
+(`alignItems: flex-start`) rather than centring, so the air below is measured from the
+lip, not the key's box. **Every key is one locked shape** (owner): **11 : 7 as shown** —
+the ratio counts the 3px lip, because that is the shape the eye reads — with the width
+solved from the face height by `keycapStyle.ts` → `keyWidthForShownAspect`: (24 + 3) ×
+11/7 ≈ **42.43 wide**, a raised key showing ≈42.43×27. The latched key has no lip and
+reads a little flatter (≈42.43×24). Earlier on 2026-11-15, on a 28px face: 40×28, then
+56×28 (2 : 1) and 42×28 (3 : 2) measured on the face alone, then 3 : 2, 2 : 1, 5 : 4,
+5 : 3, 10 : 7 and 11 : 7 shown; the flat bar's segments were 44×28. Code:
+`KeyboardSwitchBar.tsx` → `KEYBOARD_SWITCH_BAR_HEIGHT`, `SEGMENTS`, `SwitchSegment`,
+`SWITCH_KEY_SHOWN_ASPECT`, `SWITCH_KEY_WIDTH`, `SWITCH_KEY_HEIGHT`, `SWITCH_BAR_PAD`,
+`SWITCH_BAR_RULE`.
 
 `写` is drawn in `FONTS.cjk`, not through `ForeignText`. It is a key **cap**, not a
 word the learner is being taught, and must not carry pinyin above it.
@@ -2435,7 +2512,7 @@ declined it would be advertising a door into a wall. Same for a Spanish learner.
 ### The motion — trailing stagger, NOT the keyboard's timing
 
 The bar starts **parked behind the keyboard's top edge** and is pushed out by it:
-`transform: translateY(40px)` inside a slot that clips, moving to `0` after a
+`transform: translateY(KEYBOARD_SWITCH_BAR_HEIGHT)` inside a slot that clips, moving to `0` after a
 **200 ms delay, over 150 ms** on the keyboard's own `easeOut`. The keyboard's
 slide is 300 ms, so the bar begins as the keyboard is nearly home and lands
 slightly after it.
@@ -2445,7 +2522,7 @@ thing to try:
 
 | | why not |
 |---|---|
-| **same 300 ms as the keyboard** | the bar travels 40 px against the keyboard's ~320, so an equal duration is a bar *crawling* up a surface that is itself still moving. Two speeds, one gesture. |
+| **same 300 ms as the keyboard** | the bar travels ~44 px against the keyboard's ~320, so an equal duration is a bar *crawling* up a surface that is itself still moving. Two speeds, one gesture. |
 | **same velocity** (~40 ms) | the physically truest "same momentum", and it snaps into place a seventh of the way through the keyboard's travel — the bar arrives before the thing it is supposed to be riding. |
 
 Exit has **no delay**: the bar ducks back behind the keyboard first and the
@@ -2481,6 +2558,18 @@ from `useKeyboardViewport`, which on the web infers the OS keyboard from a
 expect a frame or two of the bar sitting low during the system keyboard's own
 animation. Capacitor's `keyboardWillShow` removes it. On a desktop with no OS
 keyboard at all the perch is 0 and the bar sits at the bottom of the app frame.
+
+⚠️ **Minimizing the OS keyboard closes the bar (2026-11-15).** Hiding the system
+keyboard from its own controls (Android's back button, a keyboard's hide key) does
+not blur the field, so none of the provider's dismissal events fire. The perch
+would fall to 0 and the bar would sit at the bottom of the frame with no keyboard
+under it. The host therefore treats a **visible → hidden** edge of
+`osKeyboardVisible` in `ABC` mode as the close chevron (`onDismiss`); a re-tap on
+the field refocuses and reopens normally. It is edge-triggered on a keyboard the
+host has *seen* up, so the OS keyboard's own rise after `ABC`, a desktop with a
+hardware keyboard, and the blur that drops the OS keyboard on a switch to `写`/`ā`
+never count as a minimize.
+Code: `src/features/beginnerKeyboard/BeginnerKeyboardHost.tsx` → `osKeyboardSeenRef` effect.
 
 ### Reserved space
 
@@ -2908,21 +2997,58 @@ no other feature reading that column changes. No asset was regenerated.
 ⚠️ **The accepted cost:** results widen. `口 土` now answers both 吉 (口士) and
 吐 (口土); `日 日` answers 昌 (日曰) as well as 昍.
 
+### The "covers" bubble (BUILT 2026-11-15)
+
+The merge used to be invisible: a learner who drew 士 saw only a 土 chip. Now
+**every glyph chip whose glyph heads a class carries a bubble showing the alias
+under the word "covers"** (土's chip → `covers / 士`).
+
+- **When:** always on a merged chip (口 土 日 阝), and on ⺈'s chip, whose bubble
+  shows the compact font ⺈ beside the flat hat the chip draws (§ 6z-13). With an empty buffer or not,
+  every time (it never retires). Glyph-mode chips only, so the § 6z-8 green
+  chip and result chips get none.
+- **Priority:** one bubble per chip, and `covers` wins over a § 6z-4 hint on
+  the same chip. The hint's character can still be reached through the result
+  row.
+- **Tap:** it does the same as tapping the chip under it (appends the canonical
+  component). It does **not** commit, unlike a hint bubble.
+- **Layout and size:** "covers" sits ON TOP, but CPCDRow puts its pinyin below
+  the glyph. So the bubble is a text band stacked over a **pinyinless**
+  `ForeignText` row (`size="sm"`, shared through `BUBBLE_CPCD_SIZE`). A
+  pinyinless row pads its glyph on top only, so a floor of half
+  `VERTICAL_PADDING.sm` (2px) sits under the glyph to lift it off the bubble's
+  bottom edge (`COVERS_GLYPH_FLOOR_PX`). A full 4px pushed "covers" too close to
+  the top. The band gets the rest of the `PINYIN_RESERVED_HEIGHT.sm` the row no
+  longer reserves (18 − 2 = 16px), so the height still matches a hint bubble. The width deliberately does
+  **not** match: the label sits in normal flow with 3px side padding, so the word
+  "covers" sets the bubble's width. The wider bubble marks it as a different kind
+  from the glyph-wide hints. It uses the pinyin's font (`PINYIN_FONT_SIZE`, condensed, regular) with a
+  tight `line-height: 1` in `COLORS.textSecondary`. The glyph uses `COLORS.onSurface`.
+- **Motion and placement:** the same as § 6z-4 (same surface, presence hook and
+  anchoring). The bubble key includes the kind, so a chip that switches between
+  a hint and a covers bubble pops one and grows the other.
+
 ### Code
 
 - `src/components/handwriting/componentAliases.ts` → `COMPONENT_ALIASES`,
   `canonicalComponent`, `aliasClass`
 - `src/components/handwriting/glyphLookup.ts` → `mergeComponentAliases`,
   `expandGlyph`, the class-wide rescue in `lookupCharacters`
-- `src/features/beginnerKeyboard/compositionRules.ts` → `mergeLookAlikes`, `rankGlyphs`
+- `src/features/beginnerKeyboard/compositionRules.ts` → `mergeLookAlikes`, `rankGlyphs`,
+  `Candidate.covers` (set in `toGlyphCandidates`)
+- `src/features/beginnerKeyboard/CandidateRow.tsx` → `bubbleContentFor` (covers-over-hint
+  priority), the bubble `onSelect` binding
+- `src/features/beginnerKeyboard/HintBubble.tsx` → `HintBubbleContent`, `BUBBLE_CPCD_SIZE`,
+  the `'covers'` branch (label band + pinyinless row)
 - Tests: `src/__tests__/glyphLookup.test.ts` → "§ 6z-7 look-alike components";
-  `src/__tests__/beginnerKeyboardComposition.test.ts` → the one-chip case
+  `src/__tests__/beginnerKeyboardComposition.test.ts` → the one-chip case, and "a merged
+  chip says what it covers"
 
 ## 6z-8. BUILT 2026-09-28 — the direct-commit chip
 
 **While the learner is drawing with an empty buffer, the glyph row may open with
 one chip on a GREEN ground: the top guess, which commits straight to the field.**
-The same glyph stays first among the blue chips, for the learner who wanted its
+The same glyph stays first among the gold chips, for the learner who wanted its
 parts.
 
 ```
@@ -2943,10 +3069,10 @@ both.
 
 | question | decision |
 |---|---|
-| which chip | **the top guess only** — the first chip the blue section shows (after § 6z-7's merge), so the green chip always repeats something visible beside it |
-| qualifies when | the character appears in **at least one multi-character det word** (`appearsInWord`, reading the index's `usage` count). Every index record is already a single-character det headword, so "is in det" alone would filter nothing. Measured: 我 70, 你 34, 口 518, 尔 798 qualify; 亻 氵 冖 冂 囗 are all 0 and stay silent — so the real flat-⺈ sample (top guess 冖) offers no green chip |
+| which chip | **the top guess only** — the first chip the gold section shows (after § 6z-7's merge), so the blue direct chip always repeats something visible beside it |
+| qualifies when | the character appears in **at least one multi-character det word** (`appearsInWord`, reading the index's `usage` count). Every index record is already a single-character det headword, so "is in det" alone would filter nothing. Measured: 我 70, 你 34, 口 518, 尔 798 qualify; 亻 氵 冖 冂 囗 are all 0 and stay silent — so the real flat-⺈ sample (top guess 冖) offers no direct chip |
 | buffer | **empty only.** A commit clears the buffer (§ 6r), so offering one mid-character would silently discard the learner's parts; the § 6z-4 bubbles already offer the commits that make sense there |
-| colour | the result row's green (`grnTint`) — it commits exactly as a result chip does. The two tints are pale, so a hairline divider and the commit chip's filled 2 px border carry the distinction too |
+| colour | the result row's blue (`COLORS.bluM`, the 写 switch key's face; `grnTint` until 2026-11-15) — it commits exactly as a result chip does. A hairline divider separates it from the gold glyph strip beside it |
 | placement | outside the scroller, bleeding to the row's edges: it never scrolls away, and reads as a section of the strip rather than a floating chip |
 
 Because the direct chip is a plain `commit` candidate, `selectCandidate`'s
@@ -3095,30 +3221,337 @@ keyboard, pinyin mode*.
 - `src/features/beginnerKeyboard/eligibility.ts` → `defaultSourceOf`
 - `src/components/SearchField.tsx` → `inputAttributes.enterKeyHint`
 
-## 6z-11. BUILT 2026-10-29 — Tier 2 time-of-day colours
+## 6z-11. REMOVED 2026-11-15 — no colour theming: always the standard grey
 
-Over a **Tier 2 page** (today the Dictionary and its card page) the keyboard takes that
-page's time-of-day look: the page's pale-sky ground by day, and slate keys
-with light ink at night. Everywhere else it is unchanged (owner's choice: "only on Tier 2
-pages").
+**The keyboard has one look: the standard grey keyboard, on every page and at every
+time of day.** From 2026-10-29 to 2026-11-15, over a Tier 2 page (the Dictionary), it
+took that page's time-of-day look (sky-tinted by day, slate keys at night) through
+`tier2Var` CSS variables. The owner removed that so the keyboard is one consistent
+object everywhere.
 
-- **How it knows.** It doesn't: every chrome colour is a CSS string from
-  `KEYBOARD_COLORS` (`keyboardColors.ts`), each `var(--tier2-…, <its old COLORS value>)`
-  (`src/timeOfDay/tier2Chrome.ts` → `tier2Var`). A Tier 2 page writes the variables while
-  mounted (`useTier2Look`); with none up they are unset and the fallbacks are the keyboard's
-  original colours, so no prop or context reaches the host.
-- **Themed:** the 写 and ā surfaces and their top rule, the switch bar (ground, segment
-  track, active segment, labels, close chevron), the 写 Clear / Undo / Redo keys and the
-  controls rule, the component-buffer chips and labels, and the ā pad's utility keys
-  (backspace, ← →, action).
-- **Not themed, on purpose:** the ā pad's vowel keys (their ramp hues are content), the
-  handwriting canvas (white paper; stroke ink is dark), and the candidate row's blue / green
-  mode tints (the tint is the mode signal; its white chips stay legible on it).
+- **Where the colours live:** `KEYBOARD_COLORS` (`keyboardColors.ts`) holds plain
+  `COLORS` tokens under keyboard-role names (`ground` = `COLORS.header`, `key`,
+  `keyEdge`, `outline`, `ink`, `ink2`, `muted`, `faint`; `well` and `pressed` retired by § 6z-12). Nothing in
+  `src/features/beginnerKeyboard/` reads `tier2Var`.
+- **The only colour signals left** are content and mode, which never lived in
+  `KEYBOARD_COLORS`: the ā pad's vowel ramp hues, and the candidate row's gold / blue
+  mode grounds (`CandidateRow.tsx` → `MODE_STYLE`: `COLORS.orgM` drawing — the Friends
+  friend-code card's gold, `FriendsBody.tsx` → `RAMP.org.mid` — and `COLORS.bluM` idle, the 写 switch key's face).
+- **The Tier 2 look itself is unchanged** for the Dictionary page, the slab footer and
+  `CpcdPopup` (docs/SHELF_REDESIGN.md § 7b "Time of day").
 
 **Code:** `src/features/beginnerKeyboard/keyboardColors.ts` → `KEYBOARD_COLORS`;
 `BeginnerKeyboard.tsx` → `inkKeySx`; `KeyboardSwitchBar.tsx`; `ComponentBuffer.tsx`;
-`PinyinToneKeyboard.tsx` → `utilityKeySx`, `keycapShadow` (outline ring + the straight-lip rounded edge, docs/designGuidelines.md § "The rounded edge"), `keyPressSx` (→ `src/theme/keycapPress.ts`);
-`src/timeOfDay/tier2Chrome.ts`. **Docs:** docs/SHELF_REDESIGN.md § 7b "Time of day".
+`PinyinToneKeyboard.tsx` → `utilityKeySx`; the keycap look itself (`keycapShadow` — outline ring + the straight-lip rounded edge, docs/designGuidelines.md § "The rounded edge" — and `keyPressSx` → `src/theme/keycapPress.ts`) moved to `keycapStyle.ts` on 2026-11-15 (§ 6z-12).
+
+## 6z-12. BUILT 2026-11-15 — one keycap look for the whole keyboard
+
+**Every tappable thing on the keyboard is the ā pad's raised keycap** (owner's request,
+2026-11-15: restyle 写 and the switch bar "to look like the dictionary keyboard pinyin
+keyboard"). Until then only the ā pad had raised keys; the 写 surface and the switch
+bar used flat 1px-bordered chips with a tint press.
+
+Code: `src/features/beginnerKeyboard/keycapStyle.ts` → `KEY_LIP`, `KEY_RADIUS`, `CHAR_KEY_FACE`,
+`keycapShadow`, `keyPressSx`, `latchedKeySx`, `whiteKeySx`, `hueKeySx` (lifted out of
+`PinyinToneKeyboard.tsx`; the press itself is `src/theme/keycapPress.ts` →
+`keycapPressSx`).
+
+| Key | Face | Lip | Ring | Code |
+|---|---|---|---|---|
+| ā vowel keys | ramp SURFACE | ramp MARK | 1px `COLORS.border` | `PinyinToneKeyboard.tsx` |
+| ā ⌫ / ← → / action | white | `COLORS.grey` | 1px | `PinyinToneKeyboard.tsx` → `utilityKeySx` |
+| 写 Clear / Undo / Redo (icons, 38×38 square = the candidate chip face, `CHAR_KEY_FACE`; full size on every phone since the parts column's 152px floor; a 30px flex floor is a backstop) | white | grey | 1px | `BeginnerKeyboard.tsx` → `inkKeySx`, `INK_KEY_SIZE` |
+| Parts chips (40px); empty → just the "PARTS" caption | white | grey | 1px | `ComponentBuffer.tsx` |
+| Candidate chips (38×38 face = `keycapStyle.ts` → `CHAR_KEY_FACE`, 22px glyph; an invisible `::before` keeps a 44px tap target — `CHIP_FACE`, `CHIP_HIT_SLOP`) | white | grey | 1px `COLORS.border` | `CandidateRow.tsx` → `renderChip` |
+| Candidate scroll arrows (28×39 face; 3 : 2 portrait shown — the switch key on end; mouse devices only) | white | grey | 1px | `CandidateRow.tsx` → `arrowKeySx`, via `src/components/ScrollArrow.tsx`'s `sx` prop |
+| Switch keys (≈42.43×24 face; 11 : 7 shown) | ramp MID: 写 blu · ā grn · abc red | ramp MARK (latched: none) | 1px | `KeyboardSwitchBar.tsx` → `SEGMENTS` |
+| Close key (≈42.43×24 face; 11 : 7 shown) | white | grey | 1px | `KeyboardSwitchBar.tsx` (`whiteKeySx`) |
+
+Not raised: the canvas (white paper, flat on purpose — it is a writing surface, not a
+key; a sunk-key recess — the lip turned inside out — was tried 2026-11-15 and rejected
+by the owner) and the § 6w debug chips. (The scroll arrows were flat chevrons until 2026-11-15.)
+
+**Shown aspect ratios count the lip.** When a key is specified "at 3 : 2" the ratio is
+the shape the eye reads — face **plus** the 3px lip — not the CSS box. `keycapStyle.ts` →
+`keyWidthForShownAspect(faceHeight, aspect)` and `keyFaceHeightForShownAspect(width,
+aspect)` solve for the missing side (`aspect` = width ÷ shown height; 3/2 landscape, 2/3
+portrait). Users: the switch bar's four keys (11 : 7 → ≈42.43×24 face) and the candidate
+scroll arrows (2 : 3 → 28×39 face). A latched key has no lip, so it reads slightly
+flatter than its raised neighbours.
+
+**⚠️ The lip paints outside the key's box.** Any `overflow` container holding keys
+needs `KEY_LIP` px of room below them: `CandidateRow`'s scroller pads its bottom by
+`KEY_LIP` (and the direct-commit section matches, so both sit on one baseline); the
+parts buffer's own padding covers it, and its wrapped rows are 8px apart; the controls
+section pads its bottom by `CANVAS_INSET + KEY_LIP`, so the lips end on the canvas's
+bottom line. The candidate row's vertical padding dropped
+from 6px to 4px so the raised chips still fit the 56px floor, so the canvas lost no
+height.
+
+Retired with this change: `KEYBOARD_COLORS.well` (the switch bar's sunken track) and
+`KEYBOARD_COLORS.pressed` (the chip tint press).
+
+**The commit chip lost its 2px ring (2026-11-15).** A commit chip used to wear a 2px ink
+ring as its "this commits" signal; that ring out-weighed the 3px lip and made every chip
+in the commit band read as flat (owner's catch on PPE). Every chip now has the 1px outline
+and the grey lip, commit and append alike — the row's ground (blue = result/commit,
+gold = glyph/append; green / blue tints until the 2026-11-15 recolour) is the only commit/append signal. A green lip on commit chips was
+tried the same day and rejected by the owner.
+
+**Candidate scroller edge fade (2026-11-15).** The strip's left/right edge dissolves over
+`EDGE_FADE_PX` (24px) only while chips are cut off past it — driven by the same
+`canScrollLeft` / `canScrollRight` the scroll arrows read
+(`useHorizontalScrollArrows`). A CSS mask, so it works on both modes' tinted grounds and
+never intercepts a tap. Local to `CandidateRow.tsx` → `edgeFadeSx`: the app's other edge
+fades (`src/components/scrollEdgeFade.ts`) are vertical.
+
+**Parts strip (2026-11-15):** the "PARTS" caption stays (it was briefly dropped and
+restored the same day), centred over a 1px `COLORS.rowBorder` divider that spans the
+column; the "Parts you pick appear here." sentence is gone. An empty
+strip shows only the caption (the two dashed ghost chip outlines that marked it were
+removed the same day; the candidate row's worked example teaches instead, § 6p). While
+the strip holds parts, a quiet caption-size line, **"Tap to clear"** (it removes the one part tapped, not all)
+(`.beginner-keyboard__buffer-hint`, `KEYBOARD_COLORS.faint`), sits centred and pinned to
+the bottom of the section — the chips carry no ×, so this is what makes tap-to-remove
+discoverable. Code: `ComponentBuffer.tsx`.
+
+**Canvas corners (2026-11-15):** 20px radius (was 16px — MUI `borderRadius: 2`). Code: `BeginnerKeyboard.tsx` → `.beginner-keyboard__canvas`.
+
+**Canvas margins (2026-11-15):** equal `CANVAS_INSET` (10px) on top, right and bottom,
+and **no left inset**: the gap between the parts and the canvas is the parts column's
+own padding (`ComponentBuffer.tsx` → `PARTS_COLUMN_PAD`, 10px), so the parts sit as far
+from the canvas as from the screen's left edge. The controls row (ink keys) takes the
+same `PARTS_COLUMN_PAD` on both sides. On a phone wide enough for the canvas to be
+height-bound, the extra width goes to the parts column.
+The canvas is sized from the lower region's height, capped so the parts column keeps
+at least `PARTS_COLUMN_MIN_WIDTH` (152px: three 40px part chips + two 6px gaps + 10px
+padding a side) — three parts always fit on one row (2026-11-15; it replaced the
+`CANVAS_MAX_WIDTH_SHARE` cap, 0.68 of the width, which on a 390px phone left a ~125px
+column). On a 390px phone the canvas is now width-bound at 218px, so a little spare
+height collects above it (the bottom-alignment rule keeps its bottom edge put); the
+floor also guarantees the ink keys their full 38px. Code: `BeginnerKeyboard.tsx` →
+`CANVAS_INSET` and the `measure` effect, `ComponentBuffer.tsx` →
+`PARTS_COLUMN_MIN_WIDTH`.
+
+## 6z-13. BUILT 2026-11-15 — display forms: ⺈ draws as 尔's flat hat, 卯 as 留's top
+
+**A component whose standalone font glyph is the wrong shape renders as an outline
+cut from a host character.** Two components today: ⺈ and 卯. The font's ⺈ (U+2E88)
+is the compact form at the top of 角 争 负 (a tall 丿 and a short 𠃌 with a long
+diagonal drop). In 你 and 尔, the commonest ⺈ characters by far, the hat is wide and
+flat with a small hook (the 横 spans ~315 units in hanzi-writer's 你 vs ~216 in the
+standalone). Unicode has no codepoint for the flat form, so no font glyph can fix it.
+
+**卯** (added 2026-11-15): 留 carries 97% of 卯's weight in discoverable words (聊 the
+rest), and inside 留 both halves are redrawn into a shorter, angled top. The chip shows
+留's top half; its covers bubble shows the font's 卯.
+
+**The rule for adding one** (owner, 2026-11-15): a single coherent in-context shape must
+cover most of the component's characters, weighted by discoverable-word usage. If the
+standard shape is the majority, a redrawn chip only moves the mismatch onto those
+characters — so 羊 (美 only, 29%) and ⺼ (然 察, a minority) keep their font glyphs, and
+the textbook left-side forms (禾 足 舟) were left as they are.
+
+| | what it shows |
+|---|---|
+| glyph chip (`CandidateRow`) and Parts chip (`ComponentBuffer`) | the **flat** hat, cut from 尔 · 卯 as drawn in 留 |
+| the chip's § 6z-7 covers bubble | `covers / ⺈`: the **compact** font glyph · `covers / 卯`: the font's 卯 |
+
+The two forms are **one chip** (owner, 2026-11-15). Recognition was already merged:
+§ 6z-5's in-context variants let a drawn flat hat reach the ⺈ chip. This section only
+changes how that one chip looks, and uses the covers bubble to show that it also
+stands for the compact shape.
+
+**Display only.** The chip's `text`, the buffer entry, the lookup key and the aria
+label stay `⺈`. Since 2026-11-15 (§ 6z-15) the renderer is shared, so Word Search's No
+Pinyin hint row draws the same display forms.
+
+### How the outline is made (offline)
+
+`generate-component-display-forms.js` shapes the host (尔) in the committed
+`data/hanzi/NotoSansSC-VF.ttf` at wght 400 (the chips' `WEIGHT.regular`) using
+harfbuzzjs. It splits the glyph into contours and keeps those passing a bounding-box
+predicate (`minY > 380` for 尔; `minY > 360` for 留, whose 田 tops out at maxY 340). The
+selection must match an expected count (3 for 尔: 丿, the wide 横, the hook; 小's
+contours sit at minY −80 / 67 / 67. 7 for 留). If a font change merges or
+splits contours, the script fails rather than shipping a partial hat. The contours keep
+their position in the host's em box by default: the font's own ⺈ sits high in the em the
+same way, so the flat hat lines up with its neighbours. A row with `centre: true` (卯) is
+moved so its middle sits on the ideographic em centre (y = 380, `EM_CENTRE_Y`): the
+font's 卯 is full-height, and a half-height outline left at 留's top would hug the top
+of the chip. Output is
+`componentDisplayForms.generated.ts` (path in font units, y-up), which is committed.
+
+### How it renders
+
+`ComponentGlyph` returns the plain text for every other component. For one with a
+display path it returns a 1em × 1em SVG in `currentColor`. Its viewBox
+(`EM_BOX_VIEWBOX` = `0 -936 1000 1000`) is the em box a `lineHeight: 1` font glyph
+occupies: Noto Sans SC's hhea and OS/2 win metrics are 1160 / −288, so line-height 1
+trims 224 units from each side. This keeps vertical centring identical to a text glyph.
+
+**Covers rule:** `toGlyphCandidates` sets `covers` to the § 6z-7 alias class, or,
+when the glyph has a display path, to the glyph itself. **Covers font:** the bubble's
+`ForeignText` is wrapped in a box that sets `--cjk-font` to `FONTS.hanziComponents`.
+Google's Noto Sans SC subset does not serve ⺈ (§ 4.12), and the chips are already
+pinned to that face whatever the learner's Chinese typeface is.
+
+**Adding a form:** add a `DISPLAY_FORMS` row (component, host, predicate, count),
+re-run the script, **then re-run `generate-handwriting-templates.js`** so the matcher
+learns the new outline (§ 6z-14). The generated module also exports
+`COMPONENT_DISPLAY_HOSTS` (component → host) for that second script; the client UI
+does not read it. `glyphMatcher.test.ts` fails if a display path has no display-form
+template.
+
+### Code
+
+- `server/scripts/backfill/chinese/generate-component-display-forms.js` →
+  `DISPLAY_FORMS`, `contourBox`, `shiftAndRoundPath`, `EM_CENTRE_Y`
+- `src/components/handwriting/componentDisplayForms.generated.ts` →
+  `COMPONENT_DISPLAY_PATHS`, `COMPONENT_DISPLAY_HOSTS` (moved from
+  `features/beginnerKeyboard/` 2026-11-15, § 6z-15: Word Search reads it too)
+- `src/components/handwriting/ComponentGlyph.tsx` → `ComponentGlyph`, `EM_BOX_VIEWBOX`,
+  `BASELINE_DROP` (shared: the keyboard chips and Word Search's hint row)
+- `src/features/beginnerKeyboard/CandidateRow.tsx` → `renderChip` (append chips);
+  `ComponentBuffer.tsx` → the buffer chip glyph
+- `src/features/beginnerKeyboard/compositionRules.ts` → `toGlyphCandidates` (covers)
+- `src/features/beginnerKeyboard/HintBubble.tsx` → the `'covers'` branch's
+  `--cjk-font` wrapper
+- Tests: `src/__tests__/beginnerKeyboardComposition.test.ts` → "a chip drawn as a cut
+  outline covers its own compact font glyph"
+
+## 6z-14. BUILT 2026-11-15 — every display outline is also a template
+
+**What the chip shows and what the matcher scores are the same shape.** § 6z-13
+changed only how ⺈ *looks*. Its templates still came from hanzi-writer-data, whose
+尔 hat has a long 丿, a bar near the 丿's foot and a short hook. Noto's 尔 hat (the
+chip) has a short 丿, a bar across its middle and a hook that drops **below** the 丿.
+A learner copies the chip, so a real dump (2026-11-16, empty buffer) ranked ⺈
+**25th** at 0.264 (best template: the § 6z-5 尔 variant, penalty included) with 冖
+first at 0.153 — off the visible row entirely.
+
+**Fix:** `generate-handwriting-templates.js` → `appendDisplayForms` traces every
+`COMPONENT_DISPLAY_PATHS` outline into stroke medians and appends it as a template
+with `KIND_DISPLAY_FORM` (bit 3) on top of the glyph's role bits. It takes **no**
+`VARIANT_COST_FACTOR` penalty: it is the form we teach, not a squeezed in-context
+one. The matcher keeps each glyph's best template as before, and reports
+`displayForm` beside `variant` (debug dump `v: 4`).
+
+| sample (ink alone) | before | after |
+|---|---|---|
+| 2026-11-16 flat hat, empty buffer | ⺈ #25 (0.264), 冖 first (0.153) | ⺈ **#1** (0.143) |
+| 2026-09-27 flat hat (drawn after 亻 小) | ⺈ #8 (0.249), 冖 first (0.108) | ⺈ **#1** (0.078) |
+
+⚠️ The 2026-11-16 margin over 冖 is thin (0.143 vs 0.153). Both samples are in
+`realInk.json`; revisit with every new ⺈ dump.
+
+### Tracing an outline into strokes (`lib/outlineMedians.js`)
+
+A font outline is closed **contours**, not strokes, and the two do not line up — 尔's
+横钩 is two contours (the bar and the hook). So:
+
+1. **Each contour → a centreline.** Rasterize it (4 font units/px), thin it to a 1-px
+   skeleton (Zhang–Suen), keep the skeleton's longest path (double-sweep BFS), which
+   drops the corner spurs thinning leaves. Per contour, so strokes that touch never
+   merge into one skeleton with a junction to untangle.
+2. **Pieces → strokes, by a guide.** The guide is the same component's hanzi-writer
+   strokes cut out of the **same host** (`COMPONENT_DISPLAY_HOSTS`, via
+   `componentStrokesOf` + `cutComponents`): it knows the stroke count, order and
+   direction but not the font's proportions. Both sides are bbox-normalized. Every
+   guide stroke must receive at least one piece: one anchor piece per stroke is chosen
+   by a minimum-cost matching on each piece's extra distance over its nearest stroke
+   (`assignPieces` → `minCostMatching`, Hungarian), and the remaining pieces take their
+   nearest stroke. Plain nearest-stroke assignment broke on § 6z-15's 然: Noto sets the
+   two dots lower and further right than hanzi-writer's Kai, so both fell to one guide
+   dot. When nearest-stroke already covers every stroke (⺈, 卯) the result is
+   identical. Pieces are then ordered and oriented along their stroke by projection,
+   and concatenated.
+
+It **throws** rather than guesses when there are fewer contours than guide strokes:
+one contour then spans several strokes, which it does not split. The generator lets that stop the build: a chip whose shape the matcher
+cannot read is the bug this section exists to prevent. Display forms are traced even
+under `--no-variants`.
+
+### Code
+
+- `server/scripts/backfill/chinese/lib/outlineMedians.js` → `parseOutline`,
+  `contourCentreline`, `assignPieces`, `minCostMatching`, `outlineMedians`
+- `server/scripts/backfill/chinese/generate-handwriting-templates.js` →
+  `appendDisplayForms`, `KIND_DISPLAY_FORM`
+- `server/scripts/backfill/chinese/generate-component-display-forms.js` → emits
+  `COMPONENT_DISPLAY_HOSTS`
+- `src/components/handwriting/glyphTemplates.ts` → `KIND_DISPLAY_FORM`
+- `src/components/handwriting/glyphMatcher.ts` → `TEMPLATE_SOURCE_BITS`,
+  `GlyphCandidate.displayForm`, `MatchExplanation.displayForm`
+- `src/features/beginnerKeyboard/debugSnapshot.ts` → `suggested[].displayForm`, `v: 4`
+- Tests: `server/__tests__/outlineMedians.test.ts`;
+  `src/__tests__/glyphMatcher.test.ts` → "ranks every captured sample first on ink
+  alone", "§ 6z-14: carries a template traced from every display outline"
+
+## 6z-15. BUILT 2026-11-15 — a private-use component: the two-dot ⺼ (U+E000)
+
+**The top-left of 然 and 祭, and the top of 炙, is stored as its own component, U+E000:
+夕 with a second dot.** Etymologically it is ⺼ ("meat", 4 strokes), and makemeahanzi
+stores it that way (然 via 肰 = ⺼ 犬; 祭 = ⺼ 寸 示) or as 月 (炙). But it is written in an
+old squashed shape that looks like 夕 plus a dot (cjkvi IDS `⿴𠂊冫`; 夕 is `⿴𠂊丶`). A
+learner copying 然 draws neither a 月 nor a 夕, and the shape-not-etymology rule
+(`decompose.js` header, "the shape as it actually appears is what we want") says store
+what they see. Owner, 2026-11-15: a separate chip, accurate, rather than storing 夕.
+
+**No codepoint exists** for `⿴𠂊冫` (checked against cjkvi-ids: 35 characters contain it,
+none encodes it alone). Every component is one character end to end (the template asset
+stores a u32 codepoint per glyph, chip `text` is the buffer entry), so it takes the first
+Private Use Area codepoint, defined once for both halves in
+`server/contracts/privateComponents.ts` (`MEAT_TWO_DOT_FORM`, `PRIVATE_COMPONENT_NAMES`,
+`isPrivateComponent`). No font maps it: **it is only ever drawn from its outline.**
+
+| characters | stored parts (dev, 2026-11-15) |
+|---|---|
+| 然 | 犬 灬 U+E000 |
+| 祭 · and through it 察 擦 蔡 嚓 镲 | 寸 示 U+E000 (+ 宀 / 扌 / 艹 / 口 / 钅) |
+| 炙 | 火 U+E000 |
+
+Unchanged on purpose: 肰 on its own (written with a plain 月) keeps ⺼; 燃 keeps 然 whole;
+every other ⺼ character (脸 脚 背 能) keeps ⺼.
+
+### Where each piece lives
+
+| layer | piece |
+|---|---|
+| pipeline | `lib/decompose.js` → `WRITTEN_FORM_OVERRIDES` (parent, from, to, `notAsRoot`), `writtenForm`, applied inside `decompose` so the stored column (`componentsOf`) and the template stroke labels (`componentStrokesOf`) agree. U+E000 is in `RADICALS`, or RULE 2 would refuse 肰's expansion |
+| data | `dictionaryentries_zh.components` — a new VALUE, no new column. PPE needs a targeted re-run: `docs/PRIVATE_COMPONENT_DEPLOY_RUNBOOK.md` |
+| assets | `glyph-lookup.bin` / `glyph-words.bin` (896 components), `glyph-templates.bin` (one § 6z-5 variant + the § 6z-14 display-form template; hanzi-writer has no standalone drawing for it) |
+| outline | `generate-component-display-forms.js` row: 然's five top-left contours (`maxX < 530 && minY > 150`), centred on both axes (`centre: true`, `EM_CENTRE_X/Y`) because there is no font glyph to line up with. Written to the generated module as an escaped `'\uE000'` key (`keyLiteral`) |
+| client | `ComponentGlyph` names it via `PRIVATE_COMPONENT_NAMES` (aria); `ComponentBuffer`'s "Remove …" label likewise; `toGlyphCandidates` gives it **no** self-covers bubble (no font glyph to show) |
+| other readers | Word Search's No Pinyin hint row draws parts through `ComponentGlyph` (the renderer moved to `src/components/handwriting/`), so it shows the outline instead of an empty box. `generate-component-font.js` is not involved: U+E000 cannot be subset |
+
+### Recognition (dev, 2026-11-15, neat printed strokes)
+
+| drawing | glyph row |
+|---|---|
+| 然's top-left, empty buffer | 夕 **U+E000** 爫 … (2nd) |
+| same, after 犬 灬 | **U+E000** (hint 然) first |
+| 祭's top-left, empty buffer | **U+E000** first |
+| 炙's top, empty buffer | 爫 夕 **U+E000** (3rd) |
+
+⚠️ **The accepted risk:** the separate chip competes with 夕. A learner who leaves out the
+second dot gets 夕, and 然 is then not found from its parts (writing the whole character
+still works). The look-alike merge (§ 6z-7) was offered as the forgiving alternative and
+declined in favour of accuracy.
+
+### Code
+
+- `server/contracts/privateComponents.ts` → `MEAT_TWO_DOT_FORM`, `PRIVATE_COMPONENT_NAMES`,
+  `isPrivateComponent`
+- `server/scripts/backfill/chinese/lib/decompose.js` → `WRITTEN_FORM_OVERRIDES`, `writtenForm`
+- `server/scripts/backfill/chinese/generate-component-display-forms.js` → the U+E000 row,
+  `keyLiteral`, `EM_CENTRE_X`
+- `src/components/handwriting/ComponentGlyph.tsx`; `src/games/word-search/WordSearchHintRow.tsx`
+- `src/features/beginnerKeyboard/compositionRules.ts` → `toGlyphCandidates`;
+  `ComponentBuffer.tsx` → the remove label
+- Tests: `src/__tests__/glyphLookup.test.ts` (896 components);
+  `server/__tests__/outlineMedians.test.ts` → "gives every guide stroke a piece even when
+  two pieces sit nearest the same one"
 
 ## 7. Outstanding before we can build
 
@@ -3363,7 +3796,7 @@ Capacitor as an upgrade that deletes two workarounds rather than a precondition.
 | # | question | where | status |
 |---|---|---|---|
 | B2 | Template asset scope and precision | § 6s | **RESOLVED 2026-09-07: all 895 components, N=8, int8 — ~85 KB brotli.** Accuracy is flat across every variant, so the precision dials are free and N=8 is also ~40% faster to score. Scope stays maximal because it is the only dial that can cost a missed recognition. N and the quantization scale must be **generator parameters, not literals**. |
-| B3 | How the two candidate-row modes are distinguished | § 6r | **ANSWERED 2026-09-09: ground tint + chip border weight, no label.** Shipped as a blue tint while drawing / green when idle, with commit chips outlined heavier. The vertical row label that was the third channel was removed the same day so the chips get the bar's full width. |
+| B3 | How the two candidate-row modes are distinguished | § 6r | **ANSWERED 2026-09-09: ground tint + chip border weight, no label.** Shipped as a blue tint while drawing / green when idle, with commit chips outlined heavier. (2026-11-15: recoloured — org mid gold while drawing, blu mid blue when idle; the heavier outline retired.) The vertical row label that was the third channel was removed the same day so the chips get the bar's full width. |
 | B4 | Does the buffer survive committing a character? | § 6r | **ANSWERED 2026-09-07: no.** Committing a candidate always clears the buffer. Multi-character words are reachable **only** through the § 6q fallback — the learner draws all of the word's components in one unbroken buffer and taps the word when it appears. See § 6r "Committing". |
 
 ### 7b. Design assumption: the whole det table becomes discoverable

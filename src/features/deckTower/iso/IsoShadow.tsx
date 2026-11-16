@@ -2,6 +2,7 @@ import React from "react";
 import { convexHull, flatPath, toPath, type Pt3, type WorldRect } from "./geometry";
 import { SHADOW_GLAZE_OPACITY, cloudShadowFootprint, shadowFootprint, shadowSlide, shadowSpread, shadowTone, type IsoSurface } from "./light";
 import { useIsoProjector } from "./sceneContext";
+import { translucentShadow } from "../../../components/footerCastShadow";
 
 /**
  * IsoShadow — the ONLY way a shadow is drawn in the iso framework
@@ -26,6 +27,14 @@ import { useIsoProjector } from "./sceneContext";
  *
  * Every object that stands on something renders one of these first, so the object
  * itself covers the part of its shadow that would be hidden.
+ *
+ * `seeThrough` paints the shadow as translucent black tuned to darken the receiver to the
+ * same shade (components/footerCastShadow.ts → `translucentShadow`), for a receiver that is
+ * NOT really drawn in the svg but is the DOM backdrop behind it: the sky ground plane under
+ * the Deck Tower's platform. That backdrop eases to a new colour over SpaceBackdrop's
+ * SKY_FADE_MS (weather arriving, a twilight), while `receiver.color` jumps at once, so an
+ * opaque shadow showed the NEW sky's shade on the OLD sky for ten seconds. A see-through
+ * shadow darkens whatever sky is actually on screen.
  */
 type IsoShadowProps = {
     /** The surface the shadow falls on. */
@@ -37,6 +46,12 @@ type IsoShadowProps = {
      * floor shadow keeps the decal copy instead: a floor decal has a shaded version to draw.
      */
     glaze?: string;
+    /**
+     * Paint it as translucent black that darkens `receiver.color` to its shadow tone, so it
+     * follows the backdrop it lies on instead of painting a fixed colour (see the header).
+     * Ignored with `glaze`.
+     */
+    seeThrough?: boolean;
 } & (
     | {
           /** The caster's underside outline, in world units. */
@@ -69,7 +84,7 @@ type IsoShadowProps = {
 
 const IsoShadow: React.FC<IsoShadowProps> = (props) => {
     const proj = useIsoProjector();
-    const { receiver, className, glaze } = props;
+    const { receiver, className, glaze, seeThrough } = props;
     let d: string;
     if (props.solid) {
         // Slide each vertex for its own height, then stretch the landing's front edges by
@@ -97,7 +112,7 @@ const IsoShadow: React.FC<IsoShadowProps> = (props) => {
         <path
             className={className ?? "iso-shadow"}
             d={d}
-            fill={glaze ?? shadowTone(receiver.color)}
+            fill={glaze ?? (seeThrough ? translucentShadow(receiver.color, shadowTone(receiver.color)) : shadowTone(receiver.color))}
             fillOpacity={glaze ? SHADOW_GLAZE_OPACITY : undefined}
         />
     );

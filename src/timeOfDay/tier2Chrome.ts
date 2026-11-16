@@ -2,15 +2,17 @@ import type { Tier2Look } from "./tier2Look";
 
 /**
  * tier2Chrome.ts — hands a Tier 2 page's time-of-day look (tier2Look.ts) to the chrome
- * drawn OUTSIDE the page: the slab footer (MobileFooter, rendered at frame level by
- * FooterPresenter) and the beginner keyboard (BeginnerKeyboardHost, mounted app-wide).
+ * drawn OUTSIDE the page: CpcdPopup. (The beginner keyboard read it until 2026-11-15; it is
+ * now always the standard grey — docs/BEGINNER_KEYBOARD.md § 6z-11. The slab footer and its
+ * Menu popover read it until 2026-11-15 too; they now follow the Settings theme only —
+ * theme/footerChrome.ts.)
  *
  * The channel is a set of CSS custom properties on the document root — the same route the
  * Deck Tower uses for the slab's cast shadow (components/footerCastShadow.ts) — so neither
  * piece of chrome needs to know which page is under it, and nothing re-renders when the
  * clock ticks. Each reader writes `tier2Var(key, itsOwnDefault)`: while no Tier 2 page is
- * up the variables are unset and every reader falls back to the look it always had. That
- * is what makes the keyboard tint "only on Tier 2 pages" (owner's choice 2026-10-29).
+ * up the variables are unset and every reader falls back to the look it always had, so the
+ * chrome is tinted only while a Tier 2 page is up.
  *
  * CLAIMS ARE COUNTED. Two Tier 2 pages can be mounted at once mid-transition (Dictionary →
  * its card page slides in over it), and the leaving page unmounts AFTER the entering one
@@ -18,7 +20,7 @@ import type { Tier2Look } from "./tier2Look";
  * claims on mount, and the variables are removed only when the last claim is released.
  *
  * Layer: shared module (`src/timeOfDay/`). Depended on by: useTier2Look.ts (writer);
- * components/MobileFooter.tsx, components/CpcdPopup.tsx, features/beginnerKeyboard/* (readers).
+ * components/CpcdPopup.tsx (reader).
  * Docs: docs/SHELF_REDESIGN.md § 7b "Time of day".
  */
 

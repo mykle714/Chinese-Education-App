@@ -21,6 +21,7 @@ import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import AccountIdentitySection from "./account/AccountIdentitySection";
 import StepUpPanel from "./account/StepUpPanel";
+import SetPasswordSection from "./account/SetPasswordSection";
 
 /**
  * Settings · account & security (`/settings/account`) — artboard 11b of the shelf
@@ -30,8 +31,9 @@ import StepUpPanel from "./account/StepUpPanel";
  * (theme, language, narration, display) is a page you can skim. Holds three sections:
  *   - "Your account" (AccountIdentitySection): username, name, email, phone, the last two
  *     changed through step-up re-auth (docs/LOGIN_REWORK.md Q24);
- *   - the three-field password form — only for an account that HAS a password (a phone
- *     account never does, Q3);
+ *   - the three-field password form for an account that HAS a password, or "Set a password"
+ *     (SetPasswordSection, step-up gated) for one that does not: the password is optional for
+ *     every account, email or phone (owner, 2026-11-15; migration 191);
  *   - the red-boxed danger zone, whose delete dialog confirms with the password, or with
  *     "confirm it's you" (StepUpPanel) for an account without one.
  *
@@ -61,8 +63,8 @@ function AccountSecurityPage() {
     usePageTitle("Account & security");
     const slideNavigate = useSlideNavigate();
     const { user, changePassword, deleteAccount } = useAuth();
-    // A phone-only account has no password (docs/LOGIN_REWORK.md Q3): no password form, and
-    // the delete dialog confirms through step-up instead.
+    // The password is optional (migration 191). Without one: "Set a password" instead of the
+    // change form, and the delete dialog confirms through step-up instead.
     const hasPassword = !!user?.hasPassword;
 
     // Password change form state
@@ -244,6 +246,9 @@ function AccountSecurityPage() {
                     </Box>
                 </SettingsSection>
                 )}
+
+                {/* ── Set a password (accounts without one) ──────────────────────── */}
+                {!hasPassword && <SetPasswordSection />}
 
                 {/* ── Danger zone ────────────────────────────────────────────────── */}
                 <SettingsSection

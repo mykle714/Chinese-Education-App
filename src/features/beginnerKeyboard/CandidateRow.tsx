@@ -6,7 +6,7 @@
  * candidate's own `action` carries that.
  *
  * Spec: docs/BEGINNER_KEYBOARD.md § 6p (the bar), § 6r (its modality), § 6z-4
- * (hint bubbles), § 6z-8 (the green direct-commit section).
+ * (hint bubbles), § 6z-8 (the blue direct-commit section).
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * ⚠️ THIS ROW IS MODAL, AND THAT IS THE DESIGN'S ONE REAL RISK (§ 6r)
@@ -51,7 +51,8 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * HINT BUBBLES (§ 6z-4)
  *
- * A glyph chip may carry a `hint`; its bubble floats ABOVE the row, over the
+ * A glyph chip may carry a `hint` (§ 6z-4) or a `covers` (§ 6z-7) — one bubble per
+ * chip, `covers` first (see `bubbleContentFor`). The bubble floats ABOVE the row, over the
  * switch bar. It cannot live inside the scroller — `overflow-x: auto` forces the
  * scroller to clip vertically too, so anything poking out of the strip would be
  * cut off. Instead the bubbles sit in a zero-height layer pinned to the row's top
@@ -65,16 +66,19 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Box, Typography } from '@mui/material';
 import ScrollArrow from '../../components/ScrollArrow';
 import { useHorizontalScrollArrows } from '../../hooks/useHorizontalScrollArrows';
-import { COLORS, FONTS, SIZE } from '../../theme';
+import { COLORS, FONTS, SIZE, WEIGHT } from '../../theme';
 import type { HintCharacter } from '../../components/handwriting/glyphLookup';
-import HintBubble from './HintBubble';
+import HintBubble, { type HintBubbleContent } from './HintBubble';
+import ComponentGlyph from '../../components/handwriting/ComponentGlyph';
 import { HINT_MOTION } from '../../components/hintBubble/hintMotion';
 import { useHintBubblePresence, type PresenceItem } from '../../components/hintBubble/useHintBubblePresence';
 import type { Candidate, CandidateMode } from './useComposition';
+import { KEYBOARD_COLORS } from './keyboardColors';
+import { CHAR_KEY_FACE, KEY_LIP, KEY_RADIUS, keyFaceHeightForShownAspect, keyPressSx, whiteKeySx } from './keycapStyle';
 
 interface CandidateRowProps {
   candidates: Candidate[];
-  /** § 6z-8: the green direct-commit chip leading a glyph-mode row, or null. */
+  /** § 6z-8: the blue direct-commit chip leading a glyph-mode row, or null. */
   directCandidate: Candidate | null;
   mode: CandidateMode;
   /** True while the templates are still downloading. */
@@ -85,16 +89,75 @@ interface CandidateRowProps {
 }
 
 /**
+ * A candidate chip's face, px (square for a one-glyph chip; a multi-glyph chip grows
+ * wider). The shared CHAR_KEY_FACE, so the ink keys below the parts match it.
+ * Read by renderChip. Docs: docs/BEGINNER_KEYBOARD.md § 6z-12.
+ */
+const CHIP_FACE = CHAR_KEY_FACE;
+
+/** How far each chip's invisible tap target reaches past its face, px: (44 − 38) / 2. */
+const CHIP_HIT_SLOP = (44 - CHIP_FACE) / 2;
+
+/** How wide the scroller's edge fade is, px, at an edge that has chips cut off past it. */
+const EDGE_FADE_PX = 24;
+
+/**
  * Per-mode chrome. Kept as data so the two modes cannot drift apart in styling.
- * The GROUND tint says which mode the row is in; the accent (scroll arrows, the commit
- * chip's border) is ink in both — v2 has no per-hue ink tier.
+ * The GROUND tint says which mode the row is in; the accent (the scroll arrows) is ink
+ * in both — v2 has no per-hue ink tier.
  */
 const MODE_STYLE: Record<CandidateMode, { ground: string; chip: string; accent: string }> = {
+  // The two grounds (owner, 2026-11-15; were the near-white bluTint / grnTint, then
+  // briefly the Deck Tower's saturated gld / bluMk, then yel / blu surfaces, then org mid / blu surface):
+  //   drawing — the org ramp's MID, the gold of the Friends page's friend-code card
+  //             (FriendsBody → RAMP.org.mid), so the app has one "gold" fill;
+  //   idle    — the blu ramp's MID, the 写 switch key's face (KeyboardSwitchBar →
+  //             SEGMENTS), so both grounds sit on the same MID tier and weigh the same.
   // Drawing: the row is a guess about the ink, so it is tinted and clearly "live".
-  glyph: { ground: COLORS.bluTint, chip: COLORS.white, accent: COLORS.onSurface },
+  glyph: { ground: COLORS.orgM, chip: COLORS.white, accent: COLORS.onSurface },
   // Idle: the row is the result of the buffer, which is the committing surface.
-  result: { ground: COLORS.grnTint, chip: COLORS.white, accent: COLORS.onSurface },
+  result: { ground: COLORS.bluM, chip: COLORS.white, accent: COLORS.onSurface },
 };
+
+/**
+ * The EMPTY row (canvas clean, buffer clean — the only time it has no chips) sits on the
+ * drawing gold, not the idle blue (owner, 2026-11-15). Nothing on it commits, so blue's
+ * "this commits" meaning would be wrong; gold is the colour the row turns the moment the
+ * learner starts drawing, so the instruction already wears the colour of what it asks for.
+ */
+const EMPTY_GROUND = MODE_STYLE.glyph.ground;
+
+/**
+ * The empty row's one-line lesson (owner, 2026-11-15). Every learner knows to draw in the
+ * canvas; what they don't know is how this differs from the OS Chinese keyboard: you
+ * build a character out of its COMPONENTS, one at a time — and "component" means nothing
+ * until you see one. So the row shows a worked example instead of the word.
+ * 你 = 亻 + 尔: its left and right halves (owner, 2026-11-15; was 好 = 女 + 子). NOT the
+ * three leaves `dictionaryentries_zh.components` stores (`[亻, ⺈, 小]`) — ⺈ teaches
+ * nothing to a beginner, and it needn't: drawing 尔 works because the buffer expands a
+ * decomposable glyph to its leaves on entry (glyphLookup.ts → expandGlyph, whose doc
+ * uses this very character). Docs: docs/BEGINNER_KEYBOARD.md § 6p.
+ */
+const EXAMPLE_TARGET = '你';
+const EXAMPLE_COMPONENTS = ['亻', '尔'] as const;
+
+/** One bubble the presence hook tracks: what it shows, the chip it belongs to, where. */
+interface BubbleValue {
+  content: HintBubbleContent;
+  candidate: Candidate;
+  anchorX: number;
+}
+
+/**
+ * The ONE bubble a chip gets, if any. § 6z-7's "covers" bubble wins over a § 6z-4
+ * hint: a merged chip silently answers for its look-alike, and saying so matters
+ * more than a suggestion the learner can still reach through the result row.
+ */
+function bubbleContentFor(candidate: Candidate): HintBubbleContent | null {
+  if (candidate.covers) return { kind: 'covers', glyph: candidate.covers };
+  if (candidate.hint) return { kind: 'hint', hint: candidate.hint };
+  return null;
+}
 
 export default function CandidateRow({
   candidates,
@@ -123,7 +186,7 @@ export default function CandidateRow({
    * the tag is how the bubble derivation below knows to wait for the re-measure.
    */
   const [anchors, setAnchors] = useState<{ for: Candidate[]; xs: (number | null)[] }>({ for: [], xs: [] });
-  const hasHints = candidates.some((candidate) => candidate.hint);
+  const hasHints = candidates.some((candidate) => bubbleContentFor(candidate));
 
   const measureAnchors = useCallback(() => {
     const row = rowRef.current;
@@ -138,7 +201,7 @@ export default function CandidateRow({
       for: candidates,
       xs: candidates.map((candidate, position) => {
         const chip = chipRefs.current[position];
-        if (!candidate.hint || !chip) return null;
+        if (!bubbleContentFor(candidate) || !chip) return null;
         const box = chip.getBoundingClientRect();
         const centre = box.left + box.width / 2;
         // Only paint a bubble whose chip's centre is inside the visible strip —
@@ -205,16 +268,20 @@ export default function CandidateRow({
    *
    * null = "anchors are stale, hold still" (see `useHintBubblePresence`).
    */
-  const desiredBubbles = useMemo<PresenceItem<{ hint: HintCharacter; anchorX: number }>[] | null>(() => {
+  const desiredBubbles = useMemo<PresenceItem<BubbleValue>[] | null>(() => {
     if (scrolling || !hasHints) return [];
     if (anchors.for !== candidates) return null;
-    const out: PresenceItem<{ hint: HintCharacter; anchorX: number }>[] = [];
+    const out: PresenceItem<BubbleValue>[] = [];
     candidates.forEach((candidate, position) => {
       const anchorX = anchors.xs[position];
-      if (!candidate.hint || anchorX == null) return;
+      const content = bubbleContentFor(candidate);
+      if (!content || anchorX == null) return;
+      // The kind is in the key, so a chip switching between a hint and a covers
+      // bubble pops the old one and grows the new one, like any other change.
+      const shown = content.kind === 'covers' ? content.glyph : content.hint.text;
       out.push({
-        key: `${position}|${candidate.text}|${candidate.hint.text}`,
-        value: { hint: candidate.hint, anchorX },
+        key: `${position}|${candidate.text}|${content.kind}|${shown}`,
+        value: { content, candidate, anchorX },
       });
     });
     return out;
@@ -228,12 +295,11 @@ export default function CandidateRow({
 
   /**
    * One chip. Shared by the scroller and the § 6z-8 direct section so the two
-   * cannot drift in shape; `accent` is the owning section's commit-border colour.
+   * cannot drift in shape.
    */
   const renderChip = (
     candidate: Candidate,
     key: string,
-    accent: string,
     extraClass: string,
     ref?: (element: HTMLElement | null) => void,
   ) => (
@@ -246,16 +312,28 @@ export default function CandidateRow({
       onClick={() => onSelect(candidate)}
       sx={{
         flexShrink: 0,
-        minWidth: 44, // the platform tap-target floor
-        height: 44,
-        px: candidate.text.length > 1 ? 1.25 : 0,
-        border: `1px solid ${candidate.action === 'commit' ? accent : COLORS.border}`,
-        // A commit chip is filled, an append chip is outlined — the second
-        // channel behind the ground colour, so the two tap meanings differ
-        // in shape and not only in colour.
-        borderWidth: candidate.action === 'commit' ? 2 : 1,
-        borderRadius: 2,
+        // 38×38 face (owner, 2026-11-15; was 44×44): the 22px glyph had 11px of air
+        // above and below, more than the key needed. The glyph keeps its size; only
+        // the air shrinks, to 8px.
+        minWidth: CHIP_FACE,
+        height: CHIP_FACE,
+        px: candidate.text.length > 1 ? 1 : 0,
+        // Hit slop: the drawn key is under the 44px tap-target floor, so an invisible
+        // ::before restores a 44px target around it. CHIP_HIT_SLOP (3px) a side fits
+        // inside the strip's 8px chip gap, so neighbouring targets never overlap.
+        // keycapPressSx draws with box-shadow + transform only, so ::before is free.
+        position: 'relative',
+        '&::before': { content: '""', position: 'absolute', inset: -CHIP_HIT_SLOP },
+        // A raised white keycap (keycapStyle.ts), the same object as every other key
+        // on the keyboard: 1px outline, grey lip, for commit and append chips alike.
+        // The row's ground tint is the only commit / append signal now. (Until
+        // 2026-11-15 a commit chip wore a 2px ink ring, which out-weighed the lip and
+        // made the key read flat; a green lip replaced it briefly and was dropped —
+        // owner: no green sides.)
+        border: 'none',
+        borderRadius: KEY_RADIUS,
         backgroundColor: style.chip,
+        ...keyPressSx(style.chip, KEYBOARD_COLORS.keyEdge, COLORS.border, 1),
         cursor: 'pointer',
         fontFamily: FONTS.hanziComponents,
         fontSize: SIZE.title,
@@ -264,10 +342,11 @@ export default function CandidateRow({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        '&:active': { backgroundColor: COLORS.rowHoverBg },
       }}
     >
-      {candidate.text}
+      {/* § 6z-13: a glyph chip draws its component through ComponentGlyph, which swaps
+          in a cut outline where the font's standalone glyph is the wrong shape (⺈). */}
+      {candidate.action === 'append' ? <ComponentGlyph glyph={candidate.text} /> : candidate.text}
     </Box>
   );
 
@@ -282,6 +361,7 @@ export default function CandidateRow({
         classBlock="beginner-keyboard__candidate"
         accentColor={style.accent}
         label={direction === -1 ? 'Scroll candidates left' : 'Scroll candidates right'}
+        sx={arrowKeySx(direction === -1 ? canScrollLeft : canScrollRight)}
       />
     );
   };
@@ -298,9 +378,11 @@ export default function CandidateRow({
         display: 'flex',
         alignItems: 'center',
         px: 1.25,
-        py: 0.75,
+        // 4px + 38px chip + 3px lip + 4px lands well inside the 56px floor, so the
+        // raised chips cost the canvas no height (the floor, not the chip, sets it).
+        py: 0.5,
         minHeight: 56,
-        backgroundColor: style.ground,
+        backgroundColor: candidates.length === 0 ? EMPTY_GROUND : style.ground,
         borderBottom: `1px solid ${COLORS.rowBorder}`,
       }}
     >
@@ -311,10 +393,13 @@ export default function CandidateRow({
             // Bleeds to the row's top, bottom and left edges (cancelling the row's
             // padding) so it reads as a SECTION of the strip, not a floating chip.
             alignSelf: 'stretch',
-            my: -0.75,
+            my: -0.5,
             ml: -1.25,
             pl: 1.25,
             pr: 1,
+            // Matches the scroller's lip room, so the direct chip and the strip's
+            // chips sit on one baseline.
+            pb: `${KEY_LIP}px`,
             mr: 1,
             display: 'flex',
             alignItems: 'center',
@@ -326,7 +411,6 @@ export default function CandidateRow({
           {renderChip(
             directCandidate,
             `direct-${directCandidate.text}`,
-            MODE_STYLE.result.accent,
             ' beginner-keyboard__candidate--direct',
           )}
         </Box>
@@ -348,6 +432,14 @@ export default function CandidateRow({
           // the app is otherwise touchAction: none, so this opts in deliberately.
           overflowX: 'auto',
           overflowY: 'hidden',
+          // Room for the chips' lips: overflowY clips at the padding box, and the lip
+          // paints below the chip's own box (keycapStyle.ts header).
+          pb: `${KEY_LIP}px`,
+          // Edge fade (2026-11-15): an edge dissolves only while chips are cut off
+          // past it, read off the same scroll state the arrows use — at rest at the
+          // start, only the right edge fades. A mask, not an overlay, so it works on
+          // either mode's tinted ground and never intercepts a tap.
+          ...edgeFadeSx(canScrollLeft, canScrollRight),
           touchAction: 'pan-x',
           scrollbarWidth: 'none',
           '&::-webkit-scrollbar': { display: 'none' },
@@ -356,9 +448,30 @@ export default function CandidateRow({
         {candidates.length === 0 ? (
           <Typography
             className="beginner-keyboard__candidate-row-empty"
-            sx={{ fontFamily: FONTS.sans, fontSize: SIZE.caption, color: COLORS.textSecondary, pl: 0.5 }}
+            // Bigger than the old caption (bodyLg, 16px) so it reads as the keyboard's one
+            // instruction; SEMIBOLD in the muted grey (textSecondary) so it is legible but
+            // doesn't shout (owner, 2026-11-15 — semibold full ink was too loud, regular
+            // ink2 too thin). ⚠️ textSecondary on orgM is ~3.7 : 1, under WCAG AA's
+            // 4.5 : 1 for 16px text; the semibold weight is what carries it.
+            sx={{
+              fontFamily: FONTS.sans,
+              fontSize: SIZE.bodyLg,
+              fontWeight: WEIGHT.semibold,
+              color: COLORS.textSecondary,
+              // Centred in the band (owner, 2026-11-15): with no chips it is the row's
+              // only content, so it reads as a message rather than a stray left label.
+              flex: 1,
+              textAlign: 'center',
+              whiteSpace: 'nowrap',
+            }}
           >
-            {loading ? 'Loading handwriting data…' : 'Draw a component or a whole character'}
+            {loading ? (
+              'Loading handwriting data…'
+            ) : (
+              // Plain inline characters, the sentence's own size and weight (owner,
+              // 2026-11-15) — an earlier pass set them a size up in the CJK face.
+              `To write ${EXAMPLE_TARGET}, draw ${EXAMPLE_COMPONENTS[0]} then ${EXAMPLE_COMPONENTS[1]}`
+            )}
           </Typography>
         ) : (
           candidates.map((candidate, position) =>
@@ -367,7 +480,6 @@ export default function CandidateRow({
               // Index is part of the key because the same glyph can legitimately
               // appear twice across a re-rank; text alone is not unique.
               `${candidate.text}-${position}`,
-              style.accent,
               '',
               (element: HTMLElement | null) => {
                 chipRefs.current[position] = element;
@@ -398,15 +510,65 @@ export default function CandidateRow({
           {bubbles.map((bubble) => (
             <HintBubble
               key={bubble.key}
-              hint={bubble.value.hint}
+              content={bubble.value.content}
               anchorX={bubble.value.anchorX}
               phase={bubble.phase}
               delayMs={bubble.delayMs}
-              onSelect={onSelectHint}
+              onSelect={() => {
+                const { content, candidate } = bubble.value;
+                // § 6z-7: a covers bubble is the chip's own label, so a tap on it is a
+                // tap on the chip. A § 6z-4 hint commits its character instead.
+                if (content.kind === 'covers') onSelect(candidate);
+                else onSelectHint(content.hint);
+              }}
             />
           ))}
         </Box>
       )}
     </Box>
   );
+}
+
+/**
+ * The candidate scroller's horizontal edge-fade mask. Each side fades over EDGE_FADE_PX
+ * only when there is content cut off on that side; with neither, no mask at all. Both
+ * spellings, because iOS Safari still needs the prefixed property. (The app's other
+ * edge fades are VERTICAL — src/components/scrollEdgeFade.ts — so this one is local.)
+ */
+function edgeFadeSx(fadeLeft: boolean, fadeRight: boolean) {
+  if (!fadeLeft && !fadeRight) return {};
+  const left = fadeLeft ? `transparent, #000 ${EDGE_FADE_PX}px` : '#000, #000';
+  const right = fadeRight ? `#000 calc(100% - ${EDGE_FADE_PX}px), transparent` : '#000, #000';
+  const mask = `linear-gradient(to right, ${left}, ${right})`;
+  return { maskImage: mask, WebkitMaskImage: mask } as const;
+}
+
+/**
+ * The scroll arrow's face: 3 : 2 PORTRAIT as shown, face plus lip (keycapStyle.ts →
+ * keyFaceHeightForShownAspect). 28 wide → 42 shown → a 39px face above the 3px lip.
+ */
+const ARROW_KEY_WIDTH = 28;
+const ARROW_KEY_HEIGHT = keyFaceHeightForShownAspect(ARROW_KEY_WIDTH, 2 / 3);
+
+/**
+ * The scroll arrows as raised white keycaps (2026-11-15, owner), matching the chips
+ * they page. 28 wide × 42 shown (39 face + 3 lip) — 3 : 2 PORTRAIT as the eye reads it,
+ * the switch bar's 3 : 2 shape (it has since moved on) stood on end (owner, 2026-11-15; was 28×44, the chips' height,
+ * then briefly a 28×42 face); a 4px gap off the strip so its lip and the
+ * chips' never touch. At an end of travel the arrow stays mounted (ScrollArrow's rule)
+ * at 25% and sits flat: the press is cancelled so a dead key never moves, and the hover
+ * tint ScrollArrow paints by default is dropped (a keycap's feedback is the press).
+ * Only mounted on hover-and-fine-pointer devices (useHorizontalScrollArrows).
+ */
+function arrowKeySx(enabled: boolean) {
+  const raised = whiteKeySx();
+  return {
+    ...raised,
+    width: ARROW_KEY_WIDTH,
+    height: ARROW_KEY_HEIGHT,
+    mx: 0.5,
+    cursor: enabled ? 'pointer' : 'default',
+    '&:hover': { backgroundColor: raised.backgroundColor },
+    '&:disabled:active': { transform: raised.transform, boxShadow: raised.boxShadow },
+  } as const;
 }

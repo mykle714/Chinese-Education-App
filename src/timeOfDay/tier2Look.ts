@@ -9,22 +9,26 @@ import { phaseShare, type DayPhase, type TimeOfDay } from "./dayPhase";
  * 2026-11-04 with those phases, docs/TOWER_WEATHER_SKY.md § 1).
  *
  * Layer: shared module (`src/timeOfDay/`). Pure; no React. `useTier2Look` samples the clock
- * and turns it into a look; `tier2Chrome.ts` hands the parts drawn OUTSIDE the page (the
- * slab footer, the beginner keyboard) to them through root CSS custom properties.
+ * and turns it into a look; `tier2Chrome.ts` hands the parts drawn OUTSIDE the page
+ * (CpcdPopup) to them through root CSS custom properties.
  *
  * ── What a phase changes ──────────────────────────────────────────────────────
  *   DAY is a pale tint of the tower's sky on the GROUND and its sunken WELL (the design's
  *   `--g`, `--well`, `--wellSh`), with the app's day surfaces (the search field, result
- *   slabs, keycaps), the slab footer and the ink.
+ *   slabs, keycaps) and the ink.
  *   NIGHT turns the whole page slate (owner's choice 2026-10-29, following the design's
  *   CSS over its "keep day colours" note): a #1E2735 ground, #2A3446 surfaces on a
- *   #121822 lip, light ink — the footer and the keyboard keys included.
+ *   #121822 lip, light ink. The slab footer is NOT included since 2026-11-15 — it follows
+ *   the Settings theme only (theme/footerChrome.ts).
  *
  * ── Blending ──────────────────────────────────────────────────────────────────
- * The ground and well BLEND across the tower's hour-long twilights, so this page and the
- * tower always agree on the hour. Surfaces and ink cannot blend — half-way white on
- * half-way slate under half-way ink is unreadable — so they FLIP together once night is
- * the larger share (`dark`).
+ * `tier2LookAt` can still blend the ground and well for a mid-twilight `time`, but no
+ * caller passes one any more: since 2026-11-15 Tier 2 pages do NOT honour twilight —
+ * useTier2Look snaps the clock to its majority phase (dayPhase.ts → `snappedPhase`), so
+ * the page cuts from day to night at the sun event while the tower's sky blends. Surfaces
+ * and ink never blended (half-way white on half-way slate under half-way ink is
+ * unreadable); they flip once night is the larger share (`dark`) — the same moment the
+ * snap flips the ground.
  *
  * The ground values are the eip's upper-panel `--g` family (eipPalette.ts carries the same
  * hexes for its own panel — the eip's LIGHT palette, which follows the Settings theme rather
@@ -40,9 +44,9 @@ import { phaseShare, type DayPhase, type TimeOfDay } from "./dayPhase";
  */
 
 export interface Tier2Look {
-    /** The page ground (MobileTabScreen surfaceColor), and the keyboard's surface. */
+    /** The page ground (MobileTabScreen surfaceColor). */
     ground: string;
-    /** A sunken well cut into the ground (the no-results panel, the keyboard switch track). */
+    /** A sunken well cut into the ground (the no-results panel). */
     well: string;
     /** The well's inner top lip. */
     wellShadow: string;
@@ -60,12 +64,6 @@ export interface Tier2Look {
     ink: string;
     ink2: string;
     muted: string;
-    /** The slab footer: its face, its lip, the active tab's well, idle and active labels. */
-    footerFace: string;
-    footerWall: string;
-    footerKey: string;
-    footerInk: string;
-    footerInkActive: string;
     /** True once night holds the larger share — surfaces and ink are the slate set. */
     dark: boolean;
 }
@@ -91,12 +89,6 @@ const LIGHT_SURFACES: Surfaces = {
     ink: COLORS.onSurface,
     ink2: COLORS.iconColor,
     muted: COLORS.textSecondary,
-    // The slab footer as the Deck Tower draws it (MobileFooter → SlabFooterFace).
-    footerFace: COLORS.cardFace,
-    footerWall: COLORS.cardWall,
-    footerKey: COLORS.cardBeige,
-    footerInk: COLORS.textSecondary,
-    footerInkActive: COLORS.onSurface,
 };
 
 /** Night: the design's slate set (`.t2n .phone` and the `.t2n … :is(.kc,.ft,.slab,…)` rules). */
@@ -109,11 +101,6 @@ const DARK_SURFACES: Surfaces = {
     ink: "#EEF0F6",
     ink2: "#C3C8D6",
     muted: "#8F97AA",
-    footerFace: "#2A3446",
-    footerWall: "#121822",
-    footerKey: "#1E2735",
-    footerInk: "#A3AABB", // design `.t2n … .ft div`
-    footerInkActive: "#EEF0F6",
 };
 
 /** The look at `time`: grounds blended `t` of the way, surfaces and ink flipped at night's majority. */

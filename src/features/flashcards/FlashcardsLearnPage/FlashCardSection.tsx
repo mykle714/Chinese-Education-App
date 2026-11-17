@@ -46,6 +46,7 @@ import { CardFaceSide, ChineseBlock, EnglishBlock } from "../card/CardFace";
 import BreakCardLayer from "./gameBreak/BreakCardLayer";
 import ReadyOutCardLayer, { type ReadyOutKind } from "./ReadyOutCardLayer";
 import { cardThrowSteps } from "./cardThrow";
+import { useFlpGestureProbe } from "./flpGestureProbe";
 
 interface FlashCardSectionProps {
     currentEntry: VocabEntry | null;
@@ -516,6 +517,10 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     const theme = useTheme();
     const fc = theme.palette.flashcard;
 
+    // Swipe-lab recording of real study gestures + the fly-out clip probe. Inert unless this
+    // device opted in at /swipe-lab (docs/SWIPE_LAB.md).
+    useFlpGestureProbe({ flyOut, shakeNonce, isFlipped, dragPosition });
+
     // Threshold in px, computed against card's actual rendered width for desktop consistency.
     const dismissThreshold = CARD_DISMISS_THRESHOLD_VW * (cardRef.current?.offsetWidth ?? window.innerWidth);
 
@@ -698,6 +703,9 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                     <Box
                                         key={isFront ? `front-${shakeNonce}` : `slot-${slot}`}
                                         ref={isFront ? cardRef : undefined}
+                                        // Read by the swipe-lab probe (flpGestureProbe.ts) to find the
+                                        // dragged and the flying card.
+                                        data-card-role={writingRole}
                                         // Handlers are detached during a fie edit: the card must not flip
                                         // or swipe away under a gesture aimed at the editor.
                                         {...(isFront && !editMode ? {

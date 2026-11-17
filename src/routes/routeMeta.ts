@@ -219,6 +219,13 @@ const PAGE_ROUTES: RouteMeta[] = [
     chrome: "none",
     note: "Dev-only type labs (src/pages/fontLab/FontLabPage.tsx) — a shell over two modes: Chinese (FONTS.cjk) and Info type (FONTS.label, the overline voice). Not linked from any menu; reachable by typing the URL. Plain shell because each lab owns its own scroll container and needs the width for the compare grid.",
   },
+  {
+    path: "/swipe-lab",
+    access: "any",
+    shell: "plain",
+    chrome: "none",
+    note: "Dev-only gesture lab (src/pages/swipeLab/SwipeLabPage.tsx) — guided, labeled swipes/taps on a card driven by the production useCardDrag hook, recorded to POST /api/diagnostics/gestures for tuning the flp's swipe classifier (docs/SWIPE_LAB.md). Not linked from any menu; reachable by typing the URL. Plain shell so the card has the whole screen, like the flp.",
+  },
 
   // ── Unauthenticated ──
   // Auth pages sit in the FRAME (since 2026-11-14): the boot cover opens onto `/login` on a

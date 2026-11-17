@@ -62,7 +62,7 @@ function parseArgs(argv: string[]): Args {
 
 /** `client-perf-2026-08-13.jsonl` → `2026-08-13`, or null if it is not a dated log. */
 function dateStampOf(filename: string): string | null {
-  const m = /^client-(?:perf|error)-(\d{4}-\d{2}-\d{2})\.jsonl$/.exec(filename);
+  const m = /^client-(?:perf|error|gestures)-(\d{4}-\d{2}-\d{2})\.jsonl$/.exec(filename);
   return m ? m[1] : null;
 }
 

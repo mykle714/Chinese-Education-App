@@ -14,6 +14,7 @@ Real-user interaction-latency telemetry, built to diagnose the **PPE-only**
 | **Shared writer** | `server/utils/diagnosticsLog.ts` | `appendDiagnostic(prefix, record)` — resolves the (configurable) log dir, daily-rotates, and sweeps expired files. Used by **both** the perf and error sinks. |
 | **Analysis** | `server/scripts/analyze-client-perf.ts` | Read-only aggregator; reads every `client-perf-*.jsonl` (+ legacy single file) and prints per-route p50/p95 latency breakdowns. |
 | **Export (PPE → dev)** | `server/scripts/export-diagnostics-bundle.ts` | Packages the JSONL for transport to a dev box, **stripping the `ip` field**. There is no cross-machine SSH on this project, so the only transport is a git commit — which makes scrubbing mandatory, not advisory. Driven by `/diagnostics-pull`. |
+| **Gesture sink** | `server/routes/diagnosticsRoutes.ts` → `POST /api/diagnostics/gestures` | Third sink on the shared writer (`client-gestures-*.jsonl`): raw touch samples from the swipe-tuning lab. Own doc: [SWIPE_LAB.md](./SWIPE_LAB.md). |
 | **Storage** | `server/logs/client-perf-YYYY-MM-DD.jsonl` (host) | Append-only JSONL, git-ignored. **Persisted + daily-rotated** — see "Persistence & rotation" below. |
 
 ## What is captured

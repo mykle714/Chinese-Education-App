@@ -74,3 +74,4 @@ Pages with a route but no way to reach them from td. Record the user's decision 
 | Route | Page | Finding | Decision |
 |---|---|---|---|
 | `/font-lab` | `FontLabPage` | Dev-only type lab, reachable only by typing the URL (by design, per its `ROUTE_META` note). | keep (dev tool), until told otherwise |
+| `/swipe-lab` | `SwipeLabPage` | Dev-only gesture-tuning lab (docs/SWIPE_LAB.md), reachable only by typing the URL (by design). | keep (dev tool) until the flp swipe tuning is done |

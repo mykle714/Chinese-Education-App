@@ -16,7 +16,7 @@ CLAUDE.md § "Nonstandard deploys need a temp runbook"; the deploy procedure its
 > `schema_migrations` and `migrate.sh --dry-run`, and treat any disagreement as this
 > file (or the runbook banner) being stale.
 
-PPE is current through migration **192** (2026-11-15). Latest code deploy: `75ee4fb` (2026-11-15, migrations 190–192).
+PPE is current through migration **192** (2026-11-15). Latest code deploy: `56724c6` (2026-11-17, no migrations).
 
 ## Open runbooks
 
@@ -32,6 +32,8 @@ PPE is current through migration **192** (2026-11-15). Latest code deploy: `75ee
 | [GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md](./GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md) | Gloss phase-2 half B, the runtime guard (**no migration**) | Deployed 2026-08-24; infrastructure checks passed | Someone must open a real game board and confirm it fills rather than coming back short (the one over-blocking symptom the checks cannot see) |
 
 ## Deploy history and lessons
+
+Deployed 2026-11-17 (`56724c6`), no migrations: the swipe lab only (`/swipe-lab` + the `/api/diagnostics/gestures` sink, docs/SWIPE_LAB.md). It was committed alone, with the dev box's other uncommitted work left out, and build- and test-checked in a clean worktree of the staged tree.
 
 Deployed 2026-11-15 (`75ee4fb`), migrations **190–192** (username shape, passwords for any channel, nonbinary gender — all loosen `users` CHECKs, applied after the pull and BEFORE the rebuild, as their headers ask), plus the U+E000 private component (runbook above, still open for its in-app check). **Lesson:** a runbook that runs a backfill on PPE must call it through `server/scripts/backfill/run-ppe.sh` on the host. The PPE backend image has no `scripts/backfill/` and no tsx, so `docker exec cow-backend npx tsx scripts/…` fails with `ERR_MODULE_NOT_FOUND`; the U+E000 runbook was first written that way.
 

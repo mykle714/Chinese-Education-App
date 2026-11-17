@@ -141,6 +141,8 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         currentIndex,
         currentEntry,
         nextEntry,
+        deepEntry,
+        deepSideOneLanguage,
         loading,
         error,
         isAnimating,
@@ -999,6 +1001,9 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     currentEntry={editingCurrentEntry}
                     // The break's card holds the back position: no word card sits there.
                     nextEntry={gameBreak.stackHold ? null : displayNextEntry}
+                    // Two behind the front, so a fast learner never sees an empty frame
+                    // behind the card during a fly-out. Held out during a break like nextEntry.
+                    deepEntry={gameBreak.stackHold ? null : deepEntry}
                     gameBreak={gameBreak.stackHold}
                     breakCard={breakCard}
                     onBreakCardGone={gameBreak.finishLeave}
@@ -1017,6 +1022,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     readingMode={readingMode}
                     sideOneLanguage={currentSideOneLanguage}
                     nextSideOneLanguage={nextSideOneLanguage}
+                    deepSideOneLanguage={deepSideOneLanguage}
                     showSwipeHint={showSwipeHint}
                     showTapToFlipHint={showTapToFlipHint}
                     // The writing card wiggles on the writing hook's nonce (a submit tap

@@ -47,10 +47,18 @@ import type { FlpWorld } from "../../../../server/contracts/studyMode";
 /**
  * The card flying out after a dismiss. `armed` is false for the dismiss's own commit (the
  * slot holds at the release point) and true from the next paint, when its animation runs.
- * Read by FlashCardSection (and the swipe-lab probe). Docs: docs/SWIPE_LAB.md § "Fly-out".
+ * Read by FlashCardSection. Docs: docs/FLP_CARD_GESTURES.md § "Fly-out".
  */
+/**
+ * One of the card stack's three slots. Slots rotate through the roles front → (flying →)
+ * deep → back → front: at rest two cards sit behind the front, so a fast learner who flips
+ * or swipes the new front during a fly-out still has a card behind it (with two slots the
+ * only other slot was the one flying away, and the frame showed through).
+ */
+export type CardSlot = 0 | 1 | 2;
+
 export interface FlyOut {
-    slot: 0 | 1;
+    slot: CardSlot;
     direction: "left" | "right";
     armed: boolean;
 }
@@ -93,12 +101,16 @@ export interface UseWorkingLoopReturn {
     currentIndex: number;
     currentEntry: VocabEntry | null;
     nextEntry: VocabEntry | null;
+    /** The card two behind the front — the stack's deep slot (see CardSlot). */
+    deepEntry: VocabEntry | null;
+    /** Side 1 of `deepEntry`. Derived, not rolled: sideOneForCard is a pure rule. */
+    deepSideOneLanguage: SideOneLanguage;
     loading: boolean;
     error: string | null;
     isAnimating: boolean;
     isUndoing: boolean;
     lastMarkUndoSnapshot: LastMarkUndoSnapshot | null;
-    activeFrontSlot: 0 | 1;
+    activeFrontSlot: CardSlot;
     flyOut: FlyOut | null;
     currentSideOneLanguage: SideOneLanguage;
     nextSideOneLanguage: SideOneLanguage;
@@ -139,7 +151,7 @@ export interface UseWorkingLoopReturn {
 
 /**
  * Owns the flashcard working-loop domain: the distributed-loop fetch, the
- * two-slot card-stack animation state machine, the mark/undo network layer, and
+ * three-slot card-stack animation state machine, the mark/undo network layer, and
  * the per-card Side 1 language. Extracted from FlashcardsLearnPage so the page
  * is a thin presentational shell and this retry/snapshot logic is isolated.
  *
@@ -204,9 +216,9 @@ export function useWorkingLoop({
     // "loop ran dry → climb out" fires before the replacements land.
     const [breakRefillsInFlight, setBreakRefillsInFlight] = useState(0);
 
-    // Two-slot card stack: tracks which slot (0 or 1) is the front card and
-    // which slot is currently animating off-screen.
-    const [activeFrontSlot, setActiveFrontSlot] = useState<0 | 1>(0);
+    // Three-slot card stack (CardSlot): tracks which slot is the front card and which
+    // slot is currently animating off-screen. Back = front + 1, deep = front + 2 (mod 3).
+    const [activeFrontSlot, setActiveFrontSlot] = useState<CardSlot>(0);
     const [flyOut, setFlyOut] = useState<FlyOut | null>(null);
 
     // Side 1 language for the current card and the next (back-slot) card. Rolled
@@ -220,6 +232,11 @@ export function useWorkingLoop({
     // Next entry pre-rendered in the back card slot.
     const nextEntry: VocabEntry | null =
         workingLoop.length > 1 ? workingLoop[(currentIndex + 1) % workingLoop.length] : null;
+    // The card after that, pre-rendered in the deep slot. Only with 3+ cards: in a shorter
+    // loop it would be the front card itself.
+    const deepEntry: VocabEntry | null =
+        workingLoop.length > 2 ? workingLoop[(currentIndex + 2) % workingLoop.length] : null;
+    const deepSideOneLanguage = sideOneForCard(deepEntry, world);
 
     // Temporary (provisional) cards the server lent once the session's lend switch came
     // on (docs/PROVISIONAL_CARDS.md). The words the learner MARKED are recorded at the mark
@@ -404,7 +421,8 @@ export function useWorkingLoop({
         // Un-armed: the flying slot is held at the release point while this dismiss's big
         // synchronous update commits; it is armed after the next paint (below).
         setFlyOut({ slot: activeFrontSlot, direction, armed: false });
-        setActiveFrontSlot(prev => (1 - prev) as 0 | 1);
+        // The back slot is promoted; the flying slot lands as the new deep card.
+        setActiveFrontSlot(prev => ((prev + 1) % 3) as CardSlot);
         setCurrentIndex(prev => (prev + 1) % workingLoop.length);
         // Promote the peeking card's language to current and choose the new
         // back-slot card's Side 1 from ITS own history (weaker know track). The new
@@ -524,7 +542,7 @@ export function useWorkingLoop({
         // (slot swap, next card, narration, counters) runs synchronously before the first
         // paint; an animation committed with it got its start time at commit, so on a phone
         // its first visible frame landed 70–280 ms in — the card was already mostly
-        // off-screen — and the fixed timer then cut the rest short (docs/SWIPE_LAB.md
+        // off-screen — and the fixed timer then cut the rest short (docs/FLP_CARD_GESTURES.md
         // § "Fly-out"). Armed in a light follow-up commit, it is painted at once and then
         // runs on the compositor, unaffected by later main-thread work. The fly-out's
         // clock starts here, so the full CARD_FLY_OUT_MS is always shown.
@@ -638,6 +656,8 @@ export function useWorkingLoop({
         currentIndex,
         currentEntry,
         nextEntry,
+        deepEntry,
+        deepSideOneLanguage,
         loading: loading || (breakRefillsInFlight > 0 && workingLoop.length === 0),
         error,
         isAnimating,

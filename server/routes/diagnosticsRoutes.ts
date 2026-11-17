@@ -8,7 +8,7 @@ import { diagnosticsLimiter } from '../middleware/rateLimits.js';
  * LAYER: HTTP route layer (handlers are self-contained log appenders; no DB).
  * Split out of server.ts; paths unchanged.
  *
- * All three routes are deliberately UNAUTHENTICATED: payloads arrive via
+ * Both routes are deliberately UNAUTHENTICATED: payloads arrive via
  * navigator.sendBeacon / keepalive fetch, which cannot attach an Authorization
  * header, and crashes/lag also affect public/demo sessions. Defenses instead:
  * per-request caps (record count, field lengths, express.json body limit) plus
@@ -77,40 +77,6 @@ router.post('/api/diagnostics/perf', diagnosticsLimiter, (req, res) => {
     return res.status(204).end();
   } catch (err) {
     console.error('Error handling client perf diagnostics:', err);
-    return res.status(204).end();
-  }
-});
-
-// Gesture-tuning sink — raw touch samples from the swipe lab (/swipe-lab) and, on devices
-// that opted in, the live flp's card gestures + fly-out clip probe. Records are passed
-// through as the client built them (src/utils/gestureRecorder.ts documents the shape);
-// they are tuning data read by hand / by a one-off analysis, never by the app.
-// No IP is stored: the records are about fingers, not people.
-// Docs: docs/SWIPE_LAB.md.
-router.post('/api/diagnostics/gestures', diagnosticsLimiter, (req, res) => {
-  try {
-    const body = req.body || {};
-    const records = Array.isArray(body.records) ? body.records : [];
-    // One gesture per POST is the norm; 20 is a flood backstop.
-    if (records.length === 0 || records.length > 20) {
-      return res.status(204).end();
-    }
-
-    appendDiagnostic('client-gestures', {
-      receivedAt: new Date().toISOString(),
-      session: typeof body.session === 'string' ? body.session.slice(0, 40) : undefined,
-      device: body.device && typeof body.device === 'object' ? body.device : undefined,
-      records,
-    });
-
-    const summary = records
-      .map((r: any) => `${r?.kind ?? '?'}:${r?.intent ?? ''}→${r?.verdict ?? ''}`)
-      .join(', ');
-    console.log(`🖐️  client-gestures: ${summary.slice(0, 200)}`);
-
-    return res.status(204).end();
-  } catch (err) {
-    console.error('Error handling client gesture diagnostics:', err);
     return res.status(204).end();
   }
 });

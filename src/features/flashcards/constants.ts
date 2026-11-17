@@ -132,7 +132,7 @@ export const CARD_DRAG_SENSITIVITY = 1.6;
 // Flick detection (useCardDrag → classifyRelease). A release counts as a swipe when the
 // finger is still moving sideways fast enough at lift-off, even if it never reached the
 // distance threshold above. Tuned 2026-11-17 against recorded iPhone input
-// (docs/SWIPE_LAB.md): fast flicks released at 0.73–2.9 px/ms, slow drags, holds and
+// (docs/FLP_CARD_GESTURES.md): fast flicks released at 0.73–2.9 px/ms, slow drags, holds and
 // drag-out-and-back gestures at |v| ≤ 0.17 px/ms. All in RAW finger px (not amplified).
 /** Minimum sideways release speed, px/ms, for a flick. */
 export const CARD_FLICK_MIN_VELOCITY = 0.4;

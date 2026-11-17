@@ -1393,9 +1393,11 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
   Mix (the working-loop request is `{ world }`), `onExit` instead of a navigation, transparent backgrounds, `TowerStudyHeader` (the flp header's back, undo
   and narration controls, plus the tower's own platform toggle, in the tower's white-on-sky PageHeader style, with
   **no title** — dropped 2026-11-08 to free the row for controls; `PageHeader`'s `title` is optional for it), and the
-  card stack as the tower's top card (the next card waits flush under the current one; an
+  card stack as the tower's top card (the next two cards wait flush under the current one; an
   incorrect swipe is tucked back into the deck; flips at `TOWER_CARD_FLIP_MS`). There is
-  no routed flp: `/flashcards/learn` was deleted, and the flp renders only here.
+  no routed flp: `/flashcards/learn` was deleted, and the flp renders only here. The
+  stack's three slots, the tap/swipe classifier, its locks and the fly-out timing:
+  [FLP_CARD_GESTURES.md](./FLP_CARD_GESTURES.md).
 - **The card stock** (`src/features/flashcards/card/CardFace.tsx`;
   `src/features/flashcards/card/cardStock.ts` → `cardStockVars`, applied by
   `FlashCardSection.tsx` → `FLP_CARD_STOCK_VARS`;

@@ -46,13 +46,14 @@ import { CardFaceSide, ChineseBlock, EnglishBlock } from "../card/CardFace";
 import BreakCardLayer from "./gameBreak/BreakCardLayer";
 import ReadyOutCardLayer, { type ReadyOutKind } from "./ReadyOutCardLayer";
 import { cardThrowSteps } from "./cardThrow";
-import { useFlpGestureProbe } from "./flpGestureProbe";
-import type { FlyOut } from "./useWorkingLoop";
+import type { CardSlot, FlyOut } from "./useWorkingLoop";
 
 interface FlashCardSectionProps {
     currentEntry: VocabEntry | null;
     nextEntry: VocabEntry | null;
-    activeFrontSlot: 0 | 1;
+    /** The card two behind the front, in the deep slot (useWorkingLoop → CardSlot). */
+    deepEntry: VocabEntry | null;
+    activeFrontSlot: CardSlot;
     flyOut: FlyOut | null;
     cardRef: React.RefObject<HTMLDivElement | null>;
     dragPosition: { x: number; y: number };
@@ -75,6 +76,7 @@ interface FlashCardSectionProps {
     // Side 1 language for the back-slot (peeking) card — different random value
     // so promoting it on dismiss doesn't flash the wrong language.
     nextSideOneLanguage: SideOneLanguage;
+    deepSideOneLanguage: SideOneLanguage;
     // Swipe-tutorial state from useCardDrag: shake the front card on each new
     // nonce, and fade the ← Incorrect / Correct → labels in/out with showSwipeHint.
     showSwipeHint: boolean;
@@ -480,6 +482,7 @@ const noop = () => {};
 const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     currentEntry,
     nextEntry,
+    deepEntry,
     activeFrontSlot,
     flyOut,
     cardRef,
@@ -492,6 +495,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     readingMode = false,
     sideOneLanguage,
     nextSideOneLanguage,
+    deepSideOneLanguage,
     showSwipeHint,
     showTapToFlipHint,
     shakeNonce,
@@ -518,10 +522,6 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     const theme = useTheme();
     const fc = theme.palette.flashcard;
 
-    // Swipe-lab recording of real study gestures + the fly-out clip probe. Inert unless this
-    // device opted in at /swipe-lab (docs/SWIPE_LAB.md).
-    useFlpGestureProbe({ flyOut, shakeNonce, isFlipped, dragPosition });
-
     // Threshold in px, computed against card's actual rendered width for desktop consistency.
     const dismissThreshold = CARD_DISMISS_THRESHOLD_VW * (cardRef.current?.offsetWidth ?? window.innerWidth);
 
@@ -545,11 +545,11 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
         return () => window.clearTimeout(timer);
     }, [isFlipped]);
 
-    // Each slot gets its entry: the front slot shows currentEntry, back slot shows nextEntry.
-    const slotEntries: [VocabEntry | null, VocabEntry | null] =
-        activeFrontSlot === 0
-            ? [currentEntry, nextEntry]
-            : [nextEntry, currentEntry];
+    // Each slot's ROLE, from its offset to the front: 0 front (currentEntry), 1 back
+    // (nextEntry), 2 deep (deepEntry). The flying slot has the deep role — it lands there.
+    const roleOf = (slot: CardSlot) => ((slot - activeFrontSlot + 3) % 3) as 0 | 1 | 2;
+    const roleEntries = [currentEntry, nextEntry, deepEntry] as const;
+    const slotEntries = ([0, 1, 2] as const).map((slot) => roleEntries[roleOf(slot)]);
 
     // Writing flp only: the card flying out keeps showing the card that was DISMISSED,
     // on its graded back face. The loop advances `currentIndex` in the same batch that
@@ -571,10 +571,8 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
 
     // Side 1 language pairs with its slot's entry — not its slot index — so the
     // peeking card behind shows the correct language before promotion.
-    const slotSideOneLanguages: [SideOneLanguage, SideOneLanguage] =
-        activeFrontSlot === 0
-            ? [sideOneLanguage, nextSideOneLanguage]
-            : [nextSideOneLanguage, sideOneLanguage];
+    const roleLanguages = [sideOneLanguage, nextSideOneLanguage, deepSideOneLanguage] as const;
+    const slotSideOneLanguages = ([0, 1, 2] as const).map((slot) => roleLanguages[roleOf(slot)]);
 
     return (
         // Card slot: flex:1 absorbs remaining vertical space, position:relative establishes
@@ -624,11 +622,12 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                     }}
                 >
                     {currentEntry ? (
-                        // Two-slot card stack. Slots alternate as front/back card on each dismiss.
+                        // Three-slot card stack (useWorkingLoop → CardSlot): front, back and deep
+                        // rotate on each dismiss; docs/FLP_CARD_GESTURES.md § "The stack".
                         // The back card is pre-populated with the next card's content so no
                         // content flash occurs when the front card flies off.
                         <>
-                            {([0, 1] as const).map((slot) => {
+                            {([0, 1, 2] as const).map((slot) => {
                                 const isFront = slot === activeFrontSlot;
                                 const isThisSlotFlyingOut = flyOut?.slot === slot;
                                 // The fly-out's animations start only once armed (the paint after
@@ -712,9 +711,6 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                     <Box
                                         key={isFront ? `front-${shakeNonce}` : `slot-${slot}`}
                                         ref={isFront ? cardRef : undefined}
-                                        // Read by the swipe-lab probe (flpGestureProbe.ts) to find the
-                                        // dragged and the flying card.
-                                        data-card-role={writingRole}
                                         // Handlers are detached during a fie edit: the card must not flip
                                         // or swipe away under a gesture aimed at the editor.
                                         {...(isFront && !editMode ? {
@@ -729,7 +725,8 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                             // The flying card stays on top of the promoted one: it is no
                                             // longer `isFront` once the slots swap, and a tapped writing
                                             // card starts its throw dead centre, over the new front.
-                                            zIndex: isThisSlotFlyingOut ? 3 : isFront ? 2 : 1,
+                                            // Under them: the back card, then the deep card.
+                                            zIndex: isThisSlotFlyingOut ? 3 : isFront ? 2 : roleOf(slot) === 1 ? 1 : 0,
                                             transform,
                                             transition,
                                             opacity,

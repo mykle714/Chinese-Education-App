@@ -85,7 +85,6 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   "/settings": lazy(() => import("../pages/SettingsPage")),
   "/settings/account": lazy(() => import("../pages/AccountSecurityPage")),
   "/font-lab": lazy(() => import("../pages/fontLab/FontLabPage")),
-  "/swipe-lab": lazy(() => import("../pages/swipeLab/SwipeLabPage")),
   "/login": lazy(() => import("../pages/LoginPage")),
   "/register": lazy(() => import("../pages/RegisterRedirect")),
   "*": lazy(() => import("../pages/NotFoundPage")),

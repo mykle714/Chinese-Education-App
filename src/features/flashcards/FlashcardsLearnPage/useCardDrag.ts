@@ -15,7 +15,7 @@ import {
  * ── Why the gesture lives in refs (2026-11-17 rewrite) ──
  * The previous version kept the drag in React STATE and classified the release from the
  * last RENDERED dragPosition, with a touchmove listener whose closure was rebuilt on every
- * isDragging change. Recorded real-flp input (docs/SWIPE_LAB.md) showed what that does on
+ * isDragging change. Recorded real-flp input (docs/FLP_CARD_GESTURES.md § "History") showed what that does on
  * a phone: the flp's render is heavy, so a fast flick's touchmoves arrived before the
  * re-render that "started" the drag and were dropped by a listener still holding
  * isDragging=false, and touchend ran a handler from an equally stale render. 13 of 31 real
@@ -38,7 +38,7 @@ import {
  *    card is still flying. A swipe classified during the fly-out is queued and fired the
  *    moment it ends (the working loop refuses a dismiss mid-fly-out).
  *
- * Docs: docs/SWIPE_LAB.md (the data and thresholds), docs/DECK_TOWER.md (the flp).
+ * Docs: docs/FLP_CARD_GESTURES.md (rules, thresholds, history), docs/DECK_TOWER.md (the flp).
  */
 
 interface UseCardDragReturn {
@@ -102,7 +102,7 @@ type Release =
 
 /**
  * Decide what a lift-off was. Pure — reads only the gesture and the card width — so the
- * thresholds can be replayed offline against recorded input (docs/SWIPE_LAB.md).
+ * thresholds can be re-checked offline against recorded input (docs/FLP_CARD_GESTURES.md).
  */
 export function classifyRelease(g: Pick<Gesture, "start" | "last" | "maxDist" | "recent">, cardWidth: number): Release {
     if (g.maxDist < CARD_TAP_SLOP) return { kind: "tap" };

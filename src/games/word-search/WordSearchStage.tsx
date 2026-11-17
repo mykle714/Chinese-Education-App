@@ -11,7 +11,7 @@ import { SIZE, LEADING } from "../../theme/scale";
 import WordSearchWordList from "./WordSearchWordList";
 import WordSearchHintRow from "./WordSearchHintRow";
 import WordSearchGrid, { type WordSearchGridHandle } from "./WordSearchGrid";
-import WordSearchHintBar from "./WordSearchHintBar";
+import GameHintBar from "../shared/GameHintBar";
 import { GameCentered, GameFrame } from "../shared/GameFrame";
 import { GameCountdown } from "../shared/GameCountdown";
 import { useGameCountdown } from "../shared/useGameCountdown";
@@ -27,6 +27,7 @@ import {
     BOARD_CELL_SIZE,
     GAME_KEY,
     GRID_EDGE_PX,
+    HINT_BAR_UNITS,
     WIN_LEVEL,
     modeMarkTypes,
     personalBestMode,
@@ -785,8 +786,10 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
                 {/* The hint mechanic, whole, on one row: press · charges · reveal. It is the
                     LAST child of the panel, in thumb reach. */}
                 <Box ref={hintSlotRef} className="word-search__hint-slot" sx={{ flexShrink: 0 }}>
-                    <WordSearchHintBar
+                    <GameHintBar
+                        classPrefix="word-search"
                         units={hints.units}
+                        maxUnits={HINT_BAR_UNITS}
                         ready={phase === "playing" && hints.canUse()}
                         onHint={hints.spend}
                     >
@@ -795,7 +798,7 @@ const WordSearchStage: React.FC<WordSearchStageProps> = ({
                             revealCount={hints.revealCount}
                             currency={showPinyin ? "pinyin" : "components"}
                         />
-                    </WordSearchHintBar>
+                    </GameHintBar>
                 </Box>
 
                 <GameCountdown step={countdownStep} classPrefix="word-search" />

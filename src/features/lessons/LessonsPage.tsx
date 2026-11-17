@@ -18,9 +18,7 @@ const PLATE_LIP = 4;
  * A placeholder: the lessons feature is not designed yet, so the page only says
  * "Coming soon". Styled as a Deck Tower (td) Tier-2 page, like the Dictionary
  * (docs/SHELF_REDESIGN.md § 7b): the time-of-day ground and ink from `useTier2Look`
- * (which also lends its colours to the slab footer while the page is up), and td's
- * floating slab footer (`footerStyle: "slab"` on the route, src/routes/routeMeta.ts).
- * A plain footer-tab root otherwise: no back arrow, no slide.
+ * (which also lends its colours to the slab footer while the page is up). A plain footer-tab root otherwise: no back arrow, no slide.
  *
  * The message sits on one raised plate — the look's `surface` with the app outline, the
  * top rim light and a straight `surfaceEdge` lip (CLAUDE.md § Buttons & cards, and the

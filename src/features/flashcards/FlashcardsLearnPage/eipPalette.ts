@@ -5,8 +5,8 @@ import type { ThemeMode } from "../../../contexts/ThemeContext";
 /**
  * eipPalette.ts — the eip's colours for the app's colour THEME (Settings → Theme, the
  * `ThemeMode` in src/contexts/ThemeContext.tsx). Two palettes:
- *   LIGHT — the Light theme. The Tower Tier 2 design's Day
- *           artboard: a pale-sky upper panel over the app's day keys, shelf and ink.
+ *   LIGHT — the Light theme. Started as the Tower Tier 2 design's Day artboard (a pale-sky
+ *           upper panel); retinted cornflower on 2026-11-17 — see LIGHT_PALETTE.
  *   DARK  — the Dark theme. The design's "Night–inverted" artboard: slate panels, light ink.
  *
  * Until 2026-11-05 these were the DAY and NIGHT palettes and the eip followed the learner's
@@ -27,8 +27,9 @@ import type { ThemeMode } from "../../../contexts/ThemeContext";
  *           tab body, whose example / breakdown cards are `card`.
  *
  * ── What the theme changes ────────────────────────────────────────────────────
- *   LIGHT tints only the UPPER panel's ground and wells — a pale tint of the tower's sky.
- *   Keys, the shelf and the ink are the app's light colours.
+ *   LIGHT tints the UPPER panel's ground and wells a pale cornflower (the writing
+ *   platform's hue, a quiet echo of the tower's blue), and hues the key lips and the shelf
+ *   grabber to match. The shelf, faces, cards and ink are the app's light colours (white shelf).
  *   DARK inverts the whole panel: slate panels, light ink, inner cards a lifted slate.
  *
  * ⚠️ OUTSIDE THE COLOUR FRAMEWORK, on purpose (the same divergence as the tower's
@@ -94,19 +95,28 @@ const LIGHT_BASE = {
     dark: false,
 } as const;
 
-/** The content tabs' track: the upper well mixed 45% into white (design `.tabw .tabs`). */
+/** The content tabs' track: the upper well mixed 45% into the white shelf (design `.tabw .tabs`). */
 const tabTrack = (well: string, wellShadow: string) => ({
     tabWell: mixHex(COLORS.white, well, 0.45),
     tabWellShadow: mixHex(COLORS.white, wellShadow, 0.45),
 });
 
+// "Cornflower" (2026-11-17, chosen in the EIP Sky Tint Lab artifact): the tint turned from
+// the tower sky's hue (239°) to the writing platform's cornflower (bluCorn, 261°), at ~16%
+// of the sky's chroma, so the eip echoes td's blue without its loudness. Beyond the
+// previous pale-sky palette, the tint also reaches the raised keys' lips and the shelf
+// grabber. The lower shelf (the panel body) stays WHITE on purpose — the user ruled the
+// tint stops at the upper panel. Faces, cards and ink stay the app's light colours. Authored oklch, shipped as the per-channel-clipped hex (colors.ts rule).
+// Previous palette (`.t2a` pale sky, until 2026-11-17): ground #E0F3FF, well #D1EAFC,
+// wellShadow #BDDDF2 — oklch 95.5/92.5/88% at hue 238; shelf white, edge COLORS.grey.
 const LIGHT_PALETTE: EipPalette = {
-    // `.t2a` — pale sky. Authored oklch, shipped as the clamped hex (colors.ts rule).
     ...LIGHT_BASE,
-    ground: "#E0F3FF", // oklch(95.5% 0.028 238)
-    well: "#D1EAFC", // oklch(92.5% 0.036 238)
-    wellShadow: "#BDDDF2", // oklch(88% 0.045 238)
-    ...tabTrack("#D1EAFC", "#BDDDF2"),
+    ground: "#DFEEFF", // oklch(94.5% 0.038 261) clipped → renders 94.3% 0.028 251
+    well: "#D1E4FF", // oklch(91.5% 0.049 261) clipped
+    wellShadow: "#BED5FD", // oklch(87% 0.061 261)
+    edge: "#CADAF6", // oklch(88.5% 0.042 261) — hued key lip (was COLORS.grey)
+    shelfGrab: "#C0D2F0", // oklch(86% 0.046 261) — hued grabber (was the design's #D2D2D8)
+    ...tabTrack("#D1E4FF", "#BED5FD"),
 };
 
 // `.t2n.t2ni` — the design's Night–inverted artboard: everything slate, light ink.

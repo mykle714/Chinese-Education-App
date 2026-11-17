@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Box, Collapse, useTheme, useMediaQuery, Alert } from "@mui/material";
-import { useNotify, useNotificationFor } from "../../components/notifications/useNotify";
+import { Box, Collapse, Typography, useTheme, useMediaQuery } from "@mui/material";
+import { useNotificationFor } from "../../components/notifications/useNotify";
 import { HeaderIconButton } from "../../components/PageHeader";
 import { COLORS } from "../../theme/colors";
 import ReaderDocumentSurface from "./ReaderDocumentSurface";
-import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { useAuth } from "../../AuthContext";
 import { useTheme as useCustomTheme } from "../../contexts/ThemeContext";
 import { API_BASE_URL } from "../../constants";
@@ -14,17 +13,37 @@ import { NEW_DOCUMENT_ID } from "./readerPaths";
 import VocabDisplayCard from "../../components/VocabDisplayCard";
 import { useVocabularyUpdate } from "../../contexts/VocabularyUpdateContext";
 import { processDocumentForTokens } from "../../utils/tokenUtils";
-import type { VocabEntry, Text } from "../../types";
+import type { VocabEntry, Text, Language } from "../../types";
+import EipSheet from "../flashcards/FlashcardsLearnPage/EipSheet";
+import EipAddKey from "../flashcards/FlashcardsLearnPage/EipAddKey";
+import ReaderMoreInfoKey from "./ReaderMoreInfoKey";
+import ReaderTapHint from "./ReaderTapHint";
+import ReaderKeycapPawn from "./ReaderKeycapPawn";
+import ReaderTapOverlay, { type TapZoneFlash, type TapZoneSide } from "./ReaderTapOverlay";
+import { EIP_ADD_KEY_SIZES } from "../flashcards/FlashcardsLearnPage/eipAddKeySizes";
+import { useReaderWordActions } from "./useReaderWordActions";
 
 import TextHeader from "./TextHeader";
 import TextArea from "./TextArea";
 import ReaderEditToolbar from "./ReaderEditToolbar";
 import DeleteDocumentDialog from "./DeleteDocumentDialog";
+import IconPickerDialog from "../../components/IconPickerDialog";
+import { readerMutedTextSx } from "./readerStyles";
+import ReaderCpcdView from "./ReaderCpcdView";
+import ReaderDisplayToggle from "./ReaderDisplayToggle";
+import ReaderReadAloudButton from "./ReaderReadAloudButton";
+import { ReaderAudioChip } from "../../components/AudioModeChip";
+import { useReaderAudioSettings } from "./useReaderAudioSettings";
+import { useReaderAudioPreload } from "./useReaderAudioPreload";
+import { findDictionaryMatch } from "./textSelection";
+import { useReaderReadAloud } from "./useReaderReadAloud";
+import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 
 import { useVocabularyProcessing } from "../../hooks/useVocabularyProcessing";
 import { useReaderContentEditor } from "./useReaderContentEditor";
-import { buildReaderDictMap, buildExcludeSet, computeSegmentSpans } from "./documentSegmentation";
+import { buildReaderDictMap, buildExcludeSet, buildReaderPronunciationMap, computeSegmentSpans } from "./documentSegmentation";
 import { useTextSelection } from "./useTextSelection";
+import { useEnglishTranslations } from "./useEnglishTranslations";
 import { useReaderSettings } from "./useReaderSettings";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useLockBodyScroll } from "../../hooks/useLockBodyScroll";
@@ -41,6 +60,10 @@ import {
 // across the flashcards/reader feature boundary (docs/PROJECT structure).
 
 const EDIT_TOOLBAR_ANIM_MS = 300;
+
+// The minimum visible space above, between and below the dictionary keycap's two STACKED
+// header controls, px (they otherwise spread evenly from the face's top edge to the divider).
+const KEYCAP_ACTIONS_GAP_PX = 6;
 const EDIT_TOOLBAR_ANIM_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 
 // READER OPEN-DOCUMENT PAGE — routed at `/reader/:id`, a footerless NODE-style
@@ -89,8 +112,19 @@ function ReaderDocumentPage() {
     const [savingEdit, setSavingEdit] = useState(false);
     const [editSaveError, setEditSaveError] = useState<string | null>(null);
 
+    // DOCUMENT ICON (texts."iconId", migration 193; docs/USER_DOCUMENT_FEATURE_SUMMARY.md
+    // § "Document icon"). Part of the edit DRAFT, like the content: seeded from the saved
+    // icon on Edit, changed by the toolbar's icon button + IconPickerDialog, sent with
+    // Save and simply dropped by Cancel. Not on the undo/redo stack — that history is the
+    // text's typing bursts (useReaderContentEditor); re-picking is the icon's undo.
+    const [draftIconId, setDraftIconId] = useState<string | null>(null);
+    const [iconPickerOpen, setIconPickerOpen] = useState(false);
+
     const vocabularyProcessing = useVocabularyProcessing();
     const readerSettings = useReaderSettings();
+    // The display strip's audio chip: the Reader's OWN mute / default / media setting
+    // (separate from the app-wide narration chip), driving TAP-TO-HEAR below.
+    const readerAudio = useReaderAudioSettings();
     const contentEditor = useReaderContentEditor();
 
     // Fetch the document by id. Keyed on `id` + the STABLE auth identity, never
@@ -106,6 +140,7 @@ function ReaderDocumentPage() {
             setNotFound(false);
             setText(blankDraft(user?.selectedLanguage));
             contentEditor.enterEditMode('');
+            setDraftIconId(null);
             setLoading(false);
             return;
         }
@@ -150,11 +185,26 @@ function ReaderDocumentPage() {
         return computeSegmentSpans(text.content, dictMap, excludeSet);
     }, [text?.content, vocabularyProcessing.loadedDictionaryCards, vocabularyProcessing.loadedPersonalCards]);
 
+    // Pinyin display mode (ReaderCpcdView): the pinyin under each word, and the device's
+    // "Color pinyin by tone" preference (Settings → Display) for its tint.
+    const pronunciations = useMemo(() => buildReaderPronunciationMap(
+        vocabularyProcessing.loadedDictionaryCards,
+        vocabularyProcessing.loadedPersonalCards
+    ), [vocabularyProcessing.loadedDictionaryCards, vocabularyProcessing.loadedPersonalCards]);
+    const { settings: { showPinyinColor } } = useFlashcardLearnSettings();
+    const cpcdScrollRef = useRef<HTMLDivElement | null>(null);
+
+    // English words → the Chinese entry each translates to (docs/USER_DOCUMENT_FEATURE_SUMMARY.md
+    // § "English words"): one batch lookup per document; the keycap then shows that entry for a
+    // highlighted English word exactly as for a Chinese one.
+    const englishTranslations = useEnglishTranslations(text?.content, text?.language);
+
     const textSelection = useTextSelection(
         vocabularyProcessing.loadedPersonalCards,
         vocabularyProcessing.loadedDictionaryCards,
         readerSettings.autoSelectEnabled,
-        segmentSpans
+        segmentSpans,
+        englishTranslations.translate
     );
 
     const handleTextChangeWithActivity = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -232,8 +282,10 @@ function ReaderDocumentPage() {
         };
     }, [text, vocabularyUpdate, textSelection.selectedPersonalCard, vocabularyProcessing, textSelection]);
 
-    // Focus the reading box once the document loads, auto-highlighting the first
-    // word. Keyed on the document id only — must NOT re-run (and reset the caret)
+    // Focus the reading box once the document loads, caret parked at the top. No word
+    // is highlighted: the page opens in useTextSelection's NOTHING-SELECTED MODE, and
+    // the first word lights up only when the learner taps / arrows to it. Keyed on the
+    // document id only — must NOT re-run (and reset the caret)
     // on every auto-select toggle.
     // Not for a new draft: it opens in edit mode, whose textarea focuses itself
     // (TextArea), and the reading box does not exist yet.
@@ -243,23 +295,177 @@ function ReaderDocumentPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [text?.id]);
 
-    // Tap-to-navigate hint, once per document open. A draft has nothing to navigate yet;
-    // the hint shows once it is saved (its id changes then). An app notification
-    // (docs/NOTIFICATIONS.md) — the shell pins it under the page header, clear of the
-    // reader's back / edit / delete buttons.
-    const { notify, dismiss } = useNotify();
-    const openTextId = text?.id;
+    // The tap-to-navigate hint lives IN the dictionary keycap while nothing is selected
+    // (NOTHING-SELECTED MODE, useTextSelection) — it replaced the 5 s `reader-tap-hint`
+    // app notification (2026-11-17), so it stays up exactly as long as it is useful.
+    const showNavigationHint = textSelection.awaitingFirstSelection;
+    // The hint's face (ReaderTapHint: the tap-divide demo). Built once so VocabDisplayCard's
+    // memo comparison (`idleHint` by identity) does not see a new element every render.
+    // Tapping the demo flashes the matching REAL zone over the reading box
+    // (ReaderTapOverlay → ZONE FLASH); the bumped id replays it on a repeat tap.
+    // Cleared once it has played (`clearTapZoneFlash`): the overlay unmounts in edit mode,
+    // and a request still set when it remounts on Cancel/Save would flash again.
+    const [tapZoneFlash, setTapZoneFlash] = useState<TapZoneFlash | null>(null);
+    const flashTapZone = useCallback((side: TapZoneSide) => {
+        setTapZoneFlash((prev) => ({ side, id: (prev?.id ?? 0) + 1 }));
+    }, []);
+    const clearTapZoneFlash = useCallback(() => setTapZoneFlash(null), []);
+    const navigationHint = useMemo(() => <ReaderTapHint onZoneTap={flashTapZone} />, [flashTapZone]);
+    // The keycap's face for a highlighted word with no entry: a small resting pawn. Built
+    // once — VocabDisplayCard's memo compares it by identity.
+    const keycapEmptyFace = useMemo(() => <ReaderKeycapPawn />, []);
+    // The Pinyin display mode's cpcd view replaces the reading box (reading mode only).
+    // It also switches the tap overlay to scroll the cpcd box and swallow long-presses.
+    const showCpcd = readerSettings.displayMode === 'pinyin' && !contentEditor.editMode;
+
+    // READ ALOUD (useReaderReadAloud): the display strip's play button reads from the caret,
+    // one clause per clip, moving the word selection along with the audio. While it plays,
+    // any tap, click or key press stops it AND still does its own job (the hook's window
+    // listeners); a drag or wheel scrolls instead and keeps reading.
+    // The pinyin hint is Chinese-only; in a Chinese document English words get the English voice.
+    const readAloud = useReaderReadAloud({
+        content: text?.content ?? '',
+        spans: segmentSpans,
+        pronunciations: text?.language === 'zh' ? pronunciations : null,
+        inputRef: textSelection.inputRef,
+        selectRange: textSelection.selectRange,
+        documentLanguage: text?.language,
+        textareaVisible: !showCpcd,
+    });
+
+    // The keycap's word actions (useReaderWordActions): speaker, More Info → eip, Add key.
+    // The Add key's seed: the document's vocab lookup (useVocabularyProcessing → byTokens)
+    // returns exactly the learner's Learning cards among its words, so a selected word with
+    // a matching personal card is "Added!" and one without is "Add" — known with no fetch.
+    // Undefined until that lookup has finished (useLearningToggle then waits for its own).
+    const selectedDict = textSelection.selectedDictionaryCard;
+    // An English word's translation is usually not among the document's loaded cards, so
+    // a miss there proves nothing: its seed comes from the English lookup itself, which
+    // reads each translation's Learning status with the matches (useEnglishTranslations →
+    // translationInLearning).
+    const selectedInLibrary = !selectedDict
+        ? undefined
+        : textSelection.selectedByTranslation && !textSelection.selectedPersonalCard
+            ? englishTranslations.translationInLearning(selectedDict.word1)
+            : vocabularyProcessing.processingVocab
+                ? undefined
+                : textSelection.selectedPersonalCard?.entryKey === selectedDict.word1;
+    const wordActions = useReaderWordActions(
+        selectedDict,
+        (text?.language ?? user?.selectedLanguage ?? 'zh') as Language,
+        selectedInLibrary,
+        // The read-aloud selects a new word ~4×/s; the Add key's per-word status fetch
+        // stands down until it stops (the key reappears on the word it stopped on).
+        readAloud.playing,
+    );
+    const { openMoreInfo, learning: keycapLearning } = wordActions;
+
+    // TAP-TO-HEAR (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Tap-to-hear"): with the strip's
+    // audio chip on default or media, moving the selection to a NEW word speaks it, as if
+    // the keycap's speaker were pressed (an English word speaks its Chinese translation —
+    // the keycap's word). Mute plays nothing.
+    //
+    // Keyed on the selection RANGE only, so it fires on a move and never on a re-render:
+    // the blur → refocus loop and leaving the eip restore the same range (no change), and a
+    // document opens with nothing selected, so the first sound is the learner's first tap.
+    // Toggling the chip itself speaks nothing (it is not in the deps) — the app-wide rule
+    // that changing an audio mode never makes a sound (useTTS → wasAutoplayOnRef).
+    // Stands down while the read-aloud steps the selection (it is already speaking) and in
+    // edit mode. The latest values are read through a ref so they need not be deps.
+    const tapToHearRef = useRef({ autoplay: readerAudio.autoplay, readAloudPlaying: readAloud.playing, editMode: contentEditor.editMode, speak: wordActions.autoSpeakSelected });
+    tapToHearRef.current = { autoplay: readerAudio.autoplay, readAloudPlaying: readAloud.playing, editMode: contentEditor.editMode, speak: wordActions.autoSpeakSelected };
+    const { start: selectionStart, end: selectionEnd } = textSelection.selectionRange;
     useEffect(() => {
-        if (!openTextId || openTextId === NEW_DOCUMENT_ID) return;
-        notify({
-            id: "reader-tap-hint",
-            tone: "info",
-            icon: "touch_app",
-            message: "Tap the left or right side of the text to move the cursor back or forward.",
-            autoHideMs: 5000,
-        });
-        return () => dismiss("reader-tap-hint");
-    }, [openTextId, notify, dismiss]);
+        if (selectionStart === selectionEnd) return;
+        const { autoplay, readAloudPlaying, editMode, speak } = tapToHearRef.current;
+        if (!autoplay || readAloudPlaying || editMode) return;
+        speak();
+    }, [selectionStart, selectionEnd]);
+    // PRELOADING for tap-to-hear (useReaderAudioPreload): the server synthesizes the
+    // document's words on open, and each move fetches the next few words into the browser.
+    // A span resolves to the keycap's word exactly as useTextSelection does: its det row,
+    // else (an English word) the Chinese entry it translates to.
+    const { loadedDictionaryCards } = vocabularyProcessing;
+    const translateEnglish = englishTranslations.translate;
+    const resolveKeycapEntry = useCallback(
+        (spanText: string) => findDictionaryMatch(spanText, loadedDictionaryCards) ?? translateEnglish(spanText),
+        [loadedDictionaryCards, translateEnglish],
+    );
+    useReaderAudioPreload({
+        enabled: readerAudio.autoplay && !contentEditor.editMode,
+        language: text?.language,
+        spans: segmentSpans,
+        resolveEntry: resolveKeycapEntry,
+        selectionStart,
+        readAloudPlaying: readAloud.playing,
+        prefetch: wordActions.tts.prefetch,
+    });
+    // Muting stops a tapped word mid-clip, edge-triggered so a speaker press while muted
+    // is not cut off (useTTS does the same for the app-wide chip).
+    const wasReaderAutoplayRef = useRef(readerAudio.autoplay);
+    const cancelSpeech = wordActions.tts.cancel;
+    useEffect(() => {
+        if (wasReaderAutoplayRef.current && !readerAudio.autoplay) cancelSpeech();
+        wasReaderAutoplayRef.current = readerAudio.autoplay;
+    }, [readerAudio.autoplay, cancelSpeech]);
+    // The keycap's right-edge controls: the eip's Add ⇄ Added! key and the More Info keycap
+    // (the flp's, arrowless) — side by side with More Info rightmost, or both in their compact size when the keycap
+    // stacks them under a long headword (VocabDisplayCard → ACTION LAYOUT). A word already
+    // in Learning shows "Added!", and a tap removes it (the full toggle, not the flp's
+    // add-only key); EipAddKey renders nothing for an undiscoverable word or while its
+    // status loads. Memoised: VocabDisplayCard's memo compares it by identity.
+    const renderKeycapActions = useCallback((stacked: boolean) => {
+        const size = stacked ? 'compact' : 'regular';
+        const moreInfo = <ReaderMoreInfoKey size={size} onClick={() => { void openMoreInfo(); }} />;
+        const addKey = <EipAddKey state={keycapLearning} size={size} />;
+        // Side by side: Add, then More Info at the far right (owner's call 2026-11-17).
+        if (!stacked) return <>{addKey}{moreInfo}</>;
+        // Stacked: More Info on top, over Add, spread EVENLY over the column VocabDisplayCard
+        // gives them (face top edge → divider): equal space above, between and below. Three
+        // equal flex spacers do the spreading, each with a KEYCAP_ACTIONS_GAP_PX floor; not
+        // `space-evenly` + `gap`, which adds the gap to the middle space only.
+        // Each key's margin box is set to its DRAWN extent: lifted `restAddY` (−1px) above
+        // its box, and its lip hanging lip + restAddY (4 − 1 = 3px) below it
+        // (EIP_ADD_KEY_SIZES.compact), so the spaces are even to the eye, not to the boxes.
+        const compact = EIP_ADD_KEY_SIZES.compact;
+        const addKeyDrawn = keycapLearning.available && keycapLearning.inLibrary !== undefined;
+        const spacer = (key: string) => (
+            <Box key={key} className="reader-keycap__actions-stack-spacer" sx={{ flex: '1 1 0', minHeight: `${KEYCAP_ACTIONS_GAP_PX}px` }} />
+        );
+        return (
+            <Box
+                className="reader-keycap__actions-stack"
+                sx={{
+                    flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-end',
+                    '& > :not(.reader-keycap__actions-stack-spacer)': {
+                        mt: `${-compact.restAddY}px`,
+                        mb: `${compact.lipAdd + compact.restAddY}px`,
+                    },
+                }}
+            >
+                {spacer('above')}
+                {moreInfo}
+                {/* EipAddKey draws nothing for an undiscoverable word or while its status
+                    loads; drop its spacer too so More Info stays centred alone. */}
+                {addKeyDrawn && spacer('between')}
+                {addKeyDrawn && addKey}
+                {spacer('below')}
+            </Box>
+        );
+    }, [openMoreInfo, keycapLearning]);
+
+    // The reading box re-takes focus whenever it is blurred (useTextSelection) — except
+    // while the eip is open, whose controls (tabs, search field, buttons) need focus. The
+    // dialog-close effect below hands focus back when it closes.
+    const { handleTextAreaBlur } = textSelection;
+    const eipOpen = wordActions.eipOpen;
+    const handleReadingBoxBlur = useCallback((event: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        if (eipOpen) return;
+        handleTextAreaBlur(event);
+    }, [eipOpen, handleTextAreaBlur]);
     // An inline edit that failed to save.
     useNotificationFor(editSaveError, () => setEditSaveError(null), { id: "reader-edit-save-error", tone: "error" });
 
@@ -267,7 +473,7 @@ function ReaderDocumentPage() {
     // docs/READER_SEGMENTATION.md / useTextSelection). Inline edit mode is treated
     // the same way — closing it (cancel or save) hands the reading box back its
     // focus/highlight.
-    const anyDialogOpen = deleteDialogOpen || contentEditor.editMode;
+    const anyDialogOpen = deleteDialogOpen || contentEditor.editMode || wordActions.eipOpen;
     const prevAnyDialogOpenRef = useRef(anyDialogOpen);
     useEffect(() => {
         if (prevAnyDialogOpenRef.current && !anyDialogOpen && text) {
@@ -288,6 +494,7 @@ function ReaderDocumentPage() {
         if (!text) return;
         setEditSaveError(null);
         contentEditor.enterEditMode(text.content);
+        setDraftIconId(text.iconId ?? null);
     }, [text, contentEditor]);
 
     // Cancelling a never-saved draft leaves the page: there is no reading view of
@@ -308,13 +515,14 @@ function ReaderDocumentPage() {
         const created = await apiPost<Text>('/api/texts', {
             content: contentEditor.draft,
             language: user?.selectedLanguage || 'zh',
+            iconId: draftIconId,
         });
         await vocabularyProcessing.processDocumentVocabulary(created);
         setText(created);
         contentEditor.exitEditMode();
         justCreatedIdRef.current = created.id;
         navigate(`/reader/${created.id}`, { replace: true });
-    }, [contentEditor, user?.selectedLanguage, vocabularyProcessing, navigate]);
+    }, [contentEditor, user?.selectedLanguage, draftIconId, vocabularyProcessing, navigate]);
 
     const handleSaveEdit = useCallback(async () => {
         if (!text) return;
@@ -326,7 +534,9 @@ function ReaderDocumentPage() {
                 await saveNewDraft();
                 return;
             }
-            const updated = await apiPut<Text>(`/api/texts/${text.id}`, { content: contentEditor.draft });
+            // `iconId: null` is sent on purpose when the icon was removed — the server
+            // treats null as "clear" and only an absent field as "leave as is".
+            const updated = await apiPut<Text>(`/api/texts/${text.id}`, { content: contentEditor.draft, iconId: draftIconId });
             await vocabularyProcessing.processDocumentVocabularyIncremental(text, updated);
             setText(updated);
             contentEditor.exitEditMode();
@@ -339,7 +549,7 @@ function ReaderDocumentPage() {
             setSavingEdit(false);
         }
         // No `token` dep: apiPut/apiPost read the header at call time (CLAUDE.md ⛔ rule).
-    }, [text, isNewDraft, saveNewDraft, contentEditor, vocabularyProcessing]);
+    }, [text, isNewDraft, saveNewDraft, contentEditor, draftIconId, vocabularyProcessing]);
 
     const handleDelete = useCallback(() => {
         setDeleteDialogOpen(true);
@@ -395,7 +605,10 @@ function ReaderDocumentPage() {
 
     return (
         <ReaderDocumentSurface
-            title="Reader"
+            // The document's own title is the page title (2026-11-17; it used to be a
+            // 22px heading above the dictionary card, under a header that said "Reader").
+            // "Reader" only while there is no document yet (loading / not found).
+            title={text?.title ?? "Reader"}
             onBack={handleBack}
             rightContent={docHeaderRightContent}
         >
@@ -412,19 +625,19 @@ function ReaderDocumentPage() {
                     onSave={handleSaveEdit}
                     saving={savingEdit}
                     saveDisabled={isNewDraft && !contentEditor.draft.trim()}
+                    iconId={draftIconId}
+                    onPickIcon={() => setIconPickerOpen(true)}
                 />
             </Collapse>
 
+            {/* Plain muted lines rather than a spinner / MUI Alert — the Reader's flat
+                look (readerStyles.ts), the Friends board's loading copy. */}
             {loading && (
-                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1 }}>
-                    <DelayedCircularProgress size={32} />
-                </Box>
+                <Typography className="reader-document-loading" sx={readerMutedTextSx}>Loading…</Typography>
             )}
 
             {!loading && notFound && (
-                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1, p: 3 }}>
-                    <Alert severity="error">Document not found.</Alert>
-                </Box>
+                <Typography className="reader-document-not-found" sx={readerMutedTextSx}>Document not found.</Typography>
             )}
 
             {!loading && text && (
@@ -452,7 +665,6 @@ function ReaderDocumentPage() {
                         sx={{ flexShrink: 0 }}
                     >
                         <TextHeader
-                            selectedText={text}
                             processingVocab={vocabularyProcessing.processingVocab}
                             vocabError={vocabularyProcessing.vocabError}
                         />
@@ -460,11 +672,62 @@ function ReaderDocumentPage() {
                         <Box className="reader-page-mobile-vocab-card-wrapper">
                             <VocabDisplayCard
                                 dictionaryEntry={textSelection.selectedDictionaryCard}
+                                idleHint={showNavigationHint ? navigationHint : null}
+                                emptyFace={keycapEmptyFace}
+                                onSpeak={wordActions.speakSelected}
+                                isSpeaking={wordActions.isSpeaking}
+                                renderHeaderActions={renderKeycapActions}
+                            />
+                        </Box>
+
+                        {/* The display strip: a row under the keycap — the read-aloud play
+                        button (ReaderReadAloudButton) and the tap-to-hear audio chip
+                        (ReaderAudioChip) at its left edge, the Text ⇄ Pinyin
+                        switch (ReaderDisplayToggle) at its right. Both are hidden — not
+                        removed — while editing, which is always the plain field, so the text
+                        box doesn't jump. */}
+                        <Box
+                            className="reader-document-display-strip"
+                            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1 }}
+                        >
+                            {/* The audio controls, grouped at the left: Read, then the
+                            tap-to-hear chip. */}
+                            <Box
+                                className="reader-document-display-strip__audio"
+                                sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+                            >
+                                <ReaderReadAloudButton
+                                    playing={readAloud.playing}
+                                    onStart={readAloud.start}
+                                    onStop={readAloud.stop}
+                                    disabled={segmentSpans.length === 0}
+                                    hidden={contentEditor.editMode}
+                                />
+                                {/* preventDefault on mousedown keeps focus on the reading
+                                box (as the Read pill and the switch do), so a desktop click
+                                doesn't trip the blur → refocus loop. */}
+                                <Box
+                                    className="reader-document-audio-chip-wrapper"
+                                    onMouseDown={(event) => event.preventDefault()}
+                                    sx={{ display: 'flex', visibility: contentEditor.editMode ? 'hidden' : 'visible' }}
+                                >
+                                    <ReaderAudioChip
+                                        className="reader-document-audio-chip"
+                                        mode={readerAudio.mode}
+                                        onCycle={readerAudio.cycleMode}
+                                    />
+                                </Box>
+                            </Box>
+                            <ReaderDisplayToggle
+                                className="reader-document-display-mode-toggle"
+                                value={readerSettings.displayMode}
+                                onChange={readerSettings.setDisplayMode}
+                                hidden={contentEditor.editMode}
                             />
                         </Box>
                     </Collapse>
 
-                    <Box className="reader-page-text-content-area" sx={{ flexGrow: 1, minHeight: 0, display: 'flex', gap: 3 }}>
+                    <Box className="reader-page-text-content-area" sx={{ flexGrow: 1, minHeight: 0, display: 'flex', gap: 3, position: 'relative' }}>
                         <TextArea
                             selectedText={text}
                             autoSelectEnabled={readerSettings.autoSelectEnabled && !contentEditor.editMode}
@@ -474,20 +737,94 @@ function ReaderDocumentPage() {
                             onAutoWordSelect={handleAutoWordSelectWithActivity}
                             onTextSelectionChange={handleTextSelectionChangeWithActivity}
                             inputRef={textSelection.inputRef}
-                            onBlur={textSelection.handleTextAreaBlur}
+                            onBlur={handleReadingBoxBlur}
+                            onUserInteraction={textSelection.noteUserInteraction}
                             editMode={contentEditor.editMode}
                             draftContent={contentEditor.draft}
                             onDraftChange={contentEditor.handleDraftChange}
+                            cpcdView={showCpcd ? (
+                                <ReaderCpcdView
+                                    content={text.content}
+                                    language={text.language as Language}
+                                    segmentSpans={segmentSpans}
+                                    pronunciations={pronunciations}
+                                    selectionRange={textSelection.selectionRange}
+                                    highlightColor={selectionColors.backgroundColor}
+                                    showPinyinColor={showPinyinColor}
+                                    onSelectRange={textSelection.selectRange}
+                                    scrollRef={cpcdScrollRef}
+                                    isAutoScrollPaused={readAloud.isFollowPaused}
+                                />
+                            ) : undefined}
                         />
+                        {/* TAP REGION (owner's call 2026-11-17): tap-to-navigate covers the
+                        whole screen below the display strip, not just the reading box —
+                        anchored to this area's top (the strip's bottom edge) and pushed out
+                        over the content box's side and bottom gutters to the screen's edges.
+                        Reading mode only: edit mode is a plain editable field. */}
+                        {!contentEditor.editMode && (
+                            <Box
+                                className="reader-page-tap-region"
+                                sx={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: { xs: -16, sm: -24 },
+                                    right: { xs: -16, sm: -24 },
+                                    bottom: { xs: -(16 + editKeyboardInset), sm: -(24 + editKeyboardInset) },
+                                    // Only a positioning frame: the overlay inside re-enables
+                                    // pointers. On desktop the overlay renders nothing, and the
+                                    // frame must not swallow clicks meant for the textarea.
+                                    pointerEvents: 'none',
+                                }}
+                            >
+                                <ReaderTapOverlay
+                                    inputRef={textSelection.inputRef}
+                                    scrollRef={showCpcd ? cpcdScrollRef : undefined}
+                                    nativeSelection={!showCpcd}
+                                    flash={tapZoneFlash}
+                                    onFlashEnd={clearTapZoneFlash}
+                                />
+                            </Box>
+                        )}
                     </Box>
                 </Box>
             )}
+
+            {/* The keycap's More Info → the word's eip, the Dictionary page's configuration
+                (Synonyms + Related, the word-tools rail, the Learning key). Portals its own
+                scrim + sheet (SheetPanel). */}
+            <EipSheet
+                eip={wordActions.eip}
+                open={wordActions.eipOpen}
+                onClose={wordActions.closeEip}
+                onSpeak={wordActions.tts.speak}
+                onSpeakSentence={wordActions.tts.speakSentence}
+                speakingKey={wordActions.tts.speakingKey}
+                showSynonymsRelated
+                showWordTools
+                showLearning
+            />
 
             <DeleteDocumentDialog
                 open={deleteDialogOpen}
                 text={text}
                 onClose={() => setDeleteDialogOpen(false)}
                 onSuccess={handleDeleteSuccess}
+            />
+
+            {/* Document icon picker — the shared icon browser (avatar + fie use it too).
+                Opened from ReaderEditToolbar's icon button; picking or removing only
+                changes the DRAFT icon (see DOCUMENT ICON above), Save stores it.
+                IconPickerDialog caches the icon (ensureIcon8) before onPick, so the id
+                always satisfies texts."iconId"'s FK to icons8. */}
+            <IconPickerDialog
+                open={iconPickerOpen}
+                onClose={() => setIconPickerOpen(false)}
+                title="Choose a document icon"
+                currentIconId={draftIconId}
+                onPick={(iconId) => setDraftIconId(iconId)}
+                onRemove={async () => setDraftIconId(null)}
+                removeLabel="Remove icon"
             />
 
         </ReaderDocumentSurface>

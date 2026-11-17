@@ -53,6 +53,12 @@ export class WebSpeechProvider implements TTSProvider {
                 }
                 resolve();
             };
+            // TTSRequest.onStart: speechSynthesis exposes no duration, so the caller gets null
+            // and paces itself on an estimate.
+            if (req.onStart) {
+                const onStart = req.onStart;
+                utter.onstart = () => onStart(null);
+            }
             utter.onend = () => finish();
             // onerror also resolves (not rejects) — TTS failure shouldn't break the UI
             utter.onerror = () => finish();

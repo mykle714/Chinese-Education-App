@@ -964,13 +964,27 @@ most needs feedback that their stroke was understood.
 #### The empty row teaches what a component is (2026-11-15)
 
 With the canvas and buffer both clean the bar has no chips, and its whole width
-carries the keyboard's one instruction: **"To write 你, draw 亻 then 尔"**, in
-`SIZE.bodyLg` (16px) semibold in the muted grey (`COLORS.textSecondary`, ~3.7 : 1 on `orgM` — under AA's 4.5 : 1), centred in the band; the characters are plain inline text. A learner already knows to draw in
+carries the keyboard's one hint: **"To get 你, you can use 亻 + 尔"**, in
+`SIZE.bodyLg` (16px), set entirely in the app's Chinese face (`FONTS.cjk` → 975
+Maru SC, whose slices also cover Latin, so the characters and the English share one
+rounded face — the `TOWER_STUDY_FONT` precedent; regular weight, Maru's only one) with
+normal letter spacing, in the keyboard's
+hint ink (`KEYBOARD_COLORS.faint`, the same ink as the buffer's "Tap to clear" —
+~2.2 : 1 on `org`, well under AA's 4.5 : 1, accepted for placeholder-class copy that
+disappears on the first stroke), centred in the band; the characters are plain
+inline text. It gives one worked example, phrased as an option ("you can") rather than an order. Wording history: "To write
+你, draw 亻 then 尔" in semibold `textSecondary` (2026-11-15) read as a command; on
+2026-11-17 an "e.g." prefix, then the equation "亻 + 尔 = 你" (tracked out, faint)
+were tried, and the equation read as intimidating and unclear; then "Try it: Build
+你 from parts like 亻 & 尔", whose prefix was dropped and whose & became +; then "Build 你 from parts like 亻 + 尔". `SIZE.body` (14px)
+was also tried and read awkwardly small. A learner already knows to draw in
 the canvas; what they don't know is how this differs from the OS Chinese keyboard
 (you build a character out of its **components**, one at a time) or what a
 "component" is. A worked example answers both where the word could not. The row
-sits on the drawing **gold** (`EMPTY_GROUND`), not the idle blue, because nothing on
-it commits. The example is the character's left and right **halves**, not the three leaves
+sits on a faded **gold** (`EMPTY_GROUND` = `COLORS.org`, the ramp step one paler than
+the drawing ground's `orgM`, since 2026-11-17), not the idle blue, because nothing on
+it commits; the faded gold previews the drawing state the hint is about, and the
+first stroke brightens it to full `orgM`. The example is the character's left and right **halves**, not the three leaves
 `components` stores (`[亻, ⺈, 小]`): drawing 尔 works because `expandGlyph`
 expands it to `[⺈, 小]` on entry. (The first example was 好 = 女 + 子.) It
 replaced the grey caption "Draw a component or a whole character".
@@ -1264,7 +1278,7 @@ returns when they submit or clear. Two consequences to design for:
    character or submit a component, and those are very different actions.
    **Settled:** a per-mode ground (gold while drawing — `orgM`, the friend-code card's
    gold — and blue when idle — `bluM`, the 写 switch key's face — since 2026-11-15; pale blue /
-   green tints before; the EMPTY row — canvas and buffer both clean — is gold too,
+   green tints before; the EMPTY row — canvas and buffer both clean — is a paler gold, `org`,
    `CandidateRow.tsx` → `EMPTY_GROUND`, because nothing on it commits)
    plus the chip's border weight (the border weight was retired 2026-11-15, § 6z-12). A third cue, a vertical text label on the left of the
    row ("What you drew" / "Tap to insert"), shipped first and was **removed
@@ -1313,12 +1327,14 @@ the canvas** — the row's right margin is `PARTS_COLUMN_PAD`, the same gap to t
 the part chips have (the canvas slot has no left inset). They used to split the column width with `flex: 1`.
 
 **⚠️ The bottom-alignment rule:** the bottom of the key row's lips sits on the canvas's
-bottom edge, at every keyboard size. Two halves keep it: the canvas hangs from the
-**bottom** of its slot (`.beginner-keyboard__canvas-slot` `alignItems: flex-end`), so its
-bottom edge is always `CANVAS_INSET` above the keyboard's; and the controls row pads its
-bottom by `CANVAS_INSET + KEY_LIP`, because the lip paints `KEY_LIP` below the key's box.
-When the width cap binds, the spare height collects above the canvas. (PPE before this
-had the canvas vertically centred, so on a width-bound phone it floated above the keys.)
+bottom edge, at every keyboard size. The canvas hangs from the **top** of its slot
+(`.beginner-keyboard__canvas-slot` `alignItems: flex-start`, 2026-11-17; it was
+bottom-aligned before that), so when the width cap binds the spare height collects
+**below** it. The `measure` effect records that spare height as `canvasSlack` (0 when the
+canvas is height-bound), and the controls row pads its bottom by
+`CANVAS_INSET + canvasSlack + KEY_LIP` — the lip paints `KEY_LIP` below the key's box —
+so the keys rise with the canvas's bottom edge. Code: `BeginnerKeyboard.tsx` →
+`canvasSlack`, the `measure` effect, `.beginner-keyboard__controls`.
 
 **Look (2026-11-15, § 6z-12):** raised white **square** keycaps (38×38), **icon-only** like the
 ā pad's ⌫ / ← → keys — Material Symbols `ink_eraser` for Clear (the writing notebook's
@@ -3328,7 +3344,7 @@ at least `PARTS_COLUMN_MIN_WIDTH` (152px: three 40px part chips + two 6px gaps +
 padding a side) — three parts always fit on one row (2026-11-15; it replaced the
 `CANVAS_MAX_WIDTH_SHARE` cap, 0.68 of the width, which on a 390px phone left a ~125px
 column). On a 390px phone the canvas is now width-bound at 218px, so a little spare
-height collects above it (the bottom-alignment rule keeps its bottom edge put); the
+height collects below it (the canvas is top-aligned; the ink keys lift by that slack); the
 floor also guarantees the ink keys their full 38px. Code: `BeginnerKeyboard.tsx` →
 `CANVAS_INSET` and the `measure` effect, `ComponentBuffer.tsx` →
 `PARTS_COLUMN_MIN_WIDTH`.

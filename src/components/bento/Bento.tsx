@@ -190,13 +190,13 @@ export interface BentoTileProps {
     /**
      * Set for a tile that is a TOGGLE rather than a destination — the Friends tab's
      * action tiles (features/friends/FriendActionTiles.tsx). Drives `aria-pressed`;
-     * the look of "selected" is the host's (it passes an ink ring in `sx`).
+     * the look of "selected" is the host's (FriendActionTiles passes a press-and-latch scale in `sx`).
      * Leave undefined on every navigating tile.
      */
     pressed?: boolean;
     /**
      * Extra styles merged AFTER the tile's own, so a host can replace the resting drop
-     * shadow or add a selection ring (FriendActionTiles). Not for re-skinning the
+     * shadow or add a selection scale (FriendActionTiles). Not for re-skinning the
      * face: the face is the family's, and changing it per call site is the drift
      * `CardShell` exists to stop.
      */

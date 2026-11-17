@@ -20,6 +20,11 @@ const router = Router();
 // once a given (voice, word) is on disk, all future requests are served from cache.
 router.post('/api/tts/synthesize', authenticateToken, proxyLimiter, handle(ttsController.synthesize, ttsController));
 
+// TTS pre-warm: synthesize a batch of words to the disk cache in the background (202 at
+// once), so their later /synthesize calls are disk hits. The Reader sends a document's
+// words on open (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Tap-to-hear").
+router.post('/api/tts/prewarm', authenticateToken, proxyLimiter, handle(ttsController.prewarm, ttsController));
+
 // icons8 icon catalog: paginated list of downloaded icons for the avatar picker.
 // Auth-gated — only logged-in users browse icons to set their avatar.
 router.get('/api/icons8', authenticateToken, handle(icons8Controller.listIcons, icons8Controller));

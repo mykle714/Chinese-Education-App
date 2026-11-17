@@ -436,15 +436,17 @@ export function resolveDefaultPronunciation(
 
 /**
  * The full gloss list of a word with NO choice of sense (fewer than two displayable clusters),
- * for `resolveSearchRowView`'s single-sense branch. Source: the lone displayable cluster's
+ * for `resolveSearchRowView`'s single-sense branch and the shared `SenseList`
+ * (src/components/SenseList.tsx — the eip's "Other Translations" and the Reader's keycap). Source: the lone displayable cluster's
  * `glosses` when one exists (the clusterer's ordered, pruned list), else the flat `definitions`
  * (unclustered words). Each gloss is `stripParentheses`-ed exactly like the dd, empties are
  * dropped, and duplicates that only differed by an aside ("beautiful (lit.)" / "beautiful") are
  * collapsed, keeping the first, so element 0 is the dd.
  * Referenced by: docs/DEFINITION_MAPPING.md § "Where each form surfaces", docs/SHELF_REDESIGN.md § 7b.
  */
-function singleSenseGlossList(
-  entry: Pick<DictionaryEntry, 'definitionClusters' | 'definitions'>,
+export function singleSenseGlossList(
+  // `definitions` optional: a VocabEntry may not carry the flat list (SenseList's eip host).
+  entry: Pick<DictionaryEntry, 'definitionClusters'> & { definitions?: string[] | null },
 ): string[] {
   const lone = Array.isArray(entry.definitionClusters)
     ? entry.definitionClusters.find((c) => c && Array.isArray(c.glosses) && ddt(c) !== '') ?? null
@@ -464,8 +466,9 @@ function singleSenseGlossList(
  * sense instead of only its dd (owner's call 2026-11-15): 我 reads "I · me · my", not just "I".
  * The glosses come from the lone displayable cluster when there is one, else the flat
  * `definitions`; each is paren-stripped the way the dd is and de-duplicated, so the list still
- * opens with the dd the eip header shows. `EipSenseList` renders nothing for such a word, so
- * nothing in the eip contradicts the longer row. `singleSenseGlossList` owns this branch.
+ * opens with the dd the eip header shows. The eip's sense list (`SenseList`, via
+ * `EipSenseList`) shows the same gloss list for such a word (2026-11-17), so the two never
+ * disagree. `singleSenseGlossList` owns this branch.
  *
  * The flat `definitions` still drive the search itself, so on a MULTI-sense word a hit on a
  * later gloss can show a row that does not print the word searched for.

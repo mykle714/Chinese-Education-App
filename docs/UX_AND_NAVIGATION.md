@@ -502,10 +502,10 @@ compute exactly the design's original geometry.
 | Surface | What it does | Where |
 |---|---|---|
 | Page header | Adds `SAFE_TOP` to its own top padding | `PageHeader` (`Header`) — every hub / node / dense / leaf header funnels through it, so this is stated once for the whole app |
-| Footer bar | Grows by `SAFE_BOTTOM` and pads its labels off the home indicator | `MobileFooter` → `FOOTER_TOTAL_HEIGHT` |
-| Footer hide travel | Translates by the bar's **total** height, or the inset's worth of bar peeks back | `FooterPresenter` |
-| Scroll clearance + bottom edge-fade | Reserve and fade against the bar's total height | `MobileTabScreen`, `FOOTER_TOTAL_CLEARANCE` |
-| Sheet pills, the acp platform, sheet bodies | Offset by `FOOTER_TOTAL_CLEARANCE` instead of the bare 90px | `SheetPill` (its `bottom` prop is a CSS string now), `VocabCardDetailPage`, `AddCardsPage` |
+| Footer slab | Sits `max(26px, SAFE_BOTTOM)` off the bottom edge, so it never rests on the home indicator | `MobileFooter` → `SLAB_FOOTER_BOTTOM`, `SLAB_FOOTER_TOTAL_HEIGHT` |
+| Footer hide travel | Translates by the slab's footprint plus its cast shadow, or the shadow's tail peeks back | `FooterPresenter` → `SLAB_FOOTER_HIDDEN_OFFSET` |
+| Scroll clearance + bottom edge-fade | Reserve and fade against the slab's total footprint | `MobileTabScreen`, `SLAB_FOOTER_TOTAL_CLEARANCE` |
+| Sheet pills, the acp platform, sheet bodies | Offset by `SLAB_FOOTER_TOTAL_CLEARANCE` (a CSS string carrying the inset) | `SheetPill` (its `bottom` prop is a CSS string now), `VocabCardDetailPage`, `AddCardsPage` |
 | flp merge sheet | Its own top padding ramps to `SAFE_TOP` as the sheet merges into a full-screen page, so its header passes `safeAreaTop={false}` and does not add the inset twice | `SheetPanel` → `writeMergeChrome` |
 
 **The header, not the frame, carries the top inset.** Padding the frame would stop the

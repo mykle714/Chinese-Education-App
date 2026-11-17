@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Box, ButtonBase } from "@mui/material";
 import { COLORS } from "../../theme/colors";
+import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 
 // SWIPE-TO-DELETE ROW — the iPhone list pattern for the Reader's document list
@@ -20,6 +21,8 @@ import { SIZE, WEIGHT } from "../../theme/scale";
 //     swallows that one click (capture phase) so a swipe never also opens the doc.
 // Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Deleting a document.
 
+/** The clip radius — the `Row` it wraps is 16px (src/components/primitives/Row.tsx). */
+const ROW_RADIUS = "16px";
 /** Width of the uncovered Delete button, and how far an open row rests. */
 const DELETE_BUTTON_WIDTH_PX = 80;
 /** Travel before the gesture commits to an axis (horizontal swipe vs vertical scroll). */
@@ -123,7 +126,7 @@ function SwipeToDeleteRow({ open, onOpenChange, onDelete, disabled = false, chil
     return (
         <Box
             className="reader-swipe-row"
-            sx={{ position: "relative", overflow: "hidden", borderRadius: 2 }}
+            sx={{ position: "relative", overflow: "hidden", borderRadius: ROW_RADIUS }}
         >
             {/* Behind the content, pinned to the right edge. */}
             <ButtonBase
@@ -143,6 +146,7 @@ function SwipeToDeleteRow({ open, onOpenChange, onDelete, disabled = false, chil
                     // (white never sits on a ramp colour — docs/SHELF_REDESIGN.md).
                     backgroundColor: COLORS.redMk,
                     color: COLORS.onSurface,
+                    fontFamily: FONTS.sans,
                     fontSize: SIZE.body,
                     fontWeight: WEIGHT.bold,
                     opacity: reveal > 0 ? 1 : 0,
@@ -160,8 +164,11 @@ function SwipeToDeleteRow({ open, onOpenChange, onDelete, disabled = false, chil
                 onClickCapture={handleClickCapture}
                 sx={{
                     position: "relative",
-                    // Opaque so the Delete button only shows where the content has slid away.
+                    // Opaque so the Delete button only shows where the content has slid
+                    // away. The paper ground, so the white Row's rounded corners read
+                    // against the page exactly as an unswipeable row's do.
                     backgroundColor: COLORS.background,
+                    borderRadius: ROW_RADIUS,
                     transform: `translateX(${offset}px)`,
                     transition: dragOffset === null ? SETTLE_TRANSITION : "none",
                     touchAction: "pan-y",

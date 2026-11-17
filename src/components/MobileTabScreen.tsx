@@ -1,18 +1,10 @@
 import { type ReactNode } from "react";
-import { useLocation } from "react-router-dom";
 import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import type { SxProps, Theme } from "@mui/material/styles";
 import MobileDemoHeader from "./MobileDemoHeader";
 import { type PageHeaderSize } from "./PageHeader";
-import {
-    FOOTER_TOTAL_CLEARANCE,
-    FOOTER_TOTAL_HEIGHT,
-    SLAB_FOOTER_TOTAL_CLEARANCE,
-    SLAB_FOOTER_TOTAL_HEIGHT,
-    type FooterStyle,
-} from "./MobileFooter";
-import { routeFooterStyle } from "../routes/routeMeta";
+import { SLAB_FOOTER_TOTAL_CLEARANCE, SLAB_FOOTER_TOTAL_HEIGHT } from "./MobileFooter";
 import { edgeFadeAboveBand, edgeFadeBelowBand, edgeFadeMaskSx, trackScrollEdgeFade } from "./scrollEdgeFade";
 import { COLORS } from "../theme/colors";
 
@@ -24,10 +16,9 @@ import { COLORS } from "../theme/colors";
 //      first child), so it scrolls up and out of view with the content instead
 //      of staying pinned. Every scrollable content page should use this shell so
 //      the behavior stays consistent.
-//   2. Footer — the bottom nav (MobileFooter) overlays the content: the flat,
-//      full-width bar on most routes, the floating slab where the route opts in
-//      (`footerStyle`, routeMeta). The scroll area reserves matching bottom padding
-//      (footerClearance) so the last row never hides behind it.
+//   2. Footer — the bottom nav (MobileFooter, the floating slab — the app's only
+//      footer since 2026-11-16) overlays the content. The scroll area reserves matching
+//      bottom padding (FOOTER_CLEARANCE) so the last row never hides behind it.
 //
 // Footer-bearing back-button screens (node pages: card detail, mastered cards,
 // dictionary + the dictionary cdp) reuse this shell THROUGH `NodePage`, so they
@@ -78,9 +69,8 @@ const EDGE_FADE_BOTTOM_BAND = 34;
 // A band must stay ≤ `EDGE_FADE_VAR_CAP` (scrollEdgeFade.ts), or the tracked var caps it
 // short of the requested height.
 //
-// `footprint` is the footer's top edge above the viewport bottom — the bar's total
-// height, or the floating slab's footprint on a slab route (footerFootprint). Below a
-// slab the mask stays transparent, so the strip under and beside it shows bare ground.
+// `footprint` is the footer's top edge above the viewport bottom — the floating slab's
+// footprint (FOOTER_FOOTPRINT). Below the slab the mask stays transparent, so the strip under and beside it shows bare ground.
 const edgeFadeBottomStart = (band: number, footprint: string) =>
     `calc(${footprint} + ${edgeFadeBelowBand(band)})`;
 // Full mask fades both edges; when a page opts out of the top fade (topFade=false)
@@ -90,11 +80,10 @@ const edgeFadeMask = (band: number, footprint: string) =>
     `linear-gradient(to bottom, transparent 0, #000 ${edgeFadeAboveBand(EDGE_FADE_TOP)}, #000 calc(100% - ${edgeFadeBottomStart(band, footprint)}), transparent calc(100% - ${footprint}))`;
 const edgeFadeMaskNoTop = (band: number, footprint: string) =>
     `linear-gradient(to bottom, #000 0, #000 calc(100% - ${edgeFadeBottomStart(band, footprint)}), transparent calc(100% - ${footprint}))`;
-// Where each footer style's top edge sits above the viewport bottom, and the scroll
-// reservation that keeps the last row clear of it (MobileFooter's FooterSpacer makes
-// the same bar-vs-slab choice for its height).
-const footerFootprint = (style: FooterStyle) => (style === "slab" ? SLAB_FOOTER_TOTAL_HEIGHT : FOOTER_TOTAL_HEIGHT);
-const footerClearance = (style: FooterStyle) => (style === "slab" ? SLAB_FOOTER_TOTAL_CLEARANCE : FOOTER_TOTAL_CLEARANCE);
+// Where the slab's top edge sits above the viewport bottom, and the scroll reservation
+// that keeps the last row clear of it (MobileFooter's FooterSpacer uses the same height).
+const FOOTER_FOOTPRINT = SLAB_FOOTER_TOTAL_HEIGHT;
+const FOOTER_CLEARANCE = SLAB_FOOTER_TOTAL_CLEARANCE;
 
 // Positioning context for the footer bar + full-height flex column.
 const ScreenRoot = styled(Box)(() => ({
@@ -114,8 +103,8 @@ const ScreenRoot = styled(Box)(() => ({
 // Non-scrolling pages also drop the edge-fade mask (it would clip their edge rows).
 const ScrollArea = styled(Box, {
     shouldForwardProp: (prop) =>
-        prop !== "scrollable" && prop !== "topFade" && prop !== "horizontalPan" && prop !== "bottomFadeBand" && prop !== "footerStyle",
-})<{ scrollable: boolean; topFade: boolean; horizontalPan: boolean; bottomFadeBand: number; footerStyle: FooterStyle }>(({ scrollable, topFade, horizontalPan, bottomFadeBand, footerStyle }) => ({
+        prop !== "scrollable" && prop !== "topFade" && prop !== "horizontalPan" && prop !== "bottomFadeBand",
+})<{ scrollable: boolean; topFade: boolean; horizontalPan: boolean; bottomFadeBand: number }>(({ scrollable, topFade, horizontalPan, bottomFadeBand }) => ({
     flex: 1,
     minHeight: 0,
     overflowY: scrollable ? "auto" : "hidden",
@@ -142,16 +131,16 @@ const ScrollArea = styled(Box, {
     touchAction: scrollable ? (horizontalPan ? "pan-x pan-y" : "pan-y") : "none",
     overscrollBehavior: "contain",
     WebkitOverflowScrolling: "touch",
-    // Clears whichever footer the route wears (the bar, or the taller floating slab).
-    paddingBottom: footerClearance(footerStyle),
+    // Clears the floating footer slab.
+    paddingBottom: FOOTER_CLEARANCE,
     // Soft fade at the top/bottom edges (see EDGE_FADE_MASK above), scrollable pages only.
     // Pages that opt out of the top fade (topFade=false) drop the top band. The
     // scrollbar gutter is exempt, so a desktop scrollbar draws over the fade, not in it.
     ...(scrollable
         ? edgeFadeMaskSx(
             topFade
-                ? edgeFadeMask(bottomFadeBand, footerFootprint(footerStyle))
-                : edgeFadeMaskNoTop(bottomFadeBand, footerFootprint(footerStyle)),
+                ? edgeFadeMask(bottomFadeBand, FOOTER_FOOTPRINT)
+                : edgeFadeMaskNoTop(bottomFadeBand, FOOTER_FOOTPRINT),
         )
         : {}),
 }));
@@ -255,9 +244,6 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
     wrapHeader,
     children,
 }) => {
-    // The route's footer style (routeMeta), so the scroll reservation and the bottom
-    // fade fit the footer actually drawn over this page.
-    const footerStyle = routeFooterStyle(useLocation().pathname);
     return (
     <ScreenRoot className={className ?? "mobile-tab-screen"} sx={{ backgroundColor: surfaceColor }}>
         {backdrop && (
@@ -274,7 +260,6 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
             topFade={topFade}
             bottomFadeBand={bottomFadeBand}
             horizontalPan={horizontalPan}
-            footerStyle={footerStyle}
             sx={backdrop ? { position: "relative" } : undefined}
         >
             {(() => {

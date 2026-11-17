@@ -99,8 +99,7 @@ export const WRONG_STREAK_LINES: readonly WrongStreakLine[] = [
 ];
 
 /**
- * What the pawn says when it is tapped and doesn't jump (4 taps in 5 — HintPawn →
- * `PAWN_TAP_JUMP_SHARE`): a short "ouch" line in its own little bubble, up and to the right
+ * What the pawn says when it is tapped on the ground (HintPawn → `onPawnTap`): a short "ouch" line in its own little bubble, up and to the right
  * of its head (PawnOuchBubble, docs/HINT_PAWN.md § "Tap reactions"). Not a hint: it says
  * nothing about the card, so it never touches the hint bubble. Said from its own shuffle
  * bag (`takeHintLineIndex(OUCH_LINE_BAG, …)`), so no line repeats back to back.

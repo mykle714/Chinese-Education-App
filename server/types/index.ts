@@ -388,10 +388,14 @@ export interface TextCreateData {
   userId: string;
   content: string;
   language?: Language;
+  /** Optional icons8 id (texts."iconId", migration 193); omitted/null = no icon. */
+  iconId?: string | null;
 }
 
 export interface TextUpdateData {
   title?: string;
   content?: string;
   language?: Language;
+  /** icons8 id to set, `null` to clear, `undefined` to leave as is. */
+  iconId?: string | null;
 }

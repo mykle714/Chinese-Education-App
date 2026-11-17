@@ -40,10 +40,10 @@
  * sense 5) because its guideline pushes back against headword familiarity; the word
  * pass inflates rare senses of common words (老公 word 5 vs senses 3/1). In both
  * directions the HIGHER number was the defensible one on inspection, and taking the
- * max is also the direction consistent with the project's rule that a morpheme's
- * occurrences inside compounds count toward its commonality (a bound form like 自 is
- * "heard" constantly via 自己/自由/来自). Raising never demotes a sense below a score
- * a human validator may have approved.
+ * max was also justified by the rubric's old "bound forms count through their compounds"
+ * rule, REMOVED 2026-11-17 (docs/DEFINITION_CLUSTERS.md § "Bound forms"); the ratchet
+ * itself is unchanged. Raising never demotes a sense below a score a human validator
+ * may have approved.
  *
  * Referenced by:
  *   - scripts/backfill/chinese/repair-frequency-score-drift.js  (the repair pass)

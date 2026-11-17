@@ -192,8 +192,10 @@ function FriendPersonRow({ name, username, avatarIconId, secondary, actions, lea
                     className="friend-person-row__leading"
                     sx={{
                         flexShrink: 0,
-                        minWidth: 40,
-                        px: 1,
+                        // 32px min / 6px side padding (40 / 8 until 2026-11-16, user: "a
+                        // little" narrower). Still fits a two-digit 17px rank numeral.
+                        minWidth: 32,
+                        px: 0.75,
                         pt: `${ROW_PAD_Y_PX}px`,
                     }}
                 >

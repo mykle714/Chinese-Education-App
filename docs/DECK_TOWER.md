@@ -53,14 +53,14 @@ Parent: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (sub-documents table).
 ## Status
 
 - The route row is in `src/routes/routeMeta.ts` (`/`: `access: "any"`,
-  `shell: "frame"`, `chrome: "tab"`, `footerTab: "deck"`, `footerStyle: "slab"`). The
+  `shell: "frame"`, `chrome: "tab"`, `footerTab: "deck"`). The
   component is in `src/routes/registry.ts`. The tab is the `deck` row of `TABS` in
   `src/components/MobileFooter.tsx`. The vet cdp (`/flashcards/card/:id`) and acp
   (`/discover/sort/:language`) also light the Flashcards tab.
 - There is no Settings gear on td: Settings is a tab of the `AccountSheet` the avatar
   raises (the `/settings` route remains).
-- The page renders in a non-scrolling `MobileTabScreen` (title "Deck"). It is the only
-  route that wears the floating **slab** footer instead of the flat bar (§ Footer); the
+- The page renders in a non-scrolling `MobileTabScreen` (title "Deck"). It wears the
+  floating **slab** footer (§ Footer) — the app's only footer since 2026-11-16; the
   scene stands above the slab and the sky runs on under it.
 
 ## Layers
@@ -236,25 +236,21 @@ far taller than the screen. The page never zooms out to fit it:
 ## Footer
 
 The page wears the **slab** footer, the floating nav bar from the Tower Style design
-(`.sx-flp .ft`, frames T1–T4), instead of the app-wide flat bar. Since 2026-10-29 the
-Dictionary tab wears it too (`/dictionary` — Tier-2 design,
-docs/SHELF_REDESIGN.md § 7b), without a cast shadow or wash, and so do the vet cdp
-(`/flashcards/card/:id`, also on the Tier 2 ground) and acp. Every Menu-reached page
-(`/friends/*`, `/users/:id`, `/reader`, `/community`) and `/arena` keeps
-the bar. The Menu tab's popover (`src/components/menuPopover/MenuPopover.tsx`, docs/NAVIGATION.md
-§ 3) is cut from the same card stock as the slab, on both footer styles. Every slab colour is written `footerVar(<key>, <card colour>)`
+(`.sx-flp .ft`, frames T1–T4). It began as td's own footer, spread to the Dictionary,
+the vet cdp, acp and Lessons (Oct–Nov 2026, without a cast shadow or wash), and on
+**2026-11-16 became the app's only footer**: the flat `bar` the other routes wore
+(Reader, Arena, the flagged-off Community / Study Challenge pages) was deleted along
+with routeMeta's `footerStyle` field. The Menu tab's popover
+(`src/components/menuPopover/MenuPopover.tsx`, docs/NAVIGATION.md § 3) is cut from the
+same card stock as the slab. Every slab colour is written `footerVar(<key>, <card colour>)`
 (`src/theme/footerChrome.ts`): unset on the Light theme, so the slab is the card stock below
 on every page; the **Dark theme** in Settings sets them (the design's night slate) on every
 page. The footer **never follows the time of day** (it read the Tier 2 clock until 2026-11-15
 and turned slate at night over the Dictionary).
 
-- **Opt-in per route.** The `/` row (and the two Dictionary rows, the vet cdp's and acp's) in `src/routes/routeMeta.ts` carries
-  `footerStyle: "slab"`; `routeFooterStyle` defaults every other row to `"bar"`.
-  `FooterPresenter` passes it to `MobileFooter` as `variant`. Between two footer routes
-  of different styles the swap is **instant** (tabs have no page slide, so it lands with
-  the page); leaving for a footerless route, the slab slides out as a slab (the
-  presenter remembers the last style, as it does the last tab), by
-  `SLAB_FOOTER_HIDDEN_OFFSET` — its footprint plus its cast shadow.
+- **Every footer route.** Any routeMeta row with a `footerTab` shows the slab. Leaving
+  for a footerless route, it slides out (the presenter keeps the last tab lit while it
+  goes) by `SLAB_FOOTER_HIDDEN_OFFSET` — its footprint plus its cast shadow.
 - **Shape** (`SlabFooter` in `src/components/MobileFooter.tsx`). A slab 64px tall, 16px in
   from each side and `SLAB_FOOTER_BOTTOM` (`max(26px, safe-area inset)`) off the bottom,
   radius `CARD_SURFACE_RADIUS` (15, the app's card radius — it was 22 until 2026-11-08), one equal column per tab with 6px padding (`SlabFooterFace` →
@@ -269,9 +265,9 @@ and turned slate at night over the Dictionary).
   filter keys and the mini cards' card stock (`sortCardStock.ts` → `panelWall`), and the face's
   perimeter has the same hairline **rounded edge** (`src/theme/roundedEdge.ts`: a 0.5px fillet
   half-way between the face and wall colours, a 1px rim light on the top-left edge — mixed
-  with CSS `color-mix` so the Dark theme's slate carries through). The active tab is marked by ONE sliding selector (`SlabFooterSelector`) rather than a per-tab background: a FLAT rounded rectangle in `COLORS.cardBeige` (the card's face panel, `ISO.cardPanel`) with a 1px outline in `footerVar("outline", COLORS.border)`, radius 11 (`SLAB_KEY_RADIUS`: the concentric 15 − 6px padding = 9, plus 2). It sits absolutely in the face's padding box, one `1fr` column wide, and moves by `translateX(index × 100%)` with a 280ms transform transition (`SLAB_SELECTOR_SLIDE`; none under `prefers-reduced-motion`), so switching between two slab routes slides it from the old cell to the new one — the footer is mounted once by `FooterPresenter`, so it survives the navigation. A bar↔slab style swap remounts it and does not slide. The slide starts **on the tap, not when the page arrives**: React Router v7 runs navigations as React transitions, so while a lazy route chunk loads or the page mounts, the location (and `activePage`) still reads the old tab. A tap therefore records the tab it is heading to (`pendingTab`, an urgent state update tagged with the current `location.key`), and the selector and tab ink follow `displayedTab` = that record while the location is unchanged, else `activePage`. Menu records nothing (it opens the popover). It has no side face or rounded edge: until 2026-11-10 it was a keycap with a 3px inset diagonal `cardWall` lip, which was dropped for the app's plain selected-rectangle look. Tabs, left to right, are a filled Material Symbol (`stacks` Deck,
+  with CSS `color-mix` so the Dark theme's slate carries through). The active tab is marked by ONE sliding selector (`SlabFooterSelector`) rather than a per-tab background: a FLAT rounded rectangle in `COLORS.cardBeige` (the card's face panel, `ISO.cardPanel`) with a 1px outline in `footerVar("outline", COLORS.border)`, radius 11 (`SLAB_KEY_RADIUS`: the concentric 15 − 6px padding = 9, plus 2). It sits absolutely in the face's padding box, one `1fr` column wide, and moves by `translateX(index × 100%)` with a 280ms transform transition (`SLAB_SELECTOR_SLIDE`; none under `prefers-reduced-motion`), so switching between two slab routes slides it from the old cell to the new one — the footer is mounted once by `FooterPresenter`, so it survives the navigation. The slide starts **on the tap, not when the page arrives**: React Router v7 runs navigations as React transitions, so while a lazy route chunk loads or the page mounts, the location (and `activePage`) still reads the old tab. A tap therefore records the tab it is heading to (`pendingTab`, an urgent state update tagged with the current `location.key`), and the selector and tab ink follow `displayedTab` = that record while the location is unchanged, else `activePage`. Menu records nothing (it opens the popover). It has no side face or rounded edge: until 2026-11-10 it was a keycap with a 3px inset diagonal `cardWall` lip, which was dropped for the app's plain selected-rectangle look. Tabs, left to right, are a filled Material Symbol (`stacks` Deck,
   `school` Lessons, `translate` Dictionary, `apps` Menu; 22px, weight 500) over an 11px/600 label, `textSecondary` idle and
-  `onSurface` active. The bar stays text-only.
+  `onSurface` active.
 - **Not lit by the wash** (since 2026-10-30). From 2026-10-25 the slab's face was drawn
   through the study layer's SVG `feColorMatrix` wash filter (`--footer-slab-filter`); that
   filter was cut app-wide because WebKit rasterises an SVG `url()` filter on HTML on the
@@ -294,8 +290,7 @@ and turned slate at night over the Dictionary).
 
 Code: `src/components/MobileFooter.tsx` → `SlabFooter`, `SlabFooterFace`, `SlabFooterSelector`, `SlabFooterItem`,
 `SLAB_FOOTER_*`; `src/components/footerCastShadow.ts`; `src/components/FooterPresenter.tsx`
-→ `HIDDEN_OFFSET`, `lastStyle`; `src/routes/routeMeta.ts` → `footerStyle`,
-`routeFooterStyle`; `src/features/deckTower/SpaceBackdrop.tsx` → `apply`;
+→ `HIDDEN_OFFSET`; `src/routes/routeMeta.ts` → `footerTab`; `src/features/deckTower/SpaceBackdrop.tsx` → `apply`;
 `src/features/deckTower/DeckTowerPage.tsx` → `footerSpacerRef`; `src/theme/colors.ts` →
 `cardWall`.
 
@@ -1523,7 +1518,8 @@ announced by a card in the stack:
   cooldown mid-visit rejoins the loop through the ordinary refill before any lent card.
 - **`done`** — nothing to deal even with the switch on: a focused world (it never lends —
   [FOCUS_MODE.md](./FOCUS_MODE.md)), or a dictionary with nothing left to lend. "Done for the
-  day / Every card you have is resting. Tap outside the card to leave." It stays put; the
+  day!" — title only, no subtext — celebrated by a one-shot confetti burst
+  (`src/components/ConfettiBurst.tsx`) that plays as the card turns `done`. It stays put; the
   learner leaves with Back or a tap off the card. A focused world never sees the `lend` card.
 - **While a card is up** the word under it is hidden in every other way too: no narration,
   no word-tools rail, More Info disabled, undo locked (the re-deal clears the snapshot

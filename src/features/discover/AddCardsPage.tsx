@@ -340,10 +340,10 @@ const OnDeckSection = styled(Box)({
     // floored at SORT_MIN_SPACE_BELOW_PX (BinsArea). It was a fixed 8px here.
     // The row's action targets sit ON_DECK_FOOTER_GAP_PX from the slab footer's top edge.
     paddingBottom: `calc(${SLAB_FOOTER_TOTAL_HEIGHT} + ${ON_DECK_FOOTER_GAP_PX}px)`,
-    // Hands back the ScrollArea's bottom reservation. acp is a SLAB route, so that is the
-    // slab's clearance (MobileTabScreen → footerClearance), not the bar's: handing back
-    // the bar's FOOTER_TOTAL_CLEARANCE (as this did until 2026-10-29) left ~22px of
-    // phantom space under the row on a device with no bottom safe area.
+    // Hands back the ScrollArea's bottom reservation — the slab's clearance
+    // (MobileTabScreen → FOOTER_CLEARANCE). Handing back the old flat bar's smaller
+    // clearance (as this did until 2026-10-29) left ~22px of phantom space under the row
+    // on a device with no bottom safe area.
     marginBottom: `calc(-1 * ${SLAB_FOOTER_TOTAL_CLEARANCE})`,
     display: "flex",
     flexDirection: "column",

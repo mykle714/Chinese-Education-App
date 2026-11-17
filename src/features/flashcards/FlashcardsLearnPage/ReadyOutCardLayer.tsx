@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Box, ButtonBase, Typography } from "@mui/material";
 import { CardFaceSide } from "../card/CardFace";
 import DelayedCircularProgress from "../../../components/DelayedCircularProgress";
+import ConfettiBurst from "../../../components/ConfettiBurst";
 import { CARD_DISMISS_THRESHOLD_VW, CARD_FLY_OUT_MS, FLY_OUT_X } from "../constants";
 import { CARD_SURFACE } from "../../../theme/surfaces";
 import { COLORS, RAMP } from "../../../theme/colors";
@@ -21,21 +22,22 @@ import { hueTones, plateButtonSx } from "./gameBreak/interimCardPlate";
  *   lend — "You're out of ready cards": the session's lend switch has just come on and
  *          the loop under this card is lent words. "Got it!", a tap or a swipe sends it
  *          off and study carries on.
- *   done — "Done for the day": nothing more to deal (a focused world, which never lends,
- *          or a dictionary with nothing left to lend). It stays put; the learner leaves
+ *   done — "Done for the day!": nothing more to deal (a focused world, which never lends,
+ *          or a dictionary with nothing left to lend). Title only, celebrated with a
+ *          confetti burst as it lands (ConfettiBurst). It stays put; the learner leaves
  *          with Back or a tap off the card.
  */
 export type ReadyOutKind = "pending" | "lend" | "done";
 
-/** Copy per worded kind. Kept here, with the face, so the doc can cite one place. */
-const COPY: Record<Exclude<ReadyOutKind, "pending">, { title: string; body: string }> = {
+/** Copy per worded kind. Kept here, with the face, so the doc can cite one place.
+ *  `done` is title-only by design: the confetti carries the moment, no subtext. */
+const COPY: Record<Exclude<ReadyOutKind, "pending">, { title: string; body?: string }> = {
     lend: {
         title: "You're out of ready cards",
         body: "From here on we'll show you words you haven't added yet.",
     },
     done: {
-        title: "Done for the day",
-        body: "Every card you have is resting. Tap outside the card to leave.",
+        title: "Done for the day!",
     },
 };
 
@@ -164,9 +166,11 @@ const ReadyOutCardLayer: React.FC<{
                             <Typography className="flp-ready-out-card__title" sx={{ fontSize: SIZE.heading, fontWeight: WEIGHT.bold, lineHeight: LEADING.tight, color: COLORS.onSurface }}>
                                 {copy.title}
                             </Typography>
-                            <Typography className="flp-ready-out-card__body" sx={{ fontSize: SIZE.body, lineHeight: LEADING.normal, color: COLORS.onSurface }}>
-                                {copy.body}
-                            </Typography>
+                            {copy.body && (
+                                <Typography className="flp-ready-out-card__body" sx={{ fontSize: SIZE.body, lineHeight: LEADING.normal, color: COLORS.onSurface }}>
+                                    {copy.body}
+                                </Typography>
+                            )}
                         </Box>
                         {kind === "lend" && (
                             // A tap here is a tap on the card (it bubbles to `throwOff`); the
@@ -181,6 +185,9 @@ const ReadyOutCardLayer: React.FC<{
                     </Box>
                 )}
             />
+            {/* Mounts when the card turns `done` (pending → done), so the burst plays
+                once as the card lands. Over the card face; taps pass through. */}
+            {kind === "done" && <ConfettiBurst className="flp-ready-out-card__confetti" zIndex={1} />}
         </Box>
     );
 };

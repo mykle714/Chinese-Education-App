@@ -158,9 +158,9 @@ interface IsoPawnProps {
      */
     idle?: PawnIdleCue | null;
     /**
-     * With `tappable`: picks each tap's reaction — "jump" or "flinch" — and replaces the "!"
+     * With `tappable`: picks each tap's reaction — "jump", "flinch" or "none" — and replaces the "!"
      * (the page answers in its own way, e.g. the hint pawn's "ouch" bubble). Told whether
-     * the feet are in the air; a tap there always jumps. Omitted: every tap jumps with the "!".
+     * the feet are in the air; a "flinch" there becomes a jump. Omitted: every tap jumps with the "!".
      */
     onTap?: (tap: { airborne: boolean }) => PawnTapReaction;
 }

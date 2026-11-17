@@ -11,6 +11,13 @@ import type { CardAudioService } from '../services/CardAudioService.js';
  *
  * Flow: validate → CardAudioService.synthesizeForRequest (TTSService disk cache +
  * the det `ttsVoice` stamp on a cache miss) → stream MP3 back. Browser caches it forever via immutable Cache-Control.
+ *
+ * POST /api/tts/prewarm
+ *   body: { language, clips: Array<{ text, pronunciation? }> }
+ *   returns: 202 { accepted } at once; the clips are synthesized to the disk cache in the
+ *   background (CardAudioService.prewarmClips), so the client's later /synthesize calls
+ *   are disk hits. The Reader sends a document's words on open
+ *   (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Tap-to-hear").
  */
 export class TTSController {
   /**
@@ -72,4 +79,47 @@ export class TTSController {
       res.status(500).json({ error: err?.message || 'TTS synthesis failed' });
     }
   }
+
+  async prewarm(req: Request, res: Response): Promise<void> {
+    const body = req.body || {};
+    const language: string = typeof body.language === 'string' ? body.language : '';
+    if (!language) {
+      res.status(400).json({ error: 'language is required' });
+      return;
+    }
+    if (!Array.isArray(body.clips)) {
+      res.status(400).json({ error: 'clips must be an array' });
+      return;
+    }
+    // Words, not sentences: each clip is one Reader headword. Malformed or over-long
+    // entries are dropped rather than failing the batch, and the batch is capped so one
+    // call cannot queue an unbounded amount of paid synthesis.
+    const seen = new Set<string>();
+    const clips: Array<{ text: string; pronunciation: string | null }> = [];
+    for (const raw of body.clips as unknown[]) {
+      if (clips.length >= PREWARM_MAX_CLIPS) break;
+      if (typeof raw !== 'object' || raw === null) continue;
+      const clip = raw as Record<string, unknown>;
+      const text = typeof clip.text === 'string' ? clip.text.trim() : '';
+      if (!text || text.length > PREWARM_MAX_TEXT_CHARS) continue;
+      const pronunciation = typeof clip.pronunciation === 'string' && clip.pronunciation.trim()
+        ? clip.pronunciation.trim()
+        : null;
+      const key = `${text}\u0000${pronunciation ?? ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      clips.push({ text, pronunciation });
+    }
+    res.status(202).json({ accepted: clips.length });
+    // Background: the response has gone. prewarmClips never throws, but guard anyway so a
+    // bug can never become an unhandled rejection.
+    void this.cardAudioService.prewarmClips(clips, language).catch(err => {
+      console.error('[TTSController] prewarm error:', err);
+    });
+  }
 }
+
+/** Most clips one /api/tts/prewarm call accepts (a long document's distinct words). */
+const PREWARM_MAX_CLIPS = 600;
+/** Longest clip text accepted — headwords are short; anything longer is not a word. */
+const PREWARM_MAX_TEXT_CHARS = 20;

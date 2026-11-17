@@ -15,8 +15,8 @@ import { WEIGHT, TRACKING } from "../theme/scale";
  * Positioning contract: it is `position: absolute` and expects to be rendered
  * inside a positioned FRAME (not inside a scroll area), so the sheet's scrim can
  * cover it — the pill dims and stops taking taps exactly when it has nothing left
- * to do. `bottom` is measured from that frame; pass `FOOTER_TOTAL_CLEARANCE` on a page
- * that keeps the footer bar and `0`-ish on a footerless one.
+ * to do. `bottom` is measured from that frame; pass `SLAB_FOOTER_TOTAL_CLEARANCE` on a
+ * page that keeps the footer slab and `0`-ish on a footerless one.
  *
  * The flp keeps its own `MoreInfoPill` (`FlashcardsLearnPage/styled.ts`) because
  * that page MEASURES the pill (`useCardSlotPadding`) to size the card slot and
@@ -31,9 +31,9 @@ export interface SheetPillProps {
     onClick: () => void;
     /**
      * Distance from the bottom of the positioned frame. A CSS length STRING rather
-     * than a number because every caller offsets by the footer bar, whose height now
+     * than a number because every caller offsets by the footer slab, whose position
      * carries the home-indicator inset as an `env()` term the browser must resolve —
-     * see FOOTER_TOTAL_CLEARANCE in MobileFooter and src/theme/safeArea.ts.
+     * see SLAB_FOOTER_TOTAL_CLEARANCE in MobileFooter and src/theme/safeArea.ts.
      */
     bottom: string;
     /** Fixed pill height, in px — pages reserve this much space in their own flow. */

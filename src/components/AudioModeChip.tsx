@@ -38,6 +38,9 @@ import { useTTSSettings, type AudioMode } from "../hooks/useTTSSettings";
  * its ground look's ink. On a game's accent ground `gameSurfaceSx` re-inks it to full ink
  * like the header's other icons.
  *
+ * Also exports `ReaderAudioChip`: the same skin bound to the Reader's OWN tap-to-hear
+ * setting (useReaderAudioSettings) — the one surface whose chip is not this setting.
+ *
  * Used by: TowerStudyHeader (the flp), AddCardsPage (acp), BubbleMatchHeader
  * (Bubble Match + Hydra Bubbles), MatchSpeedHeader, WordSearchHeader, BucketDropStage, and
  * GameBreakChrome (an flp game break's header row; a white and a dark copy for its ink swap).
@@ -108,14 +111,22 @@ const MODE_LABELS = Object.values(MODE_CHIP).map((m) => m.label);
 const MODE_LABEL_WIDTH_CH = cycleChipWidthCh(MODE_LABELS);
 
 
-const AudioModeChip: React.FC<{
+interface AudioModeChipSkinProps {
     className?: string;
     /** Glyph, label and outline colour — pick the one that reads on the surface's ground. */
     ink?: string;
     /** Layered over the outlined skin (HeaderCycleChip `sx`). */
     sx?: SxProps<Theme>;
-}> = ({ className, ink = COLORS.iconColor, sx }) => {
-    const { mode, cycleMode: cycleAudioMode } = useTTSSettings();
+}
+
+/**
+ * The chip itself, bound to whatever 3-state setting the caller hands it. Not exported:
+ * the two settings that use this skin each get a named wrapper below, so a surface picks
+ * WHICH setting it shows by name, never by wiring value/onChange itself.
+ */
+const AudioModeCycleChip: React.FC<AudioModeChipSkinProps & { mode: AudioMode; onCycle: () => void }> = ({
+    className, ink = COLORS.iconColor, sx, mode, onCycle,
+}) => {
     const chip = MODE_CHIP[mode];
 
     return (
@@ -136,11 +147,28 @@ const AudioModeChip: React.FC<{
             widthCh={MODE_LABEL_WIDTH_CH}
             icon={chip.icon}
             ariaLabel={chip.ariaLabel}
-            onClick={cycleAudioMode}
+            onClick={onCycle}
         >
             {chip.label}
         </HeaderCycleChip>
     );
 };
+
+/** The app-wide narration chip — reads and cycles `useTTSSettings` itself (see the file doc). */
+const AudioModeChip: React.FC<AudioModeChipSkinProps> = (props) => {
+    const { mode, cycleMode: cycleAudioMode } = useTTSSettings();
+    return <AudioModeCycleChip {...props} mode={mode} onCycle={cycleAudioMode} />;
+};
+
+/**
+ * The Reader document page's audio chip — the SAME skin, labels and cycle order, bound to
+ * the Reader's own tap-to-hear setting (src/features/reader/useReaderAudioSettings.ts), a
+ * separate value from the app-wide one. Props-driven rather than self-reading because that
+ * setting has one owner (the page, which also runs the tap-to-hear effect off it).
+ * Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Tap-to-hear".
+ */
+export const ReaderAudioChip: React.FC<AudioModeChipSkinProps & { mode: AudioMode; onCycle: () => void }> = (props) => (
+    <AudioModeCycleChip {...props} />
+);
 
 export default AudioModeChip;

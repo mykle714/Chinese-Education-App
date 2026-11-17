@@ -11,10 +11,9 @@ import { COLORS } from "../../theme/colors";
 // node-style document surface").
 //
 // Why this is NOT the shared `NodePage`: NodePage is built on MobileTabScreen,
-// which reserves FOOTER_CLEARANCE for the footer pill and provides a
-// scroll-away header — neither fits here. `/reader` shows no nav footer (it is
-// not registered in FooterPresenter's route maps), and the reader is a fixed,
-// non-scrolling layout. So this composes the same primitives directly, per the
+// which reserves the footer slab's clearance and provides a scroll-away header —
+// neither fits here. `/reader/:id` shows no nav footer (its routeMeta row has no
+// `footerTab`), and the reader is a fixed, non-scrolling layout. So this composes the same primitives directly, per the
 // "compose, don't fork" header hierarchy: `NodePageHeader` (LEFT arrow) +
 // `usePageSlide({ axis: "x" })` (node motion: in from the right, out to the
 // right on back).
@@ -51,8 +50,8 @@ interface ReaderDocumentSurfaceProps {
     // Invoked by the back arrow. Called IMMEDIATELY when the exit starts (the
     // list beneath must be current while the clone slides away), not after.
     onBack: () => void;
-    // Header right slot: Edit/Delete icon buttons + the validator download
-    // button + streak fire badge (docHeaderRightContent in ReaderPage).
+    // Header right slot: the Edit/Delete icon buttons
+    // (docHeaderRightContent in ReaderDocumentPage).
     rightContent?: ReactNode;
     children: ReactNode;
 }

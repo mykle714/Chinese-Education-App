@@ -79,8 +79,7 @@ white, outlined bubble with `SHADOW.chip`, grows down out of its top edge
 | `FlashcardsLearnPage.tsx` | `flp-eip-learning-error` | error, 2.5 s | eip Add key failed |
 | `FlashcardsLearnPage.tsx`, `VocabCardDetailPage.tsx` | `card-icon-save-error` | error, 4 s | fie layout save/reset failed |
 | `src/pages/settings/SettingsBody.tsx` | `settings-language-result` | success 3 s / error 5 s | language preference saved / failed |
-| `src/features/reader/ReaderDocumentPage.tsx` | `reader-tap-hint` | info (`touch_app`), 5 s | once per opened document |
-| `ReaderDocumentPage.tsx` | `reader-edit-save-error` | error, 4 s | inline edit failed to save |
+| `src/features/reader/ReaderDocumentPage.tsx` | `reader-edit-save-error` | error, 4 s | inline edit failed to save |
 | `src/features/discover/useDeckFillNotices.ts` (acp) | `acp-deck-fill-goal` | info (`style`), sticky | "Sort at least N…" goal, counting down |
 | `useDeckFillNotices.ts` (acp) | `acp-deck-fill-warning` | warning, sticky | today's deck at/over 40 (on arrival or after a sort) |
 

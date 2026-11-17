@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { Box, Typography, List, ListItem, ListItemButton, Alert, Button } from "@mui/material";
-import DelayedCircularProgress from "../../components/DelayedCircularProgress";
-import { Article as ArticleIcon, Add as AddIcon, Person as PersonIcon } from "@mui/icons-material";
+import { Box, Typography } from "@mui/material";
+import { Bento, BentoTile } from "../../components/bento";
+import { Row, RowList } from "../../components/primitives";
 import SwipeToDeleteRow from "./SwipeToDeleteRow";
 import type { Text } from "../../types";
-import { SIZE , WEIGHT} from "../../theme/scale";
-import { COLORS } from "../../theme/colors";
+import { readerMessageSx, readerMutedTextSx } from "./readerStyles";
+import { iconImageUrl } from "../../cardIcons/cardIconLayout";
 
 interface TextSidebarProps {
     texts: Text[];
@@ -18,9 +18,29 @@ interface TextSidebarProps {
     onCreateNew: () => void;
     // Swipe-left → Delete. Deletes immediately (iPhone style, no confirmation).
     onDelete: (text: Text) => void;
-    drawerWidth: number;
 }
 
+/**
+ * The Reader's document list (`/reader`, rendered by ReaderPage) in the Friends panel's
+ * flat look (readerStyles.ts):
+ *
+ *   - ONE half-width `compact` Bento tile on top, in the LEFT column — "New document" —
+ *     dressed exactly like the Friends tab's action tiles (FriendActionTiles): `compact`
+ *     height, title only (no subtitle), the title at the tile's bottom-left, the ghost
+ *     glyph top-right. Creating is a destination-shaped tap, not an MUI contained button.
+ *     Half width, no subtitle (owner's call 2026-11-17): the full-width `low` tile with
+ *     a subtitle read as too big for the page's one action.
+ *   - A `RowList` of white `Row`s below (the shelf system's `.rw`): a 36px pastel avatar
+ *     glyph (or the document's picked icon, texts."iconId"), the title, and a chevron
+ *     because the row navigates. A learner's own document
+ *     wears the blue avatar and can be swiped left to Delete (SwipeToDeleteRow); a
+ *     built-in text wears grey and cannot.
+ *   - Loading / empty / error states are plain text lines, as on the Friends board.
+ *
+ * Despite its name this has not been a sidebar since the Reader went mobile-only; it is
+ * the list body of ReaderPage. Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Frontend.
+ * Layer: feature view (src/features/reader).
+ */
 function TextSidebar({
     texts,
     loading,
@@ -30,120 +50,74 @@ function TextSidebar({
     onTextSelect,
     onCreateNew,
     onDelete,
-    drawerWidth
 }: TextSidebarProps) {
     // At most one row is swiped open at a time; opening another closes this one.
     const [openRowId, setOpenRowId] = useState<string | null>(null);
     return (
-        <Box
-            className="reader-page-sidebar-content"
-            sx={{ width: drawerWidth, height: '100%', display: 'flex', flexDirection: 'column' }}
-        >
-            {/* Header */}
-            <Box
-                className="reader-page-sidebar-header"
-                sx={{ p: 2, borderBottom: `1px solid ${COLORS.rowBorder}` }}
-            >
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                    <Typography
-                        className="reader-page-sidebar-title"
-                        variant="h6"
-                        sx={{ fontWeight: WEIGHT.bold, display: 'flex', alignItems: 'center', gap: 1 }}
-                    >
-                        <ArticleIcon className="reader-page-sidebar-title-icon" />
-                        Reading Materials
-                    </Typography>
-                </Box>
-                <Typography
-                    className="reader-page-sidebar-subtitle"
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ mb: 1.5 }}
-                >
-                    Select a text to begin reading
-                </Typography>
-                <Button
-                    variant="contained"
-                    startIcon={<AddIcon />}
+        <Box className="reader-page-sidebar-content" sx={{ display: "flex", flexDirection: "column" }}>
+            {/* New document — opens `/reader/new`, a blank draft in edit mode. One column
+                wide; as the grid's only child it lands in the left column on its own. */}
+            <Bento className="reader-page-sidebar-actions">
+                <BentoTile
+                    className="reader-page-sidebar-new-document-tile"
+                    title="New document"
+                    hue="blu"
+                    icon="edit_note"
+                    variant="compact"
                     onClick={onCreateNew}
-                    fullWidth
-                    size="small"
-                    sx={{ textTransform: 'none' }}
-                >
-                    New Document
-                </Button>
-            </Box>
+                />
+            </Bento>
 
-            {/* Loading state */}
-            {loading && (
-                <Box
-                    className="reader-page-sidebar-loading"
-                    sx={{ display: 'flex', justifyContent: 'center', p: 3 }}
-                >
-                    <DelayedCircularProgress className="reader-page-sidebar-loading-spinner" size={24} />
-                </Box>
-            )}
-
-            {/* Error state */}
             {error && (
-                <Box className="reader-page-sidebar-error" sx={{ p: 2 }}>
-                    <Alert className="reader-page-sidebar-error-alert" severity="error">
-                        {error}
-                    </Alert>
-                </Box>
+                <Typography className="reader-page-sidebar-error" sx={{ ...readerMessageSx, px: "22px", pt: 1.5 }}>
+                    {error}
+                </Typography>
             )}
 
-            {/* Delete failure (the row is restored by ReaderPage). */}
+            {/* Delete failure (the row is restored by ReaderPage). Tap to dismiss — the
+                Friends panel's error lines carry no close button either. */}
             {actionError && (
-                <Box className="reader-page-sidebar-action-error" sx={{ px: 2, pt: 2 }}>
-                    <Alert className="reader-page-sidebar-action-error-alert" severity="error" onClose={onDismissActionError}>
-                        {actionError}
-                    </Alert>
-                </Box>
+                <Typography
+                    className="reader-page-sidebar-action-error"
+                    onClick={onDismissActionError}
+                    sx={{ ...readerMessageSx, px: "22px", pt: 1.5, cursor: "pointer" }}
+                >
+                    {actionError}
+                </Typography>
+            )}
+
+            {/* Loading text rather than a spinner: the list is one small query and a
+                spinner flashes more than it informs (same call as the Friends board). */}
+            {loading && (
+                <Typography className="reader-page-sidebar-loading" sx={readerMutedTextSx}>Loading…</Typography>
+            )}
+
+            {!loading && !error && texts.length === 0 && (
+                <Typography className="reader-page-sidebar-empty" sx={readerMutedTextSx}>
+                    No documents yet.
+                </Typography>
             )}
 
             {/* Texts list — each user document is a SwipeToDeleteRow (swipe left →
             Delete). No per-row edit: content is edited inside the open document. */}
-            {!loading && !error && (
-                <List
-                    className="reader-page-sidebar-texts-list"
-                    sx={{ flexGrow: 1, overflow: 'auto', p: 1 }}
-                >
+            {!loading && !error && texts.length > 0 && (
+                <RowList className="reader-page-sidebar-texts-list">
                     {texts.map((text) => {
-                        const rowButton = (
-                            <ListItemButton
+                        const row = (
+                            <Row
                                 className="reader-page-sidebar-text-button"
+                                icon={text.isUserCreated ? "description" : "menu_book"}
+                                // The learner's picked icon (texts."iconId") replaces the
+                                // glyph; the glyph stays the fallback for documents without one.
+                                iconSrc={text.iconId ? iconImageUrl(text.iconId) : undefined}
+                                hue={text.isUserCreated ? "blu" : "grey"}
+                                title={text.title}
+                                chevron
                                 onClick={() => onTextSelect(text)}
-                                sx={{
-                                    borderRadius: 2,
-                                    p: 2,
-                                    '&:hover': { backgroundColor: 'action.hover' },
-                                }}
-                            >
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, width: '100%' }}>
-                                    {text.isUserCreated && (
-                                        <PersonIcon
-                                            className="reader-page-sidebar-text-owner-icon"
-                                            sx={{ fontSize: SIZE.bodyLg, color: COLORS.iconColor }}
-                                        />
-                                    )}
-                                    <Typography
-                                        className="reader-page-sidebar-text-title"
-                                        variant="subtitle2"
-                                        sx={{ fontWeight: WEIGHT.bold, color: 'text.primary', flex: 1 }}
-                                    >
-                                        {text.title}
-                                    </Typography>
-                                </Box>
-                            </ListItemButton>
+                            />
                         );
                         return (
-                            <ListItem
-                                className="reader-page-sidebar-text-item"
-                                key={text.id}
-                                disablePadding
-                                sx={{ mb: 1, display: 'block' }}
-                            >
+                            <Box className="reader-page-sidebar-text-item" key={text.id}>
                                 {text.isUserCreated ? (
                                     <SwipeToDeleteRow
                                         open={openRowId === text.id}
@@ -153,13 +127,13 @@ function TextSidebar({
                                             onDelete(text);
                                         }}
                                     >
-                                        {rowButton}
+                                        {row}
                                     </SwipeToDeleteRow>
-                                ) : rowButton}
-                            </ListItem>
+                                ) : row}
+                            </Box>
                         );
                     })}
-                </List>
+                </RowList>
             )}
         </Box>
     );

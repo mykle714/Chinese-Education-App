@@ -445,9 +445,9 @@ discoverable clustered rows; the full rule, the repair pass and the ratchet-up p
 are in [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) § "The word/cluster frequency
 invariant".
 
-**Bound forms count through their compounds.** A morpheme that is never uttered alone
-still scores as frequent when the compounds carrying that meaning are common — 自 is
-heard daily via 自己/自由/自动. Only genuine rarity (兮, 翌日) scores low.
+**Bound forms no longer count through their compounds** (rule removed 2026-11-17 — it
+starred compound-only senses such as 的 "taxi" from 的士). See
+[DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) § "Bound forms".
 
 **Surfaced to users as "Commonality"** — the five-circle `CommonalityMeter` (`src/components/ScoreMeters.tsx`; Material Symbols `circle` glyphs, filled for the score, outlined for the rest), icons only, on the
 eip Definition tab (`DefinitionFacts.tsx`, via `InfoCardTabContent.tsx`), the acp card

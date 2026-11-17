@@ -4,6 +4,7 @@ import type { Language, VocabEntry } from "../../types";
 import { reportTap } from "../../utils/perfDiagnostics";
 import MatchSpeedCard from "./MatchSpeedCard";
 import MatchSpeedClearBanner from "./MatchSpeedClearBanner";
+import ConfettiBurst from "../../components/ConfettiBurst";
 import type { BoardCard, CardPair, CardVisualState, Slot } from "./types";
 import {
     CARD_ASPECT,
@@ -628,6 +629,8 @@ const MatchSpeedBoard: React.FC<MatchSpeedBoardProps> = ({
                     animation actually replays; it stays mounted (faded out) in
                     between rather than being torn down on a timer. */}
                 {clearId > 0 && <MatchSpeedClearBanner key={clearId} />}
+                {/* Same key trick: a fresh confetti burst per clear, under the banner (z 5). */}
+                {clearId > 0 && <ConfettiBurst key={`confetti-${clearId}`} className="match-speed__clear-confetti" zIndex={4} />}
             </Box>
         </Box>
     );

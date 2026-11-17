@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Box } from "@mui/material";
 import NodePage from "../../components/NodePage";
+import { FooterSpacer } from "../../components/MobileFooter";
 import { useAuth } from "../../AuthContext";
 import type { Text } from "../../types";
 
@@ -15,10 +15,9 @@ import { NEW_DOCUMENT_PATH } from "./readerPaths";
 import { navigateBackOr } from "../../utils/navigateBack";
 
 // READER DOCUMENT LIST — the `/reader` NODE page (docs/LEAF_NODE_PAGES.md § Reader):
-// keeps the footer (Menu tab stays active, same as Games), LEFT back
+// keeps the footer slab (Menu tab stays active), LEFT back
 // arrow → the previous page (else `/`, navigateBackOr), slides in from the right.
-// Fixed non-scrolling shell (scrollable={false}) — TextSidebar owns its own internal scroll region for the
-// document list, same shape as before under LeafPage. Opening a document is a
+// A scrolling page: the list body is TextSidebar. Opening a document is a
 // real navigation to `/reader/:id` (ReaderDocumentPage.tsx), a footerless
 // NODE-style drill-in reached via `useSlideNavigate` — a routed cdp-style pair,
 // not in-page state. "New Document" is the same navigation to `/reader/new`, which
@@ -98,57 +97,27 @@ function ReaderPage() {
         }
     }, []);
 
+    // A plain scrolling node page on the paper ground (the Friends panel's flat look —
+    // readerStyles.ts): the header scrolls away with the list, and FooterSpacer keeps the
+    // last row clear of the footer slab. (It used to be a fixed shell whose list
+    // scrolled inside a 500px "sidebar" box — a leftover of the desktop layout.)
     return (
         <NodePage
             title="Reader"
             onBack={() => navigateBackOr(navigate, "/")}
-            scrollable={false}
             contentClassName="reader-page-root"
         >
-            <Box className="reader-page-container" sx={{
-                display: 'flex',
-                width: '100%',
-                flex: 1,
-                minHeight: 0,
-                overflow: 'hidden',
-            }}>
-                <Box className="reader-page-content" sx={{
-                    flexGrow: 1,
-                    minHeight: 0,
-                    p: { xs: 2, sm: 3 },
-                    pt: { xs: 1, sm: 2 },
-                    display: 'flex',
-                    flexDirection: 'column',
-                    overflow: 'hidden'
-                }}>
-                    <Box className="reader-page-list-wrapper" sx={{
-                        width: '100%',
-                        maxWidth: '500px',
-                        mx: 'auto',
-                        mt: 2,
-                        flex: 1,
-                        minHeight: 0,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        '& > *': {
-                            width: '100% !important'
-                        }
-                    }}>
-                        <TextSidebar
-                            texts={texts}
-                            loading={loading}
-                            error={error}
-                            actionError={deleteError}
-                            onDismissActionError={() => setDeleteError(null)}
-                            onTextSelect={handleTextSelect}
-                            onCreateNew={handleCreateNew}
-                            onDelete={handleDelete}
-                            drawerWidth={500}
-                        />
-                    </Box>
-                </Box>
-            </Box>
-
+            <TextSidebar
+                texts={texts}
+                loading={loading}
+                error={error}
+                actionError={deleteError}
+                onDismissActionError={() => setDeleteError(null)}
+                onTextSelect={handleTextSelect}
+                onCreateNew={handleCreateNew}
+                onDelete={handleDelete}
+            />
+            <FooterSpacer />
         </NodePage>
     );
 }

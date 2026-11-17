@@ -1,15 +1,24 @@
-import { Box, Button, CircularProgress } from "@mui/material";
-import UndoIcon from "@mui/icons-material/Undo";
-import RedoIcon from "@mui/icons-material/Redo";
-import { SIZE, WEIGHT } from "../../theme/scale";
+import { Box, Button, CircularProgress, IconButton } from "@mui/material";
+import Icon from "../../components/Icon";
 import { COLORS } from "../../theme/colors";
+import { readerPillButtonSx } from "./readerStyles";
+import { iconImageUrl } from "../../cardIcons/cardIconLayout";
 
 // READER EDIT TOOLBAR — drops in below the document header while the Edit
-// toggle is on (docs/LEAF_NODE_PAGES.md § Reader), modeled on the fie
-// (flashcard icon editor) toolbar's row of small text buttons
-// (CardEditToolbar.tsx): same compact button sizing/spacing, undo/redo on the
-// left, cancel/save on the right. No advanced sub-menu here — content editing
-// only needs undo/redo + cancel/save.
+// toggle is on (docs/LEAF_NODE_PAGES.md § Reader). Undo/redo and the document-icon
+// button on the left, cancel/save on the right.
+//
+// The icon button (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Document icon") is a small
+// outlined square showing a live preview of the DRAFT icon — the one Save will store,
+// not necessarily the saved one — or a muted placeholder glyph when there is none.
+// Tapping it asks the host to open the shared IconPickerDialog; the host owns the draft.
+//
+// Flat look (readerStyles.ts), like the Friends panel: the strip is the paper ground
+// over a hairline, undo/redo are bare icon buttons (muted icon ink, the app's other bare
+// icon buttons), and Cancel / Save are pills — Cancel white, Save the blue MID fill the
+// Friends tab's Send button wears, both with ink text. (Until 2026-11-16 these were
+// lowercase MUI text buttons on the grey header strip, with Save in white-on-infoInk —
+// white text on a hue, which the palette rules out.)
 const ReaderEditToolbar: React.FC<{
     canUndo: boolean;
     canRedo: boolean;
@@ -21,93 +30,118 @@ const ReaderEditToolbar: React.FC<{
     // Save is disabled with nothing to save, e.g. a still-blank new document
     // (ReaderDocumentPage) — creating an empty document would be pointless.
     saveDisabled?: boolean;
-}> = ({ canUndo, canRedo, onUndo, onRedo, onCancel, onSave, saving, saveDisabled = false }) => {
-    const smallBtnSx = {
-        minWidth: "unset",
-        px: 0.5,
-        py: 0.25,
-        height: "30px",
-        fontSize: SIZE.micro,
-        textTransform: "lowercase" as const,
-        borderRadius: "6px",
-        color: COLORS.onSurface,
+    // The draft document icon (icons8 id) previewed in the icon button; null = none.
+    iconId: string | null;
+    // Opens the icon picker (ReaderDocumentPage owns the dialog and the draft).
+    onPickIcon: () => void;
+}> = ({ canUndo, canRedo, onUndo, onRedo, onCancel, onSave, saving, saveDisabled = false, iconId, onPickIcon }) => {
+    const iconButtonSx = {
+        color: COLORS.iconColor,
         // See CardEditToolbar.tsx: opts out of the ~300ms double-tap-zoom delay so
         // rapid undo/redo taps register immediately on touch devices.
         touchAction: "manipulation",
-        "& .MuiButton-startIcon": { marginRight: "2px" },
-        "&.Mui-disabled": { color: COLORS.onSurface, opacity: 0.38 },
-    };
-    const iconSx = { fontSize: "16px !important" } as const;
+        "&.Mui-disabled": { color: COLORS.iconColor, opacity: 0.35 },
+    } as const;
 
     return (
         <Box
             className="reader-edit-toolbar"
+            // ⚠️ THE TOOLBAR MUST NOT TAKE FOCUS. While editing, the text field holds the
+            // caret and a keyboard (OS or BeginnerKeyboard) is up; a tap anywhere on this
+            // strip — a button or the empty gap — would otherwise blur the field, drop the
+            // keyboard, and the keyboard inset going to 0 unfolds the page's lead
+            // (ReaderDocumentPage's KEYBOARD LIFT `Collapse`: dictionary card + display
+            // strip) in the middle of an edit. Swallowing `mousedown` keeps focus where it
+            // is without stopping the `click`, so the buttons still fire. Same guard as
+            // the beginner keyboard's own keys (BeginnerKeyboard.tsx → `keepFocus`).
+            // Cancel/Save need no exception: leaving edit mode swaps the field out anyway.
+            onMouseDown={(event: React.MouseEvent) => event.preventDefault()}
             sx={{
                 display: "flex",
                 alignItems: "center",
                 gap: 1,
-                px: 1.5,
-                py: 0.75,
-                backgroundColor: COLORS.header,
+                px: 2,
+                py: 1,
+                backgroundColor: COLORS.background,
                 borderBottom: `1px solid ${COLORS.rowBorder}`,
             }}
         >
-            <Button
+            <IconButton
                 className="reader-edit-toolbar__undo"
                 size="small"
-                variant="text"
-                startIcon={<UndoIcon sx={iconSx} />}
+                aria-label="Undo"
                 onClick={onUndo}
                 disabled={!canUndo || saving}
-                sx={smallBtnSx}
+                sx={iconButtonSx}
             >
-                undo
-            </Button>
-            <Button
+                <Icon name="undo" size={20} />
+            </IconButton>
+            <IconButton
                 className="reader-edit-toolbar__redo"
                 size="small"
-                variant="text"
-                startIcon={<RedoIcon sx={iconSx} />}
+                aria-label="Redo"
                 onClick={onRedo}
                 disabled={!canRedo || saving}
-                sx={smallBtnSx}
+                sx={iconButtonSx}
             >
-                redo
-            </Button>
+                <Icon name="redo" size={20} />
+            </IconButton>
 
-            <Box sx={{ flex: 1 }} />
+            {/* Document icon — outlined (the app's tappable-object rule, CLAUDE.md
+                "Buttons & cards") because, unlike undo/redo, it is a filled object
+                rather than a bare glyph. 32px square with a 22px preview. */}
+            <IconButton
+                className={`reader-edit-toolbar__icon-button${iconId ? " reader-edit-toolbar__icon-button--set" : ""}`}
+                size="small"
+                aria-label={iconId ? "Change document icon" : "Choose document icon"}
+                title={iconId ? "Change document icon" : "Choose document icon"}
+                onClick={onPickIcon}
+                disabled={saving}
+                sx={{
+                    ...iconButtonSx,
+                    ml: 0.5,
+                    width: 32,
+                    height: 32,
+                    p: 0,
+                    borderRadius: "10px",
+                    border: `1px solid ${COLORS.border}`,
+                    backgroundColor: COLORS.white,
+                    "&:hover": { backgroundColor: COLORS.rowHoverBg },
+                }}
+            >
+                {iconId ? (
+                    <Box
+                        component="img"
+                        className="reader-edit-toolbar__icon-preview"
+                        src={iconImageUrl(iconId)}
+                        alt=""
+                        sx={{ width: 22, height: 22, objectFit: "contain", display: "block" }}
+                    />
+                ) : (
+                    <Icon name="add_photo_alternate" size={18} className="reader-edit-toolbar__icon-placeholder" />
+                )}
+            </IconButton>
+
+            <Box className="reader-edit-toolbar__spacer" sx={{ flex: 1 }} />
 
             <Button
                 className="reader-edit-toolbar__cancel"
-                size="small"
-                variant="text"
                 onClick={onCancel}
                 disabled={saving}
-                sx={smallBtnSx}
+                sx={readerPillButtonSx(COLORS.white)}
             >
-                cancel
+                Cancel
             </Button>
             <Button
                 className="reader-edit-toolbar__save"
-                size="small"
-                variant="contained"
                 onClick={onSave}
                 disabled={saving || saveDisabled}
-                sx={{
-                    ...smallBtnSx,
-                    fontWeight: WEIGHT.semibold,
-                    backgroundColor: COLORS.infoInk,
-                    color: COLORS.white,
-                    "&:hover": { backgroundColor: COLORS.infoInk },
-                    // Keep the ink fill when disabled (MUI would swap in its grey
-                    // disabled background) so a blank draft's Save reads as "not yet".
-                    "&.Mui-disabled": { color: COLORS.white, backgroundColor: COLORS.infoInk, opacity: 0.5 },
-                }}
+                sx={readerPillButtonSx(COLORS.bluM)}
             >
                 {saving ? (
-                    <CircularProgress size={16} thickness={5} sx={{ color: COLORS.white }} className="reader-edit-toolbar__save-spinner" />
+                    <CircularProgress size={14} thickness={5} sx={{ color: COLORS.onSurface }} className="reader-edit-toolbar__save-spinner" />
                 ) : (
-                    "save"
+                    "Save"
                 )}
             </Button>
         </Box>

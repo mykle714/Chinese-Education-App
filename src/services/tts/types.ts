@@ -44,6 +44,26 @@ export interface TTSRequest {
      * one thing an audio-as-clock caller cannot survive.
      */
     voice?: TTSVoice;
+    /**
+     * Called once, the moment audio actually starts coming out — the media element's
+     * `playing` event, the Web Audio source's `start`, or the utterance's `onstart` — with
+     * the clip's length in ms, or null when the provider cannot know it (the browser
+     * voice). NOT part of the cache key. A superseded or cancelled request never calls it.
+     *
+     * For a caller that paces something against the audio while it plays: the Reader's
+     * read-aloud moves its word highlight through a clause over exactly this duration
+     * (src/features/reader/useReaderReadAloud.ts; docs/AUDIO_PLAYBACK.md § 3c).
+     */
+    onStart?: (durationMs: number | null) => void;
+    /**
+     * Cut the silence Google synthesizes at the clip's start and/or end (≈120 ms lead,
+     * ≈230 ms tail), keeping a short pad so a consonant's onset and release survive. For a
+     * caller that butts two clips together mid-phrase: the Reader read-aloud's voice switch
+     * inside a clause (ReadAloudClause.joinsPrevious / joinsNext). The duration reported to
+     * `onStart` is the trimmed one. NOT part of the cache key; the cloud provider only
+     * (the browser voice ignores it). docs/AUDIO_PLAYBACK.md § 3c.
+     */
+    trimSilence?: { start?: boolean; end?: boolean };
 }
 
 export interface TTSProvider {

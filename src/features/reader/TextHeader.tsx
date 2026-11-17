@@ -1,71 +1,63 @@
-import { Box, Typography, Chip, CircularProgress } from "@mui/material";
-import { WEIGHT } from '../../theme/scale';
-import type { Text } from "../../types";
+import { Box, CircularProgress } from "@mui/material";
+import { LEADING, SIZE, WEIGHT } from '../../theme/scale';
+import { FONTS } from "../../theme/fonts";
 import { COLORS } from "../../theme/colors";
 
-// The open document's title block (ReaderDocumentPage). Shows only the title plus
-// the transient vocabulary-processing status chips — the character count and
-// creation date were removed from the Reader UI on 2026-11-05 (the `characterCount`
-// / `createdAt` fields still come over the wire).
+// The open document's vocabulary-processing status (ReaderDocumentPage), shown above the
+// dictionary keycap while there is something to report — nothing at all when idle.
+//
+// The document TITLE no longer lives here: since 2026-11-17 it is the page header's title
+// (ReaderDocumentSurface `title`), so this file is now status-only despite its name.
+//
+// Flat look (readerStyles.ts): small pastel pills (mid-tier fill, ink text, hairline)
+// instead of MUI's outlined info/error Chips.
 // Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Frontend.
 
 interface TextHeaderProps {
-    selectedText: Text;
     processingVocab: boolean;
     vocabError: string | null;
-    // No back/edit/delete handlers here: back lives in the ReaderDocumentSurface
-    // header's left arrow, and Edit/Delete are icon buttons in that same header's
-    // right slot (docs/LEAF_NODE_PAGES.md) — see ReaderDocumentPage's
-    // docHeaderRightContent.
 }
 
-function TextHeader({
-    selectedText,
-    processingVocab,
-    vocabError,
-}: TextHeaderProps) {
-    const showStatus = processingVocab || !!vocabError;
+/** One status pill: a ramp MID fill with ink text. Not tappable, so the quiet
+ *  `rowBorder` hairline rather than the button outline. */
+const statusPillSx = (fill: string) => ({
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    px: 1.25,
+    py: 0.375,
+    borderRadius: "999px",
+    backgroundColor: fill,
+    border: `1px solid ${COLORS.rowBorder}`,
+    fontFamily: FONTS.sans,
+    fontSize: SIZE.caption,
+    fontWeight: WEIGHT.semibold,
+    lineHeight: LEADING.tight,
+    color: COLORS.onSurface,
+}) as const;
+
+function TextHeader({ processingVocab, vocabError }: TextHeaderProps) {
+    if (!processingVocab && !vocabError) return null;
     return (
         <Box
-            className="reader-page-text-header"
-            sx={{ mb: 3, pb: 2, borderBottom: `1px solid ${COLORS.rowBorder}` }}
+            className="reader-page-text-status"
+            sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', pb: 1.5 }}
         >
-            <Typography
-                className="reader-page-text-title"
-                variant="h4"
-                component="h1"
-                sx={{ fontWeight: WEIGHT.bold }}
-            >
-                {selectedText.title}
-            </Typography>
+            {processingVocab && (
+                <Box component="span" className="reader-page-vocab-processing-chip" sx={statusPillSx(COLORS.bluM)}>
+                    <CircularProgress
+                        className="reader-page-vocab-processing-spinner"
+                        size={10}
+                        thickness={6}
+                        sx={{ color: COLORS.onSurface }}
+                    />
+                    Processing vocabulary…
+                </Box>
+            )}
 
-            {/* Vocabulary processing status — the row only exists while there is
-            something to report, so an idle header is just the title. */}
-            {showStatus && (
-                <Box
-                    className="reader-page-text-status"
-                    sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap', mt: 2 }}
-                >
-                    {processingVocab && (
-                        <Chip
-                            className="reader-page-vocab-processing-chip"
-                            icon={<CircularProgress className="reader-page-vocab-processing-spinner" size={12} />}
-                            label="Processing vocabulary..."
-                            size="small"
-                            color="info"
-                            variant="outlined"
-                        />
-                    )}
-
-                    {vocabError && (
-                        <Chip
-                            className="reader-page-vocab-error-chip"
-                            label="Vocab processing failed"
-                            size="small"
-                            color="error"
-                            variant="outlined"
-                        />
-                    )}
+            {vocabError && (
+                <Box component="span" className="reader-page-vocab-error-chip" sx={statusPillSx(COLORS.redM)}>
+                    Vocab processing failed
                 </Box>
             )}
         </Box>

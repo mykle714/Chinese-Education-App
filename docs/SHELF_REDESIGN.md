@@ -1207,7 +1207,7 @@ and what survived the overrides was a `Box` with extra steps.
 **`src/components/primitives/Row.tsx`** → `Row` (`.rw`), `RowList` (`.rows`).
 
 One entity in a list, where the list is neither a collection the user owns (Shelf) nor a
-menu of destinations (Bento). Slots: `icon`/`initials`/`avatar` + `hue`, `title`,
+menu of destinations (Bento). Slots: `icon`/`iconSrc`/`initials`/`avatar` + `hue`, `title`,
 `subtitle`, `meta`, `value`, `chevron`, `trailing`. A row that needs one more slot than
 these is not a `Row`. Like `BentoTile`, it becomes a real `<a>` with `to`, a real
 `<button>` with only `onClick`, and a plain div otherwise.
@@ -1224,7 +1224,9 @@ profile row is the only row in the artboards that needs either:
   a caller could change the contents and nothing else. Account needs a 48px, radius-15,
   *tappable* avatar (it opens the icon picker), and a focusable control cannot be built by
   handing children to a div. There were no other callers, so the code moved to match the
-  doc. `icon` / `initials` still render in the styled box.
+  doc. `icon` / `initials` still render in the styled box, and so does `iconSrc`
+  (added 2026-11-17 for the Reader's document icons): an image URL drawn at 24px inside
+  the same pastel box, winning over `icon`, which stays as the fallback.
 - **`meta` is a THIRD text line, set in mono** — the design's second `.s` inside `.tx`.
   Exactly one row in the whole artboard set has it (Account's, carrying the copyable user
   ID), so it is an exception rather than a general slot: reach for it when a row's identity
@@ -1507,7 +1509,7 @@ entry 2.
 
 **Code:** new `src/games/shared/gameSurface.ts` + `GameSurface.tsx`;
 `src/games/shared/GameFrame.tsx`; all six game pages and their `constants.ts`;
-`src/games/registry.ts`; `src/games/word-search/WordSearchHintBar.tsx`;
+`src/games/registry.ts`; `src/games/shared/GameHintBar.tsx`;
 `src/games/match-speed/MatchSpeedTimerBar.tsx`; `src/components/LeafPage.tsx`
 (new `surfaceSx`); `src/components/PageHeader.tsx` (the `--active` chip class).
 **Docs:** `docs/GAMES_FEATURE.md`, `docs/LEAF_NODE_PAGES.md`, and the per-game docs.
@@ -2062,11 +2064,13 @@ come from `getToneColor` inside cpcd, never the artboard's inlined hexes.
 - **Every eip lists the senses in its Definition tab** (owner's call 2026-11-05, first for
   the Dictionary eip, then for every eip). The entry header shows ONE dd — the chosen sense's,
   else the persisted pick's, else the default's (`resolveDisplayDefinition`), with that
-  sense's reading. For a word with ≥2 displayable clusters (the SensePicker's gate,
-  `sortedSenseClusters`) the Definition tab opens with an **"Other Translations"** section — titled in the eip's
+  sense's reading. The Definition tab opens with an **"Other Translations"** section — titled in the eip's
   shared section-label style (`EipSectionLabel`, the Synonyms + Related labels' caps caption, set in the page-header title face `FONTS.sans`) —
-  holding a **numbered list** of every sense's dd
-  (`ddt`), in the picker's order, numbered 1…n and filled **column-major** (down the left
+  holding a **numbered list**: for a word with ≥2 displayable clusters (the SensePicker's gate,
+  `sortedSenseClusters`) every sense's dd (`ddt`), in the picker's order; for a single-sense or
+  unclustered word, every gloss of that one sense (`singleSenseGlossList`, the dictionary search
+  row's list — no row is starred and nothing is underlined, since the rows are glosses of one
+  sense rather than competing senses; owner's calls 2026-11-17, it showed nothing before). Rows are numbered 1…n and filled **column-major** (down the left
   column, then the right — the left takes the odd one out) once there are **5+ senses**
   (`TWO_COLUMN_MIN_SENSES`; 2–4 senses stay one numbered column), so the default and the most common
   senses share the left column (owner's call 2026-11-07; one per row 2026-11-05 → 11-07). The
@@ -2076,12 +2080,15 @@ come from `getToneColor` inside cpcd, never the artboard's inlined hexes.
   persisted `selectedSense`, so a det entry shows no underline). The picker's **star** (13px,
   in the gloss's own colour) marks the default (index 0) and every
   commonality-4–5 sense (`isStarredSense`); in this list it trails the gloss (2026-11-07), where the card face and Memory Map lead with it. The star never wraps onto a line of its own: the gloss's last word and the star share one no-wrap span (`.eip-sense-list__last-word-with-star`, `glossHeadAndLastWord`), so the star stays at the line end when it fits and otherwise takes that word down with it (owner's call 2026-11-10). The list never makes a pick: that is
-  the card face's `SensePicker`, which the open eip follows via `useEipTabs.syncEntry`. A
-  single-sense word shows no grid.
+  the card face's `SensePicker`, which the open eip follows via `useEipTabs.syncEntry`.
+  **One shared list** (2026-11-17): the list, its popup and everything below are
+  `src/components/SenseList.tsx`; `EipSenseList` only adds the section label and rule (through
+  `SenseList`'s `wrap`, called only when there are rows). The Reader's dictionary keycap renders
+  the same `SenseList` with no label (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Look).
   **Alternate pinyin, inline** (owner's call 2026-11-10). A sense whose reading differs from
   the headword's prints it at the END of its entry, after the star (`SIZE.body`, no-wrap):
   tone-coloured per syllable (`getToneColor`) when the learner's `showPinyinColor` setting is
-  on — threaded `InfoCardPanelBody` → `InfoCardTabContent` → `EipSenseList`, the same flag the
+  on — threaded `InfoCardPanelBody` → `InfoCardTabContent` → `EipSenseList` → `SenseList`, the same flag the
   header's cpcd honours — otherwise muted ink (`textSecondary`). Tone colours survive the
   open-popup Red Salmon. "Differs" compares
   `resolveDisplayPronunciation(entry, rowIndex)` with `resolveDisplayPronunciation(entry,
@@ -2090,20 +2097,26 @@ come from `getToneColor` inside cpcd, never the artboard's inlined hexes.
   **Tap a sense's text → its commonality** (owner's call 2026-11-10). The tap target is the
   entry's TEXT only — gloss, star and inline pinyin in one inline span (`.eip-sense-list__tap`),
   so the number and the row's white space are not hit. A tap opens the eip's popup box
-  (`CpcdPopup`, the est's tapped-segment box, given a `children` slot for this) over that text,
+  (`CpcdPopup`, the est's tapped-segment box, given a `children` slot for this) over that text
+  — or, when the list is ONE column, to the RIGHT of where the text ends (its last line box),
+  in the row's empty space, falling back to above/below without room (owner's call
+  2026-11-17; `popupBesideText`, `lastLineAnchor`) —
   showing the sense's `CommonalityMeter` (icons only, `currentColor` so it follows the popup's
   dark-eip tones). The tapped text turns Red Salmon (`COLORS.keywordInk`). It closes on a tap
   anywhere but a sense's text or the popup (row white space included), a second tap on the same
   text, any scroll, or a new entry; a tap on another sense's text moves it. A tap ON the popup
-  is forwarded to the sense text beneath that point (`elementsFromPoint` hit-test, so a popup
-  covering the row above never blocks it); over anything else it only closes the popup — the
+  is forwarded to the sense text beneath that point (`elementsFromPoint` hit-test, skipping
+  the popup's whole stack — card, motion box and Popper root — so a popup covering another
+  sense never blocks it); over anything else it only closes the popup — the
   popup is not made pointer-transparent, so a tap never leaks to a control behind it. A null score gets an
   empty box (a guard — 0 discoverable zh senses had a null score on dev, 2026-11-10).
   History: 2026-10-29 → 2026-11-05 the header itself carried the list, dot-separated, through
   `SwipeableTwoLineText` (now used only by Memory Map's prompt).
-  **Code:** `src/features/flashcards/FlashcardsLearnPage/EipSenseList.tsx`,
+  **Code:** `src/components/SenseList.tsx` → `SenseList`, `buildSenseRows`;
+  `src/features/flashcards/FlashcardsLearnPage/EipSenseList.tsx` (the eip section),
   `InfoCardTabContent.tsx` (tab 0 → `senseList`), `EipEntryHeader.tsx` (the one dd),
-  `src/components/senseListSegments.tsx` → `buildSenseSegments`, `senseSelectedUnderlineSx`;
+  `src/components/senseListSegments.tsx` → `buildSenseSegments`, `senseStar`, `senseSelectedUnderlineSx`;
+  `src/utils/definitionUtils.ts` → `singleSenseGlossList`;
   `src/components/CpcdPopup.tsx` (the facts popup), `src/utils/definitionUtils.ts` →
   `resolveDisplayPronunciation`, `src/components/ScoreMeters.tsx` → `CommonalityMeter`.
 - **One section-title style in the word panels** (owner's call 2026-11-07). Every title in
@@ -2679,7 +2692,7 @@ there is no in-game picker to fall back to.
   [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md) §5a). Those three used to live in three
   places — the button in the page header, the meter absolutely centred in the HUD, the
   reveal on a line of its own under the gloss list — so the player had to assemble one
-  mechanic out of three unrelated-looking widgets. `WordSearchHintBar` is now the whole
+  mechanic out of three unrelated-looking widgets. `GameHintBar` (shared) is now the whole
   row and takes `WordSearchHintRow` as its `children`.
 - **Charges, not a meter.** With `HINT_COST` at 1 the eight-segment gauge with its
   threshold line was already just "how many hints you have", drawn as a gauge. `.chg`
@@ -2762,7 +2775,7 @@ there is no in-game picker to fall back to.
   channel on one 16px icon made the button look like a warning) and a banked charge dot is
   the game's accent ink rather than the app's warning gold.
 
-**Code:** `src/games/word-search/WordSearchPage.tsx`, `WordSearchHintBar.tsx`,
+**Code:** `src/games/word-search/WordSearchPage.tsx`, `shared/GameHintBar.tsx`,
 `WordSearchHintRow.tsx`, `WordSearchWordList.tsx`, `WordSearchHeader.tsx`,
 `WordSearchGrid.tsx`. **Docs:** `docs/WORD_SEARCH_GAME.md`.
 

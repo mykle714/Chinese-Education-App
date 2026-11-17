@@ -6,11 +6,10 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
 `MobileNavDrawer` is deleted and `Layout` carries no chrome). Navigation is:
 
 1. **Footer tabs** (`MobileFooter`) — the top-level destinations, left to right in
-   the order below. Two footer looks: the flat full-width **bar** (text-only tabs — the
-   shelf redesign's A2a/D5, [SHELF_REDESIGN.md](./SHELF_REDESIGN.md)) and the floating
-   **slab** (with Material Symbols icons), chosen per route by `routeMeta`'s
-   `footerStyle` (`routeFooterStyle`). The slab is worn by `/`, `/lessons`, `/dictionary`,
-   the cdp and acp; every Menu-reached page keeps the bar.
+   the order below. One footer look: td's floating **slab** (Material Symbols icon over
+   label, a sliding selector — [DECK_TOWER.md](./DECK_TOWER.md) § Footer), on every route
+   with a `footerTab`. (The flat, text-only **bar** most routes wore — the shelf
+   redesign's A2a/D5 — was deleted 2026-11-16 with routeMeta's `footerStyle` field.)
 
    | Tab        | `FooterTab`   | Route         | Page                                                         |
    | ---------- | ------------- | ------------- | ------------------------------------------------------------ |
@@ -103,8 +102,7 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
      at night together. No `COLORS.border` outline, which departs from CLAUDE.md § Buttons &
      cards on purpose, as the slab does.
    - **Placement**: anchored bottom-right, 16px from the right edge, 12px above the footer
-     (`MobileFooter` passes `footerClearance`: `FOOTER_TOTAL_HEIGHT` for the bar,
-     `SLAB_FOOTER_TOTAL_HEIGHT` for the slab). It grows from its bottom-right corner
+     (`MobileFooter` passes `footerClearance` = `SLAB_FOOTER_TOTAL_HEIGHT`). It grows from its bottom-right corner
      (220 ms enter, 140 ms exit).
    - **Dim**: a frame-hosted `COLORS.scrim` (`useScreenOverlayHost`, z-index 200) over the
      whole screen, footer included (overlayHost.ts § "THE RULE FOR A DIM").

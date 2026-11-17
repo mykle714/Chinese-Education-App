@@ -16,6 +16,24 @@ interface UseTextSelectionReturn {
     inputRef: React.RefObject<HTMLTextAreaElement | null>;
     focusTextArea: (restoreSelection?: boolean) => void;
     handleTextAreaBlur: React.FocusEventHandler<HTMLInputElement | HTMLTextAreaElement>;
+    // NOTHING-SELECTED MODE (see `awaitingFirstSelection` below). True from mount
+    // until the learner's first word selection; never true again for this mount.
+    awaitingFirstSelection: boolean;
+    // Call on a real learner gesture in the reading box (key press, pointer down) —
+    // it is what lets selection logic run while `awaitingFirstSelection` holds.
+    noteUserInteraction: () => void;
+    // The reading box's last recorded caret/selection, as STATE (lastSelectionRef's
+    // reactive twin). The Pinyin display mode (ReaderCpcdView) paints its own highlight
+    // from this, since its textarea is invisible. Collapsed (start === end) = no word.
+    selectionRange: { start: number; end: number };
+    // Select [start, end) in the reading box as if the learner had placed it there —
+    // the Pinyin view's desktop click-on-a-word. Counts as a learner gesture.
+    selectRange: (start: number, end: number) => void;
+    // True when `selectedDictionaryCard` came from the English → Chinese lookup (the
+    // selection is an English word), so `selectedPersonalCard` is only the translation's
+    // card if the document's vocab lookup happened to load it — the page then lets the Add
+    // key fetch its own status instead of trusting a miss.
+    selectedByTranslation: boolean;
 }
 
 export function useTextSelection(
@@ -24,11 +42,15 @@ export function useTextSelection(
     autoSelectEnabled: boolean,
     // GSA word spans for the current document (docs/READER_SEGMENTATION.md) —
     // drives auto word selection so a tapped caret expands to a dictionary word.
-    segmentSpans: SegmentSpan[]
+    segmentSpans: SegmentSpan[],
+    // The English → Chinese fallback (useEnglishTranslations): a selection with no det row
+    // of its own that is an English word resolves to the Chinese entry it translates to.
+    translateEnglish?: (selectedText: string) => DictionaryEntry | null,
 ): UseTextSelectionReturn {
     // Text selection card state
     const [selectedPersonalCard, setSelectedPersonalCard] = useState<VocabEntry | null>(null);
     const [selectedDictionaryCard, setSelectedDictionaryCard] = useState<DictionaryEntry | null>(null);
+    const [selectedByTranslation, setSelectedByTranslation] = useState(false);
 
     // Live handle to the underlying <textarea> (forwarded via MUI TextField's
     // inputRef). Used for both focus management and reading the caret/selection,
@@ -38,6 +60,38 @@ export function useTextSelection(
     // The most recent caret/selection range, persisted so we can restore the
     // user's place whenever focus returns to the reading box.
     const lastSelectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
+    // Reactive copy for the Pinyin view's highlight (see `selectionRange` above). Only
+    // set when the range actually changes, so the frequent `select` events that land
+    // on the same word cost no re-render.
+    const [selectionRange, setSelectionRangeState] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
+
+    // ── NOTHING-SELECTED MODE ──────────────────────────────────────────────
+    // A document opens with NO word highlighted (owner's call 2026-11-17; it used to
+    // auto-highlight the first word): the caret is parked at the top and the
+    // dictionary keycap shows the how-to-navigate hint instead of an entry.
+    //
+    // The mode ends on the first selection the LEARNER makes (a tap / arrow / click
+    // that lands on a word), and it is one-way: nothing in this hook sets it back, so
+    // only remounting the page (leaving the document and coming back) restores it.
+    //
+    // Why a separate interaction flag: focusing the box fires `select` on its own
+    // (programmatic focus, the blur→refocus loop, leaving edit mode), and auto
+    // word-select would expand the parked caret at 0 into the first word — ending
+    // the mode with no learner action. So until the learner has touched the box,
+    // auto-select and the card lookup stand down. A gesture that selects nothing
+    // (a back-tap at the very top, a click in whitespace) keeps the mode.
+    const [awaitingFirstSelection, setAwaitingFirstSelection] = useState(true);
+    const awaitingFirstSelectionRef = useRef(true);
+    const userHasInteractedRef = useRef(false);
+    const noteUserInteraction = useCallback(() => {
+        userHasInteractedRef.current = true;
+    }, []);
+    // True while selection work must be skipped: still in the mode and the learner
+    // has not touched the box yet.
+    const isPassiveWhileAwaiting = useCallback(
+        () => awaitingFirstSelectionRef.current && !userHasInteractedRef.current,
+        []
+    );
 
     // Handle text change - prevent modifications while maintaining cursor functionality
     const handleTextChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -50,23 +104,47 @@ export function useTextSelection(
     const handleTextSelectionChange = useCallback(() => {
         const textarea = inputRef.current;
         if (!textarea) return;
+        if (isPassiveWhileAwaiting()) return;
 
         // Persist the live caret/selection so focus restoration returns the user
         // to their place (this fires after handleAutoWordSelect, so it captures
         // the auto-selected word range when auto-select is enabled).
-        lastSelectionRef.current = { start: textarea.selectionStart, end: textarea.selectionEnd };
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        lastSelectionRef.current = { start, end };
+        setSelectionRangeState(prev => (prev.start === start && prev.end === end ? prev : { start, end }));
 
         // Get the currently selected text
         const selectedTextContent = getSelectedText(textarea);
 
         // Find matching cards in both personal and dictionary
-        const matchingPersonalCard = findExactMatch(selectedTextContent, loadedPersonalCards);
-        const matchingDictionaryCard = findDictionaryMatch(selectedTextContent, loadedDictionaryCards);
+        let matchingPersonalCard = findExactMatch(selectedTextContent, loadedPersonalCards);
+        let matchingDictionaryCard = findDictionaryMatch(selectedTextContent, loadedDictionaryCards);
+
+        // No det row of its own → maybe an English word: show the Chinese entry it
+        // translates to, exactly as if that word were highlighted (owner's call 2026-11-17:
+        // no marker). Its personal card is the TRANSLATION's (keyed by the Chinese word).
+        let byTranslation = false;
+        if (!matchingDictionaryCard && translateEnglish && selectedTextContent) {
+            const translated = translateEnglish(selectedTextContent);
+            if (translated) {
+                matchingDictionaryCard = translated;
+                matchingPersonalCard = findExactMatch(translated.word1, loadedPersonalCards);
+                byTranslation = true;
+            }
+        }
 
         // Update the selected card states
         setSelectedPersonalCard(matchingPersonalCard);
         setSelectedDictionaryCard(matchingDictionaryCard);
-    }, [loadedPersonalCards, loadedDictionaryCards]);
+        setSelectedByTranslation(byTranslation);
+
+        // The learner's first real selection ends NOTHING-SELECTED MODE, for good.
+        if (awaitingFirstSelectionRef.current && selectedTextContent.length > 0) {
+            awaitingFirstSelectionRef.current = false;
+            setAwaitingFirstSelection(false);
+        }
+    }, [loadedPersonalCards, loadedDictionaryCards, isPassiveWhileAwaiting, translateEnglish]);
 
     // Auto word selection: expand a tapped/placed caret to the gsa word span
     // containing it (docs/READER_SEGMENTATION.md). Replaces the old pairwise
@@ -74,6 +152,9 @@ export function useTextSelection(
     // caret in whitespace/punctuation (no span) simply selects nothing.
     const handleAutoWordSelect = useCallback(() => {
         if (!autoSelectEnabled) return;
+        // NOTHING-SELECTED MODE: a focus-driven `select` must not grow the parked caret
+        // into the first word.
+        if (isPassiveWhileAwaiting()) return;
 
         // The underlying textarea, forwarded via inputRef
         const textarea = inputRef.current;
@@ -88,7 +169,7 @@ export function useTextSelection(
         if (span) {
             textarea.setSelectionRange(span.start, span.end);
         }
-    }, [autoSelectEnabled, segmentSpans]);
+    }, [autoSelectEnabled, segmentSpans, isPassiveWhileAwaiting]);
 
     // Focus the reading box. By default we restore the last saved selection;
     // pass restoreSelection=false on a fresh document to park the caret at the top.
@@ -101,6 +182,8 @@ export function useTextSelection(
     // setSelectionRange doesn't reliably fire the textarea's `select` event, so
     // these must be invoked explicitly rather than relied upon to fire. An empty
     // document yields no word (handleAutoWordSelect bails on empty content).
+    // While NOTHING-SELECTED MODE holds (before the learner's first gesture) both
+    // calls stand down, so focusing only parks the caret and highlights nothing.
     const focusTextArea = useCallback((restoreSelection = true) => {
         const textarea = inputRef.current;
         if (!textarea) return;
@@ -118,6 +201,18 @@ export function useTextSelection(
         handleAutoWordSelect();
         handleTextSelectionChange();
     }, [handleAutoWordSelect, handleTextSelectionChange]);
+
+    // Programmatic selection on the learner's behalf (Pinyin view, desktop click). The
+    // range is already a whole gsa span, so auto word-select has nothing to expand;
+    // only the card lookup + bookkeeping run.
+    const selectRange = useCallback((start: number, end: number) => {
+        const textarea = inputRef.current;
+        if (!textarea) return;
+        userHasInteractedRef.current = true;
+        if (document.activeElement !== textarea) textarea.focus({ preventScroll: true });
+        textarea.setSelectionRange(start, end);
+        handleTextSelectionChange();
+    }, [handleTextSelectionChange]);
 
     // When the reading box loses focus we re-assert it on the next frame so the
     // box is always focused after the user taps elsewhere (vocab card, settings,
@@ -152,6 +247,11 @@ export function useTextSelection(
         handleAutoWordSelect,
         inputRef,
         focusTextArea,
-        handleTextAreaBlur
+        handleTextAreaBlur,
+        awaitingFirstSelection,
+        noteUserInteraction,
+        selectionRange,
+        selectRange,
+        selectedByTranslation,
     };
 }

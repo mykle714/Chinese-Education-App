@@ -12,7 +12,7 @@ pattern and add an iOS-style enter/exit slide transition.
 |---|---|---|
 | Wrapper | `src/components/LeafPage.tsx` | `src/components/NodePage.tsx` |
 | Header | `LeafPageHeader` (DOWN chevron) | `NodePageHeader` / `MobileTabScreen` (LEFT chevron) |
-| Footer | **none** | **kept** (the flat footer bar) |
+| Footer | **none** | **kept** (the floating footer slab) |
 | Exit options | **back arrow only** | back arrow + footer tabs |
 | Enter motion | slides **up** (translateY 100% → 0) | slides **in from the right** (translateX 100% → 0) |
 | Exit motion | slides **down** on back | slides **right** on back — **only via the arrow** |
@@ -376,7 +376,7 @@ Menu popover opens (there is no `/menu` route since 2026-11-06), `arena` and `di
 
 Every other route (all leaf pages, login, etc.) is absent → the footer slides out.
 `MobileTabScreen` no longer renders `MobileFooter` itself; it only reserves
-`FOOTER_CLEARANCE`. It takes no `activePage` either — `FooterPresenter` derives the
+`SLAB_FOOTER_TOTAL_CLEARANCE`. It takes no `activePage` either — `FooterPresenter` derives the
 active tab from the route.
 
 ### Transient suppression (a modal is open)
@@ -479,7 +479,10 @@ whichever word is showing on the trail.
 - Membership comes from `GET /api/vocabEntries/libraryStatus` (a `'provisional'` row
   or no row = not in). Until it arrives nothing renders, so an added word never flashes
   "+". It is stored with its `entryKey`, so moving to another word refetches. A
-  failed status fetch falls back to "+" (adding is idempotent).
+  failed status fetch falls back to "+" (adding is idempotent). A host that already
+  knows the answer passes it as `useLearningToggle`'s `seedInLibrary` and the control
+  shows that at once, the fetch then confirming it — the Reader's dictionary keycap does,
+  from its document vocab lookup (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Look).
 - **Optimistic** (2026-10-30): a tap flips the control at once and the request is sent
   only after that frame paints (`afterNextPaint`); there is no in-flight / disabled /
   spinner state. Taps during a request are serialized per word — one request at a time,
@@ -530,12 +533,10 @@ The Reader is TWO routed pages, following the same fetch-by-id cdp pattern as
   Menu popover (`NodePage`, LEFT arrow → `navigateBackOr(navigate, "/")`, footer kept, Menu tab lit —
   same shape as `CommunityPage`). Registered by its `src/routes/routeMeta.ts` row
   (`chrome: "node"`, `footerTab: "menu"`).
-  Fixed non-scrolling shell (`scrollable={false}`) — `TextSidebar` owns its own
-  internal scroll region for the document list, matching the fixed-layout
-  `NodePage` pattern used by `AddCardsPage`; `MobileTabScreen`'s scroll area
-  reserves `FOOTER_CLEARANCE` regardless of `scrollable`, so no manual
-  footer spacer is needed. `TextSidebar`'s `onTextSelect` calls
-  `useSlideNavigate()` to `/reader/${text.id}`, and its New Document button
+  A plain scrolling `NodePage` (since 2026-11-16; it was a fixed shell whose list
+  scrolled inside a 500px "sidebar" box): the header scrolls away with the list and a
+  closing `FooterSpacer` keeps the last row clear of the slab. `TextSidebar`'s
+  `onTextSelect` calls `useSlideNavigate()` to `/reader/${text.id}`, and its New document tile
   slides to `/reader/new` (`NEW_DOCUMENT_PATH`, `readerPaths.ts`), a blank draft
   the document page opens in edit mode
   ([USER_DOCUMENT_FEATURE_SUMMARY.md](./USER_DOCUMENT_FEATURE_SUMMARY.md) § Creating a document).
@@ -547,9 +548,9 @@ The Reader is TWO routed pages, following the same fetch-by-id cdp pattern as
   right slot (`docHeaderRightContent`) carries the Edit/Delete icon buttons, so
   `TextHeader.tsx` itself only renders title/meta — no back/edit/delete buttons of
   its own. `ReaderDocumentSurface` is deliberately NOT the shared
-  `NodePage`: `MobileTabScreen` would reserve `FOOTER_CLEARANCE` for a
-  footer bar `/reader/:id` never shows (it isn't in `FooterPresenter`'s route
-  maps) and add a scroll-away header to a fixed layout. Instead it composes
+  `NodePage`: `MobileTabScreen` would reserve the slab's clearance for a
+  footer `/reader/:id` never shows (its routeMeta row has no `footerTab`) and add a
+  scroll-away header to a fixed layout. Instead it composes
   `NodePageHeader` + `usePageSlide({ axis: "x" })` directly, per the header
   hierarchy above. The back arrow calls `navigate("/reader")` — an ordinary route
   change, so `Layout`'s pathname effect clears the skip-enter latch normally, same

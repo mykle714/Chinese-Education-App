@@ -75,6 +75,9 @@ export class TextService {
     // id and createdAt are filled by Postgres defaults (uuid_generate_v4, now()).
     const created = await this.textDAL.insertUserText({
       userId, title, content: safeContent, language, characterCount,
+      // A draft can carry an icon from its first Save (docs/USER_DOCUMENT_FEATURE_SUMMARY.md
+      // § "Document icon"); omitted → no icon.
+      iconId: textData.iconId ?? null,
     });
 
     console.log(`[TEXT-SERVICE] ✅ Created new user document:`, {
@@ -111,10 +114,10 @@ export class TextService {
       throw new ValidationError('System texts cannot be edited');
     }
     
-    // Nothing to change (neither field): return the document as it is. TextController
+    // Nothing to change (no field): return the document as it is. TextController
     // already rejects an empty body with 400; this guards any other caller, because
     // `TextDAL.updateFields` refuses an update that names no column.
-    if (updateData.title === undefined && updateData.content === undefined) {
+    if (updateData.title === undefined && updateData.content === undefined && updateData.iconId === undefined) {
       return existingText;
     }
 
@@ -126,6 +129,8 @@ export class TextService {
       // Counted on the RAW content, as createText does. `!== undefined` (not truthiness),
       // so clearing a document to "" records 0 rather than keeping the old count.
       characterCount: updateData.content !== undefined ? updateData.content.length : undefined,
+      // `null` clears the icon, `undefined` leaves it (TextDAL.updateFields skips undefined).
+      iconId: updateData.iconId,
     });
 
     if (!updated) {
@@ -281,6 +286,20 @@ export class TextService {
     if (data.language && !validLanguages.includes(data.language)) {
       throw new ValidationError(`Invalid language. Must be one of: ${validLanguages.join(', ')}`);
     }
+
+    this.validateIconId(data.iconId);
+  }
+
+  /**
+   * An icon id is an icons8 id string or null (clear). Shape-checked only: whether the
+   * icon exists is the FK's job (texts."iconId" → icons8, migration 193), and the
+   * client always caches the icon (`ensureIcon8`) before sending its id.
+   */
+  private validateIconId(iconId: unknown): void {
+    if (iconId === undefined || iconId === null) return;
+    if (typeof iconId !== 'string' || iconId.trim().length === 0 || iconId.length > 64) {
+      throw new ValidationError('Invalid icon id');
+    }
   }
 
   /**
@@ -305,5 +324,7 @@ export class TextService {
     if (data.language !== undefined) {
       throw new ValidationError('Language cannot be changed after document creation');
     }
+
+    this.validateIconId(data.iconId);
   }
 }

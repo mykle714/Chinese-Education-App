@@ -1,8 +1,11 @@
 # Reader Word Segmentation & Tap Navigation (gsa)
 
-The Reader (`/reader`) navigates documents **word by word**: a tap on the right
-two-thirds of the text advances the selection to the next word, the left third
-steps back, and a caret placed anywhere auto-expands to the word containing it.
+The Reader (`/reader`) navigates documents **word by word**: on mobile, a tap on the
+right two-thirds of the screen advances the selection to the next word, the left third
+steps back, and a caret placed anywhere auto-expands to the word containing it. The tap
+region is the **whole screen below the display strip** (edge to edge, down to the bottom),
+not just the reading box (`ReaderDocumentPage.tsx` → `.reader-page-tap-region`, which
+mounts `ReaderTapOverlay`; `ReaderTapOverlay.tsx` → `TAP_LEFT_ZONE_FRACTION`).
 "Word" here means a **gsa segment** — the same dictionary-aware greedy
 segmentation used for example-sentence enrichment — so the tapped unit is
 always something the dictionary (or the user's own vocab) can answer for.
@@ -15,7 +18,7 @@ Parent doc: [USER_DOCUMENT_FEATURE_SUMMARY.md](./USER_DOCUMENT_FEATURE_SUMMARY.m
 | Layer | Piece |
 |---|---|
 | Client util (pure) | `src/features/reader/documentSegmentation.ts` — gsa port, span computation, navigation |
-| Client feature | `ReaderPage.tsx` (span memo) → `TextArea.tsx` (arrow keys) / `useTextSelection.ts` (auto select) / `ReaderTapOverlay.tsx` (tap gestures) |
+| Client feature | `ReaderDocumentPage.tsx` (span memo) → `TextArea.tsx` (arrow keys) / `useTextSelection.ts` (auto select) / `ReaderTapOverlay.tsx` (tap gestures) / `ReaderCpcdView.tsx` (Pinyin display mode: renders the same spans as cpcd words and highlights the textarea's selected span — see USER_DOCUMENT_FEATURE_SUMMARY.md § Display modes) |
 | Server (canonical algorithm) | `server/dal/shared/segmentString.ts` — `segmentWithDict` et al. (est enrichment) |
 | Server (data source) | `POST /api/vocabEntries/byTokens` (`VocabEntryController.getEntriesByTokens`) |
 
@@ -30,7 +33,7 @@ data the reader already loads.
    server's `getAllSubstrings(maxLen=4)`) and fetches matching rows via
    `POST /api/vocabEntries/byTokens` → `loadedDictionaryCards` (det rows incl.
    `frequencyScore` + `matchException`) and `loadedPersonalCards` (vet rows).
-2. `ReaderPage.tsx` memoizes the segmentation
+2. `ReaderDocumentPage.tsx` memoizes the segmentation
    (`segmentSpans` `useMemo`, keyed on `selectedText?.content` + the two card
    arrays — **never on `token`**, per the silent-token-refresh rule in CLAUDE.md):
    - `buildReaderDictMap(dictCards, personalCards)` — word1 → `{frequencyScore}`;

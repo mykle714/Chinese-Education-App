@@ -48,3 +48,22 @@ export const CANVAS_SIZE = WRITING_FOCUS_SIZE;
 export const SPEED_TIERS: SpeedTierLadder = {
     maxMs: [90_000, 120_000, 165_000, 210_000, 285_000, 360_000],
 };
+
+/**
+ * Hints (docs/WRITING_PRACTICE_REWORK.md § 2 "Hints"). Phase 2 only: each cell's FIRST ✓
+ * banks one point; the Hint button opens a menu of these offerings, and the chosen one is
+ * applied to a cell the learner then taps. Applying lowers that cell's writing level to
+ * the offering's (never raises it — a cell already easier keeps its own level, so the
+ * points are simply spent), and the cell's writing mark goes out at that lower level, so
+ * the server's anti-farming gate (`writingMarkCounts`) judges it as the help it was.
+ * Most help (dearest) first.
+ */
+export const WRITING_GRID_HINTS: readonly { level: number; cost: number }[] = [
+    { level: 2, cost: 4 }, // Trace
+    { level: 5, cost: 2 }, // Memorize
+];
+/**
+ * Charge bars under the Hint button — the same 8 as Word Search's meter, one per cell.
+ * Only 7 can ever fill: the 8th ✓ finishes the board and ends the run.
+ */
+export const WRITING_GRID_HINT_METER_UNITS = 8;

@@ -88,8 +88,8 @@ const CANVAS_INSET = 10;
  * chips fit on one row (owner, 2026-11-15). It replaced CANVAS_MAX_WIDTH_SHARE (0.68 of
  * the width; 0.6 before that), which on a 390px phone left a ~125px column that wrapped
  * the third part. On that phone the canvas is now width-bound at 218px (was up to
- * 245px), so a little spare height collects above it (the bottom-alignment rule keeps
- * its bottom edge fixed). The column floor also gives the three ink keys their full
+ * 245px), so a little spare height collects BELOW it (the canvas is top-aligned; the
+ * ink keys lift by that slack to keep the bottom-alignment rule). The column floor also gives the three ink keys their full
  * CHAR_KEY_FACE (they need 122px; the controls' PARTS_COLUMN_PAD a side leaves 132).
  * On a phone wide enough that the canvas is height-bound, the extra width goes to the
  * parts column, so the gap to the canvas stays PARTS_COLUMN_PAD there too.
@@ -164,6 +164,10 @@ export default function BeginnerKeyboard({ onCommit, height, debug, draft }: Beg
   const canvasRef = useRef<WritingCanvasHandle>(null);
   const lowerRef = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState(0);
+  // The spare height left BELOW the canvas when its width cap binds (the canvas hangs
+  // from the TOP of its slot). The controls row adds it to its bottom padding so the
+  // ink keys' lips stay on the canvas's bottom edge (the bottom-alignment rule).
+  const [canvasSlack, setCanvasSlack] = useState(0);
   // Mirrors the canvas's redo stack so the Redo key can grey out. The stack
   // itself lives imperatively in the canvas; every change to it is followed by an
   // ink notification, so re-reading it there is always current.
@@ -186,7 +190,10 @@ export default function BeginnerKeyboard({ onCommit, height, debug, draft }: Beg
       // Vertically the slot insets top + bottom; horizontally only the right (no left
       // inset — the parts column's padding is the gap).
       const limit = Math.min(box.height - CANVAS_INSET * 2, box.width - PARTS_COLUMN_MIN_WIDTH - CANVAS_INSET);
-      setCanvasSize(Math.max(0, Math.floor(limit)));
+      const size = Math.max(0, Math.floor(limit));
+      setCanvasSize(size);
+      // Height-bound → 0; width-bound → the height the canvas does not use.
+      setCanvasSlack(Math.max(0, Math.floor(box.height - CANVAS_INSET * 2 - size)));
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -305,11 +312,12 @@ export default function BeginnerKeyboard({ onCommit, height, debug, draft }: Beg
               the same as the chips'.
 
               ⚠️ THE BOTTOM-ALIGNMENT RULE (owner, 2026-11-15): the bottom of the key
-              row's LIPS sits on the canvas's bottom edge. Two halves keep it true at any
-              keyboard size: the canvas is pinned to the BOTTOM of its slot (canvas-slot
-              alignItems: flex-end), so its bottom edge is always CANVAS_INSET above the
-              keyboard's; and this row's bottom padding is CANVAS_INSET + KEY_LIP, since
-              the lip paints KEY_LIP below the key's box. Change either inset and both
+              row's LIPS sits on the canvas's bottom edge. The canvas hangs from the TOP
+              of its slot (canvas-slot alignItems: flex-start, owner 2026-11-17), so its
+              bottom edge sits CANVAS_INSET + canvasSlack above the keyboard's, where
+              canvasSlack is the spare height a width-bound canvas leaves below itself
+              (0 when height-bound). This row's bottom padding is that plus KEY_LIP,
+              since the lip paints KEY_LIP below the key's box. Change the inset and both
               move together. */}
           <Box
             className="beginner-keyboard__controls"
@@ -319,7 +327,7 @@ export default function BeginnerKeyboard({ onCommit, height, debug, draft }: Beg
               // the same gap to the canvas the chips have.
               mx: `${PARTS_COLUMN_PAD}px`,
               pt: 0.75,
-              pb: `${CANVAS_INSET + KEY_LIP}px`,
+              pb: `${CANVAS_INSET + canvasSlack + KEY_LIP}px`,
               display: 'flex',
               flexDirection: 'column',
               gap: 0.75,
@@ -388,16 +396,17 @@ export default function BeginnerKeyboard({ onCommit, height, debug, draft }: Beg
 
         <Box
           className="beginner-keyboard__canvas-slot"
-          // Equal inset top / right / bottom; the canvas hangs from the BOTTOM (flex-end) so
-          // its bottom edge meets the ink keys' lips (the bottom-alignment rule on
-          // .beginner-keyboard__controls). When the width cap binds, the spare height
-          // collects ABOVE the canvas instead of splitting around it.
+          // Equal inset top / right / bottom; the canvas hangs from the TOP (flex-start,
+          // owner 2026-11-17). When the width cap binds, the spare height collects BELOW
+          // the canvas, and the controls row lifts by the same amount (canvasSlack) so
+          // the ink keys' lips still meet its bottom edge (the bottom-alignment rule on
+          // .beginner-keyboard__controls).
           // No LEFT inset: the parts column's padding is the whole gap (CANVAS_INSET doc).
           sx={{
             p: `${CANVAS_INSET}px`,
             pl: 0,
             display: 'flex',
-            alignItems: 'flex-end',
+            alignItems: 'flex-start',
             justifyContent: 'center',
           }}
         >

@@ -26,18 +26,31 @@ were NodePages before that.
 ### The action tiles
 
 `src/features/friends/FriendActionTiles.tsx`, rendered as cells of `FriendsBody`'s 3-column
-`Bento`. Code: `FriendActionTiles`, `FriendsBody` → `toggleView`, `friendsView.ts` →
-`FriendsView` / `FRIENDS_VIEW_ORDER`.
+`Bento`. Code: `FriendActionTiles` → `pressScaleSx`, `FriendsBody` → `toggleView`,
+`friendsView.ts` → `FriendsView` / `FRIENDS_VIEW_ORDER`.
 
 * **Face** = the `BentoTile` `compact` tiles they always were: Send `blu`, Accept `grn`,
   Remove `red` (ramp MID), ghost glyph, one-word title, resting `SHADOW.rest`, and
   Accept's alert `pin` with the incoming count. `BentoTile` takes `pressed`
   (→ `aria-pressed`) and `sx` for this.
-* **Selected** = a 2px `COLORS.onSurface` **outline** inset 2px (`outlineOffset: -2px`), the
-  "stronger ink ring" CLAUDE.md § "Buttons & cards" names for selected tiles. An outline,
-  not an inset box-shadow, because it paints above the tile's content, so the ghost glyph
-  cannot cover it; inset, so selecting never changes the tile's box. The fill never
-  changes, so each tile keeps its valence colour in both states.
+* **Selected** = a **two-state button: state by colour, press by size** (2026-11-17; before
+  that a latched smaller scale, and before 2026-11-16 a 2px ink outline). With none
+  selected all three wear their hue's `mid` tier. Once one is selected it KEEPS its `mid`
+  fill and the other two fade over 220 ms to a blend halfway between their hue's `surface`
+  and `tint` tiers (`theme/shadeHex.ts` → `mixHex`, weight `DIM_TOWARD_TINT` = 0.5), so the
+  selected tile reads as lit and its siblings recede. Their ghost glyphs fade with them,
+  0.15 → 0.07 opacity (`DIMMED_GHOST_OPACITY`): ink at a fixed opacity would otherwise be
+  the most emphasized thing on the lighter tile. The ramp has no tier between the two,
+  hence the blend; both ends are the tile's own hue. (Tried first and rejected: a
+  `mark`-tier fill on the selected tile, too loud; siblings to `tint`, too drastic;
+  siblings to `surface`, not strong enough.)
+  Every tile rests at full size. Held (finger down, any state) sinks to `scale(0.76)` in a
+  quick 90 ms press-in, with no colour change. The click fires on release and flips the
+  view while the tile springs back to full size with a small overshoot
+  (`theme/keycapPress.ts` → `KEYCAP_POP_TRANSITION`). The held look is plain `:active`,
+  deliberately NOT the keycap delegate: its `KEYCAP_MIN_HELD_MS` floor kept the tile at
+  its smallest after the finger lifted, which read as lag. `prefers-reduced-motion` drops the transitions. Both fills are tiers of the
+  tile's own hue, so each tile keeps its valence colour in every state.
 * **Contract**: at most one tile selected. Tapping the selected tile deselects it (back to
   the leaderboard); tapping another moves the selection across.
 * **Slide**: the four views sit on a carousel: leaderboard 0, Send 1, Accept 2, Remove 3.
@@ -247,7 +260,7 @@ heading: it starts directly under the friend code card (`src/features/friends/Fr
   `isCurrentUser`, so `FriendPersonRow` renders the avatar/name half inert (no pointer
   cursor, no expand). Every friend row expands in place (§ 1 "Expand in place").
 * **The rank is the row's whole left section**, not a chip: `FriendPersonRow`'s `leading`
-  slot renders a full-height column (min 40px wide). The tint (`leadingFill`) is painted on
+  slot renders a full-height column (min 32px wide, 6px side padding). The tint (`leadingFill`) is painted on
   the ROW and the body sits over it as a white panel rounded on all four corners (15px),
   so the tint wraps into the body's left corners; the divider is the body's own curved
   `COLORS.rowBorder` left border (user 2026-11-15 — until then the section carried the

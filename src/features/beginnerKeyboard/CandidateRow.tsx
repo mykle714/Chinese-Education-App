@@ -120,19 +120,28 @@ const MODE_STYLE: Record<CandidateMode, { ground: string; chip: string; accent: 
 };
 
 /**
- * The EMPTY row (canvas clean, buffer clean — the only time it has no chips) sits on the
- * drawing gold, not the idle blue (owner, 2026-11-15). Nothing on it commits, so blue's
- * "this commits" meaning would be wrong; gold is the colour the row turns the moment the
- * learner starts drawing, so the instruction already wears the colour of what it asks for.
+ * The EMPTY row (canvas clean, buffer clean — the only time it has no chips) sits on a
+ * gold, not the idle blue (owner, 2026-11-15). Nothing on it commits, so blue's "this
+ * commits" meaning would be wrong; gold is the colour the row turns the moment the
+ * learner starts drawing, so the empty row previews the drawing state its hint is about.
+ * It is the org ramp's SURFACE step (`org`), one step paler than the drawing ground's
+ * MID (`orgM`) (owner, 2026-11-17): a faded preview of the live gold, so the resting row
+ * recedes behind its hint and the first stroke visibly "lights" it up to full gold.
  */
-const EMPTY_GROUND = MODE_STYLE.glyph.ground;
+const EMPTY_GROUND = COLORS.org;
 
 /**
- * The empty row's one-line lesson (owner, 2026-11-15). Every learner knows to draw in the
- * canvas; what they don't know is how this differs from the OS Chinese keyboard: you
- * build a character out of its COMPONENTS, one at a time — and "component" means nothing
- * until you see one. So the row shows a worked example instead of the word.
- * 你 = 亻 + 尔: its left and right halves (owner, 2026-11-15; was 好 = 女 + 子). NOT the
+ * The empty row's one-line hint (owner, 2026-11-15; rewritten 2026-11-17). Every
+ * learner knows to draw in the canvas; what they don't know is how this differs from
+ * the OS Chinese keyboard: you build a character out of its COMPONENTS, one at a time —
+ * and "component" means nothing until you see one. So the row shows one worked example,
+ * phrased as an option ("you can") rather than an order: "To get 你, you can use
+ * 亻 + 尔". Wording
+ * history, all 2026-11-17 unless noted: "To write 你, draw 亻 then 尔" (2026-11-15, read as a
+ * command) → "e.g. …" prefix → the equation "亻 + 尔 = 你" (read as intimidating and
+ * unclear) → "Try it: Build 你 from parts like 亻 & 尔" (prefix dropped for width
+ * and brevity, & → +) → "Build 你 from parts like 亻 + 尔" → this.
+ * 你 from 亻 and 尔: its left and right halves (owner, 2026-11-15; was 好 from 女, 子). NOT the
  * three leaves `dictionaryentries_zh.components` stores (`[亻, ⺈, 小]`) — ⺈ teaches
  * nothing to a beginner, and it needn't: drawing 尔 works because the buffer expands a
  * decomposable glyph to its leaves on entry (glyphLookup.ts → expandGlyph, whose doc
@@ -448,16 +457,27 @@ export default function CandidateRow({
         {candidates.length === 0 ? (
           <Typography
             className="beginner-keyboard__candidate-row-empty"
-            // Bigger than the old caption (bodyLg, 16px) so it reads as the keyboard's one
-            // instruction; SEMIBOLD in the muted grey (textSecondary) so it is legible but
-            // doesn't shout (owner, 2026-11-15 — semibold full ink was too loud, regular
-            // ink2 too thin). ⚠️ textSecondary on orgM is ~3.7 : 1, under WCAG AA's
-            // 4.5 : 1 for 16px text; the semibold weight is what carries it.
+            // A gentle hint (owner, 2026-11-17): it wears the keyboard's hint ink
+            // (KEYBOARD_COLORS.faint — the same as ComponentBuffer's "Tap to clear"), so it recedes the way an input's placeholder does. Was
+            // semibold textSecondary (2026-11-15), which read as a command. Size stays
+            // bodyLg (16px): body (14px) was tried and read awkwardly small for a row
+            // whose whole width it fills (owner, 2026-11-17). Normal letter spacing: the
+            // 0.12em tracking belonged to the equation wording and would only stretch a
+            // sentence. ⚠️ faint on org (EMPTY_GROUND) is ~2.2 : 1, well under WCAG AA's
+            // 4.5 : 1 — accepted because this is placeholder-class copy gone on the first
+            // stroke.
             sx={{
-              fontFamily: FONTS.sans,
+              // The hint is set entirely in the app's Chinese face (FONTS.cjk → 975 Maru
+              // SC, owner 2026-11-17): it is mixed-script, and Maru's slices cover Latin
+              // too, so 你/亻/尔 and the English share one rounded face instead of the
+              // English sitting in Instrument Sans while the characters fell through to
+              // the OS's CJK font. Same precedent as towerPlate.ts → TOWER_STUDY_FONT. The
+              // loading line stays in the UI sans. Maru ships ONE weight (regular), so the
+              // weight is regular — anything heavier would be synthesised.
+              fontFamily: loading ? FONTS.sans : FONTS.cjk,
               fontSize: SIZE.bodyLg,
-              fontWeight: WEIGHT.semibold,
-              color: COLORS.textSecondary,
+              fontWeight: WEIGHT.regular,
+              color: KEYBOARD_COLORS.faint,
               // Centred in the band (owner, 2026-11-15): with no chips it is the row's
               // only content, so it reads as a message rather than a stray left label.
               flex: 1,
@@ -470,7 +490,7 @@ export default function CandidateRow({
             ) : (
               // Plain inline characters, the sentence's own size and weight (owner,
               // 2026-11-15) — an earlier pass set them a size up in the CJK face.
-              `To write ${EXAMPLE_TARGET}, draw ${EXAMPLE_COMPONENTS[0]} then ${EXAMPLE_COMPONENTS[1]}`
+              `To get ${EXAMPLE_TARGET}, you can use ${EXAMPLE_COMPONENTS[0]} + ${EXAMPLE_COMPONENTS[1]}`
             )}
           </Typography>
         ) : (

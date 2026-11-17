@@ -73,6 +73,32 @@ export function buildReaderDictMap(
 }
 
 /**
+ * Build the word → pronunciation lookup the Pinyin display mode reads
+ * (ReaderCpcdView). Same entry-picking rule as the keycap's card lookup
+ * (textSelection.ts → findDictionaryMatch): the FIRST det row whose word1 — or,
+ * failing that, word2 — matches, so the pinyin under a word always agrees with the
+ * entry the keycap shows when that word is selected. Personal cards fill gaps only
+ * (a user-created word with no det row).
+ */
+export function buildReaderPronunciationMap(
+    dictCards: DictionaryEntry[],
+    personalCards: VocabEntry[]
+): Map<string, string> {
+    const map = new Map<string, string>();
+    // word1 first, as its own pass, so a word2 alias can never shadow a headword.
+    for (const entry of dictCards) {
+        if (entry.pronunciation && !map.has(entry.word1)) map.set(entry.word1, entry.pronunciation);
+    }
+    for (const entry of dictCards) {
+        if (entry.pronunciation && entry.word2 && !map.has(entry.word2)) map.set(entry.word2, entry.pronunciation);
+    }
+    for (const card of personalCards) {
+        if (card.pronunciation && card.entryKey && !map.has(card.entryKey)) map.set(card.entryKey, card.pronunciation);
+    }
+    return map;
+}
+
+/**
  * Collect matchException tokens from det entries into one exclusion set.
  * Port of server buildExcludeSet (segmentString.ts). Multi-char tokens listed
  * here are never matched by the gsa; single chars are never excluded (they are

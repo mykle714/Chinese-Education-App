@@ -185,11 +185,21 @@ When the clusters need lifting, only the **default** cluster is raised — the o
 learner is already on — so the repair never changes which sense a card shows. A rare
 sense is never raised (老公 "eunuch" stays at 1), and nothing is ever lowered.
 
-**Bound forms count through their compounds** (rubric rule added 2026-08-28). A
-morpheme that is never uttered alone is still *heard* constantly if the compounds
-carrying that meaning are common: 自 is bound, yet a learner meets it daily inside
-自己/自由/自动, so its senses score as frequent. This is what separates a
-bound-but-everywhere morpheme (自) from a genuinely rare one (兮).
+**Bound forms — the compound-credit rule was REMOVED (2026-11-17).** From 2026-08-28 the
+rubric (`scripts/backfill/chinese/lib/frequencyScore.js` → `SCALE_AND_GUIDELINES`) told the
+scorer that a bound morpheme's senses count through their compounds (自 via 自己/自由).
+That inflated senses that live only inside one compound — 的 "taxi" (的士) and
+"bull's-eye" (目的) scored 4 and were starred. The guideline was deleted **without a
+SCRIPT_VERSION bump**. Every cluster score written 2026-08-28 → 2026-11-17 was produced
+under the rule; the damage was repaired by hand instead of a corpus-wide re-score:
+every starred non-default sense of a discoverable single-char zh entry (526 senses / 328
+entries) was reviewed, and the compound-only ones lowered — **133 senses on 109 entries**,
+to 3 (only met inside compounds) or 2 (confined to one or two lexicalized compounds:
+的 "taxi", "bull's-eye"). Default senses were never touched, so dd and det."frequencyScore"
+did not move. List: `scripts/backfill/shared/bound-form-rescore-2026-11-17.json`; applied
+on PPE 2026-11-17 by `scripts/backfill/shared/patch-bound-form-scores.js` (stamps
+`enrichmentLog."shared/patch-bound-form-scores"`). Multi-char words and senses scored 3 or
+below were out of scope.
 
 **How it is now enforced.** `reconcileFrequencyScore`
 (`scripts/backfill/shared/lib/senseClusters.js`) is the single implementation, called
@@ -804,7 +814,7 @@ earlier generated glosses that were clipped, abbreviated or not in classifier fo
 
 **Display.** `src/utils/definitionUtils.ts` → `CLASSIFIER_LABEL`, `splitClassifierLabel`;
 `src/components/GlossText.tsx`. Used by `CardFace` (EnglishBlock), `SensePicker`,
-`EipEntryHeader` (the one dd), `EipSenseList` (the sense list, via `buildSenseSegments`),
+`EipEntryHeader` (the one dd), `SenseList` (the eip's and the Reader's sense list, via `buildSenseSegments`),
 `WritingCardFace` and `MiniCard`. No markup is stored or parsed: the italics are a
 prefix test on plain text, and where the sense's `pos` is at hand (picker, eip list)
 a gloss is split only on a `classifier` sense. Game surfaces draw dd as plain strings and

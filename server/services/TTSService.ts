@@ -112,11 +112,15 @@ export class TTSService {
     // Mandarin: female A/D, male B/C in both Wavenet and Standard; `cmn-TW-*` is Taiwanese.
     // Spanish: Mexican / Latin-American lives under `es-US` (there is no `es-MX` voice) —
     // female Neural2-A, male Neural2-B/C. (`es-ES-*` would be Castilian.)
-    // English: the neutral fallback for an unknown language; Neural2-C is FEMALE (it is the
-    // language fallback, not a gender-neutral voice), male counterparts are Neural2-A/D/I/J.
+    // English: the neutral fallback for an unknown language, and the voice of the Reader
+    // read-aloud's English runs inside a Chinese document. The female default is Wavenet-F
+    // (owner's pick 2026-11-17, chosen by ear as the closest match to the soft, higher
+    // cmn-CN-Wavenet-A; it replaced the deeper Neural2-C). The male stays Neural2-D, so English
+    // is the one language whose two roles come from different families. Wavenet males are
+    // A/B/D/I/J if that should be evened up.
     const zhDefault = process.env.GOOGLE_TTS_VOICE_ZH || 'cmn-CN-Wavenet-A';
     const esDefault = process.env.GOOGLE_TTS_VOICE_ES || 'es-US-Neural2-A';
-    const enDefault = process.env.GOOGLE_TTS_VOICE_EN || 'en-US-Neural2-C';
+    const enDefault = process.env.GOOGLE_TTS_VOICE_EN || 'en-US-Wavenet-F';
     this.voices = {
       // 'female' mirrors 'default' by construction — see the TTSVoiceKey doc for why that is
       // deliberate (it is what keeps every pre-existing cached MP3 a hit).
@@ -238,17 +242,35 @@ export class TTSService {
       throw new Error('TTS provider not configured (missing GOOGLE_APPLICATION_CREDENTIALS)');
     }
 
-    const audio = await this.callGoogle(text, lang, pinyin, voiceKey);
-
-    // Persist to disk for all future requests. Best-effort: if the write fails we
-    // still return the audio so the caller isn't blocked on filesystem hiccups.
-    await fs.mkdir(CACHE_DIR, { recursive: true }).catch(() => {});
-    await fs.writeFile(filePath, audio).catch(err => {
-      console.warn(`[TTSService] failed to write cache file ${filePath}:`, err);
-    });
-
-    return { audio, cacheHit: false, voice: this.voiceTag(lang, voiceKey) };
+    // One provider call per clip at a time. A background pre-warm (the Reader's
+    // `CardAudioService.prewarmClips`) and the learner's own request for the same word can
+    // miss the disk together; the second joins the first instead of paying Google twice.
+    const pending = this.inFlightSyntheses.get(cacheKey);
+    if (pending) {
+      const audio = await pending;
+      return { audio, cacheHit: false, voice: this.voiceTag(lang, voiceKey) };
+    }
+    const synthesis = (async () => {
+      const audio = await this.callGoogle(text, lang, pinyin, voiceKey);
+      // Persist to disk for all future requests. Best-effort: if the write fails we
+      // still return the audio so the caller isn't blocked on filesystem hiccups.
+      await fs.mkdir(CACHE_DIR, { recursive: true }).catch(() => {});
+      await fs.writeFile(filePath, audio).catch(err => {
+        console.warn(`[TTSService] failed to write cache file ${filePath}:`, err);
+      });
+      return audio;
+    })();
+    this.inFlightSyntheses.set(cacheKey, synthesis);
+    try {
+      const audio = await synthesis;
+      return { audio, cacheHit: false, voice: this.voiceTag(lang, voiceKey) };
+    } finally {
+      this.inFlightSyntheses.delete(cacheKey);
+    }
   }
+
+  /** Cache-missed syntheses still waiting on the provider, by cache key (see synthesize). */
+  private inFlightSyntheses = new Map<string, Promise<Buffer>>();
 
   /**
    * Make sure the clip is on disk WITHOUT reading it back — the pre-warm path, which only

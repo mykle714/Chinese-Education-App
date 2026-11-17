@@ -7,6 +7,7 @@ import { keycapPressSx } from "../../../theme/keycapPress";
 import { roundedEdgeFilletDown, roundedEdgeRimLightTop } from "../../../theme/roundedEdge";
 import type { LearningToggleState } from "../../../hooks/useLearningToggle";
 import { useEipColors } from "./useEipPalette";
+import { EIP_ADD_KEY_SIZES, type EipAddKeySize } from "./eipAddKeySizes";
 
 /**
  * EipAddKey — the Dictionary eip's "Add ⇄ Added!" Learning key (Tower Tier 2 design,
@@ -38,27 +39,28 @@ import { useEipColors } from "./useEipPalette";
  * docs/EIP_SHEET_GESTURES.md § Add key.
  *
  * Layer: feature component (src/features/flashcards). Depends on: EipPaletteContext,
- * useLearningToggle. Depended on by: EipUpperPanel (hosts: EipSheet; the flp, add-only). Docs: docs/EIP_SHEET_GESTURES.md § Add key.
+ * useLearningToggle. Depended on by: EipUpperPanel (hosts: EipSheet; the flp, add-only) and the Reader's
+ * dictionary keycap (ReaderDocumentPage → VocabDisplayCard `renderHeaderActions`; `compact` when stacked). Docs: docs/EIP_SHEET_GESTURES.md § Add key.
  */
 
 /** The check's green: oklch(55% 0.15 155), clamped to sRGB. */
 const ADDED_CHECK = "#008A48";
 
-const KEY_WIDTH = 92;
-const LIP_ADD = 5;
-const LIP_ADDED = 2;
-const SINK = 4;
+// The key's sizes (regular / compact) live in eipAddKeySizes.ts, shared with the Reader's
+// More Info key, which is built to the same recipe.
+const KEY_SIZES = EIP_ADD_KEY_SIZES;
 
 const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 
-const EipAddKey: React.FC<{ state: LearningToggleState }> = ({ state }) => {
+const EipAddKey: React.FC<{ state: LearningToggleState; size?: EipAddKeySize }> = ({ state, size = "regular" }) => {
+    const k = KEY_SIZES[size];
     const { available, inLibrary, toggle } = state;
     const colors = useEipColors();
     if (!available || inLibrary === undefined) return null;
 
     // The outline ring: the app's border token on the light palette, a faint white ring on the dark slate.
     const ring = `inset 0 0 0 1px ${colors.dark ? "rgba(255, 255, 255, 0.12)" : COLORS.border}`;
-    const lip = inLibrary ? LIP_ADDED : LIP_ADD;
+    const lip = inLibrary ? k.lipAdded : k.lipAdd;
     // The hairline rounded edge (theme/roundedEdge.ts, straight-lip form): the rim light
     // under the ring (listed after it, so it shows as the 1px just inside the outline),
     // the fillet over the lip.
@@ -69,7 +71,7 @@ const EipAddKey: React.FC<{ state: LearningToggleState }> = ({ state }) => {
         <ButtonBase
             // Pressed look from the app-wide keycap delegate (keycapPressDelegate.ts) — the
             // key sits in the upper panel's drag handle, whose pointer capture steals `:active`.
-            className={`eip-add-key ${inLibrary ? "eip-add-key--added" : "eip-add-key--add"}`}
+            className={`eip-add-key eip-add-key--${size} ${inLibrary ? "eip-add-key--added" : "eip-add-key--add"}`}
             aria-label={inLibrary ? "Added to Learning — tap to remove" : "Add to Learning"}
             aria-pressed={inLibrary}
             // The hook flips Add ⇄ Added! at once and sends the request after paint
@@ -81,18 +83,18 @@ const EipAddKey: React.FC<{ state: LearningToggleState }> = ({ state }) => {
             disableRipple
             sx={{
                 boxSizing: "border-box",
-                width: KEY_WIDTH,
+                width: k.width,
                 flexShrink: 0,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "flex-start",
-                gap: "5px",
-                padding: "6px 11px 6px 10px",
-                borderRadius: "12px",
+                gap: `${k.gap}px`,
+                padding: k.padding,
+                borderRadius: `${k.radius}px`,
                 backgroundColor: colors.face,
                 color: colors.ink,
                 fontFamily: FONTS.sans,
-                fontSize: 13,
+                fontSize: k.fontSize,
                 fontWeight: WEIGHT.semibold,
                 whiteSpace: "nowrap",
                 // The app's raised-key press (theme/keycapPress.ts — it snaps, no easing):
@@ -101,14 +103,14 @@ const EipAddKey: React.FC<{ state: LearningToggleState }> = ({ state }) => {
                 ...keycapPressSx({
                     restShadow: `${ring}, ${rim}${fillet}, 0 ${lip}px 0 ${colors.edge}`,
                     pressedShadow: `${ring}, ${rim}`,
-                    restY: inLibrary ? 2 : -1,
-                    pressedY: SINK,
+                    restY: inLibrary ? k.restAddedY : k.restAddY,
+                    pressedY: k.sink,
                 }),
             }}
         >
             <Icon
                 name={inLibrary ? "check" : "add"}
-                size={18}
+                size={k.icon}
                 color={inLibrary ? ADDED_CHECK : colors.ink}
                 className="eip-add-key__icon"
             />

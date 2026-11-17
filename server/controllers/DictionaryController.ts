@@ -3,7 +3,7 @@ import { DictionaryService } from '../services/DictionaryService.js';
 import { LazyEnrichmentService } from '../services/LazyEnrichmentService.js';
 import { IUserDAL } from '../dal/interfaces/IUserDAL.js';
 import { IVocabEntryDAL } from '../dal/interfaces/IVocabEntryDAL.js';
-import { RateLimitError } from '../types/dal.js';
+import { RateLimitError, ValidationError } from '../types/dal.js';
 import { DICTIONARY_SEARCH_RANKINGS } from '../types/index.js';
 import type { DictionarySearchRanking } from '../types/index.js';
 import { resolveTimezone, streakDateOf } from '../utils/streakDate.js';
@@ -314,6 +314,52 @@ export class DictionaryController {
    * an invalid pair / disabled feature / transient model failure.
    * POST /api/dictionary/compare  { wordA, wordB, language?, tz }
    */
+  /**
+   * The Reader's English → Chinese batch lookup.
+   * POST /api/dictionary/englishMatches  { terms: string[], language }
+   *   → { matches: Array<{ term, senseOrdinal, entry, inLearning }> }
+   * One entry per term that has a complete-English det match; terms with none are absent.
+   * See DictionaryService → findEnglishTranslations, docs/USER_DOCUMENT_FEATURE_SUMMARY.md
+   * § "English words".
+   */
+  async englishMatches(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = requireUserId(req, res);
+      if (!userId) return;
+
+      const { terms } = req.body ?? {};
+      if (!Array.isArray(terms)) {
+        res.status(400).json({ error: 'terms must be an array' });
+        return;
+      }
+      const language = resolveWriteLanguage(req.body?.language)
+        ?? (await this.userDAL.findById(userId))?.selectedLanguage
+        ?? 'zh';
+
+      const matches = await this.dictionaryService.findEnglishTranslations(terms, language);
+      // Each translation's Learning status rides along, so the Reader's Add key is drawn
+      // WITH the keycap (seeded, useLearningToggle `seedInLibrary`) instead of clipping in
+      // when its own per-word status fetch lands. Same read — and so the same meaning of
+      // "in Learning" — as the document's own vocab lookup (VocabEntryDAL → findByTokens,
+      // vetSortedClause).
+      const translationWords = Array.from(new Set(matches.map(match => match.entry.word1)));
+      const learningCards = translationWords.length > 0
+        ? await this.vocabEntryDAL.findByTokens(userId, translationWords, language)
+        : [];
+      const learningKeys = new Set(learningCards.map(card => card.entryKey));
+      res.json({
+        matches: matches.map(match => ({ ...match, inLearning: learningKeys.has(match.entry.word1) })),
+      });
+    } catch (error: any) {
+      if (error instanceof ValidationError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      console.error('Error looking up English matches:', error);
+      res.status(500).json({ error: error.message || 'Failed to look up English matches' });
+    }
+  }
+
   async compare(req: Request, res: Response): Promise<void> {
     try {
       const { wordA, wordB, language, tz } = req.body;

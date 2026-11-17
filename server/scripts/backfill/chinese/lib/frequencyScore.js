@@ -58,9 +58,14 @@ Guidelines:
   - RECOGNITION COUNTS. A word everyone knows but rarely reaches for is a 3 — unremarkable — NOT a 2. Only drop to 2 when hearing it casually would actually make a listener notice.
   - Formal flavour alone is not a penalty. 政府 is formal and still a 4. Formality costs points only at the point where it becomes conspicuous in casual talk.
   - Do not raise a score because a word is vivid slang. Slang confined to one subculture is a 2: most listeners WOULD notice it.
-  - BOUND FORMS COUNT THROUGH THEIR COMPOUNDS. A morpheme never uttered alone is still met constantly if the compounds carrying that meaning are common: 自 "self" is bound, yet a learner meets it every day inside 自己/自由/自动, so it is a high band, not a low one. Do not score a bound form down merely for being bound. (This is what separates a bound-but-everywhere morpheme like 自 from a genuinely rare one like 兮.)
   - Judge the word as a SPOKEN item; ignore how often it appears in written corpora, textbooks, or news.
   - Calibration: these words were chosen to be taught to learners, so most of them belong in 3-5. Reserve 2 and 1 for words that would genuinely make a listener pause — do not spend them on words that are merely not daily.`;
+// ↑ REMOVED 2026-11-17: the "BOUND FORMS COUNT THROUGH THEIR COMPOUNDS" guideline (added
+// 2026-08-28 with cluster SCRIPT_VERSION 7 / word SCRIPT_VERSION 3). It told the scorer to
+// credit a sense with its compounds' frequency, which inflated senses that exist ONLY inside
+// one compound: 的 "taxi" (的士) and "bull's-eye" (目的) both scored 4 and were starred beside
+// the possessive particle. Removed WITHOUT a SCRIPT_VERSION bump — the affected rows are
+// being sized first (docs/DEFINITION_CLUSTERS.md § "Bound forms"). Do not re-add it.
 
 /**
  * The final guideline, which is the ONE line that must differ between the two callers.

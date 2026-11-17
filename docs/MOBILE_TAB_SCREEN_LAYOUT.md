@@ -28,17 +28,21 @@ pages don't re-implement (or drift from) them.
      they wrap `MobileTabScreen` in `NodePage`, which sets `showBack` +
      `arrowDirection="left"` and adds the horizontal slide. See
      [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md).
-2. **Footer bar.** The bottom nav (`MobileFooter`) renders as a flat, **full-width
-   bar** flush to the bottom edge, overlaying the content rather than sitting in
-   normal flow. The scroll area reserves `FOOTER_CLEARANCE` of bottom
-   padding so the last row never hides behind the bar. **`MobileTabScreen` no longer
-   renders the footer itself** — a single persistent bar is rendered at the frame
+2. **Footer.** The bottom nav (`MobileFooter`) is the floating **slab** (td's footer —
+   [DECK_TOWER.md](./DECK_TOWER.md) § Footer), overlaying the content rather than
+   sitting in normal flow. The scroll area reserves `SLAB_FOOTER_TOTAL_CLEARANCE` of
+   bottom padding so the last row never hides behind it. **`MobileTabScreen` does not
+   render the footer itself** — a single persistent slab is rendered at the frame
    level by `FooterPresenter` (so it animates independently of the page slides;
    see [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)). `MobileTabScreen` still reserves
-   the clearance; the footer resolves its own active tab from the route. A route
-   whose `routeMeta` row sets `footerStyle: "slab"` (td, `/dictionary`, the cdp,
-   acp) gets the floating **slab** footer instead of the bar (`MobileFooter`
-   `variant`, `SLAB_FOOTER_TOTAL_HEIGHT`).
+   the clearance; the footer resolves its own active tab from the route.
+
+   > Until 2026-11-16 most routes wore a flat, full-width **bar** and only the routes
+   > whose `routeMeta` row set `footerStyle: "slab"` (td, `/lessons`, `/dictionary`, the
+   > cdp, acp) wore the slab. The bar, the `footerStyle` field, `routeFooterStyle` and
+   > the `FOOTER_HEIGHT` / `FOOTER_CLEARANCE` / `FOOTER_TOTAL_*` constants were deleted
+   > when the Reader moved onto the slab; Arena and the flagged-off Community / Study
+   > Challenge pages switched with it.
 
    > It was a detached rounded **pill** (64px tall, inset 16px on every side, drop
    > shadow, icon + label per tab) until the shelf redesign's A2a
@@ -88,15 +92,11 @@ ScreenRoot            position: relative
 - `surfaceColor` paints `ScreenRoot` behind everything (header + content + the
   footer-clearance padding) so short pages have no color seams.
 
-  > ⚠️ **`surfaceColor` must stay within a hair of the paper ground.** The footer bar
-  > is rendered at FRAME level by `FooterPresenter`, not inside the page, and it is
-  > always painted `COLORS.background` (`--paper`) — the design gives `.fbar` no other
-  > ground. A page that sets a distinctly different `surfaceColor` therefore gets a
-  > visible colour step across the bottom 74px of the frame. If a page needs to feel
-  > tinted, tint an INNER surface — a card, a sheet, a section — not the page ground.
-  > The rule binds bar-footer pages only: the pages that set a ground today (the Deck
-  > Tower, acp, the Dictionary and both card pages, on the Tier 2 look) all wear the
-  > floating slab, which casts onto that ground instead of meeting it edge to edge.
+  > `surfaceColor` is free to differ from the paper ground: the footer is the floating
+  > slab, which casts onto whatever ground is behind it rather than meeting it edge to
+  > edge. (While the flat bar existed — painted `--paper`, flush to the bottom — a
+  > tinted ground left a colour step across the bottom 74px; that rule died with the
+  > bar on 2026-11-16.)
 - `contentSx` styles only the content column (padding, `alignItems`, nested
   selectors). The header is intentionally excluded so it always stays flush and
   full-width regardless of content centering.
@@ -112,10 +112,10 @@ soften/lighten out as they scroll past the screen edges (NYT-Games style).
   so the two fade bands stay pinned at the top/bottom edges as you scroll.
 - `EDGE_FADE_TOP` (28px) dissolves the header / first rows as they scroll up.
 - The bottom band is the design's `.fade`: `EDGE_FADE_BOTTOM_BAND` (34px) of
-  gradient sitting **on the footer bar's top edge**, starting
-  `EDGE_FADE_BOTTOM_START` (`FOOTER_HEIGHT + 34 + SAFE_BOTTOM`) up from the bottom and
-  reaching transparent exactly at the bar. Content is fully opaque until 34px above
-  the bar. (Before A2a this was one band running all the way to the frame's bottom,
+  gradient sitting **on the footer slab's top edge**, starting
+  `SLAB_FOOTER_TOTAL_HEIGHT + 34px` up from the bottom (`edgeFadeBottomStart`) and
+  reaching transparent exactly at the slab. Content is fully opaque until 34px above
+  the slab. (Before A2a this was one band running all the way to the frame's bottom,
   sized to the whole floating-footer zone.)
 - The design paints that band as its own gradient **element**; the app keeps the
   **mask** and just moves its stops, because the mask is anchored to the scroll
@@ -199,47 +199,37 @@ Current opt-in: `ArenaPage`.
 
 ## Footer geometry (single source of truth)
 
-`MobileFooter.tsx` exports the bar geometry so callers stay in sync:
+`MobileFooter.tsx` exports the slab geometry so callers stay in sync:
 
-| Constant                    | Value | Meaning                                       |
-| --------------------------- | ----- | --------------------------------------------- |
-| `FOOTER_HEIGHT`    | 74    | Bar height (px).                              |
-| `FOOTER_EXTRA_GAP` | 16    | Breathing gap above the bar. Tune bottom room here, not via HEIGHT/INSET. |
-| `FOOTER_CLEARANCE` | 90    | Vertical space to reserve below scrollable content. Equals the design's `.clear`. |
-| `FOOTER_TOTAL_HEIGHT` | `calc(74px + SAFE_BOTTOM)` | The bar's REAL footprint. A CSS **string**, because the home-indicator inset is an `env()` only the browser can resolve. |
-| `FOOTER_TOTAL_CLEARANCE` | `calc(90px + SAFE_BOTTOM)` | The reservation, likewise. |
+| Constant | Meaning |
+| --- | --- |
+| `FOOTER_EXTRA_GAP` (16) | Breathing gap above the slab. Tune bottom room here. |
+| `SLAB_FOOTER_BOTTOM` | The slab's gap to the screen's bottom edge: `max(26px, SAFE_BOTTOM)`. |
+| `SLAB_FOOTER_TOTAL_HEIGHT` | The slab's REAL footprint (bottom gap + 64px face + 6px lip). A CSS **string**, because the home-indicator inset is an `env()` only the browser can resolve. |
+| `SLAB_FOOTER_TOTAL_CLEARANCE` | The scroll reservation: footprint + `FOOTER_EXTRA_GAP`. |
+| `SLAB_FOOTER_HIDDEN_OFFSET` | `FooterPresenter`'s slide-out distance: footprint + the cast shadow. |
 
-**Use the `_TOTAL_` pair for anything measured against the bar on screen** — its hide
-travel, scroll clearance, the bottom fade, a `SheetPill`'s `bottom`. Since
-`viewport-fit=cover` the page paints under the home indicator, so `bottom: 0` is the
-physical bottom edge and the bar grows by `SAFE_BOTTOM` (`src/theme/safeArea.ts`); the
-bare 74/90 numbers are the design's geometry, not the on-screen one. Both fall back to
-the bare numbers where there is no inset. See
+**Use these for anything measured against the footer on screen** — scroll clearance,
+the bottom fade, a `SheetPill`'s `bottom`, the Menu popover's anchor. Since
+`viewport-fit=cover` the page paints under the home indicator; see
 [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) § Safe areas and the iOS status bar.
 
-**The flat bar is the app-wide footer style** — there is no pill or in-flow variant.
-The one exception is the floating **slab** (the Deck Tower, and the Dictionary tab since
-2026-10-29), opted into by a route row (`footerStyle: "slab"`) and drawn by the same
-`MobileFooter` (`variant`), with its own `SLAB_FOOTER_*` geometry — see
-[DECK_TOWER.md](./DECK_TOWER.md) § Footer. The constants above describe the bar only.
-`MobileTabScreen` (`footerFootprint` / `footerClearance`) and `FooterSpacer` read the
-route's style, so on a slab route they reserve `SLAB_FOOTER_TOTAL_CLEARANCE` (the slab's
-footprint + the same 16px gap) and end the bottom fade at the slab's top edge instead.
-`MobileFooter` always renders the bar and anchors it to the nearest positioned
-ancestor, the phone frame (`MobileDemoFrame`'s `FrameRoot`, `position: relative`).
+**The slab is the app's only footer style** (since 2026-11-16 — see the note under
+rule 2). `MobileTabScreen` (`FOOTER_FOOTPRINT` / `FOOTER_CLEARANCE`) and `FooterSpacer`
+reserve `SLAB_FOOTER_TOTAL_CLEARANCE` and end the bottom fade at the slab's top edge.
+`MobileFooter` anchors the slab to the nearest positioned ancestor, the phone frame
+(`MobileDemoFrame`'s `FrameRoot`, `position: relative`).
 
-**Tabs are text-only** (decision D5): four labels, the active one in ink at weight
-600 with a 14×2 underline. The `HomeIcon` / `StyleIcon` / `LanguageIcon` /
-`AccountCircleIcon` imports are gone, and the active state is no longer an opacity
-change. The four tab rows are data (`TABS` in `MobileFooter.tsx`), not four
-copy-pasted JSX blocks.
+**Tabs are icon over label**: a filled Material Symbol over an 11px/600 label, with ONE
+sliding selector (`SlabFooterSelector`) behind the active tab. The four tab rows are
+data (`TABS` in `MobileFooter.tsx`), not four copy-pasted JSX blocks.
 
 **No page renders `<MobileFooter>` itself.** It is rendered exactly once, by
 `FooterPresenter` (mounted in `MobileDemoFrame`), which decides visibility from the
 route's `chrome` in `src/routes/routeMeta.ts` plus any active `useHideFooter` hold.
 Pages that import `MobileFooter` import only its geometry constants. So the
 clearance contract is: **a scrollable surface reserves
-`FOOTER_TOTAL_CLEARANCE` at the bottom** — `MobileTabScreen` does this for every
+`SLAB_FOOTER_TOTAL_CLEARANCE` at the bottom** — `MobileTabScreen` does this for every
 node page automatically, and a page laying out its own scroller must do it by hand.
 
 > Related: `VocabCardDetailPage` is a node page; the routed game pages are **leaf pages**

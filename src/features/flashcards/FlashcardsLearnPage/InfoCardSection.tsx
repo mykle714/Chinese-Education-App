@@ -177,7 +177,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     const headerSlideRef = useRef<HTMLDivElement | null>(null);
     // SheetPanel drives the upper panel's height from the sheet's (the telescope).
     const telescopeRef = useRef<SheetTelescopeHandle | null>(null);
-    // The theme palette (a pale-sky upper panel in light themes; Dark inverts the panel).
+    // The theme palette (a pale-cornflower upper panel in light themes; Dark inverts the panel).
     const palette = useEipPalette();
     // Last (id, index) we animated FROM. Held in a ref rather than state: nothing renders
     // from it, and writing it during the effect keeps the comparison to exactly one place.

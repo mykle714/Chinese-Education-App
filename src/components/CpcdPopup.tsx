@@ -6,7 +6,7 @@ import { SIZE } from "../theme/scale";
 import { COLORS } from "../theme/colors";
 import { tier2Var } from "../timeOfDay/tier2Chrome";
 import { HINT_MOTION } from "./hintBubble/hintMotion";
-import { fadeIn, fadeOut, growIn, growInFromAbove } from "./hintBubble/bubbleKeyframes";
+import { fadeIn, fadeOut, growIn, growInFromAbove, growInFromLeft } from "./hintBubble/bubbleKeyframes";
 
 // The exit: a quiet fade, not the hint bubble's pop (owner's call 2026-11-10: the pop was
 // "too loud" for a caption). Also how long Popper keeps the card mounted after close.
@@ -48,7 +48,11 @@ export const CpcdPopupTonesCtx = createContext<CpcdPopupTones | null>(null);
  * through the fade, since callers clear them on close — the card fades out as it last looked. `contentKey` replays the grow when the subject changes.
  * Docs: docs/EIP_SHEET_GESTURES.md § "CpcdPopup motion".
  *
- * Placement is always "above the anchor, flipping below when there is no room".
+ * Placement defaults to "above the anchor, flipping below when there is no room". A caller
+ * with empty space beside its anchor can ask for `placement="right"` instead (the sense
+ * list in single-column mode, owner's call 2026-11-17): the card floats to the anchor's
+ * right, vertically centred on it, grows in sideways (`growInFromLeft`), and falls back
+ * to above / below when the right side has no room.
  * The anchor may be a real element or a Popper virtual element (a bare
  * `{ getBoundingClientRect }`), which is how the est anchors to a measured
  * highlight rect rather than to a DOM node.
@@ -60,7 +64,7 @@ export const CpcdPopupTonesCtx = createContext<CpcdPopupTones | null>(null);
  *
  * Referenced by: src/components/SegmentedSentenceDisplay.tsx (segment definition
  * popup), src/components/CPCDRow.tsx (tap-to-copy toast),
- * src/features/flashcards/FlashcardsLearnPage/EipSenseList.tsx (tapped-sense facts).
+ * src/components/SenseList.tsx (tapped-sense facts; the eip's and the Reader's sense list).
  */
 export interface CpcdPopupProps {
     open: boolean;
@@ -80,6 +84,8 @@ export interface CpcdPopupProps {
      * descriptive, greppable class names.
      */
     className?: string;
+    /** Which side of the anchor the card floats on (see the header note). Default "top". */
+    placement?: "top" | "right";
     /** Render the drill-in chevron and the pointer cursor: the card itself is tappable. */
     interactive?: boolean;
     /** Grey the card while it is being pressed (tap feedback for `interactive` cards). */
@@ -90,6 +96,7 @@ export interface CpcdPopupProps {
     cardRef?: React.Ref<HTMLDivElement>;
     onMouseEnter?: React.MouseEventHandler<HTMLDivElement>;
     onMouseLeave?: React.MouseEventHandler<HTMLDivElement>;
+    onClick?: React.MouseEventHandler<HTMLDivElement>;
     onPointerDown?: React.PointerEventHandler<HTMLDivElement>;
     onPointerUp?: React.PointerEventHandler<HTMLDivElement>;
     onPointerLeave?: React.PointerEventHandler<HTMLDivElement>;
@@ -102,6 +109,7 @@ const CpcdPopup: React.FC<CpcdPopupProps> = ({
     text,
     children,
     contentKey,
+    placement: preferredPlacement = "top",
     className = "cpcd-popup",
     interactive = false,
     pressed = false,
@@ -109,6 +117,7 @@ const CpcdPopup: React.FC<CpcdPopupProps> = ({
     cardRef,
     onMouseEnter,
     onMouseLeave,
+    onClick,
     onPointerDown,
     onPointerUp,
     onPointerLeave,
@@ -140,12 +149,16 @@ const CpcdPopup: React.FC<CpcdPopupProps> = ({
         open={open}
         anchorEl={shown.anchorEl}
         popperRef={popperRef}
-        placement="top"
+        placement={preferredPlacement}
         transition
         modifiers={[
+            // [skidding, distance]: a 6px gap between the card and the side it floats on.
             { name: "offset", options: { offset: [0, 6] } },
             { name: "preventOverflow", options: { boundary: "viewport", padding: 8 } },
-            { name: "flip", options: { fallbackPlacements: ["bottom"] } },
+            {
+                name: "flip",
+                options: { fallbackPlacements: preferredPlacement === "right" ? ["top", "bottom"] : ["bottom"] },
+            },
         ]}
         sx={{ zIndex: 1300 }}
     >
@@ -157,7 +170,7 @@ const CpcdPopup: React.FC<CpcdPopupProps> = ({
             isIn={!!TransitionProps?.in}
             onEnter={TransitionProps?.onEnter}
             onExited={TransitionProps?.onExited}
-            below={placement.startsWith("bottom")}
+            side={placement.startsWith("bottom") ? "below" : placement.startsWith("right") ? "right" : "above"}
             reduceMotion={reduceMotion}
             className={className}
         >
@@ -166,6 +179,7 @@ const CpcdPopup: React.FC<CpcdPopupProps> = ({
             className={className}
             onMouseEnter={onMouseEnter}
             onMouseLeave={onMouseLeave}
+            onClick={onClick}
             onPointerDown={onPointerDown}
             onPointerUp={onPointerUp}
             onPointerLeave={onPointerLeave}
@@ -251,8 +265,9 @@ interface CpcdPopupMotionProps {
     isIn: boolean;
     onEnter?: () => void;
     onExited?: () => void;
-    // Popper flipped the card under its anchor: grow DOWN out of the anchor, not up.
-    below: boolean;
+    // Where Popper finally put the card relative to its anchor (after any flip); it grows
+    // out of the anchor from that side — up from above, down from below, sideways from the right.
+    side: "above" | "below" | "right";
     reduceMotion: boolean;
     className: string;
     children: React.ReactNode;
@@ -266,7 +281,7 @@ interface CpcdPopupMotionProps {
  * Keyframes: ./hintBubble/bubbleKeyframes.ts; timing: HINT_MOTION.growMs, FADE_OUT_MS.
  */
 const CpcdPopupMotion: React.FC<CpcdPopupMotionProps> = ({
-    isIn, onEnter, onExited, below, reduceMotion, className, children,
+    isIn, onEnter, onExited, side, reduceMotion, className, children,
 }) => {
     // Popper hands over fresh callbacks on every render; read them through a ref so a
     // re-render mid-fade cannot restart (and so postpone) the release timer below.
@@ -286,7 +301,9 @@ const CpcdPopupMotion: React.FC<CpcdPopupMotionProps> = ({
     }, [isIn]);
 
     const fading = !isIn;
-    const enter = reduceMotion ? fadeIn : below ? growInFromAbove : growIn;
+    const enter = reduceMotion
+        ? fadeIn
+        : side === "below" ? growInFromAbove : side === "right" ? growInFromLeft : growIn;
     const animation = fading
         ? `${fadeOut} ${FADE_OUT_MS}ms ease-out forwards`
         : `${enter} ${HINT_MOTION.growMs}ms ease-out both`;
@@ -297,7 +314,7 @@ const CpcdPopupMotion: React.FC<CpcdPopupMotionProps> = ({
             sx={{
                 position: "relative",
                 // Grow out of the anchor: the edge facing it, centred (Popper centres the card on it).
-                transformOrigin: below ? "50% 0%" : "50% 100%",
+                transformOrigin: side === "below" ? "50% 0%" : side === "right" ? "0% 50%" : "50% 100%",
                 animation,
                 pointerEvents: fading ? "none" : undefined,
             }}

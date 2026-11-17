@@ -10,50 +10,31 @@ import { LEADING } from "../theme/scale";
 import { SAFE_BOTTOM } from "../theme/safeArea";
 import Icon from "./Icon";
 import { SLAB_CAST_SHADOW_VAR } from "./footerCastShadow";
-import { routeFooterStyle } from "../routes/routeMeta";
 import { footerVar } from "../theme/footerChrome";
 import { CARD_SURFACE_RADIUS } from "../theme/surfaces";
 import { roundedEdgeFillet, roundedEdgeRimLight } from "../theme/roundedEdge";
 import { registerDictionaryTabTap, requestDictionarySearchFocus } from "../features/dictionary/dictionarySearchFocus";
 
-// Footer bar geometry (shelf redesign `.fbar`, docs/SHELF_REDESIGN.md A2a). Exported
-// so scroll containers (see MobileTabScreen) can reserve matching bottom padding and
-// never let content hide behind the bar.
+// Footer geometry. There is ONE footer: the floating slab (Tower Style design, `.sx-flp
+// .ft`), described by the SLAB_FOOTER_* family below. Exported so scroll containers (see
+// MobileTabScreen) can reserve matching bottom padding and never let content hide
+// behind it.
 //
-// ⚠️ The bar is FLAT AND FULL-WIDTH as of the redesign — it used to be a detached
-// rounded pill inset 16px on every side, which is where the old `FLOATING_FOOTER_*`
-// names came from. Nothing floats any more, so the family was renamed to `FOOTER_*`
-// and the old `FLOATING_FOOTER_INSET` (the pill's gap to the frame edge) was DELETED
-// rather than renamed: a flush bar has no inset, and a permanently-zero constant
-// named "gap from the edges" is a trap for the next reader, not a tuning knob.
-// (The one floating footer, the Deck Tower's `slab`, has its own SLAB_FOOTER_* family
-// below; the FOOTER_* constants describe the bar only.)
-export const FOOTER_HEIGHT = 74;
-// Extra breathing gap added on top of the bar's own footprint, so the last row clears
-// it with a little slack. Bump this (not HEIGHT) to give every page more bottom room
-// without resizing or repositioning the bar itself. 16 here makes the clearance
-// exactly 90px, which is the design's own `.clear` spacer height.
+// ⚠️ The app-wide flat `bar` footer (FOOTER_HEIGHT / FOOTER_CLEARANCE / FOOTER_TOTAL_*,
+// the `FooterStyle` type and routeMeta's `footerStyle` field) was DELETED 2026-11-16,
+// when the Reader moved onto the slab — Arena and the flagged-off Community / Study
+// Challenge pages were its last other wearers and switched with it. Do not reinstate a
+// per-route footer style; every footer-bearing route wears the slab.
+
+// Extra breathing gap added on top of the slab's footprint, so the last row clears it
+// with a little slack. Bump this (not the slab's height) to give every page more bottom
+// room without resizing or repositioning the slab itself.
 export const FOOTER_EXTRA_GAP = 16;
-// Total vertical space the bar occupies plus a breathing gap above it, used as the
-// scroll area's paddingBottom so the last row clears the bar. = the design's `.clear`.
-export const FOOTER_CLEARANCE = FOOTER_HEIGHT + FOOTER_EXTRA_GAP;
 
-// The bar's REAL on-screen footprint, as a CSS string.
-//
-// Since `viewport-fit=cover` (index.html) the page paints under the home indicator, so
-// `bottom: 0` is the physical bottom edge of the screen rather than the bottom of the
-// safe area. The bar therefore GROWS by the bottom inset and pads its labels off it —
-// otherwise the tab row sits under the indicator. Everything measured off the bar (its
-// hide travel, the scroll clearance, the bottom edge-fade) must use this, not the bare
-// 74px. See src/theme/safeArea.ts. On a device with no inset it is exactly 74px.
-export const FOOTER_TOTAL_HEIGHT = `calc(${FOOTER_HEIGHT}px + ${SAFE_BOTTOM})`;
-// Same, for the scroll reservation: the design's 90px clearance plus the inset.
-export const FOOTER_TOTAL_CLEARANCE = `calc(${FOOTER_CLEARANCE}px + ${SAFE_BOTTOM})`;
-
-// ── The SLAB style (Tower Style design, `.sx-flp .ft`) ────────────────────────────
-// Worn only by routes whose registry row says `footerStyle: "slab"` (today: the Deck Tower at `/`,
-// and since 2026-10-29 the Dictionary tab, /dictionary — and
-// acp, /discover/sort/:language).
+// ── The SLAB (Tower Style design, `.sx-flp .ft`) ──────────────────────────────────
+// Worn by every footer-bearing route (routeMeta `footerTab`). Started on the Deck Tower,
+// spread to the Dictionary / cdp / acp / Lessons in Oct–Nov 2026, and became the only
+// footer on 2026-11-16 (see the note above).
 // Instead of a flat bar flush to the edge it is a floating flashcard: a cream slab held
 // off the screen's sides and bottom, standing on a lip in the card's shaded wall colour,
 // casting an iso shadow onto whatever is painted behind it (the tower's sky).
@@ -107,8 +88,8 @@ const SLAB_CAST_PX = SLAB_FOOTER_LIP + SLAB_CAST_REACH;
 // this, as a CSS string because it carries the safe area. The cast shadow is excluded:
 // it falls on sky and may overlap the scene.
 export const SLAB_FOOTER_TOTAL_HEIGHT = `calc(${SLAB_FOOTER_BOTTOM} + ${SLAB_FOOTER_HEIGHT + SLAB_FOOTER_LIP}px)`;
-// Same, for a scroll reservation: the footprint plus the bar's breathing gap, so a list
-// over the slab clears it by the same 16px it clears the bar by.
+// Same, for a scroll reservation: the footprint plus FOOTER_EXTRA_GAP, so a list's last
+// row clears the slab with 16px of slack.
 export const SLAB_FOOTER_TOTAL_CLEARANCE = `calc(${SLAB_FOOTER_TOTAL_HEIGHT} + ${FOOTER_EXTRA_GAP}px)`;
 // How far FooterPresenter pushes the slab to clear the frame's bottom edge entirely:
 // its footprint plus the cast shadow, or the shadow's tail would peek up when hidden.
@@ -116,21 +97,17 @@ export const SLAB_FOOTER_HIDDEN_OFFSET = `calc(${SLAB_FOOTER_BOTTOM} + ${SLAB_FO
 
 // The single, app-wide bottom spacer. Render it as the LAST child of any
 // footer-bearing scroll surface (hubs, decks, dictionary, card details, mastered
-// cards) so the final row clears the footer bar. We rely on this explicit block —
+// cards) so the final row clears the footer slab. We rely on this explicit block —
 // NOT MobileTabScreen's ScrollArea paddingBottom — because that padding is (a) eaten
 // when the flex content column overflows its computed height and (b) covered by the
-// scroll area's bottom edge-fade mask. One shared height (FOOTER_CLEARANCE)
-// means a single edit reflows every page at once. It reads the route's footer style, so
-// on a slab route (the Dictionary) it clears the taller floating slab instead of the bar.
-export const FooterSpacer: React.FC = () => {
-    const { pathname } = useLocation();
-    return (
-        <Box
-            className="footer-spacer"
-            sx={{ width: "100%", height: routeFooterStyle(pathname) === "slab" ? SLAB_FOOTER_TOTAL_CLEARANCE : FOOTER_TOTAL_CLEARANCE, flexShrink: 0 }}
-        />
-    );
-};
+// scroll area's bottom edge-fade mask. One shared height (SLAB_FOOTER_TOTAL_CLEARANCE)
+// means a single edit reflows every page at once.
+export const FooterSpacer: React.FC = () => (
+    <Box
+        className="footer-spacer"
+        sx={{ width: "100%", height: SLAB_FOOTER_TOTAL_CLEARANCE, flexShrink: 0 }}
+    />
+);
 
 // Extra room BELOW FooterSpacer, so a page that exactly fills the screen can still
 // be dragged up a little and settle back. FooterSpacer only guarantees the last row
@@ -138,7 +115,7 @@ export const FooterSpacer: React.FC = () => {
 // stops dead on the bar with nothing behind it.
 //
 // This is overscroll comfort, not clearance, which is why it is a separate constant
-// and a separate element: raising FOOTER_CLEARANCE would push every footer-bearing
+// and a separate element: raising FOOTER_EXTRA_GAP would push every footer-bearing
 // surface in the app (decks, dictionary, card details) away from its footer as a side
 // effect of wanting a bit of give on the hubs.
 export const SCROLL_PAST_HEIGHT = 96;
@@ -151,58 +128,6 @@ export const ScrollPastSpacer: React.FC = () => (
         sx={{ width: "100%", height: SCROLL_PAST_HEIGHT, flexShrink: 0 }}
     />
 );
-
-// The footer is a flat, full-width bar flush to the bottom of the nearest positioned
-// ancestor (MobileTabScreen's ScreenRoot, or the phone frame for pages that render it
-// directly). It is separated from the content by a hairline rather than by a drop
-// shadow, and it is painted in the paper ground so it reads as part of the page rather
-// than as a floating object. This is the ONLY footer style in the app — there is no
-// pill variant any more. Surfaces that render it must reserve
-// FOOTER_CLEARANCE of bottom space so content never hides behind it.
-const Footer = styled(Box)(() => ({
-    backgroundColor: COLORS.background,
-    borderTop: `1px solid ${COLORS.rowBorder}`,
-    display: "flex",
-    alignItems: "center",
-    flexShrink: 0,
-    // Block native pan/scroll: dragging from the footer must not scroll/bounce
-    // the page (it sits over drag-to-sort/game surfaces).
-    touchAction: "none",
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    // Grown by the home-indicator inset, with matching bottom padding so the four tab
-    // labels keep their designed position relative to the bar's TOP edge and the extra
-    // height is dead space under the indicator. See FOOTER_TOTAL_HEIGHT.
-    height: FOOTER_TOTAL_HEIGHT,
-    paddingBottom: SAFE_BOTTOM,
-    boxSizing: "border-box",
-    zIndex: 10,
-}));
-
-// One tab. The active state is ink + weight 600 + a short underline bar drawn as an
-// ::after, exactly as `.fbar div.on` does it — NOT an opacity change, which is what
-// the pill used and which read as "dimmed" rather than "not selected".
-const FooterItem = styled(Box, {
-    shouldForwardProp: (prop) => prop !== "active",
-})<{ active?: boolean }>(({ active }) => ({
-    flex: 1,
-    textAlign: "center",
-    paddingBottom: 7,
-    cursor: "pointer",
-    // The underline occupies 8px (2px bar + 6px margin) under the active label only,
-    // so an inactive tab's label would sit 8px lower than the active one. The
-    // transparent placeholder on inactive tabs keeps all four labels on one baseline.
-    "&::after": {
-        content: '""',
-        display: "block",
-        width: 14,
-        height: 2,
-        margin: "6px auto 0",
-        backgroundColor: active ? COLORS.onSurface : "transparent",
-    },
-}));
 
 // The slab (see the SLAB_FOOTER_* constants), in two layers:
 //   - SlabFooter (outer): position + the cast shadow on the sky. Transparent: box-shadow
@@ -223,7 +148,8 @@ const SlabFooter = styled(Box)(() => ({
     height: SLAB_FOOTER_HEIGHT,
     borderRadius: SLAB_FOOTER_RADIUS,
     boxShadow: `${SLAB_CAST_PX}px ${SLAB_CAST_PX}px 0 var(${SLAB_CAST_SHADOW_VAR}, transparent)`,
-    // Same reason as the bar: a drag from the footer must not pan the page under it.
+    // Block native pan/scroll: dragging from the footer must not scroll/bounce the page
+    // (it sits over drag-to-sort/game surfaces).
     touchAction: "none",
     zIndex: 10,
 }));
@@ -301,10 +227,6 @@ const SlabFooterItem = styled(Box)(() => ({
 // Menu-reached pages (Reader, Arena, the `/friends/*` drill-ins, …) still light it (routeMeta `footerTab`).
 export type FooterTab = "deck" | "menu" | "lessons" | "dictionary";
 
-// Which footer is drawn: the app-wide flat `bar`, or the floating `slab` a route opts
-// into through its registry row (`footerStyle`, src/routes/routeMeta.ts).
-export type FooterStyle = "bar" | "slab";
-
 /** One footer tab: its key, label, slab icon (Material Symbols name) and tap handler. */
 interface FooterTabRow {
     tab: FooterTab;
@@ -315,33 +237,27 @@ interface FooterTabRow {
 
 interface MobileFooterProps {
     activePage?: FooterTab;
-    // Which footer to draw. FooterPresenter picks it from the route. Defaults to the bar.
-    variant?: FooterStyle;
-    // Spread onto the bar element. Used by FooterPresenter to drive the vertical
+    // Spread onto the slab element. Used by FooterPresenter to drive the vertical
     // slide-in/out transform (the footer is animated independently of the page-slide
     // transitions). See FooterPresenter / docs/LEAF_NODE_PAGES.md.
     style?: React.CSSProperties;
 }
 
-const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "deck", variant = "bar", style }) => {
+const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "deck", style }) => {
     const navigate = useNavigate();
     // Whether the Menu tab's popover is up (MenuPopover). Local state: the footer is
     // rendered once at frame level, so this survives navigation between footer routes.
     const [menuOpen, setMenuOpen] = useState(false);
     const closeMenu = useCallback(() => setMenuOpen(false), []);
-    // Rendered next to either footer style; anchored above whichever one is drawn.
+    // Rendered next to the slab; anchored right above it.
     const menuPopover = (
-        <MenuPopover
-            open={menuOpen}
-            onClose={closeMenu}
-            footerClearance={variant === "slab" ? SLAB_FOOTER_TOTAL_HEIGHT : FOOTER_TOTAL_HEIGHT}
-        />
+        <MenuPopover open={menuOpen} onClose={closeMenu} footerClearance={SLAB_FOOTER_TOTAL_HEIGHT} />
     );
 
     // One row per tab, in the design's left-to-right order. This used to be four
     // copy-pasted JSX blocks differing only in label, icon and handler; with the icons
     // gone (decision D5) there was nothing left to justify the repetition.
-    // `icon` (a Material Symbols name) is drawn by the slab only — the bar stays text-only.
+    // `icon` is a Material Symbols name, drawn above the label.
     const baseTabs: FooterTabRow[] = [
         { tab: "deck", label: "Flashcards", icon: "stacks", onClick: () => navigate("/") },
         // Placeholder page for now (src/features/lessons/LessonsPage.tsx) — not flagged.
@@ -383,92 +299,56 @@ const MobileFooter: React.FC<MobileFooterProps> = ({ activePage = "deck", varian
         },
     }));
 
-    if (variant === "slab") {
-        // Which cell the sliding selector sits in (-1 = no tab lit → selector hidden).
-        const activeIndex = TABS.findIndex((t) => t.tab === displayedTab);
-        return (
-            <>
-                <SlabFooter className="mobile-footer mobile-footer--slab" style={style}>
-                    <SlabFooterFace className="mobile-footer__slab-face">
-                        {/* The sliding selector. Persists across footer routes (the footer is
-                            rendered once at frame level), so a tab change animates it from the
-                            old cell to the new one. A page that lights no tab hides it. */}
-                        <SlabFooterSelector
-                            className="mobile-footer__slab-selector"
-                            style={{
-                                width: `calc((100% - ${2 * SLAB_FOOTER_PADDING}px) / ${TABS.length})`,
-                                transform: `translateX(${Math.max(activeIndex, 0) * 100}%)`,
-                                opacity: activeIndex < 0 ? 0 : 1,
-                            }}
-                        />
-                        {TABS.map(({ tab, label, icon, onClick }) => {
-                            // `displayedTab`, not `activePage`: the ink moves with the selector.
-                            const active = displayedTab === tab;
-                            const tone = active
-                                ? footerVar("inkActive", COLORS.onSurface)
-                                : footerVar("ink", COLORS.textSecondary);
-                            return (
-                                <SlabFooterItem
-                                    key={tab}
-                                    className={`mobile-footer-item mobile-footer-item--${tab}${active ? " mobile-footer-item--active" : ""}`}
-                                    onClick={onClick}
-                                >
-                                    {/* Filled, weight 500 — the design's icon-font axes for this bar. */}
-                                    <Icon className={`mobile-footer__${tab}-icon`} name={icon} size={22} weight={500} fill={1} color={tone} />
-                                    <Typography
-                                        className={`mobile-footer__${tab}-label`}
-                                        sx={{
-                                            // 11px/600 flat, the design's `.ft div` — like the bar's
-                                            // 12px, pinned independently of the body ramp.
-                                            fontSize: 11,
-                                            fontWeight: 600,
-                                            lineHeight: LEADING.tight,
-                                            color: tone,
-                                            fontFamily: FONTS.sans,
-                                        }}
-                                    >
-                                        {label}
-                                    </Typography>
-                                </SlabFooterItem>
-                            );
-                        })}
-                    </SlabFooterFace>
-                </SlabFooter>
-                {menuPopover}
-            </>
-        );
-    }
-
+    // Which cell the sliding selector sits in (-1 = no tab lit → selector hidden).
+    const activeIndex = TABS.findIndex((t) => t.tab === displayedTab);
     return (
         <>
-            <Footer className="mobile-footer" style={style}>
-                {TABS.map(({ tab, label, onClick }) => {
-                    const active = displayedTab === tab;
-                    return (
-                        <FooterItem
-                            key={tab}
-                            className={`mobile-footer-item mobile-footer-item--${tab}${active ? " mobile-footer-item--active" : ""}`}
-                            active={active}
-                            onClick={onClick}
-                        >
-                            <Typography
-                                className={`mobile-footer__${tab}-label`}
-                                sx={{
-                                    // 12px flat, not a scale token: the design pins `.fbar`
-                                    // labels at this size independently of the body ramp.
-                                    fontSize: 12,
-                                    fontWeight: active ? 600 : 400,
-                                    lineHeight: LEADING.tight,
-                                    color: active ? COLORS.onSurface : COLORS.textFaint,
-                                    fontFamily: FONTS.sans,
-                                }}
+            <SlabFooter className="mobile-footer mobile-footer--slab" style={style}>
+                <SlabFooterFace className="mobile-footer__slab-face">
+                    {/* The sliding selector. Persists across footer routes (the footer is
+                        rendered once at frame level), so a tab change animates it from the
+                        old cell to the new one. A page that lights no tab hides it. */}
+                    <SlabFooterSelector
+                        className="mobile-footer__slab-selector"
+                        style={{
+                            width: `calc((100% - ${2 * SLAB_FOOTER_PADDING}px) / ${TABS.length})`,
+                            transform: `translateX(${Math.max(activeIndex, 0) * 100}%)`,
+                            opacity: activeIndex < 0 ? 0 : 1,
+                        }}
+                    />
+                    {TABS.map(({ tab, label, icon, onClick }) => {
+                        // `displayedTab`, not `activePage`: the ink moves with the selector.
+                        const active = displayedTab === tab;
+                        const tone = active
+                            ? footerVar("inkActive", COLORS.onSurface)
+                            : footerVar("ink", COLORS.textSecondary);
+                        return (
+                            <SlabFooterItem
+                                key={tab}
+                                className={`mobile-footer-item mobile-footer-item--${tab}${active ? " mobile-footer-item--active" : ""}`}
+                                onClick={onClick}
                             >
-                                {label}
-                            </Typography>
-                        </FooterItem>
-                    );
-                })}
-            </Footer>
+                                {/* Filled, weight 500 — the design's icon-font axes for this footer. */}
+                                <Icon className={`mobile-footer__${tab}-icon`} name={icon} size={22} weight={500} fill={1} color={tone} />
+                                <Typography
+                                    className={`mobile-footer__${tab}-label`}
+                                    sx={{
+                                        // 11px/600 flat, the design's `.ft div` — pinned
+                                        // independently of the body ramp.
+                                        fontSize: 11,
+                                        fontWeight: 600,
+                                        lineHeight: LEADING.tight,
+                                        color: tone,
+                                        fontFamily: FONTS.sans,
+                                    }}
+                                >
+                                    {label}
+                                </Typography>
+                            </SlabFooterItem>
+                        );
+                    })}
+                </SlabFooterFace>
+            </SlabFooter>
             {menuPopover}
         </>
     );

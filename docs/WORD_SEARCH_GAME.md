@@ -570,7 +570,7 @@ Shelf redesign entry 13 (`docs/SHELF_REDESIGN.md`). Everything below lives insid
 | glosses | `.word-search__word-band` → `WordSearchWordList` | the target glosses, inline and middot-separated (§ above), centred both ways in the height above the board |
 | grid | `WordSearchGrid` | the board, at its natural height, anchored on the screen (below); it shrinks only when the screen is too short for it |
 | spacer | `.word-search__grid-spacer` | whatever height the board leaves below it |
-| hint | `WordSearchHintBar` | reveal · button (charge bars under it) (§5a). Last row, pinned to the panel's bottom edge; hairline on its TOP |
+| hint | `GameHintBar` (shared) | reveal · button (charge bars under it) (§5a). Last row, pinned to the panel's bottom edge; hairline on its TOP |
 
 **There is no strip above the glosses.** The HUD held the clock until 2026-11-01, when the
 clock went out of sight (§ 5), and with it the eye toggle and the whole strip.
@@ -1014,7 +1014,7 @@ A lightweight, client-only assist layer (no server/DB involvement). State lives 
 `useWordSearchHints.ts` (`units`, `entryKey`, `revealCount`,
 `hintLocationRevealed`, `hintShakeNonce`).
 
-**One mechanic, one row.** `WordSearchHintBar.tsx` is now the whole `.hintbar`: the
+**One mechanic, one row.** `GameHintBar.tsx` (`src/games/shared/`, shared with Writing Grid) is now the whole `.hintbar`: the
 reveal on the LEFT, and the button (with its charge bars stacked underneath it) on the
 RIGHT, in right-thumb reach (swapped 2026-11-10; the button used to lead on the left). It takes `WordSearchHintRow` as its `children`. Before the shelf
 redesign these were three widgets in three places (button in the page header, meter
@@ -1050,7 +1050,7 @@ hint nudges recall without handing over the answer.
   state is already carried by the glyph's FILL axis and the button's opacity, and a third
   channel on one 16px icon made the button look like a warning rather than a tool. A
   **banked charge bar is ink** (v2 `#ws .hintbar .chg i{background:var(--ink)}`; it was the
-  game's purple ink before v2 removed the ink tier — `WordSearchHintBar.tsx`).
+  game's purple ink before v2 removed the ink tier — `shared/GameHintBar.tsx`).
   `HINT_ACCENT_COLOR` colours the pinyin REVEAL, and is plain ink in v2 too.
 - **Reveal granularity (`pinyinUnits.ts`):** a hint reveals one **phonetic
   unit** at a time, not one raw Latin letter — `syllableToPinyinUnits` splits
@@ -1437,7 +1437,7 @@ Frontend (`src/games/word-search/`):
   `hintedCells`; see §5a).
 - `WordSearchWordList.tsx` — the English-gloss prompt chips: solid ink `.chip.on` while
   pending, struck through and faded once found (§3).
-- `WordSearchHintBar.tsx` — the whole `.hintbar` row: the hint button, `HINT_BAR_UNITS`
+- `shared/GameHintBar.tsx` — the whole `.hintbar` row: the hint button, `HINT_BAR_UNITS`
   charge bars under it, and the reveal slot it renders its `children` into (§5a).
 - `WordSearchHintRow.tsx` — the reveal, filling the hint row's left-hand slot. Renders whichever currency the board spends (`currency` prop): the
   Pinyin board's per-syllable islands — nothing at all until that character's

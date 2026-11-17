@@ -101,12 +101,13 @@ the open animation, and every `applyResize` floor becomes `minHeightRef.current`
 instead of `0`. There is no second implementation of the gesture model.
 
 **Choosing the resting height.** Derive it from the floating footer's own
-geometry — `FOOTER_HEIGHT + FOOTER_EXTRA_GAP
-+ SHEET_LIP` (the old card-sets sheet's rule) — so the lip that showed above the pill (grabber + first caption) survives
+geometry — `SLAB_FOOTER_TOTAL_HEIGHT + FOOTER_EXTRA_GAP
++ SHEET_LIP` (the old card-sets sheet's rule, restated for the slab — it was written
+against the deleted flat bar's `FOOTER_HEIGHT`) — so the lip that showed above the pill (grabber + first caption) survives
 any change to the footer. The footer is rendered at frame level with `zIndex: 100`
 (`FooterPresenter`), well above the sheet's internal `11`, so the pill floats **over**
 the sheet at every height; a persistent sheet's body must therefore reserve
-`FOOTER_CLEARANCE` of bottom padding exactly as a page's scroll area does,
+`SLAB_FOOTER_TOTAL_CLEARANCE` of bottom padding exactly as a page's scroll area does,
 and wear its bottom edge-fade (`EDGE_FADE_MASK_NO_TOP` from `MobileTabScreen`) so the
 content dissolves under the pill rather than being cut by it.
 
@@ -496,9 +497,14 @@ read it with `useEipColors()` (the LIGHT palette outside a provider). The sheet
 (`InfoCardSection`) mounts the provider — the eip's only host since the inline dictionary-cdp
 panel was deleted (2026-11-10).
 
-- **Light** — the Light theme. The design's Day artboard: a
-  pale-sky tint on the upper panel's ground and wells; keys, shelf, cards and ink are the
-  app's light colours.
+- **Light** — the Light theme. A pale **cornflower** (hue 261°, the writing platform's
+  `bluCorn` hue) on the upper panel's ground and wells, at about 16% of the tower sky's
+  chroma, so the sheet echoes td's blue without its loudness. The key lips and shelf grabber
+  are hued to match. The lower shelf (the panel body) stays **white** by decision; the tab
+  track is the well mixed into white. Faces, cards and ink are the app's light colours. Chosen
+  2026-11-17 in the EIP Sky Tint Lab artifact; it replaced the design Day artboard's pale-sky
+  tint (#E0F3FF at hue 238°, upper panel only), which the Dictionary page ground
+  (`src/timeOfDay/tier2Look.ts` → `day`) still uses.
 - **Dark** — the Dark theme. The design's *Night–inverted* artboard: slate panels (#2A3446
   upper, #1E2735 shelf), light ink, cards a lifted slate. The provider also **re-themes the
   subtree** — the flashcard palette's ink/border tokens are swapped — so everything that
@@ -530,14 +536,19 @@ ground (`src/timeOfDay/tier2Look.ts`) carries the same day hexes for its page.
 `EipAddKey` — the design's `.kc.add`, built exactly: a 92px raised key in the trail row,
 at its right end (`+ Add` on a 5px lip, lifted 1px; held, it sinks 4px and loses the lip;
 `✓ Added!` sits 2px low on a 2px lip with a green check). Driven by `useLearningToggle`
-(EipSheet `showLearning`: the Dictionary page and the saved-card cdp); tapping "Added!" removes. The hook is
+(EipSheet `showLearning`: the Dictionary page, the saved-card cdp and the Reader); tapping "Added!" removes. The hook is
 optimistic: Add ⇄ Added! flips on the tap and the request follows after paint, so the key is
 never disabled waiting on the network (LEAF_NODE_PAGES.md § "The Learning control"). **No glow.**
 With `learningSkipsRoot` (the saved-card cdp) the key is hidden while the trail's root is
 showing — the root is the saved card the page is about, so the key would only offer to un-save
 it — and appears on every word drilled into from it. It is the app's only Learning control
 (the dictionary cdp's glowing `LearningToggle` was deleted with that page, 2026-11-10). acp
-offers none.
+offers none. **Outside the eip** it has one mount: the Reader's dictionary keycap
+(VocabDisplayCard `renderHeaderActions`, wired by `src/features/reader/useReaderWordActions.ts`),
+under the light palette `useEipColors` returns outside a provider; that hook's toggle goes
+inert while the Reader's eip is open so the two never disagree. There it also uses the key's
+**`compact` size** (`size` prop; `KEY_SIZES`, width in `eipAddKeySizes.ts`) when the keycap
+stacks its controls under a long headword — same press arithmetic, smaller key.
 
 **The flp's key is ADD-ONLY (2026-11-11).** The flp mounts `InfoCardSection` itself, so it
 calls `useLearningToggle` directly (`FlashcardsLearnPage.tsx` → `eipLearning`) and passes
@@ -1041,7 +1052,9 @@ grow-in, and fades away on exit (owner's picks):
 - **Enter:** grows out of its anchor from a speck, overshoots to 1.08, settles
   (`HINT_MOTION.growMs`, plain ease-out — the overshoot is in the keyframes). Above its anchor
   it grows up (`growIn`, origin bottom-centre); flipped below, it grows down
-  (`growInFromAbove`, origin top-centre), read from Popper's resolved `placement`.
+  (`growInFromAbove`, origin top-centre); floated right (`placement="right"`, the
+  single-column sense list since 2026-11-17) it grows sideways (`growInFromLeft`, origin
+  left-centre) — all read from Popper's resolved `placement`.
 - **Exit:** a plain fade away (`fadeOut`, `FADE_OUT_MS` = 160ms, ease-out). The hint
   bubble's pop (swell + ring) was tried first and dropped the same day as too loud for a
   caption. A fading card takes no taps.
@@ -1060,7 +1073,7 @@ grow-in, and fades away on exit (owner's picks):
 `CpcdPopupMotion`; `FADE_OUT_MS`; `src/components/hintBubble/bubbleKeyframes.ts` (shared with
 `HintBubbleSurface`); `src/components/hintBubble/hintMotion.ts` → `HINT_MOTION`; callers
 `src/components/SegmentedSentenceDisplay.tsx`, `src/components/CPCDRow.tsx`,
-`src/features/flashcards/FlashcardsLearnPage/EipSenseList.tsx`.
+`src/components/SenseList.tsx` (the eip's and the Reader's sense list).
 
 ---
 

@@ -1,7 +1,8 @@
 # Bento System
 
-Shared menu primitive (`src/components/bento/`). Its one live caller is
-`src/features/friends/FriendsBody.tsx` (the AccountSheet's Friends tab). `/` is the Deck
+Shared menu primitive (`src/components/bento/`). Its live callers are
+`src/features/friends/FriendsBody.tsx` (the AccountSheet's Friends tab) and
+`src/features/reader/TextSidebar.tsx` (the Reader list's New document tile). `/` is the Deck
 Tower, not a hub (see [NAVIGATION.md](./NAVIGATION.md)).
 
 All three hub pages that used to be built on it were deleted on 2026-11-06: the Menu
@@ -113,7 +114,7 @@ bleeds off the top-right. Code: `src/components/bento/Bento.tsx` →
 **`pressed` + `sx`** — for a tile that is a TOGGLE rather than a destination: the Friends
 tab's Send / Accept / Remove tiles (`src/features/friends/FriendActionTiles.tsx`). `pressed`
 drives `aria-pressed`; `sx` is merged after the tile's own styles so the host can add the
-selected tile's ink-ring outline. Not for re-skinning the face. Code: `src/components/bento/Bento.tsx` →
+selected tile's press-and-latch scale. Not for re-skinning the face. Code: `src/components/bento/Bento.tsx` →
 `BentoTileProps.pressed`, `BentoTileProps.sx`.
 
 ### Colour: tiles take a hue KEY, not a colour
@@ -189,6 +190,7 @@ control" meaning the strip header had.)*
 | ~~**Menu**~~ | Deleted 2026-11-06 with `/menu`. Its destinations (and their hues) moved to `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations`, drawn as popover rows (docs/NAVIGATION.md § 3). |
 | ~~**Games**~~ | Deleted 2026-11-06 with `/games`. Its `GameCard` tiles (Bubble Match / Word Search full-row cards, the rest half-width tiles) remain as dormant code. |
 | **Friends** (`src/features/friends/FriendsBody.tsx`, shown in the AccountSheet's Friends tab) | The one `columns={3}` caller, and the one that is a MENU OF ACTIONS rather than of destinations: Send / Accept / Remove as `compact` tiles (blu / grn / red — valence, not decoration), then Challenges as `low` + `fullWidth` with a subtitle. Both counted tiles use `pinTone="alert"`. Its tiles pass `to` **and** an `onClick` that intercepts the plain-click to run the drill-in slide, so they keep real link behaviour for modified clicks. |
+| **Reader list** (`src/features/reader/TextSidebar.tsx`, the `/reader` list body) | A single `compact` tile — **New document** (blu, `edit_note`, title only, no subtitle — the Friends action tiles' dress) — one column wide in the default 2-column grid, so it sits in the LEFT column and the right stays empty. `onClick` only (it navigates to `/reader/new` through its host). |
 
 *(Dormant since the hub's deletion:)* Bubble Match's and Word Search's cards were **special-cased in the page**, not
 driven by generic `GameDef` fields. Word Search's card is owned by

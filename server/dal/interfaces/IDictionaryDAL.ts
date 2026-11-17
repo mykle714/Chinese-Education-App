@@ -37,6 +37,16 @@ export interface IDictionaryDAL {
   findMultipleByWord1(words: string[], language?: string): Promise<DictionaryEntry[]>;
 
   /**
+   * The Reader's batch English → Chinese lookup: per term, the best det row having a sense
+   * that IS the term (complete match only), with the 1-based position of that sense.
+   * See DictionaryDAL → findCompleteEnglishMatches.
+   */
+  findCompleteEnglishMatches(
+    terms: string[],
+    language: string
+  ): Promise<Array<{ term: string; senseOrdinal: number; entry: DictionaryEntry }>>;
+
+  /**
    * Find multiple dictionary entries by simplified Chinese characters (backward compatibility)
    */
   findMultipleBySimplified(simplifiedTerms: string[]): Promise<DictionaryEntry[]>;

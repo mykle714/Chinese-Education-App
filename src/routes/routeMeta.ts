@@ -1,5 +1,5 @@
 import { matchPath } from "react-router-dom";
-import type { FooterStyle, FooterTab } from "../components/MobileFooter";
+import type { FooterTab } from "../components/MobileFooter";
 import { ROUTED_GAMES } from "../games/registry";
 import { isFeatureEnabled } from "../../server/contracts/featureFlags";
 
@@ -89,13 +89,6 @@ export interface RouteMeta {
   chrome: RouteChrome;
   /** Which footer tab is active here. Omit for footerless routes. */
   footerTab?: FooterTab;
-  /**
-   * How the footer bar is drawn here. Omit for the app-wide flat `bar`; `slab` is the
-   * floating flashcard slab (Tower Style design), worn by the Deck Tower (`/`), the Dictionary tab, both
-   * card detail pages and acp.
-   * Meaningless without `footerTab`. See MobileFooter / docs/DECK_TOWER.md § Footer.
-   */
-  footerStyle?: FooterStyle;
   // NOTE: there is deliberately no `lazy` flag. Every route is code-split (see
   // routes/registry.ts) and App.tsx wraps them all in <Suspense>, so a per-row
   // flag would be always-true and could only ever drift.
@@ -115,7 +108,6 @@ const PAGE_ROUTES: RouteMeta[] = [
     shell: "frame",
     chrome: "tab",
     footerTab: "deck",
-    footerStyle: "slab",
     note: "The Deck Tower (docs/DECK_TOWER.md) — the app's landing page and first footer tab. It took `/` on 2026-11-04, when the old Home (the fdp), the Reading/Writing Centers, Decks and the collection pages were deleted; `/deck-tower`, its address until then, is gone.",
   },
   {
@@ -124,8 +116,7 @@ const PAGE_ROUTES: RouteMeta[] = [
     shell: "frame",
     chrome: "tab",
     footerTab: "lessons",
-    footerStyle: "slab",
-    note: "Took Arena's footer slot on 2026-11-10. A \"coming soon\" placeholder (src/features/lessons/LessonsPage.tsx) until the lessons feature is designed. Styled as a td Tier-2 page (useTier2Look ground) and wears the slab footer, like the Dictionary.",
+    note: "Took Arena's footer slot on 2026-11-10. A \"coming soon\" placeholder (src/features/lessons/LessonsPage.tsx) until the lessons feature is designed. Styled as a td Tier-2 page (useTier2Look ground), like the Dictionary.",
   },
   {
     path: "/dictionary",
@@ -133,8 +124,7 @@ const PAGE_ROUTES: RouteMeta[] = [
     shell: "frame",
     chrome: "tab",
     footerTab: "dictionary",
-    footerStyle: "slab",
-    note: "Wears the Deck Tower's slab footer since the 2026-10-29 Tier-2 redesign (docs/SHELF_REDESIGN.md § 7b).",
+    note: "A td Tier-2 page since the 2026-10-29 redesign (docs/SHELF_REDESIGN.md § 7b).",
   },
 
   // ── Node pages (slide from the right) ──
@@ -178,15 +168,15 @@ const PAGE_ROUTES: RouteMeta[] = [
   // The card detail page is a drill-in from the Deck Tower's cards page, so it keeps the
   // Flashcards tab. (The Dictionary's read-only `/dictionary/card/:word` was deleted
   // 2026-11-10 — a dictionary word is shown only in the eip sheet.)
-  { path: "/flashcards/card/:id", access: "any", shell: "frame", chrome: "node", footerTab: "deck", footerStyle: "slab" },
+  { path: "/flashcards/card/:id", access: "any", shell: "frame", chrome: "node", footerTab: "deck" },
 
   // Add Cards — the Discover hub (`/discover`) was deleted 2026-10-17, so acp is a
   // drill-in from the Deck Tower (the main world's sort platform) and lights the Flashcards tab. The
   // `/discover/` URL prefix is kept so existing links (?set=provisional offers) work.
-  // Wears the floating `slab` footer since its Tower Tier 2 re-skin (2026-10-29): the page
-  // is a tier-2 ground under the Deck Tower, and the slab casts its shadow on that ground
+  // A Tower Tier 2 page since its re-skin (2026-10-29): a tier-2 ground under the Deck
+  // Tower, and the footer slab casts its shadow on that ground
   // (docs/SORT_CARDS_REQUIREMENTS.md § 4.9).
-  { path: "/discover/sort/:language", access: "any", shell: "frame", chrome: "node", footerTab: "deck", footerStyle: "slab" },
+  { path: "/discover/sort/:language", access: "any", shell: "frame", chrome: "node", footerTab: "deck" },
 
   // ── Leaf pages (slide up, no footer) ──
   {
@@ -308,11 +298,6 @@ export function routeShell(pathname: string): RouteShell {
 /** The active footer tab for a pathname, or undefined when the footer is hidden. */
 export function routeFooterTab(pathname: string): FooterTab | undefined {
   return findRoute(pathname)?.footerTab;
-}
-
-/** How the footer bar is drawn on a pathname (the flat `bar` unless the row says otherwise). */
-export function routeFooterStyle(pathname: string): FooterStyle {
-  return findRoute(pathname)?.footerStyle ?? "bar";
 }
 
 /** The page archetype for a pathname. */

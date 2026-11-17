@@ -422,7 +422,9 @@ being fed would hang forever. Three rules in `topUpBuffer` and `refill` close th
 
 When a match **leaves no live card on the board**, a green **"Board Cleared!"** banner pops
 in over the centre of the grid, drifts up and fades
-(`MatchSpeedClearBanner.tsx`, `CLEAR_BANNER_MS` = 1400ms).
+(`MatchSpeedClearBanner.tsx`, `CLEAR_BANNER_MS` = 1400ms), with a one-shot confetti burst
+from the same point beneath it (`src/components/ConfettiBurst.tsx`, keyed by `clearId` like the
+banner so every clear replays it; shared with the flp's "Done for the day!" card).
 
 **It is an indicator and nothing else** — no score, no tier, no mark, no bonus,
 no phase change. The board refills on its normal tick exactly as it would have.
@@ -1136,7 +1138,7 @@ it reads from.
 
 | This doc's section | Depends on |
 |---|---|
-| Board cleared celebration | `src/games/match-speed/MatchSpeedClearBanner.tsx`; `MatchSpeedBoard.tsx` (`clearId`, `markPairExiting`, `removePair`); `constants.ts` (`CLEAR_BANNER_MS`) |
+| Board cleared celebration | `src/games/match-speed/MatchSpeedClearBanner.tsx`; `src/components/ConfettiBurst.tsx`; `MatchSpeedBoard.tsx` (`clearId`, `markPairExiting`, `removePair`); `constants.ts` (`CLEAR_BANNER_MS`) |
 | Study Challenge rounds | `src/games/match-speed/challengeDeal.ts`; `MatchSpeedStage.tsx` (`dealStateRef`, `drawPairs`, the `beginRun` split, `&contested=exclude`); `src/games/runtime/useChallengeRound.ts`; `src/games/__tests__/challengeDeal.test.ts`; server side → `OnDeckVocabService.getChallengeGamePool` |
 | Duplicate gate | `src/games/match-speed/cardBuffer.ts` (`takePairs`'s `isBlocked` + batch id set, `fillBuffer`'s dedupe); `src/games/match-speed/MatchSpeedStage.tsx` (`drawPairs`, `onBoardIdsRef`); `src/__tests__/matchSpeedCardBuffer.test.ts` |
 | Card selection, buffer, `exclude` | `server/services/OnDeckVocabService.ts` — `getGameVocabPool`, `fetchGameCandidates`, `GAME_FALLBACK_ORDER` |

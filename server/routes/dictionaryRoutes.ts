@@ -22,6 +22,9 @@ router.post('/api/dictionary/aiEntry', authenticateToken, handle(dictionaryContr
 // Generate (or return cached) a comparison paragraph for two words (eip Compare tab)
 router.post('/api/dictionary/compare', authenticateToken, handle(dictionaryController.compare, dictionaryController));
 
+// The Reader's batch English → Chinese lookup (a document's English words → det rows)
+router.post('/api/dictionary/englishMatches', authenticateToken, handle(dictionaryController.englishMatches, dictionaryController));
+
 // Lookup dictionary term by exact match
 router.get('/api/dictionary/lookup/:term', authenticateToken, handle(dictionaryController.lookupTerm, dictionaryController));
 

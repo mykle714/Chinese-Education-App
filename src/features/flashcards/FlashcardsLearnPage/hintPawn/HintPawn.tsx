@@ -47,10 +47,11 @@ import { useSoftIntro } from "../../../../softIntro/useSoftIntro";
  * until it is tapped or has a new line to say.
  *
  * ── Tap reactions ────────────────────────────────────────────────────────────
- * A tap on the pawn (IsoPawn `tappable` + `onTap`) is answered one of two ways: 4 in 5 a
- * flinch and a short "ouch" line in its own bubble up and to the right of its head, over
- * the card (PawnOuchBubble, usePawnOuch); 1 in 5 (PAWN_TAP_JUMP_SHARE) the tower's jump. A
- * tap while it is still in the air always jumps again — chained jumps climb. No "!" here: the ouch replaces it.
+ * A tap on the pawn (IsoPawn `tappable` + `onTap`) is answered with a flinch and a short
+ * "ouch" line in its own bubble up and to the right of its head, over the card
+ * (PawnOuchBubble, usePawnOuch). The hint pawn never jumps (owner, 2026-11-17: the tower's
+ * poke jump was removed here); a tap while it is still falling onto the platform is
+ * ignored ("none"). No "!" here: the ouch replaces it.
  *
  * ── Dismissing ───────────────────────────────────────────────────────────────
  * A swipe LEFT on the platform or the pawn throws the platform off the screen's left edge
@@ -212,8 +213,6 @@ const OUCH_TIP = {
     x: SCENE_BOX.pawnX + HEAD_SCREEN_R * 0.85,
     y: SCENE_BOX.pawnY - HEAD_CENTRE * PROJ.heightUnit - HEAD_SCREEN_R * 0.85,
 };
-/** The share of ground taps the pawn answers with a jump; the rest get a flinch + "ouch" (owner, 2026-11-08: 1 in 5). */
-const PAWN_TAP_JUMP_SHARE = 0.2;
 /** The rise in from below the screen. */
 const RISE_MS = 520;
 /** From the stage's rest to below the screen's bottom edge, px (the pill's offset + the stage + margin). */
@@ -373,7 +372,8 @@ export default function HintPawn({ world, hint, unseen, away, parked, contentRef
     const onPawnTap = useCallback(
         ({ airborne }: { airborne: boolean }): PawnTapReaction => {
             noteTap();
-            if (airborne || Math.random() < PAWN_TAP_JUMP_SHARE) return "jump";
+            // Mid-drop: a flinch would turn into a jump (usePawnMotion), so ignore the tap.
+            if (airborne) return "none";
             sayOuch();
             return "flinch";
         },

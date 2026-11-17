@@ -1,6 +1,6 @@
 import { API_BASE_URL } from '../../constants';
 import * as authStorage from '../../utils/authStorage';
-import type { AudioRoute } from '../../hooks/useTTSSettings';
+import { readTTSSettings, type AudioRoute } from '../../hooks/useTTSSettings';
 import type { TTSProvider, TTSRequest, TTSVoice } from './types';
 
 /**
@@ -79,6 +79,32 @@ function isContextRunning(ctx: AudioContext): boolean {
 }
 
 /**
+ * Tell WebKit which iOS audio-session category the page wants, via the Audio Session
+ * API (`navigator.audioSession`, Safari 16.4+; absent elsewhere, where this is a no-op).
+ *
+ *   'media'       → `'ambient'`: mixes with other apps' audio and obeys the silent
+ *                   switch — exactly what media mode promises, stated explicitly
+ *                   instead of relying on WebKit's 'auto' heuristics for Web Audio.
+ *   'passthrough' → `'auto'`: hand the decision back to WebKit, which classifies the
+ *                   media element as Playback (the behaviour passthrough is built on).
+ *
+ * Called from `unlock()` on every tap, so a route change takes effect on the next
+ * gesture. The assignment is skipped when unchanged (one property read per tap).
+ * Documented in docs/AUDIO_PLAYBACK.md § 5.
+ */
+function applyAudioSessionType(route: AudioRoute): void {
+    if (typeof navigator === 'undefined') return;
+    const session = (navigator as unknown as { audioSession?: { type: string } }).audioSession;
+    if (!session) return;
+    const wanted = route === 'media' ? 'ambient' : 'auto';
+    try {
+        if (session.type !== wanted) session.type = wanted;
+    } catch {
+        // ignore — an unsupported value must never break the tap that called us
+    }
+}
+
+/**
  * A short synthesized cue (docs/AUDIO_PLAYBACK.md § "Sound effects"). `render` returns
  * mono PCM in [-1, 1] at `sampleRate`; it runs once per key per session, lazily.
  */
@@ -119,6 +145,51 @@ function encodeWav(samples: Float32Array, sampleRate: number): Blob {
     return new Blob([view], { type: 'audio/wav' });
 }
 
+// ── Silence trimming (TTSRequest.trimSilence) ──────────────────────────────────────
+// A sample counts as sound above −45 dBFS. Google's clips are digitally silent at the edges,
+// so this only has to sit under the quietest consonant onset (the same level ffmpeg's
+// silencedetect agreed with on our cached clips, 2026-11-17).
+const SILENCE_THRESHOLD = 0.0056;
+// Silence kept on a trimmed edge, so a consonant's attack/release is never clipped and two
+// butted clips still have a hair of air between them. Tuned by ear.
+const TRIM_PAD_SEC = 0.03;
+
+/** Where sound starts and stops in a clip, in seconds from its start. */
+interface SoundBounds {
+    soundStartSec: number;
+    soundEndSec: number;
+    durationSec: number;
+}
+
+/** First and last sample above SILENCE_THRESHOLD on any channel. */
+function findSoundBounds(buffer: AudioBuffer): SoundBounds | null {
+    let first = Infinity;
+    let last = -1;
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+        const data = buffer.getChannelData(c);
+        let i = 0;
+        while (i < data.length && Math.abs(data[i]) < SILENCE_THRESHOLD) i++;
+        if (i < first) first = i;
+        let j = data.length - 1;
+        while (j > i && Math.abs(data[j]) < SILENCE_THRESHOLD) j--;
+        if (j > last) last = j;
+    }
+    if (last < 0 || !Number.isFinite(first)) return null; // all silence: leave it untouched
+    return {
+        soundStartSec: first / buffer.sampleRate,
+        soundEndSec: (last + 1) / buffer.sampleRate,
+        durationSec: buffer.duration,
+    };
+}
+
+/** The [startSec, endSec) slice of a clip to play; endSec null = to the natural end. */
+interface PlaySlice {
+    startSec: number;
+    endSec: number | null;
+}
+
+const FULL_CLIP: PlaySlice = { startSec: 0, endSec: null };
+
 export class CloudTTSProvider implements TTSProvider {
     readonly name = 'cloud' as const;
 
@@ -126,6 +197,14 @@ export class CloudTTSProvider implements TTSProvider {
     // so the provider never reads React state itself. Defaults to passthrough to
     // match DEFAULT_SETTINGS in useTTSSettings.
     private route: AudioRoute = 'passthrough';
+
+    // A SURFACE'S OWN route, outranking the app-wide one while that surface is mounted —
+    // the Reader document page's audio chip (useReaderAudioSettings), which is its own
+    // setting, independent of `tts.settings` (owner's call 2026-11-17). Null = no surface
+    // claims the route; the app-wide setting governs. Read by speak(), prefetch() and
+    // unlock() (sink, cache warm-up, iOS session type + element priming) through
+    // `effectiveRoute`, so all three agree on the sink. docs/AUDIO_PLAYBACK.md § 5.
+    private routeOverride: AudioRoute | null = null;
 
     // --- 'media' sink state (Web Audio) --------------------------------------
     // The single session-scoped AudioContext. Created lazily (decoding needs a
@@ -187,6 +266,10 @@ export class CloudTTSProvider implements TTSProvider {
     // createObjectURL pins its Blob for the life of the document otherwise, and
     // this map would grow once per distinct word played in a session.
     private urlCache = new Map<string, string>();
+    // Derived cache for TTSRequest.trimSilence: where sound starts/ends in each analyzed clip.
+    // Filled only for clips a caller asked to trim, so it stays small; null = could not
+    // analyze (no Web Audio), which plays the clip whole.
+    private boundsCache = new Map<string, Promise<SoundBounds | null>>();
     private static MAX_CACHED_URLS = 64;
     /** Pause before getOrFetchBlob's single retry of a transient failure. */
     private static RETRY_DELAY_MS = 300;
@@ -244,6 +327,19 @@ export class CloudTTSProvider implements TTSProvider {
      */
     setRoute(route: AudioRoute): void {
         this.route = route;
+    }
+
+    /**
+     * Claim (or with null, release) the route for a surface that has its own audio
+     * setting — see `routeOverride`. Like setRoute, it does not interrupt a live clip.
+     */
+    setRouteOverride(route: AudioRoute | null): void {
+        this.routeOverride = route;
+    }
+
+    /** The route speak() will actually use: a surface's claim, else the app-wide mirror. */
+    get effectiveRoute(): AudioRoute {
+        return this.routeOverride ?? this.route;
     }
 
     /**
@@ -351,7 +447,22 @@ export class CloudTTSProvider implements TTSProvider {
         // only from speak()/prefetch(). Idempotent, and re-entrant-safe when the
         // listener itself is what called us.
         this.ensureUnlockListener();
+        // Read the route LIVE from the settings store, not `this.route`: that mirror is
+        // only pushed by a mounted useTTS, and this runs on every tap app-wide.
+        // A surface's own route (routeOverride) outranks the app-wide setting.
+        const route = this.routeOverride ?? readTTSSettings().route;
+        applyAudioSessionType(route);
         this.unlockContext();
+        // ⛔ The media-element sinks are primed ONLY on the passthrough route. Priming
+        // calls play() on an HTMLAudioElement — even muted, on a silent clip — and on iOS
+        // that alone takes audio focus and PAUSES the user's music. Priming them in
+        // media mode defeated the one promise media mode makes ("mixes, undisturbed"):
+        // the first tap of the session stopped the music before a word was ever spoken.
+        // Cost: after a media → passthrough switch the elements are primed by the NEXT
+        // tap rather than in advance (the chip tap's own pointerdown fires before the
+        // route changes) — one gesture later, never a lost utterance on a speaker tap,
+        // whose pointerdown primes before its fetch. docs/AUDIO_PLAYBACK.md § 5.
+        if (route !== 'passthrough') return;
         // A real utterance is mid-flight; the silent clip's cleanup would pause
         // it and strip its src. The active play already proves activation.
         if (!this.elementPlaying && !this.elementActivated) this.unlockElement();
@@ -565,32 +676,84 @@ export class CloudTTSProvider implements TTSProvider {
 
         // Capture the route for the whole call: a settings change mid-fetch must
         // not start playback on one sink having prepared the other's artifact.
-        const route = this.route;
+        const route = this.effectiveRoute;
         const key = this.bufferKey(req);
+
+        // Which slice of the clip to play (TTSRequest.trimSilence); the whole clip by default.
+        const slice = await this.resolvePlaySlice(key, req);
+        if (myGeneration !== this.generation) return;
 
         if (route === 'passthrough') {
             const url = await this.getOrCreateUrl(key, req);
             // Superseded by a newer speak() or a cancel() while the fetch was in
             // flight — drop this call on the floor.
             if (myGeneration !== this.generation) return;
-            return this.playViaElement(url, myGeneration);
+            return this.playViaElement(url, myGeneration, req.onStart, slice);
         }
 
         const buffer = await this.getOrDecodeBuffer(key, req);
         if (myGeneration !== this.generation) return;
-        return this.playViaWebAudio(buffer, myGeneration);
+        return this.playViaWebAudio(buffer, myGeneration, req.onStart, slice);
+    }
+
+    /**
+     * The slice of a clip to play for TTSRequest.trimSilence: the requested edges moved in to
+     * where sound starts/ends, less TRIM_PAD_SEC. Any failure plays the clip whole.
+     */
+    private async resolvePlaySlice(key: string, req: TTSRequest): Promise<PlaySlice> {
+        const trim = req.trimSilence;
+        if (!trim?.start && !trim?.end) return FULL_CLIP;
+        const bounds = await this.getSoundBounds(key, req);
+        if (!bounds) return FULL_CLIP;
+        const startSec = trim.start ? Math.max(0, bounds.soundStartSec - TRIM_PAD_SEC) : 0;
+        const endSec = trim.end ? Math.min(bounds.durationSec, bounds.soundEndSec + TRIM_PAD_SEC) : null;
+        if (endSec !== null && endSec <= startSec) return FULL_CLIP;
+        return { startSec, endSec };
+    }
+
+    /**
+     * Where sound starts and stops in a clip. Decodes its own copy of the cached Blob and
+     * keeps only the two numbers, so the 'passthrough' route (which never needs PCM) does not
+     * pin a decoded buffer for every clip. Null when Web Audio is unavailable.
+     */
+    private getSoundBounds(key: string, args: SynthArgs): Promise<SoundBounds | null> {
+        const cached = this.boundsCache.get(key);
+        if (cached) return cached;
+        const promise = (async (): Promise<SoundBounds | null> => {
+            const ctx = this.ensureContext();
+            if (!ctx) return null;
+            const decoded = this.bufferCache.get(key);
+            const buffer = decoded
+                ? await decoded
+                : await this.decode(ctx, await (await this.getOrFetchBlob(key, args)).arrayBuffer());
+            return findSoundBounds(buffer);
+        })();
+        // A failed fetch/decode is not remembered: the next speak() retries the analysis.
+        promise.catch(() => this.boundsCache.delete(key));
+        this.boundsCache.set(key, promise.catch(() => null));
+        return this.boundsCache.get(key)!;
     }
 
     /**
      * 'passthrough' playback. Resolves when the clip ends, errors, or the
      * watchdog fires — never rejects, so a narration failure can't break the UI.
      */
-    private playViaElement(url: string, myGeneration: number): Promise<void> {
+    private playViaElement(
+        url: string,
+        myGeneration: number,
+        // TTSRequest.onStart — fired on the first `playing` (sound is coming out), not on
+        // `loadedmetadata` (see the watchdog note below for why those differ).
+        onStart?: (durationMs: number | null) => void,
+        slice: PlaySlice = FULL_CLIP,
+    ): Promise<void> {
         const el = this.ensureElement();
         if (!el) return Promise.resolve();
 
         return new Promise<void>((resolve) => {
             let watchdog: ReturnType<typeof setTimeout> | null = null;
+            // A trimmed end (slice.endSec): the timer that pauses the clip there, since an
+            // element has no "stop at" of its own.
+            let endTimer: ReturnType<typeof setTimeout> | null = null;
             let settled = false;
             const cleanup = () => {
                 if (settled) return;
@@ -598,6 +761,10 @@ export class CloudTTSProvider implements TTSProvider {
                 if (watchdog !== null) {
                     clearTimeout(watchdog);
                     watchdog = null;
+                }
+                if (endTimer !== null) {
+                    clearTimeout(endTimer);
+                    endTimer = null;
                 }
                 // Only touch the SHARED element if this utterance still owns it.
                 // A newer speak() may already have installed its own handlers on
@@ -627,12 +794,37 @@ export class CloudTTSProvider implements TTSProvider {
             // from metadata let the watchdog resolve while the word was still
             // playing, so a sequenced caller (the acp pack autoplay's gap) started
             // the next word early and cut this one off.
-            el.onloadedmetadata = null;
+            // A trimmed start is a seek. Set right after `src` below (the spec's default
+            // playback start position), and again once metadata lands for engines that drop
+            // an early seek — at worst a few ms of the lead silence play first.
+            el.onloadedmetadata = slice.startSec > 0
+                ? () => {
+                    if (el.currentTime < slice.startSec) {
+                        try { el.currentTime = slice.startSec; } catch { /* not seekable */ }
+                    }
+                }
+                : null;
+            let startReported = false;
             el.onplaying = () => {
                 if (settled) return;
-                if (!Number.isFinite(el.duration)) return;
+                // Where this playback will stop: the trimmed end, or the clip's own end.
+                const stopAtSec = slice.endSec ?? (Number.isFinite(el.duration) ? el.duration : null);
+                const fromSec = Math.max(el.currentTime, slice.startSec);
+                const remainingMs = stopAtSec === null ? null : Math.max(0, (stopAtSec - fromSec) * 1000);
+                if (!startReported) {
+                    startReported = true;
+                    onStart?.(remainingMs);
+                }
+                if (remainingMs === null) return;
+                if (slice.endSec !== null) {
+                    // Stop at the trimmed end. pause() fires no 'ended', so settle by hand.
+                    if (endTimer !== null) clearTimeout(endTimer);
+                    endTimer = setTimeout(() => {
+                        if (myGeneration === this.generation) el.pause();
+                        cleanup();
+                    }, Math.ceil(remainingMs));
+                }
                 if (watchdog !== null) clearTimeout(watchdog);
-                const remainingMs = Math.max(0, (el.duration - el.currentTime) * 1000);
                 watchdog = setTimeout(cleanup, Math.ceil(remainingMs) + 750);
             };
 
@@ -640,7 +832,7 @@ export class CloudTTSProvider implements TTSProvider {
             el.muted = false;
             el.src = url;
             try {
-                el.currentTime = 0;
+                el.currentTime = slice.startSec;
             } catch {
                 // Not seekable yet — harmless, a fresh src starts at 0 anyway.
             }
@@ -656,7 +848,12 @@ export class CloudTTSProvider implements TTSProvider {
     }
 
     /** 'media' playback. Resolves when the clip ends or the watchdog fires. */
-    private async playViaWebAudio(buffer: AudioBuffer, myGeneration: number): Promise<void> {
+    private async playViaWebAudio(
+        buffer: AudioBuffer,
+        myGeneration: number,
+        onStart?: (durationMs: number | null) => void,
+        slice: PlaySlice = FULL_CLIP,
+    ): Promise<void> {
         const ctx = this.ensureContext();
         if (!ctx) return;
 
@@ -690,7 +887,8 @@ export class CloudTTSProvider implements TTSProvider {
 
         // Playback length of the buffer we're about to start — the real
         // wall-clock duration, used to size the watchdog below.
-        const playbackSeconds = source.buffer?.duration ?? 0;
+        // (The trimmed slice when TTSRequest.trimSilence asked for one.)
+        const playbackSeconds = Math.max(0, (slice.endSec ?? buffer.duration) - slice.startSec);
 
         return new Promise<void>((resolve) => {
             // Watchdog handle so we can clear it once onended fires normally.
@@ -714,7 +912,9 @@ export class CloudTTSProvider implements TTSProvider {
             // wakes up. See the watchdog for how this is used.
             const endsAtContextTime = ctx.currentTime + playbackSeconds;
             try {
-                source.start(0);
+                source.start(0, slice.startSec, playbackSeconds);
+                // TTSRequest.onStart: the source is scheduled at "now" on a running context.
+                onStart?.(playbackSeconds * 1000);
             } catch {
                 // start() can throw if the node is in a bad state — resolve so
                 // the caller isn't left hanging.
@@ -803,7 +1003,15 @@ export class CloudTTSProvider implements TTSProvider {
      * before the response reaches us, so this fetch is the cheap follow-up
      * that pulls bytes across the wire.
      */
-    prefetch(text: string, lang: string, pronunciation?: string | null, voice?: TTSVoice): void {
+    prefetch(
+        text: string,
+        lang: string,
+        pronunciation?: string | null,
+        voice?: TTSVoice,
+        // The coming speak() will pass TTSRequest.trimSilence: analyze the clip's silence now
+        // too, so that speak() does not wait on a decode.
+        analyzeSilence = false,
+    ): void {
         if (!text) return;
         // Arm the gesture-unlock listener as early as possible — prefetch fires
         // during deck load, well before the first speak(), giving the user's
@@ -811,12 +1019,13 @@ export class CloudTTSProvider implements TTSProvider {
         this.ensureUnlockListener();
         const args: SynthArgs = { text, lang, pronunciation, voice };
         const key = this.bufferKey(args);
-        const warm: Promise<unknown> = this.route === 'passthrough'
+        const warm: Promise<unknown> = this.effectiveRoute === 'passthrough'
             ? this.getOrCreateUrl(key, args)
             : this.getOrDecodeBuffer(key, args);
         warm.catch(() => {
             // already evicted by the failing cache layer
         });
+        if (analyzeSilence) void this.getSoundBounds(key, args);
     }
 
     /**

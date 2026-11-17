@@ -22,7 +22,7 @@ import type { DefinitionCluster } from "../types";
  * whenever its segments change identity.
  *
  * Used by: src/games/memory-map/MemoryMapPrompt.tsx (the prompt gloss) and
- * src/features/flashcards/FlashcardsLearnPage/EipSenseList.tsx (the eip's sense list, which
+ * src/components/SenseList.tsx (the eip's and the Reader's sense list, which
  * draws `leading` AFTER the gloss and flips its gap —
  * reads `leading`, `content` and `className` only). Docs:
  * docs/DEFINITION_CLUSTERS.md (picker order), docs/MEMORY_MAP_GAME.md § 3.1.
@@ -33,6 +33,22 @@ import type { DefinitionCluster } from "../types";
 // SwipeableTwoLineText adds when it measures a line.
 export const SENSE_STAR_SIZE = 13;
 export const SENSE_STAR_GAP = 3;
+
+/** The filled star a starred sense wears, in the gloss's own colour, its gap on the RIGHT
+ *  (a leading star). Used only by `buildSenseSegments` (single-sense lists are unstarred,
+ *  owner's call 2026-11-17). */
+function senseStar(className: string) {
+    return (
+        <Icon
+            name="star"
+            size={SENSE_STAR_SIZE}
+            fill={1}
+            color="inherit"
+            className={className}
+            sx={{ marginRight: `${SENSE_STAR_GAP}px`, verticalAlign: "-1px" }}
+        />
+    );
+}
 
 export function buildSenseSegments(
     clusters: readonly DefinitionCluster[],
@@ -46,16 +62,7 @@ export function buildSenseSegments(
         content: <GlossText text={ddt(cluster)} pos={cluster.pos} />,
         className: index === selectedIndex ? `${classPrefix} ${classPrefix}--selected` : classPrefix,
         ...(isStarredSense(cluster, index) && {
-            leading: (
-                <Icon
-                    name="star"
-                    size={SENSE_STAR_SIZE}
-                    fill={1}
-                    color="inherit"
-                    className={`${classPrefix}-star`}
-                    sx={{ marginRight: `${SENSE_STAR_GAP}px`, verticalAlign: "-1px" }}
-                />
-            ),
+            leading: senseStar(`${classPrefix}-star`),
             leadingWidth: SENSE_STAR_SIZE + SENSE_STAR_GAP,
         }),
     }));

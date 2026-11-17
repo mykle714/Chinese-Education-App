@@ -173,7 +173,7 @@ Code: `HintPawn` → `stretch` (the cue), `IsoPawn` → `stretch`, `usePawnMotio
 - It is also one of the five **idle animations** (§ Idle animations): an idle stretch goes out
   as a stretch cue of its own (`useHintPawnIdles` → `idleStretch`), and `HintPawn` sends
   IsoPawn whichever of the two cues is newer.
-- A poke during the stretch jumps on top of it (a flinch replaces it). Reduced motion: no stretch.
+- A tap during the stretch flinches instead (the flinch replaces it). Reduced motion: no stretch.
 
 ## Idle animations
 
@@ -205,13 +205,13 @@ the iso side is `deckTower/iso/pawnIdles.ts`, `PawnIdleProps.tsx`, `usePawnMotio
 
 ## Tap reactions
 
-Code: `HintPawn` → `onPawnTap`, `PAWN_TAP_JUMP_SHARE`, `OUCH_TIP`; `usePawnOuch.ts`;
+Code: `HintPawn` → `onPawnTap`, `OUCH_TIP`; `usePawnOuch.ts`;
 `PawnOuchBubble.tsx`; `pawnHintLines.ts` → `OUCH_LINES`; the iso side is `IsoPawn` → `onTap`,
 `usePawnMotion` → `poke`, the `flinch` mode.
 
 Every tap restarts the idle minute and ends a doze or knit. Then:
 
-- **4 in 5 ground taps: "ouch".** The pawn flinches on the spot (a quick recoil, tipped back
+- **Every ground tap: "ouch".** The pawn flinches on the spot (a quick recoil, tipped back
   away from the viewer) and says a short line in its own bubble. That bubble is a different
   kind of dialogue from the hint bubble: it says nothing about the card, never closes or
   replaces the hint bubble, and does not stretch the pawn.
@@ -228,9 +228,11 @@ Every tap restarts the idle minute and ends a doze or knit. Then:
     (`ouchInflate`, 560 ms). It leaves by **fading while dropping** 16 px (`ouchLeave`,
     `OUCH_EXIT_MS` 280 ms). Reduced motion: plain fades. Same surface as the hint bubble (white,
     `COLORS.border` outline, `SHADOW.chip`).
-- **1 in 5: the jump** (`PAWN_TAP_JUMP_SHARE`, owner 2026-11-08), the tower's poke jump.
-- **Mid-air taps always jump again.** Jumps chain as on the Deck Tower, climbing with each
-  tap.
+- **No jump** (owner, 2026-11-17): the tower's poke jump (formerly 1 tap in 5,
+  `PAWN_TAP_JUMP_SHARE`) was removed from the hint pawn.
+- **Mid-air taps are ignored.** While the pawn is still dropping onto its platform, a tap
+  answers `"none"` (`usePawnMotion` → `PawnTapReaction`), since a flinch in the air would
+  otherwise become a jump.
 - **No "!"**: passing `onTap` turns off IsoPawn's "!" emote, and the ouch replaces it. The
   Deck Tower's pawns keep the "!".
 

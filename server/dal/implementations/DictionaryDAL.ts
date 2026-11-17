@@ -183,16 +183,26 @@ function prefixGlossMatch(param: string): string {
   return anyNormalizedSense(`~ ${param}`);
 }
 
+/**
+ * SQL for one sense normalized for an EQUALITY test against an English term: parentheticals
+ * stripped, lowercased, trimmed, and a leading grammatical marker ("to ", "the ", …) removed.
+ * Shared by the search ladder (`anyNormalizedSense`) and the Reader's batch English lookup
+ * (`findCompleteEnglishMatches`) so "this sense IS the term" means the same thing in both.
+ */
+function normalizedSenseSql(senseExpr: string): string {
+  return `regexp_replace(
+                      btrim(lower(regexp_replace(${senseExpr}, '\\s*\\([^)]*\\)', '', 'g'))),
+                      '${GLOSS_LEADING_MARKER_SQL}', ''
+                    )`;
+}
+
 /** EXISTS over the entry's senses (split on `'; '`, parentheses and a leading marker stripped, lowercased). */
 function anyNormalizedSense(test: string): string {
   return `EXISTS (
               SELECT 1
               FROM jsonb_array_elements_text(definitions) AS d,
                    LATERAL regexp_split_to_table(d, '; ') AS sense
-              WHERE regexp_replace(
-                      btrim(lower(regexp_replace(sense, '\\s*\\([^)]*\\)', '', 'g'))),
-                      '${GLOSS_LEADING_MARKER_SQL}', ''
-                    ) ${test}
+              WHERE ${normalizedSenseSql('sense')} ${test}
             )`;
 }
 
@@ -566,6 +576,81 @@ export class DictionaryDAL implements IDictionaryDAL {
     console.log(`[DICTIONARY-DAL] ✅ Found ${result.recordset.length} matches in ${queryTime.toFixed(2)}ms`);
 
     return result.recordset.map(row => this.mapRowToEntity(row));
+  }
+
+  /**
+   * The Reader's English → Chinese lookup (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "English
+   * words"): for each English term, the ONE det row that has a sense which IS that term — the
+   * search ladder's "complete English" test (`normalizedSenseSql`, both sides stripped of a
+   * leading "to"/"the"/"a"/"an") — or no row at all. Partial matches ("to eat till full" for
+   * "eat") never count: the keycap shows a translation, not a search result.
+   *
+   * Best row per term, in order: most common ("frequencyScore" DESC, unenriched rows last),
+   * then the EARLIEST sense that matched (a word whose first meaning is the term beats one
+   * whose fifth is — 跑 over 开 for "run"), then easiest (difficulty), then shortest headword.
+   * Each result carries the matched sense's 1-based position so the client can compare
+   * matches across the several keys it looks up for one word (its stripped endings).
+   *
+   * Cost: one pass over every sense of every row of the language's table (~1 s on dev's
+   * 115k zh rows, independent of how many terms are asked for) — the terms are hash-joined
+   * against the normalized senses instead of regex-testing each row once per term, which
+   * would grow with the term count. Run once per document open, not per selection.
+   *
+   * Terms must already be normalized by the caller (lowercased, trimmed); a leading marker
+   * is stripped here too, so the client's "to run" and "run" agree.
+   */
+  async findCompleteEnglishMatches(
+    terms: string[],
+    language: string
+  ): Promise<Array<{ term: string; senseOrdinal: number; entry: DictionaryEntry }>> {
+    const normalizedTerms = Array.from(new Set(
+      terms
+        .map(term => term.trim().toLowerCase().replace(GLOSS_LEADING_MARKER_JS, ''))
+        .filter(term => term.length > 0)
+    ));
+    if (normalizedTerms.length === 0) return [];
+
+    const table = dictTableForLanguage(language);
+    const columns = dictionaryColumns(language);
+    const result = await this.dbManager.executeQuery<any>(async (client) => {
+      // `best` keeps distinct, prefixed column names so the final `${columns}` (unqualified
+      // det columns such as `id`, `word1`) cannot collide with it.
+      return await client.query(`
+        WITH terms AS (
+          SELECT unnest($1::text[]) AS match_term
+        ),
+        senses AS (
+          SELECT e.id AS match_entry_id,
+                 d.ord AS match_sense_ord,
+                 ${normalizedSenseSql('sense')} AS match_sense
+          FROM ${table} e,
+               jsonb_array_elements_text(e.definitions) WITH ORDINALITY AS d(txt, ord),
+               LATERAL regexp_split_to_table(d.txt, '; ') AS sense
+          WHERE e.language = $2
+        ),
+        best AS (
+          SELECT DISTINCT ON (t.match_term) t.match_term, s.match_entry_id, s.match_sense_ord
+          FROM terms t
+          JOIN senses s ON s.match_sense = t.match_term
+          JOIN ${table} r ON r.id = s.match_entry_id
+          ORDER BY t.match_term,
+                   r."frequencyScore" DESC NULLS LAST,
+                   s.match_sense_ord,
+                   r.difficulty ASC NULLS LAST,
+                   LENGTH(r.word1),
+                   r.word1
+        )
+        SELECT best.match_term, best.match_sense_ord, ${columns}
+        FROM best
+        JOIN ${table} ON ${table}.id = best.match_entry_id
+      `, [normalizedTerms, language]);
+    });
+
+    return result.recordset.map(row => ({
+      term: row.match_term as string,
+      senseOrdinal: Number(row.match_sense_ord),
+      entry: this.mapRowToEntity(row),
+    }));
   }
 
   /**

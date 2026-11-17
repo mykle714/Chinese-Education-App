@@ -57,6 +57,13 @@ cycle order, and adding it to a new header is one tag. A surface that must hide 
 (Bubble Match and Bucket Drop on a reading run, where hearing the word hands over the pronunciation
 being tested) simply does not render it.
 
+**One surface has its own setting: the Reader document page.** Its display strip shows
+`ReaderAudioChip`, the same skin bound to `useReaderAudioSettings` (`localStorage`
+`reader.audio`, default **default**), which gates the Reader's tap-to-hear and claims the
+route for the page while it is mounted (§ 5). It is not this setting, and changing one never
+changes the other. See [USER_DOCUMENT_FEATURE_SUMMARY.md](./USER_DOCUMENT_FEATURE_SUMMARY.md)
+§ "Tap-to-hear".
+
 **In an flp game break** the break's header row replaces the study header from the circle
 grow's first frame, and draws its own chip at the row's right end, level with the arrow. It is
 drawn twice — `ink` white for the sky and the default `COLORS.iconColor` for the white ground —
@@ -343,6 +350,52 @@ sentence; `stamp: false` skips it. Opt-OUT, so no existing caller changed behavi
 
 ---
 
+### 3c. `onStart` — the clip's real length, the moment it starts (2026-11-17)
+
+`TTSRequest.onStart(durationMs | null)` is called **once**, when sound actually starts:
+- on the media element's first `playing` event (not `loadedmetadata`, for the reason in the
+  watchdog note), with the remaining length;
+- right after the Web Audio source's `start`, with the buffer's length;
+- on the utterance's `onstart` for the browser voice, with `null`, since `speechSynthesis`
+  exposes no length.
+
+A superseded or cancelled request never calls it. It is not part of the cache key.
+`useTTS.speakSentence(text, pinyin, voice?, { onStart })` forwards it to whichever provider
+ends up playing, including the browser fallback. The same options object takes `lang`, a
+per-clip language override (default: the study language); `prefetchSentence`'s 4th
+argument must match it, since the cache key includes the language. The read-aloud uses it
+for the document's language and for English runs in a Chinese document.
+
+Unlike `prepare()` (§ 3a), it needs no extra call and is not gated on `autoplay`, so a
+manual paced caller gets the length too. Its caller is the Reader's read-aloud, which spreads
+a clause's word highlight over the clip (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Read
+aloud). That caller also treats "`onStart` never fired" as "no sound came out" and stops its
+sequence.
+
+*Code:* `src/services/tts/types.ts` → `TTSRequest.onStart`; `CloudTTSProvider` →
+`playViaElement`, `playViaWebAudio`; `WebSpeechProvider` → `speak`; `useTTS` → `speakText`,
+`speakSentence`; `src/features/reader/useReaderReadAloud.ts`.
+
+**`trimSilence` — butting two clips together (2026-11-17).** Every Google clip carries
+≈120 ms of silence before the speech and ≈230 ms after it (measured with ffmpeg
+`silencedetect` on our cache). Between two sentences that reads as a natural pause, but
+where the read-aloud switches voice mid-clause (我昨天买了 | iPhone) it stacks into a ~350 ms
+hole. `TTSRequest.trimSilence: { start?, end? }` cuts the requested edge back to where sound
+begins/ends (`findSoundBounds`: first/last sample above −45 dBFS, `SILENCE_THRESHOLD`),
+keeping `TRIM_PAD_SEC` (30 ms). The bounds come from decoding the cached Blob once per clip
+(`getSoundBounds`, cached as two numbers in `boundsCache`, so the passthrough route does not
+pin PCM). Media route: `source.start(0, offset, duration)`. Passthrough route: a seek for the
+start, and a timer that pauses the element at the trimmed end (an element has no "stop at").
+`onStart` reports the trimmed length. Not part of the cache key; the browser fallback ignores
+it; no Web Audio = the clip plays whole. `prefetchSentence`'s 5th argument
+(`analyzeSilence`) measures the bounds ahead of time so the `speak` never waits on a decode.
+
+*Code:* `CloudTTSProvider` → `resolvePlaySlice`, `getSoundBounds`, `findSoundBounds`,
+`prefetch`; `useTTS` → `speakSentence` (`options.trimSilence`), `prefetchSentence`;
+`src/features/reader/readAloudClauses.ts` → `ReadAloudClause.joinsPrevious` / `joinsNext`.
+
+---
+
 ## 4. Autoplay vs. manual — the rule every call site follows
 
 `useTTS` exposes **two pairs** of narration functions. Which one you call is the
@@ -352,6 +405,11 @@ whole contract:
 |---|---|---|
 | `speak(entry)` / `speakSentence(text, pinyin)` | the user pressed a speaker button | **no** — always speaks |
 | `autoSpeak(entry)` / `autoSpeakSentence(text, pinyin)` | the app decided to speak | **yes** — no-op when autoplay is off |
+
+A third, `surfaceAutoSpeak(entry)` (trigger `'surface'`), is automatic narration on a
+surface that gates it with its OWN setting: the app-wide autoplay flag does not apply, the
+media-mode fallback rule does. Its one caller is the Reader's tap-to-hear
+(`useReaderWordActions` → `autoSpeakSelected`).
 
 The gate lives inside the hook, so a call site never re-checks the setting.
 Automatic sites today: the flp card-flip narration, the acp on-deck pack
@@ -404,6 +462,16 @@ rest of the pack is not resumed afterwards.
 The run leaves a **600 ms gap** between words (`AUTOPLAY_GAP_MS`), so the pack is
 heard as separate words rather than one phrase. The stop check comes *after* the gap,
 so a press that lands during the silence still ends the run before the next word.
+
+### The Reader pre-warms a document's words
+
+`POST /api/tts/prewarm` (`TTSController.prewarm` → `CardAudioService.prewarmClips`)
+synthesizes a client-supplied batch of (headword, pinyin) clips to the disk cache in the
+background, throttled, default voice only. Its one caller is the Reader on document open,
+alongside a per-move neighbour prefetch
+([USER_DOCUMENT_FEATURE_SUMMARY.md](./USER_DOCUMENT_FEATURE_SUMMARY.md) § "Tap-to-hear").
+`TTSService.synthesize` joins concurrent misses for one clip (`inFlightSyntheses`), so a
+pre-warm and a learner's request for the same word call Google once.
 
 ### acp pack audio is fetched ahead, never on its turn
 
@@ -485,8 +553,26 @@ therefore primed on the **first pointerdown anywhere on the page**, and they nee
   element user-activated. Per-utterance audio is swapped in via `src =` on the
   **same** element, because the activation lives on the element.
 
-`unlock()` primes **both** regardless of the active route, so a later route
-switch never has to hunt for a fresh gesture.
+The **context** is primed on every route. The **elements** (narration + effect) are
+primed **only on the `passthrough` route** — `unlock()` reads the route live from
+`readTTSSettings()` on each tap, unless a surface has claimed the route
+(`CloudTTSProvider.setRouteOverride`; today only the Reader document page, from its own
+audio chip). The claim outranks the app-wide route in `unlock()`, `speak()` and
+`prefetch()` alike (`effectiveRoute`), so the sink, the cache warm-up and the iOS session
+category agree:
+
+> ⛔ **Never `play()` a media element in `media` mode — not even muted and silent.**
+> On iOS any media-element `play()` takes audio focus and pauses the user's music.
+> `unlock()` used to prime both sinks regardless of route, so in media mode the
+> session's first tap stopped the music before a word was spoken (fixed 2026-11-17).
+> The cost: after a media → passthrough switch the elements are primed by the *next*
+> tap (the chip's own pointerdown fires before the route flips). A speaker tap's
+> pointerdown primes before its fetch, so no utterance is lost.
+
+`unlock()` also sets the **Audio Session API** category (`navigator.audioSession.type`,
+Safari 16.4+, no-op elsewhere): `'ambient'` in `media` mode — mix with other audio,
+obey the silent switch, stated explicitly rather than left to WebKit's `'auto'`
+heuristics for Web Audio — and `'auto'` in `passthrough`.
 
 > ⚠️ Call sites that begin playback only *after* an await (a game's first
 > drag-triggered narration) must call `tts.unlockAudio()` synchronously from an
@@ -542,7 +628,7 @@ platforms that allow it need no tap at all.
 
 *Code:* `CloudTTSProvider` → `ensureUnlockListener`, `handleGesture`,
 `handleVisibilityChange`, `unlock`, `unlockContext`, `unlockElement`,
-`isContextRunning`, `playViaWebAudio`, `SILENT_MP3`.
+`applyAudioSessionType`, `isContextRunning`, `playViaWebAudio`, `SILENT_MP3`.
 *Tests:* `src/__tests__/ttsUnlockRecovery.test.ts` — pins the three repeatability
 properties (persistent listener, mid-session resume, no latch on a refused
 `play()`). Verified to fail against the pre-fix logic.
@@ -568,7 +654,7 @@ names verified against `GET texttospeech/v1/voices` on our own service account,
 |---|---|---|
 | `zh` (`cmn-CN`) | `cmn-CN-Wavenet-A` | `cmn-CN-Wavenet-B` |
 | `es` (`es-US`) | `es-US-Neural2-A` | `es-US-Neural2-B` |
-| `en` (`en-US`) | `en-US-Neural2-C` | `en-US-Neural2-D` |
+| `en` (`en-US`) | `en-US-Wavenet-F` | `en-US-Neural2-D` |
 
 Each cell is overridable via env (`GOOGLE_TTS_VOICE_ZH`, `…_ZH_MALE`, and the `ES`/`EN`
 equivalents), so swapping a voice is a restart, not a deploy.
@@ -580,15 +666,22 @@ Three deliberate choices in that table:
   shipped still a hit — and it means the flashcard voice and a female NPC are one voice rather
   than two that merely sound alike.
 - **The male voice is from its language's own family** (`Wavenet` with `Wavenet`, `Neural2`
-  with `Neural2`), so a cast does not mix synthesis generations mid-conversation.
+  with `Neural2`), so a cast does not mix synthesis generations mid-conversation. **English
+  is the exception**: its female is `Wavenet-F` but its male is still `Neural2-D` (see below).
 - **No `Chirp3-HD-*` voices**, though they sound better and Mandarin alone has 30 of them
   (16 male / 14 female — enough for one voice per NPC). They are a different price tier and
   **do not accept SSML**, which would silently drop the pinyin `<phoneme>` hint that keeps a
   polyphone's audio matching the reading on screen (§ 3, `buildPinyinSsml`). Read that
   function before putting a Chirp3 voice in the `zh` column.
 
-**`en-US-Neural2-C` is a FEMALE voice.** It is the *language* fallback for an unknown
-language — not a gender-neutral one. Every voice this app used before 2026-09-09 was female.
+**The English female voice is `en-US-Wavenet-F`** (owner's pick 2026-11-17). It is the
+*language* fallback for an unknown language, and it reads the Reader read-aloud's English runs
+inside a Chinese document (§ 3c), right next to the Chinese voice. It was chosen by ear, from
+samples of every en-US female Neural2 / Wavenet / Chirp3-HD voice played in a real
+Chinese → English → Chinese switch, as the closest match to `cmn-CN-Wavenet-A`: higher and
+softer than the deep, neutral `en-US-Neural2-C` it replaced. Being the same family as the
+Chinese voice helps. Old `Neural2-C` MP3s stay on disk under their own cache keys and are
+simply no longer requested.
 
 ### The learner's choice — `/settings` → Voice (BUILT 2026-09-09)
 
@@ -746,7 +839,8 @@ the whole feature is **not observable on desktop or headless**:
   comes from WebKit's Playback classification and the repo's own 2026-06-13
   finding, not from a measurement on current iOS.)
 - Do the lock-screen controls reappear in `passthrough`, and stay away in `media`?
-- Does `media` still mix with background music?
+- Does `media` still mix with background music — including across the session's
+  first tap (the 2026-11-17 element-priming fix, § 5)?
 - Does the element sink's unlock survive a route switch mid-session?
 - **Does narration survive an interruption?** Take a call (or play a video in
   another app) mid-session, come back, and press a speaker button. This is the
@@ -824,6 +918,7 @@ rule covers input-blocking overlays, and a header chip leaves the board playable
 - `server/controllers/TTSController.ts` — request validation, incl. the voice role (§ 6)
 - `src/services/tts/CloudTTSProvider.ts` — both sinks, all three caches, unlock
 - `src/services/tts/WebSpeechProvider.ts` — the unrouteable fallback; carries no voice role (§ 6)
+- `src/features/reader/useReaderReadAloud.ts` — the Reader's read-aloud, the one `onStart` caller (§ 3c)
 - `src/pages/SettingsPage.tsx` — `AUDIO_MODE_OPTIONS`; `NARRATION_VOICE_OPTIONS`,
   `VOICE_SAMPLE` and the voice section (§ 6)
 - `server/services/CardAudioService.ts` — `prewarm` (default-voice only), `synthesizeForRequest`,
@@ -833,7 +928,12 @@ rule covers input-blocking overlays, and a header chip leaves the board playable
 - `src/__tests__/ttsUnlockRecovery.test.ts` — unlock repeatability regression tests
 - `src/features/discover/AddCardsPage.tsx` — `unlockAudio` (no local latch, § 5);
   `stopPackAutoplay`, the queue prefetch effect (§ 4)
-- `src/components/AudioModeChip.tsx` — reads `useTTSSettings`, never `useTTS` (§ 1, § 4)
+- `src/components/AudioModeChip.tsx` — reads `useTTSSettings`, never `useTTS` (§ 1, § 4);
+  also `ReaderAudioChip`, the same skin on the Reader's own setting
+- `src/features/reader/useReaderAudioPreload.ts`, `src/api/tts.ts` — the Reader's
+  pre-warm + neighbour prefetch (§ 4)
+- `src/features/reader/useReaderAudioSettings.ts` — the Reader's own audio setting and its
+  route claim (§ 1 The chip, § 5)
 - `src/services/sfx/countdownSounds.ts`, `src/games/shared/useGameCountdown.ts` — the countdown beeps (§ 7a)
 - [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) — est narration call sites
 - [REACT_NATIVE_MIGRATION.md](./REACT_NATIVE_MIGRATION.md) — `expo-audio`'s

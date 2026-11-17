@@ -127,11 +127,11 @@ import { flinchPose, idlePose, IDLE_STALE_MS, LASTING_IDLES, type IdlePose, type
  * what is playing (and when it is easing out), so IsoPawn draws its marks — z's, notes,
  * the sneeze puff, the needles — only while the pose is.
  *
- * TAP REACTION: with `onTap`, the page picks each tap's reaction — "jump" (the POKE) or
+ * TAP REACTION: with `onTap`, the page picks each tap's reaction — "jump" (the POKE),
  * "flinch" (the `flinch` mode: a short recoil on the spot, pawnIdles.ts → `flinchPose`;
- * the hint pawn shows its "ouch" bubble with it) — and the poke pops NO "!" bubble (the
- * page has its own reply). A tap while the feet are in the air always jumps, whatever
- * `onTap` returns. Without `onTap` every tap is a jump with the "!", as on the Deck Tower.
+ * the hint pawn shows its "ouch" bubble with it) or "none" (no motion; an idle still
+ * stops) — and the poke pops NO "!" bubble (the page has its own reply). A "flinch" while
+ * the feet are in the air becomes a jump. Without `onTap` every tap is a jump with the "!", as on the Deck Tower.
  *
  * Under prefers-reduced-motion nothing runs: the pawn stands at `at`, and the startle, the
  * poke, the stretch, the idles and the flinch are skipped.
@@ -659,8 +659,12 @@ export interface PawnStretchCue {
     at: number;
 }
 
-/** What the page answers a tap with (see the header's TAP REACTION). */
-export type PawnTapReaction = "jump" | "flinch";
+/**
+ * What the page answers a tap with (see the header's TAP REACTION). `"none"` ignores the
+ * tap's motion entirely (it still stops an idle) — the hint pawn's answer to a tap while it
+ * is still falling, since it never jumps (docs/HINT_PAWN.md § Tap reactions).
+ */
+export type PawnTapReaction = "jump" | "flinch" | "none";
 
 /** The idle being played (see the header's IDLE ANIMATIONS); `ending` while it eases out. */
 export interface PawnActiveIdle {
@@ -733,7 +737,7 @@ export function usePawnMotion(opts: {
     idle?: PawnIdleCue | null;
     /**
      * Picks each tap's reaction (see the header's TAP REACTION). Told whether the feet are
-     * in the air (a tap then always jumps). Read live. Without it: always jump, with the "!".
+     * in the air (a flinch then becomes a jump; answer "none" to ignore it). Read live. Without it: always jump, with the "!".
      */
     onTap?: (tap: { airborne: boolean }) => PawnTapReaction;
 }): {
@@ -1149,6 +1153,7 @@ export function usePawnMotion(opts: {
             s.startedIdleId = m.id;
             s.mode = { kind: "pause", until: performance.now() + PAUSE_MIN_MS };
         }
+        if (reaction === "none") return;
         if (reaction === "flinch" && !airborne) {
             s.stepPhase = 0;
             s.mode = { kind: "flinch", t0: performance.now() };

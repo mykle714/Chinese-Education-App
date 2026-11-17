@@ -17,7 +17,16 @@ import { WEIGHT } from "../../theme/scale";
 import WritingGridBoard, { type BoardPhase, type CellResult } from "./WritingGridBoard";
 import WritingFocusEditor from "../../components/handwriting/WritingFocusEditor";
 import { moveItem } from "./gridOrder";
-import { CANVAS_SIZE, GAME_ID, GAME_KEY, SPEED_TIERS } from "./constants";
+import {
+    CANVAS_SIZE,
+    GAME_ID,
+    GAME_KEY,
+    SPEED_TIERS,
+    WRITING_GRID_HINTS,
+    WRITING_GRID_HINT_METER_UNITS,
+} from "./constants";
+import GameHintBar from "../shared/GameHintBar";
+import WritingGridHintMenu from "./WritingGridHintMenu";
 import { GameCountdown } from "../shared/GameCountdown";
 import { useGameCountdown } from "../shared/useGameCountdown";
 import { gradeSpeed } from "../shared/runTiers";
@@ -57,6 +66,10 @@ export interface WritingGridStageProps {
  *               out → top-1 Verify → ✓ / ✗ and a writing mark on the character's own
  *               card (the server applies the anti-farming gate). A ✗ cell can be
  *               reopened and rewritten (a fresh attempt: new ink, new Level 8 clock).
+ *               HINTS: each cell's first ✓ banks a point; the Hint button (bottom right,
+ *               where the Start-writing bar was) opens Trace (4) / Memorize (2); the
+ *               chosen offering then goes on a tapped unfinished cell, lowering its level
+ *               (docs/WRITING_PRACTICE_REWORK.md § 2 "Hints").
  *   ended     — every cell ✓ (or the learner left); the stopwatch stops. Time, speed tier
  *               and personal best go to the flp's results card (`onRunEnded`) — there is
  *               no end popup. A cell tapped while the break shrinks away is verified
@@ -103,6 +116,19 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
     // or the revealed End board on the way out.
     const [leftDuringArrange, setLeftDuringArrange] = useState(false);
 
+    // ── Hints (docs/WRITING_PRACTICE_REWORK.md § 2 "Hints") ─────────────────────
+    // Points banked; each cell's FIRST ✓ adds one (capped at the meter's width).
+    const [hintUnits, setHintUnits] = useState(0);
+    // The Hint button's offering menu is open.
+    const [hintMenuOpen, setHintMenuOpen] = useState(false);
+    // The offering chosen and waiting for a cell (its level); null = not picking.
+    const [pickingLevel, setPickingLevel] = useState<number | null>(null);
+    // A hinted cell's level, keyed by char like `results` / `inks`. Only ever lower than
+    // the slot's own level; a hint on an already-easier cell is recorded but changes nothing.
+    const [levelOverrides, setLevelOverrides] = useState<Record<string, number>>({});
+    // Chars whose ✓ already banked a point: a ✗ → ✓ retry pays once, never twice.
+    const pointPaidRef = useRef<Set<string>>(new Set());
+
     // ── Deal ─────────────────────────────────────────────────────────────────────
     // Keyed on isAuthenticated, never the token (CLAUDE.md "Never reload on token refresh").
     useEffect(() => {
@@ -119,6 +145,11 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
                 setInks({});
                 setOpenIndex(null);
                 setGaveUpCorrect(null);
+                setHintUnits(0);
+                setHintMenuOpen(false);
+                setPickingLevel(null);
+                setLevelOverrides({});
+                pointPaidRef.current = new Set();
                 setPhase(dealt.length > 0 ? "countdown" : "empty");
             })
             .catch((err) => {
@@ -174,6 +205,13 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
         setCells((prev) => moveItem(prev, from, to));
     }, []);
 
+    /** The level cell `index` is written at: its slot's, unless a hint lowered it. */
+    const levelOf = (index: number): number => {
+        const slotLevel = index + 1;
+        const char = cells[index]?.char;
+        return Math.min(slotLevel, (char && levelOverrides[char]) || slotLevel);
+    };
+
     // ── Phase 2: check a cell on tap-out ─────────────────────────────────────────
     // Once the run has ended (the break is shrinking away) a tapped cell reopens with its
     // ink as drawn; a CHANGED drawing is re-verified (✓ / ✗ on the cell) but emits no
@@ -198,7 +236,14 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
         }
         setResults((prev) => ({ ...prev, [cell.char]: correct ? "correct" : "wrong" }));
         if (practice) return; // post-run redraws are evaluated, never marked
-        const level = index + 1;
+        // A cell's first ✓ of the run banks a hint point.
+        if (correct && !pointPaidRef.current.has(cell.char)) {
+            pointPaidRef.current.add(cell.char);
+            setHintUnits((u) => Math.min(WRITING_GRID_HINT_METER_UNITS, u + 1));
+        }
+        // A hinted cell marks at its LOWER level, so the server's farming gate
+        // (writingMarkCounts) judges the help the learner actually had.
+        const level = levelOf(index);
         // Every check marks the character's own card; the server drops it when
         // level ≤ that character's mastery (farming) or the card is resting.
         markFlashcard({
@@ -222,6 +267,11 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
     // its canvas exactly as drawn (✓ or ✗); the editor's Clear starts it over.
     const handleOpenCell = (index: number, el: HTMLElement) => {
         const cell = cells[index];
+        // Pick mode: the tap applies the chosen hint to this cell instead of opening it.
+        if (pickingLevel !== null) {
+            applyHint(index, pickingLevel);
+            return;
+        }
         if (phase === "write" && cell && results[cell.char] === "wrong") {
             setInks((prev) => ({ ...prev, [cell.char]: [] }));
             setResults((prev) => ({ ...prev, [cell.char]: "idle" }));
@@ -229,6 +279,44 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
         setOpenOrigin(el);
         setOpenIndex(index);
     };
+
+    // ── Hints ───────────────────────────────────────────────────────────────────
+    /** Cell `index` can take a hint at `level`: unfinished, and the hint would LOWER it. */
+    const canHintCell = (index: number, level: number): boolean => {
+        const char = cells[index]?.char;
+        if (!char || results[char] === "correct" || results[char] === "checking") return false;
+        return levelOf(index) > level;
+    };
+    /** Some cell on the board would be made easier by a hint at `level`. */
+    const hasHintTarget = (level: number): boolean => cells.some((_, i) => canHintCell(i, level));
+    // The board only offers target cells while picking; everything is re-checked here
+    // because the points are spent now and a no-op hint must never cost anything.
+    const applyHint = (index: number, level: number) => {
+        const cell = cells[index];
+        const offer = WRITING_GRID_HINTS.find((h) => h.level === level);
+        closeHintMenu();
+        if (!cell || !offer || phase !== "write" || hintUnits < offer.cost) return;
+        if (!canHintCell(index, level)) return;
+        setHintUnits((u) => u - offer.cost);
+        setLevelOverrides((prev) => ({ ...prev, [cell.char]: level }));
+    };
+    const closeHintMenu = () => {
+        setHintMenuOpen(false);
+        setPickingLevel(null);
+    };
+    // The button toggles the menu; while picking it backs all the way out.
+    const toggleHintMenu = () => {
+        if (hintMenuOpen) closeHintMenu();
+        else setHintMenuOpen(true);
+    };
+    // Armed when some offering is affordable AND has a cell it would make easier — or the
+    // menu is open, so it can close.
+    const hintReady =
+        phase === "write" && (hintMenuOpen || WRITING_GRID_HINTS.some((h) => hintUnits >= h.cost && hasHintTarget(h.level)));
+    // Leaving Phase 2 (the run ended) drops any open menu or half-made pick.
+    useEffect(() => {
+        if (phase !== "write") closeHintMenu();
+    }, [phase]);
 
     // ── End: every cell correct ──────────────────────────────────────────────────
     const allCorrect = cells.length > 0 && cells.every((c) => results[c.char] === "correct");
@@ -348,6 +436,8 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
                             inks={inks}
                             onReorder={handleReorder}
                             onOpenCell={handleOpenCell}
+                            levelOverrides={levelOverrides}
+                            pickingLevel={pickingLevel}
                         />
                     </Box>
 
@@ -357,9 +447,13 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
                         resize every cell mid-game. It sits under the countdown scrim from
                         the first frame, is live only in Phase 1, and keeps its space
                         (hidden, not unmounted) after. */}
+                    {/* The bottom bar: Phase 1's Start-writing button and Phase 2's hint row
+                        share ONE grid cell (stacked), so the bar is as tall as the taller of
+                        the two in every phase and swapping them never resizes the board. */}
+                    <Box className="writing-grid__bottom-bar" sx={{ flexShrink: 0, display: "grid" }}>
                     <Box
                         className="writing-grid__start-bar"
-                        sx={{ p: 2, pt: 0, visibility: showsPhase1 ? "visible" : "hidden" }}
+                        sx={{ gridArea: "1 / 1", alignSelf: "end", p: 2, pt: 0, visibility: showsPhase1 ? "visible" : "hidden" }}
                     >
                         <Button
                             className="writing-grid__start-writing"
@@ -374,6 +468,32 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
                         </Button>
                     </Box>
 
+                    {/* Phase 2's hint row — the same control, in the same bottom-right spot,
+                        as Word Search's (src/games/shared/GameHintBar.tsx). */}
+                    <Box
+                        className="writing-grid__hint-slot"
+                        sx={{ gridArea: "1 / 1", alignSelf: "end", visibility: showsPhase1 ? "hidden" : "visible" }}
+                    >
+                        <GameHintBar
+                            classPrefix="writing-grid"
+                            units={hintUnits}
+                            maxUnits={WRITING_GRID_HINT_METER_UNITS}
+                            ready={hintReady}
+                            onHint={toggleHintMenu}
+                            expanded={hintMenuOpen}
+                        >
+                            <WritingGridHintMenu
+                                open={hintMenuOpen}
+                                units={hintUnits}
+                                pickingLevel={pickingLevel}
+                                hasTarget={hasHintTarget}
+                                onChoose={setPickingLevel}
+                                onUnchoose={() => setPickingLevel(null)}
+                            />
+                        </GameHintBar>
+                    </Box>
+                    </Box>
+
                     <GameCountdown step={countdownStep} classPrefix="writing-grid" />
 
                     {openCell && openIndex !== null && (
@@ -381,7 +501,7 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
                             key={`${openCell.char}-${openIndex}`}
                             char={openCell.char}
                             pinyin={openCell.pinyin}
-                            level={openIndex + 1}
+                            level={levelOf(openIndex)}
                             initialInk={inks[openCell.char] ?? []}
                             origin={openOrigin}
                             onDone={(ink) => void handleCellDone(openIndex, ink)}

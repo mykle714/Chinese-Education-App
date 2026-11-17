@@ -8,7 +8,7 @@
  * Per docs/FRONTEND_LAYERING.md §3.2 nothing here takes a `token`: it goes through
  * src/api/http.ts, which resolves the Authorization header at call time.
  */
-import { apiGet } from './http';
+import { apiGet, apiPost } from './http';
 import { dictionaryEntryToVocabEntry } from '../utils/dictEntryAdapter';
 import type { DictionaryEntry } from '../types';
 import type { VocabEntry } from '../features/flashcards/types';
@@ -31,4 +31,28 @@ export async function lookupVocabEntry(entryKey: string, language?: string): Pro
         { params: language ? { language } : undefined }
     );
     return dictionaryEntryToVocabEntry(dictData);
+}
+
+/** One English lookup key's best det match (DictionaryController.englishMatches). */
+export interface EnglishDictionaryMatch {
+    // The lookup key, as the server normalized it (lowercased, leading "to"/"the"/"a" dropped).
+    term: string;
+    // 1-based position of the det row's sense that equals `term` (lower = a more central meaning).
+    senseOrdinal: number;
+    entry: DictionaryEntry;
+    // Whether `entry` is among the learner's Learning cards — seeds the Reader's Add key
+    // so it renders with the keycap rather than after a status fetch.
+    inLearning: boolean;
+}
+
+/**
+ * The Reader's English → Chinese lookup: for each key, the best det row having a sense that
+ * IS that key; keys with no such row are absent. Chinese only (the server returns nothing
+ * for another language). One call per document open — the server scans every sense, ~1 s.
+ * Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "English words".
+ */
+export async function fetchEnglishDictionaryMatches(terms: string[], language: string): Promise<EnglishDictionaryMatch[]> {
+    if (terms.length === 0) return [];
+    const data = await apiPost<{ matches: EnglishDictionaryMatch[] }>('/api/dictionary/englishMatches', { terms, language });
+    return data.matches ?? [];
 }

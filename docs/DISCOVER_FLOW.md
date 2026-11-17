@@ -35,7 +35,7 @@ Deck Tower (/) — main world's mini sort platform
   [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)) — wrapped in `NodePage`, which **keeps
   the footer** (lateral nav stays available while sorting), owns the ← back arrow and
   the horizontal slide. Its `ROUTE_META` row (`src/routes/routeMeta.ts`) sets
-  `footerTab: "deck"` and `footerStyle: "slab"` — acp is a Deck Tower drill-in.
+  `footerTab: "deck"` — acp is a Deck Tower drill-in.
   - **Back arrow:** in normal mode `onBack` (`AddCardsPage` → `leave`) follows the
     launch's `state.exitTo`: the Deck Tower's mini sort platform opens acp with the
     dash transition (the world pan's camera dash) and `exitTo` = the tower's main world

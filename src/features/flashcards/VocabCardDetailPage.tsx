@@ -63,11 +63,11 @@ const ContentArea = styled(Box)(() => ({
 //
 // Offset by the FULL (slab) footer clearance, so it clears the floating footer slab
 // with the gap every other page's last row gets. The scroll area
-// already pads FOOTER_CLEARANCE for that bar, so the column only owes the pill's own
+// already pads the slab's clearance, so the column only owes the pill's own
 // height plus a breathing gap.
 const INFO_PILL_HEIGHT = 34;
-// A CSS string — see FOOTER_TOTAL_CLEARANCE: the footer bar grew by the
-// home-indicator inset, and the pill has to clear the bar's real top edge.
+// A CSS string — see SLAB_FOOTER_TOTAL_CLEARANCE: the slab sits off the
+// home-indicator inset, and the pill has to clear the slab's real top edge.
 const INFO_PILL_BOTTOM = SLAB_FOOTER_TOTAL_CLEARANCE;
 
 /** The hero card prints on the Deck Tower's card stock, scaled to the hero's width. */

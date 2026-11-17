@@ -59,7 +59,14 @@ export type CacheInvalidationReason = typeof CacheInvalidationReason[keyof typeo
 
 // ─── Generic Cache Manager ────────────────────────────────────────────────────
 
-const CACHE_VERSION = '1.0.0';
+// Bump whenever the SHAPE of a cached entry changes (a new or reshaped DictionaryEntry /
+// VocabEntry field): a mismatch invalidates every learner's cache once, on next read.
+// The staleness check below cannot do this job — `lastUpdated` is reset on every write,
+// so an active learner's cache never ages out.
+//   1.0.0 → 2.0.0 (2026-11-17): entries cached before `definitionClusters` / the
+//   definitions array carried one "I; me; my" string and no clusters, so the Reader's
+//   dictionary keycap (SenseList) drew 我 as a single semicolon row.
+const CACHE_VERSION = '2.0.0';
 const MAX_CACHE_SIZE_MB = 10;
 const STALE_CACHE_DAYS = 7;
 

@@ -6,6 +6,7 @@ import { MORPH_EASING, PROJECTION_MORPH_MS } from "../../../components/handwriti
 import type { StrokeAid } from "./strokeAid";
 import { NOTEBOOK_CELL_BORDER, WORD_BAR_CELLS_PER_ROW, notebookGeometry } from "./notebookLayout";
 import { COLORS } from "../../../theme/colors";
+import { TEXT } from "../../../theme/typography";
 
 /**
  * NotebookWordBar — the sheet's word, drawn under the Writing Notebook's toolbar
@@ -63,6 +64,16 @@ const STROKE_AID_LABEL: Record<StrokeAid, string> = {
     numbers: "numbered",
     colored: "numbered and colored",
 };
+
+/**
+ * The stroke-order hint shown in the empty space LEFT of a lone character's centred cell
+ * (a one-character word leaves a quarter of the grid bare on each side). Purely a label:
+ * pointer-transparent, so a tap there behaves exactly as a tap on the bar's empty ground.
+ */
+/** A fixed three-line stack, so it never wraps differently by width. */
+const STROKE_HINT_LINES = ["Tap for", "stroke", "order"];
+/** Breathing room between the hint and the grid edge / the cell (px). */
+const STROKE_HINT_PAD_X = 8;
 
 /** Space above and below the shadow grid (px) — the sheet's own top pad is 12. */
 const BAR_PAD_Y = 12;
@@ -168,6 +179,9 @@ export default function NotebookWordBar({ word, strokeAids, onCycleStrokeAid, co
     const tapExpands = compact && cellSize < fullSize;
     const expandedChar = tapExpands && expanded !== null ? chars[expanded] : undefined;
     const isExpanded = expandedChar !== undefined;
+    // A one-character word: its single full-size cell sits centred, so the strip from the
+    // grid's left edge to the cell's left edge is free for the stroke-order hint.
+    const hintWidth = chars.length === 1 ? Math.floor((gridWidth - fullSize) / 2) : 0;
 
     /** Expand position `c`, growing from `from` (the tapped row cell's element). */
     const expand = (c: number, from: HTMLElement) => {
@@ -251,6 +265,34 @@ export default function NotebookWordBar({ word, strokeAids, onCycleStrokeAid, co
                         ...(compact ? { height: `${fullSize}px` } : {}),
                     }}
                 >
+                    {hintWidth > 2 * STROKE_HINT_PAD_X && (
+                        <Box
+                            className="notebook-word-bar__stroke-hint"
+                            aria-hidden
+                            // Spans the bare strip left of the lone cell, text centred in it.
+                            sx={{
+                                ...TEXT.caption,
+                                position: "absolute",
+                                top: 0,
+                                bottom: 0,
+                                left: 0,
+                                width: `${hintWidth}px`,
+                                padding: `0 ${STROKE_HINT_PAD_X}px`,
+                                boxSizing: "border-box",
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                textAlign: "center",
+                                color: COLORS.textSecondary,
+                                pointerEvents: "none",
+                            }}
+                        >
+                            {STROKE_HINT_LINES.map((line) => (
+                                <span key={line} className="notebook-word-bar__stroke-hint-line">{line}</span>
+                            ))}
+                        </Box>
+                    )}
                     {/* The row stays mounted while a cell is expanded (hidden), so its cells
                         can fade out from where they sit and back in to it. */}
                     {rows.map((row, r) => (

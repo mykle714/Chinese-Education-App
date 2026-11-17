@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { VocabEntry } from '../types';
 import { tts } from '../services/tts';
-import type { TTSLang, TTSProvider, TTSVoice } from '../services/tts';
+import type { TTSLang, TTSProvider, TTSRequest, TTSVoice } from '../services/tts';
 import { useTTSSettings } from './useTTSSettings';
 import { useAuth } from '../AuthContext';
 import { resolveDisplayPronunciation } from '../utils/definitionUtils';
@@ -23,9 +23,12 @@ function toTTSLang(selectedLanguage: string | undefined): TTSLang {
 /**
  * Why a narration fired. 'manual' = the user pressed a speaker button (always
  * speaks); 'auto' = the app decided to speak (gated on the autoplay setting, and
- * subject to the media-mode fallback rule below).
+ * subject to the media-mode fallback rule below); 'surface' = automatic narration on a
+ * surface with its OWN audio setting (the Reader's tap-to-hear, useReaderAudioSettings) —
+ * the caller has already gated it, so the app-wide autoplay flag does not apply, but the
+ * media-mode fallback rule still does.
  */
-type SpeakTrigger = 'auto' | 'manual';
+type SpeakTrigger = 'auto' | 'manual' | 'surface';
 
 /**
  * useTTS — single entry point for narrating flashcards.
@@ -92,6 +95,13 @@ export function useTTS() {
         pronunciation?: string | null,
         trigger: SpeakTrigger = 'manual',
         voice?: TTSVoice,
+        // TTSRequest.onStart, forwarded to whichever provider ends up playing (cloud, or
+        // the browser fallback — which reports a null duration).
+        onStart?: (durationMs: number | null) => void,
+        // Language override for this one clip; omitted = the study language (ttsLang).
+        langOverride?: TTSLang,
+        // TTSRequest.trimSilence, cloud only (the browser fallback has no clip to trim).
+        trimSilence?: TTSRequest['trimSilence'],
     ) => {
         // Caller's voice wins; otherwise the learner's setting.
         const chosenVoice: TTSVoice = voice ?? settingsVoice;
@@ -102,7 +112,7 @@ export function useTTS() {
 
         cancel();
 
-        const lang: TTSLang = ttsLang;
+        const lang: TTSLang = langOverride ?? ttsLang;
         // Narration always runs "auto": cloud is primary (better voice), browser
         // is the fallback. There is no user engine choice anymore.
         const primary = tts.cloud;
@@ -115,12 +125,16 @@ export function useTTS() {
                 lang,
                 pronunciation: pronunciation ?? undefined,
                 voice: chosenVoice,
+                onStart,
+                trimSilence,
             });
         } catch (err) {
             // Cloud failed (server unreachable, key missing, etc.). Whether we
             // may fall back to the browser voice depends on the mode — see the
             // fallback rule in the hook doc.
-            if (trigger === 'auto' && route === 'media') {
+            // The route that actually played: a surface's own route claim
+            // (CloudTTSProvider.setRouteOverride) outranks the app-wide one.
+            if (trigger !== 'manual' && tts.cloud.effectiveRoute === 'media') {
                 console.warn('[useTTS] cloud provider failed; suppressing browser fallback in media mode:', err);
                 return;
             }
@@ -136,6 +150,7 @@ export function useTTS() {
                     text,
                     lang,
                     pronunciation: pronunciation ?? undefined,
+                    onStart,
                 });
             } catch (err2) {
                 console.warn('[useTTS] fallback provider also failed:', err2);
@@ -149,7 +164,7 @@ export function useTTS() {
             // + setSpeakingKey(newText) before our finally ran.
             setSpeakingKey(prev => (prev === text ? null : prev));
         }
-    }, [settings.autoplay, route, cancel, ttsLang, settingsVoice]);
+    }, [settings.autoplay, cancel, ttsLang, settingsVoice]);
 
     // ⚠️ THE PRONUNCIATION HINT MUST BE THE ONE ON SCREEN. It is passed to the cloud
     // provider and reaches Google TTS as an SSML <phoneme> tag, so it genuinely
@@ -202,6 +217,14 @@ export function useTTS() {
         await speakText(entry.entryKey, resolveDisplayPronunciation(entry, senseIndexOverride), 'auto');
     }, [speakText]);
 
+    // Automatic narration on a surface that gates it with its OWN setting (trigger
+    // 'surface'): the Reader's tap-to-hear, gated on the Reader audio chip rather than the
+    // app-wide autoplay flag. Still obeys the media-mode fallback rule.
+    const surfaceAutoSpeak = useCallback(async (entry: VocabEntry, senseIndexOverride?: number) => {
+        if (!entry || !entry.entryKey) return;
+        await speakText(entry.entryKey, resolveDisplayPronunciation(entry, senseIndexOverride), 'surface');
+    }, [speakText]);
+
     // Narrate an arbitrary Chinese sentence. Pronunciation is the optional
     // space-separated pinyin hint (one token per GSA segment) — see
     // buildSentencePronunciation. Server-side cache is keyed on text+pinyin+voice
@@ -210,8 +233,27 @@ export function useTTS() {
     // `voice` picks which voice within the language, for a speaker that is a character with a
     // gender rather than the app reading a card. Its only caller was Immersive World
     // (removed 2026-11-09, archived — docs/ARCHIVED_FEATURES.md); omit it everywhere else.
-    const speakSentence = useCallback(async (text: string, pronunciation?: string, voice?: TTSVoice) => {
-        await speakText(text, pronunciation, 'manual', voice);
+    //
+    // `options.onStart` fires when sound actually starts, with the clip's length in ms (null
+    // on the browser fallback) — TTSRequest.onStart. Its caller is the Reader's read-aloud
+    // (useReaderReadAloud), which paces its word highlight across each clause's clip.
+    //
+    // `options.lang` reads this clip in another language than the study language: the
+    // read-aloud uses it for the document's own language and for English runs inside a
+    // Chinese document (readAloudClauses → ReadAloudClause.voice). `options.trimSilence`
+    // cuts the clip's synthesized edge silence where the read-aloud butts two voice runs
+    // together mid-clause (TTSRequest.trimSilence).
+    const speakSentence = useCallback(async (
+        text: string,
+        pronunciation?: string,
+        voice?: TTSVoice,
+        options?: {
+            onStart?: (durationMs: number | null) => void;
+            lang?: TTSLang;
+            trimSilence?: TTSRequest['trimSilence'];
+        },
+    ) => {
+        await speakText(text, pronunciation, 'manual', voice, options?.onStart, options?.lang, options?.trimSilence);
     }, [speakText]);
 
     // Automatic variant of speakSentence() — same gating as autoSpeak.
@@ -305,10 +347,19 @@ export function useTTS() {
         tts.cloud.unlock();
     }, []);
 
-    // Sentence variant of prefetch — warm the cloud cache without playing.
-    const prefetchSentence = useCallback((text: string, pronunciation?: string, voice?: TTSVoice) => {
+    // Sentence variant of prefetch — warm the cloud cache without playing. `lang` must match
+    // the later speakSentence's `options.lang`, or the warmed cache key is never asked for.
+    // `analyzeSilence`: the coming speakSentence will pass `trimSilence`, so measure the
+    // clip's edge silence now as well (CloudTTSProvider.prefetch).
+    const prefetchSentence = useCallback((
+        text: string,
+        pronunciation?: string,
+        voice?: TTSVoice,
+        lang?: TTSLang,
+        analyzeSilence?: boolean,
+    ) => {
         if (!text) return;
-        tts.cloud.prefetch(text, ttsLang, pronunciation, voice ?? settingsVoice);
+        tts.cloud.prefetch(text, lang ?? ttsLang, pronunciation, voice ?? settingsVoice, analyzeSilence);
     }, [ttsLang, settingsVoice]);
 
     return {
@@ -318,6 +369,8 @@ export function useTTS() {
         // did not press something to ask for sound.
         autoSpeak,
         autoSpeakSentence,
+        /** Automatic narration gated by the CALLER's own setting (the Reader audio chip). */
+        surfaceAutoSpeak,
         cancel,
         prefetch,
         prefetchSentence,

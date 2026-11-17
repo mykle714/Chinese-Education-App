@@ -200,7 +200,7 @@ need to decide. A 502/503 for an upstream failure would make the distinction che
 
 | | |
 |---|---|
-| **What** | Swap the TTS provider behind `TTSService` from Google Cloud Text-to-Speech to **Amazon Polly**, so narration bills to the same cloud account as everything else once the app moves to AWS. Scope is one provider method plus the SSML dialect: add a `callPolly` beside `callGoogle`, select on the existing `TTS_PROVIDER` env var, and port `buildPinyinSsml`. Voices to target: **`Zhiyu`** (cmn-CN, neural) for Chinese, `Mia` (es-MX) or `Lupe`/`Pedro` (es-US, neural) for Spanish, any neural US voice for English — replacing `cmn-CN-Wavenet-A` / `es-US-Neural2-A` / `en-US-Neural2-C` |
+| **What** | Swap the TTS provider behind `TTSService` from Google Cloud Text-to-Speech to **Amazon Polly**, so narration bills to the same cloud account as everything else once the app moves to AWS. Scope is one provider method plus the SSML dialect: add a `callPolly` beside `callGoogle`, select on the existing `TTS_PROVIDER` env var, and port `buildPinyinSsml`. Voices to target: **`Zhiyu`** (cmn-CN, neural) for Chinese, `Mia` (es-MX) or `Lupe`/`Pedro` (es-US, neural) for Spanish, any neural US voice for English — replacing `cmn-CN-Wavenet-A` / `es-US-Neural2-A` / `en-US-Wavenet-F` |
 | **Why deferred** | Explicitly decided 2026-08-24: **do it when the whole app migrates to AWS, not as its own project.** Google is wired in and working again (the outage that surfaced this was an expired free trial on project `cow2-497203`, fixed by attaching a real billing account — not a provider problem). Migrating on its own buys nothing: at ~15k characters of lifetime usage the app sits inside the free tier of either provider indefinitely, so the comparison is $0 vs $0, and the only thing a solo migration can do is break tone accuracy. Polly is *cheaper* at volume (~$4/M standard, ~$16/M neural, vs Google WaveNet's $16/M) — a reason to prefer it once the account exists, not a reason to move today |
 | **Cost of leaving it** | One cloud account kept alive purely for TTS after everything else has left it — a second bill, a second set of credentials (`server/google-tts-credentials.json`), and a second billing relationship that can lapse without anyone noticing. That last one is not hypothetical: it is exactly what happened on 2026-08-21 and went undetected for three days (see item 12) |
 | **Trigger** | The whole-app AWS migration. There is **no plan doc for it yet** — when one is written, link this item from it. Do NOT start on a TTS bill; the free tier makes that argument empty |
@@ -765,6 +765,16 @@ misspelled Spanish/English query on an es account still gets an empty result. Wh
 resumes, port the zh typo rule into the es branch of the prompt.
 Code: `server/services/DictionaryService.ts` → `buildAiSystemPrompt`.
 Doc: [DICTIONARY_AI_FALLBACK_SEARCH.md](./DICTIONARY_AI_FALLBACK_SEARCH.md).
+
+### 55. The Reader's English → Spanish keycap lookup (paused with all Spanish work, 2026-11-17)
+
+| | |
+|---|---|
+| **What** | The Reader shows a highlighted English word's Chinese translation in the dictionary keycap (USER_DOCUMENT_FEATURE_SUMMARY.md § "English words"). The Spanish side was not built: `DictionaryService.findEnglishTranslations` returns no matches for `es`, and `useEnglishTranslations` never fetches for a non-zh document. In a Spanish document an English word would need care the zh side does not: every Spanish word is ALSO Latin-script, so "which spans are English" cannot be read off the script the way zh's Han/Latin split does — and sdet's `definitions` shape and its `[+…]` usage notes (item 33) would need checking against `normalizedSenseSql` |
+| **Why deferred** | All Spanish work is paused until further notice (CLAUDE.md § Multi-Language Support) |
+| **Cost of leaving it** | English words in a Spanish document keep the keycap's empty face (the pawn) |
+| **Trigger** | Spanish work resumes |
+| **References** | `src/features/reader/useEnglishTranslations.ts`; `server/services/DictionaryService.ts` → `findEnglishTranslations` |
 
 ## Recently closed
 

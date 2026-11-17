@@ -106,9 +106,8 @@ end popup and no Play Again. The personal best records on a finished run, and so
 2. **Phase 1, arrange** — the stopwatch runs (accumulated active time; backgrounding
    pauses it, `useBackgroundPause`). It is never on screen during a run: it exists for the
    finish time, speed tier and personal best, which the end of the run reports. The current phase
-   ("Phase 1" / "Phase 2") is the one label of a `GameHud` strip, pinned right
-   (`writing-grid__phase-strip`); in a break the strip is the study header's row, level with
-   Leave's arrow. Drag a character to another slot: the 8 cells are one
+   ("Phase 1" / "Phase 2") is a `GameHudLabel` (`writing-grid__phase`) on Leave's row, just
+   left of the audio chip and the minute-points flame (`GameFrame` → `exitRowTrailing`). Drag a character to another slot: the 8 cells are one
    list, so it **moves** (`gridOrder.ts` → `moveItem`), everything between shifts. Each
    cell (also on the countdown's board) shows its character as the full, still **shadow**
    outline — every slot, regardless of level, since arranging needs to see them all — with
@@ -119,7 +118,10 @@ end popup and no Play Again. The personal best records on a finished run, and so
    **Start writing** ends the phase. Its bar is mounted from the countdown's first frame
    (disabled under the scrim) and only *hidden* after Phase 1, never unmounted: the board
    sizes its cells from the space left over (`WritingGridBoard`), so a bar that came and
-   went would resize the whole grid mid-game. Cells are square. Only one axis binds the
+   went would resize the whole grid mid-game. It shares ONE grid cell
+   (`writing-grid__bottom-bar`) with Phase 2's hint row (§ "Hints" below): both are always
+   mounted, stacked, and swap by `visibility`, so the bottom bar is the taller of the two
+   in every phase. Cells are square. Only one axis binds the
    fit; the other axis's leftover space widens the gaps on that axis, from `CELL_GAP` up to
    `CELL_GAP_MAX` (`constants.ts`; `WritingGridBoard` → `spreadGap`), so a tall phone spaces
    the rows out and a short/wide frame spaces the two columns apart. The side columns carry
@@ -155,7 +157,7 @@ end popup and no Play Again. The personal best records on a finished run, and so
    `SHADOW_SCALE` × the cell (shadow / ink / dd) and the tone-coloured pinyin pinned to
    the cell's bottom centre.
 
-   Tap a cell → `WritingFocusEditor` at its slot's level;
+   Tap a cell → `WritingFocusEditor` at its level (the slot's, or a hint's — § "Hints");
    tap out → top-1 Verify → ✓ / ✗ (the verdict stamp below), and a writing mark on the character's own card
    (`surface: "writing-grid"`). A ✗ cell reopens as a fresh attempt (new ink, new clock).
 4. **End** — every cell ✓ stops the stopwatch. Time, speed tier (`SPEED_TIERS` via
@@ -180,6 +182,26 @@ end popup and no Play Again. The personal best records on a finished run, and so
    and no marks** beyond the cells already checked. Left during Phase 1, the screen keeps
    showing Phase 1 on the way out (`leftDuringArrange`). Before the run has started, Leave
    simply closes the break.
+
+### Hints (Phase 2)
+Client-only — no server or schema change. Built 2026-11-17.
+
+| | |
+|---|---|
+| earning | each cell's **first ✓** of the run banks **1 point** (`pointPaidRef`, so a ✗ → ✓ retry pays once). Phase 2 only; post-run practice redraws earn nothing. The run starts at 0. |
+| meter | 8 charge bars under the Hint button (`WRITING_GRID_HINT_METER_UNITS`), matching Word Search's. Only 7 can ever fill: the 8th ✓ ends the run. |
+| button | the shared `GameHintBar` (`src/games/shared/GameHintBar.tsx`) — the same control, bottom right, as Word Search's. It sits in the bottom bar's shared cell, visible from Phase 2 on (disarmed at End). Armed when some offering is affordable **and** has a target cell (below) — or while its menu is open, so it can close it. A press **toggles** the menu; while open the button wears the selected ink ring (`expanded`). |
+| offerings | `WRITING_GRID_HINTS`: **Trace (L2) · 4 points**, **Memorize (L5) · 2 points**, as outlined tiles that slide out LEFTWARD from the button (`WritingGridHintMenu`). Each shows the level name, and under it the cost as charge bars plus the number. A tile is disarmed (opacity), not hidden, when it is unaffordable **or** has no target cell (`hasTarget` ← `WritingGridStage` → `hasHintTarget`). |
+| picking | tapping an affordable tile enters pick mode: only that tile stays (ink ring) beside "Tap a square". The board rings only the cells the hint would make **easier** — not ✓, not checking, and currently above the hint's level — and dims the rest, which go inert (`WritingGridBoard` → `pickingLevel`; `WritingGridStage` → `canHintCell`). Slots are L1 → L8, so Trace can target slots 3–8 and Memorize slots 6–8 (fewer once hinted). Tapping a cell applies the hint (points are spent **here**, not on choosing) instead of opening the editor. Tapping the chosen tile again goes back to choosing; the Hint button closes everything; the run ending closes it too. |
+| effect | `levelOverrides[char] = hint level`. A hint only ever **lowers** a cell's level — a cell already at or below it is never a target, so points are never spent on a hint that changes nothing. A hint may go on a ✗ cell (its verdict stays until reopened). The cell renders, opens (`WritingFocusEditor`) and is written at the override level (`WritingGridStage` → `levelOf`). Its level-name band shows the override's name after a filled lightbulb. |
+| marking | the writing mark goes out at the **override level**, so the server's farming gate (`writingMarkCounts`) judges the help the learner actually had. |
+| results | unchanged: a hinted run keeps its speed tier and personal best. |
+
+**Code:** `src/games/writing-grid/WritingGridStage.tsx` → `applyHint`, `canHintCell`, `hasHintTarget`, `levelOf`,
+`toggleHintMenu`; `src/games/writing-grid/WritingGridHintMenu.tsx`;
+`src/games/writing-grid/WritingGridBoard.tsx` (`levelOverrides`, `pickingLevel`);
+`src/games/writing-grid/constants.ts` → `WRITING_GRID_HINTS`;
+`src/games/shared/GameHintBar.tsx`.
 
 ### Dealing (`GET /api/writingGrid/deal`)
 `WritingGridController` → `WritingGridService.deal` → `WritingGridDAL`. An flp break adds

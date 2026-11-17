@@ -1949,6 +1949,13 @@ export interface TextBase {
   characterCount: number;
   /** Distinguishes user-created from system texts. */
   isUserCreated: boolean;
+  /**
+   * The icons8 icon the learner picked for this document (migration 193, FK to
+   * icons8."icons8Id"), rendered via GET /api/icons8/<id>/image. NULL = no icon: the
+   * Reader list falls back to its default glyph. Set from the edit toolbar's icon
+   * button (src/features/reader/ReaderEditToolbar.tsx); docs/USER_DOCUMENT_FEATURE_SUMMARY.md.
+   */
+  iconId?: string | null;
   createdAt: string;
 }
 

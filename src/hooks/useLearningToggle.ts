@@ -32,12 +32,25 @@ import type { Language, VocabEntry } from "../types";
  * already in Learning shows no key, a tapped word keeps "Added!" (and stays removable)
  * while it is showing, and the key disappears the next time that word is loaded.
  *
+ * A host that already knows the answer passes `seedInLibrary` (the Reader), so the key is
+ * drawn at once on each new word rather than appearing when the fetch lands.
+ *
  * Hosts: EipSheet (the Dictionary page's and the saved-card cdp's eip) and the flp
- * (FlashcardsLearnPage, add-only), both drawn as EipAddKey.
+ * (FlashcardsLearnPage, add-only), both drawn as EipAddKey, and the Reader's dictionary
+ * keycap (useReaderWordActions).
  * (The read-only dictionary cdp drew it as a glowing `LearningToggle` until both were
  * deleted 2026-11-10.) Docs: docs/EIP_SHEET_GESTURES.md § Add key.
  */
-export function useLearningToggle(entry: VocabEntry | null | undefined, language: Language) {
+export function useLearningToggle(
+    entry: VocabEntry | null | undefined,
+    language: Language,
+    // SEED (2026-11-17): the host's own answer for this word, when it already holds one —
+    // the Reader's document vocab lookup returns exactly the learner's Learning cards
+    // (vetSortedClause), so it knows before the status fetch does. Shown at once instead
+    // of rendering nothing while loading; the fetch still runs and corrects it (a cached
+    // seed can be stale). Undefined → no seed, the old "nothing until loaded" behaviour.
+    seedInLibrary?: boolean,
+) {
     const { user } = useAuth();
     const entryKey = entry?.entryKey;
     const available = !!entry?.discoverable && !!user?.id;
@@ -91,7 +104,15 @@ export function useLearningToggle(entry: VocabEntry | null | undefined, language
         // (CLAUDE.md token-refresh rule).
     }, [entryKey, available, language]);
 
-    const inLibrary = available && entryKey && status?.entryKey === entryKey ? status.inLibrary : undefined;
+    // What the key shows: this word's loaded/tapped status; before that arrives, the
+    // seed — unless this hook already knows better for the word (a tap still syncing, or
+    // an earlier load / accepted request: `desired`, then `confirmed`).
+    const seeded = seedInLibrary !== undefined && entryKey
+        ? (desiredRef.current.get(entryKey) ?? confirmedRef.current.get(entryKey) ?? seedInLibrary)
+        : undefined;
+    const inLibrary = available && entryKey
+        ? (status?.entryKey === entryKey ? status.inLibrary : seeded)
+        : undefined;
     // The server's answer at the last load of the showing word; `undefined` while loading.
     // Re-evaluated whenever the word is loaded again (the effect above re-runs when the
     // entry changes, e.g. trail A → B → A, or the eip reopening on the next card).
@@ -132,6 +153,10 @@ export function useLearningToggle(entry: VocabEntry | null | undefined, language
     const toggle = useCallback(() => {
         if (!entryKey || inLibrary === undefined) return;
         const next = !inLibrary;
+        // Tapped on a SEEDED value (status not loaded yet): take the seed as the server's
+        // state, so the sync loop knows what it is changing from and a failure snaps back
+        // to it.
+        if (!confirmedRef.current.has(entryKey)) confirmedRef.current.set(entryKey, inLibrary);
         desiredRef.current.set(entryKey, next);
         setStatus({ entryKey, inLibrary: next });
         // The request waits for the flipped key to paint (afterNextPaint).

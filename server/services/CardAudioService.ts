@@ -11,7 +11,9 @@ import type { SynthesisResult, TTSService, TTSVoiceKey } from './TTSService.js';
  *
  *   1. **Pre-warm** (`prewarm`): synthesize a batch of cards' audio before an endpoint
  *      responds, so the client's later `/api/tts/synthesize` for each word is a disk-cache
- *      hit. Used by the flp working loop, the game boards, and acp pack refills.
+ *      hit. Used by the flp working loop, the game boards, and acp pack refills; and
+ *      `prewarmClips`, the client-supplied, throttled, background variant behind the
+ *      Reader's `POST /api/tts/prewarm`.
  *   2. **The `ttsVoice` stamp** (`recordAudioVoice`): mark a det row as having cached audio.
  *      ONE policy for every caller, where there used to be two hand-written UPDATEs with
  *      different rules (the controller overwrote, the pre-warm only filled NULLs).
@@ -87,6 +89,36 @@ export class CardAudioService {
   }
 
   /**
+   * Pre-warm a batch of (headword, pinyin) clips IN ORDER, a few at a time — the Reader's
+   * document-open pre-warm (`POST /api/tts/prewarm`, docs/USER_DOCUMENT_FEATURE_SUMMARY.md
+   * § "Tap-to-hear"). Unlike `prewarm`, the CLIENT supplies the pinyin: it is the exact
+   * `resolveDisplayPronunciation` value the client will later request with, so the warmed
+   * cache key is the one it hits.
+   *
+   * Throttled (`PREWARM_CLIP_CONCURRENCY` workers) rather than `Promise.all`: a document can
+   * hold hundreds of words, and the caller does not wait for this — it runs in the
+   * background after the response — so there is no reason to fire them all at Google at
+   * once. In document order, so the opening words are ready first. Default voice only, like
+   * `prewarm`. Never throws; a failed clip costs that word latency, nothing more.
+   */
+  async prewarmClips(clips: Array<{ text: string; pronunciation: string | null }>, language: string): Promise<void> {
+    const ttsLang = toTtsLang(language);
+    let next = 0;
+    const worker = async () => {
+      while (next < clips.length) {
+        const clip = clips[next++];
+        try {
+          const result = await this.ttsService.ensureCached(clip.text, ttsLang, clip.pronunciation);
+          if (!result.cacheHit) await this.recordAudioVoice(clip.text, language, 'default', result.voice);
+        } catch (err) {
+          console.warn(`[CardAudioService.prewarmClips] synthesis failed for "${clip.text}":`, err);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(PREWARM_CLIP_CONCURRENCY, clips.length) }, worker));
+  }
+
+  /**
    * The one `ttsVoice` stamp policy, called only after a FRESH synthesis (a cache miss) —
    * whose voice is authoritative, so it overwrites (e.g. after `GOOGLE_TTS_VOICE_*`
    * changes). Cache hits never write: nothing in the app reads the column today, so
@@ -113,6 +145,9 @@ export class CardAudioService {
     }
   }
 }
+
+/** How many of `prewarmClips`' syntheses run at once. */
+const PREWARM_CLIP_CONCURRENCY = 4;
 
 /** Short language code → the BCP-47 tag TTSService expects. Expand as new langs get TTS. */
 function toTtsLang(language: string): string {

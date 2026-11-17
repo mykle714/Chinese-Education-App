@@ -1,15 +1,10 @@
 import { useRef } from "react";
 import { useLocation } from "react-router-dom";
-import MobileFooter, {
-    FOOTER_TOTAL_HEIGHT,
-    SLAB_FOOTER_HIDDEN_OFFSET,
-    type FooterStyle,
-    type FooterTab,
-} from "./MobileFooter";
-import { routeFooterStyle, routeFooterTab } from "../routes/routeMeta";
+import MobileFooter, { SLAB_FOOTER_HIDDEN_OFFSET, type FooterTab } from "./MobileFooter";
+import { routeFooterTab } from "../routes/routeMeta";
 import { useFooterSuppressed } from "../hooks/useHideFooter";
 
-// Persistent footer layer. The footer bar is rendered ONCE here (inside
+// Persistent footer layer. The footer slab is rendered ONCE here (inside
 // MobileDemoFrame) rather than inside each page, so it is **omitted from the
 // per-page slide transitions** (leaf = vertical, node = horizontal). Instead it
 // animates on its own axis: it slides up from / down past the bottom of the phone
@@ -31,23 +26,12 @@ import { useFooterSuppressed } from "../hooks/useHideFooter";
 const DURATION_MS = 340;
 const EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 
-// Distance to push the bar fully below the frame's bottom edge. The bar is flush to
-// that edge and casts no shadow (shelf redesign A2a), so its own height is exactly the
-// travel needed — the old formula added the pill's 16px inset plus 16px of shadow
-// allowance, neither of which exists any more.
-//
-// It must be the bar's TOTAL height (74px + the home-indicator inset, a CSS string),
-// not the bare 74: since `viewport-fit=cover` the bar is taller than its nominal
-// height, and translating by 74px alone would leave the inset's worth of bar peeking
-// above the bottom edge on every footerless page. `translateY()` takes a calc(), so
-// the string goes straight in.
-//
-// The floating slab (`footerStyle: "slab"`) sits higher and casts a shadow below
-// itself, so it travels further: SLAB_FOOTER_HIDDEN_OFFSET.
-const HIDDEN_OFFSET: Record<FooterStyle, string> = {
-    bar: FOOTER_TOTAL_HEIGHT,
-    slab: SLAB_FOOTER_HIDDEN_OFFSET,
-};
+// Distance to push the slab fully below the frame's bottom edge: its footprint plus its
+// cast shadow, or the shadow's tail would peek up when hidden. A CSS string (it carries
+// the home-indicator inset); `translateY()` takes a calc(), so it goes straight in.
+// (Until 2026-11-16 there was a second, flat `bar` footer with its own offset, picked
+// per route; the slab is the only footer now — MobileFooter.tsx.)
+const HIDDEN_OFFSET = SLAB_FOOTER_HIDDEN_OFFSET;
 
 const FooterPresenter: React.FC = () => {
     const { pathname } = useLocation();
@@ -59,26 +43,18 @@ const FooterPresenter: React.FC = () => {
     const suppressed = useFooterSuppressed();
     const visible = activePage !== undefined && !suppressed;
 
-    // Keep showing the last active tab while sliding OUT, so the bar doesn't
+    // Keep showing the last active tab while sliding OUT, so the slab doesn't
     // blank or flip its highlight as it leaves.
     const lastActive = useRef<FooterTab>("deck");
     if (activePage) lastActive.current = activePage;
-    // The same for the style: a slab leaving for a footerless route slides out AS a slab.
-    // Between two footer routes of different styles the swap is instant — tab changes
-    // have no page slide, so it lands with the page.
-    const style = routeFooterStyle(pathname);
-    const lastStyle = useRef<FooterStyle>("bar");
-    if (activePage) lastStyle.current = style;
-
     return (
         <MobileFooter
             activePage={lastActive.current}
-            variant={lastStyle.current}
             style={{
-                transform: visible ? "translateY(0)" : `translateY(${HIDDEN_OFFSET[lastStyle.current]})`,
+                transform: visible ? "translateY(0)" : `translateY(${HIDDEN_OFFSET})`,
                 transition: `transform ${DURATION_MS}ms ${EASING}`,
                 // Above the page surfaces and the exit clone (z-index 50) so the
-                // bar is always visible while it (and the pages) animate.
+                // slab is always visible while it (and the pages) animate.
                 zIndex: 100,
                 // Don't intercept taps while hidden / sliding away.
                 pointerEvents: visible ? "auto" : "none",

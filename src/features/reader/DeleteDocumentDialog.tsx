@@ -6,14 +6,23 @@ import {
     DialogActions,
     DialogContentText,
     Button,
-    Alert
+    Typography,
 } from '@mui/material';
 import type { Text } from '../../types';
 import { apiDelete } from '../../api/http';
+import { COLORS } from '../../theme/colors';
+import { FONTS } from '../../theme/fonts';
+import { LEADING, SIZE, WEIGHT } from '../../theme/scale';
+import { READER_CARD_RADIUS, readerMessageSx, readerPillButtonSx } from './readerStyles';
 
 // The open document's delete confirmation (ReaderDocumentPage header → trash icon).
 // The /reader list does NOT use it: list rows delete by swipe, with no confirmation
 // (SwipeToDeleteRow). Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Deleting a document.
+//
+// Flat look (readerStyles.ts): a white card at SectionCard's 18px radius with the
+// hairline and no elevation shadow, sentence-case title, and the two actions as pills —
+// Cancel white, Delete the red MID fill (the Friends panel's Remove), both ink text.
+// An error is a plain red line, not an MUI Alert.
 
 interface DeleteDocumentDialogProps {
     open: boolean;
@@ -58,36 +67,56 @@ function DeleteDocumentDialog({ open, text, onClose, onSuccess }: DeleteDocument
 
     return (
         <Dialog
+            className="reader-delete-dialog"
             open={open}
             onClose={handleClose}
-            maxWidth="sm"
+            maxWidth="xs"
             fullWidth
+            PaperProps={{
+                elevation: 0,
+                sx: {
+                    backgroundColor: COLORS.white,
+                    border: `1px solid ${COLORS.rowBorder}`,
+                    borderRadius: READER_CARD_RADIUS,
+                    mx: 2,
+                },
+            }}
         >
-            <DialogTitle>Delete Document</DialogTitle>
-            <DialogContent>
-                {error && (
-                    <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>
-                        {error}
-                    </Alert>
-                )}
-                <DialogContentText>
-                    Are you sure you want to delete "{text.title}"? This action cannot be undone.
+            <DialogTitle
+                className="reader-delete-dialog__title"
+                sx={{ fontFamily: FONTS.sans, fontSize: SIZE.subtitle, fontWeight: WEIGHT.bold, lineHeight: LEADING.tight, color: COLORS.onSurface, pb: 1 }}
+            >
+                Delete document?
+            </DialogTitle>
+            <DialogContent className="reader-delete-dialog__content" sx={{ pb: 1 }}>
+                <DialogContentText
+                    className="reader-delete-dialog__message"
+                    sx={{ fontFamily: FONTS.sans, fontSize: SIZE.body, lineHeight: LEADING.normal, color: COLORS.textSecondary }}
+                >
+                    "{text.title}" will be deleted. This can't be undone.
                 </DialogContentText>
+                {error && (
+                    <Typography className="reader-delete-dialog__error" sx={{ ...readerMessageSx, mt: 1.5 }}>
+                        {error}
+                    </Typography>
+                )}
             </DialogContent>
-            <DialogActions sx={{ px: 3, pb: 2 }}>
+            <DialogActions className="reader-delete-dialog__actions" sx={{ px: 3, pb: 2.5 }}>
                 <Button
+                    className="reader-delete-dialog__cancel"
                     onClick={handleClose}
                     disabled={loading}
+                    sx={readerPillButtonSx(COLORS.white)}
                 >
                     Cancel
                 </Button>
                 <Button
+                    className="reader-delete-dialog__confirm"
                     onClick={handleDelete}
-                    variant="contained"
-                    color="error"
                     disabled={loading}
+                    sx={readerPillButtonSx(COLORS.redM)}
                 >
-                    {loading ? 'Deleting...' : 'Delete'}
+                    {loading ? 'Deleting…' : 'Delete'}
                 </Button>
             </DialogActions>
         </Dialog>

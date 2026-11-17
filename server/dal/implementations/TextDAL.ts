@@ -18,12 +18,13 @@ export class TextDAL implements ITextDAL {
 
   async insertUserText(data: {
     userId: string; title: string; content: string; language: string; characterCount: number;
+    iconId: string | null;
   }): Promise<Text> {
     const { rows } = await this.run<Text>(
-      `INSERT INTO texts ("userId", title, content, language, "characterCount", "isUserCreated")
-       VALUES ($1, $2, $3, $4, $5, true)
+      `INSERT INTO texts ("userId", title, content, language, "characterCount", "iconId", "isUserCreated")
+       VALUES ($1, $2, $3, $4, $5, $6, true)
        RETURNING *`,
-      [data.userId, data.title, data.content, data.language, data.characterCount]
+      [data.userId, data.title, data.content, data.language, data.characterCount, data.iconId]
     );
     if (rows.length === 0) throw new Error('Failed to create text');
     return rows[0];
@@ -35,6 +36,7 @@ export class TextDAL implements ITextDAL {
       ['title', 'title'],
       ['content', 'content'],
       ['characterCount', '"characterCount"'],
+      ['iconId', '"iconId"'],
     ];
     const sets: string[] = [];
     const values: unknown[] = [];

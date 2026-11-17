@@ -30,6 +30,13 @@ import { FONTS, DATA_TYPE } from "../../theme/fonts";
 export interface RowProps {
     /** Material Symbols name for the avatar glyph. Ignored when `avatar` is given. */
     icon?: string;
+    /**
+     * Image URL drawn inside the styled avatar box in place of the glyph — a picked
+     * icons8 icon (the Reader list's document icon, texts."iconId"). Wins over `icon`,
+     * which then stays the fallback for callers that pass both. Ignored when `avatar`
+     * is given.
+     */
+    iconSrc?: string;
     /** Short text avatar (1–2 characters) — a friend's initial. Ignored when `avatar` is given. */
     initials?: string;
     /**
@@ -87,6 +94,7 @@ function rowLinkProps(to?: string, state?: unknown, onClick?: (e: React.MouseEve
 
 export const Row: React.FC<RowProps> = ({
     icon,
+    iconSrc,
     initials,
     avatar,
     hue = "grey",
@@ -112,7 +120,7 @@ export const Row: React.FC<RowProps> = ({
         sx?: Record<string, string>;
         [key: string]: unknown;
     };
-    const hasAvatar = avatar !== undefined || icon !== undefined || initials !== undefined;
+    const hasAvatar = avatar !== undefined || iconSrc !== undefined || icon !== undefined || initials !== undefined;
 
     return (
         <Box
@@ -158,7 +166,17 @@ export const Row: React.FC<RowProps> = ({
                         boxShadow: `inset 0 0 0 1px ${COLORS.markOutline}`,
                     }}
                 >
-                    {icon ? <Icon name={icon} size={19} color={ink} /> : initials}
+                    {iconSrc ? (
+                        <Box
+                            component="img"
+                            className="row__avatar-image"
+                            src={iconSrc}
+                            alt=""
+                            // Same optical size as the 19px glyph would be, with a little
+                            // more room: icons8 artwork carries its own padding.
+                            sx={{ width: 24, height: 24, objectFit: "contain", display: "block" }}
+                        />
+                    ) : icon ? <Icon name={icon} size={19} color={ink} /> : initials}
                 </Box>
             )}
 

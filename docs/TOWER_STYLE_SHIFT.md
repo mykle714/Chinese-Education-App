@@ -96,7 +96,7 @@ lag at night.
 | flp study header + audio chip | `TowerStudyHeader.tsx` (`tone="bare"`) | DECK_TOWER.md § "Studying the tower" → "The audio chip" |
 | acp's on-deck cards, its skipped-cards sheet and td's cards page (rim + panel, drawn as one thick panel: a 4px wall with a hairline rounded edge (`src/theme/roundedEdge.ts`) and a near-solid cast shadow on the ground, no outline) | `src/features/discover/sortCardStock.ts` → `sortCardStockSx` | SORT_CARDS_REQUIREMENTS.md § 4.5, § 5.1a |
 | td's cards page under the platform (the same stock on `MiniVocabCard` `stock`, with the mastery strip, no levitation; an own-colour card fills the panel via `--mini-card-panel`) | `src/features/deckTower/TowerCardsPage.tsx` → `TOWER_CARD_STOCK` | DECK_TOWER.md § "The cards page" |
-| Slab footer (`footerStyle: "slab"` in `src/routes/routeMeta.ts`: `/` (td), `/dictionary`, the cdp, acp) | `src/components/MobileFooter.tsx` | DECK_TOWER.md § Footer |
+| Slab footer (every footer route since 2026-11-16) | `src/components/MobileFooter.tsx` | DECK_TOWER.md § Footer |
 | Tier 2 time-of-day ground (the page ground tints with the hour; the slab follows): `/dictionary`, the cdp | `src/timeOfDay/useTier2Look.ts` → `useTier2Look` | DECK_TOWER.md § Time of day |
 
 ## Still bento

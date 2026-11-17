@@ -107,6 +107,9 @@ interface AiFallbackState {
  * Dictionary Service - Contains business logic for dictionary operations
  * Handles CC-CEDICT dictionary lookups for the reader feature
  */
+// Most lookup keys one Reader English-lookup request may carry (findEnglishTranslations).
+const ENGLISH_LOOKUP_MAX_TERMS = 5000;
+
 export class DictionaryService {
   constructor(private dictionaryDAL: IDictionaryDAL) {}
 
@@ -129,6 +132,33 @@ export class DictionaryService {
     if (!entry) return null;
 
     return entry;
+  }
+
+  /**
+   * The Reader's English → Chinese lookup for one document
+   * (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "English words"). The client sends every
+   * lookup KEY of the document's English words (each word plus its stripped-ending forms,
+   * src/features/reader/englishTranslation.ts → `englishLookupKeys`); this returns, per key
+   * that has one, the best det row whose sense IS that key (DictionaryDAL →
+   * findCompleteEnglishMatches). Picking one match per word across its keys is the client's.
+   *
+   * Chinese only: Spanish is paused (CLAUDE.md), so an es document gets no matches
+   * (docs/DEFERRED_WORK.md). Capped at ENGLISH_LOOKUP_MAX_TERMS keys — a whole long
+   * document's English vocabulary fits well under it; beyond that the request is refused
+   * rather than silently truncated.
+   */
+  async findEnglishTranslations(
+    terms: string[],
+    language: string
+  ): Promise<Array<{ term: string; senseOrdinal: number; entry: DictionaryEntry }>> {
+    if (!Array.isArray(terms) || terms.some(term => typeof term !== 'string')) {
+      throw new ValidationError('terms must be an array of strings');
+    }
+    if (terms.length > ENGLISH_LOOKUP_MAX_TERMS) {
+      throw new ValidationError(`At most ${ENGLISH_LOOKUP_MAX_TERMS} terms per request`);
+    }
+    if (language !== 'zh' || terms.length === 0) return [];
+    return this.dictionaryDAL.findCompleteEnglishMatches(terms, language);
   }
 
   /**

@@ -1,6 +1,6 @@
 import React from "react";
 import { convexHull, flatPath, toPath, type Pt3, type WorldRect } from "./geometry";
-import { SHADOW_GLAZE_OPACITY, cloudShadowFootprint, shadowFootprint, shadowSlide, shadowSpread, shadowTone, type IsoSurface } from "./light";
+import { SHADOW_GLAZE_OPACITY, centredShadowFootprint, cloudShadowFootprint, shadowFootprint, shadowSlide, shadowSpread, shadowTone, type IsoSurface } from "./light";
 import { useIsoProjector } from "./sceneContext";
 import { translucentShadow } from "../../../components/footerCastShadow";
 
@@ -63,6 +63,12 @@ type IsoShadowProps = {
            * sliver shrinks to match (light.ts → `contactLift`); without it, the full sliver.
            */
           casterHeight?: number;
+          /**
+           * Lay the shadow straight under the footprint instead of sliding it along the
+           * light (light.ts → `centredShadowFootprint`). For a caster drawn alone on a flat
+           * UI surface (ReaderKeycapPawn), never for one inside a lit iso scene.
+           */
+          centred?: boolean;
           solid?: never;
           cloudPuffs?: never;
       }
@@ -106,7 +112,10 @@ const IsoShadow: React.FC<IsoShadowProps> = (props) => {
     } else if (props.cloudPuffs) {
         d = props.cloudPuffs.map((p) => flatPath(proj, cloudShadowFootprint(p.footprint, p.casterZ, receiver), receiver.z)).join("");
     } else {
-        d = flatPath(proj, shadowFootprint(props.footprint, props.casterZ, receiver, props.casterHeight), receiver.z);
+        const landed = props.centred
+            ? centredShadowFootprint(props.footprint)
+            : shadowFootprint(props.footprint, props.casterZ, receiver, props.casterHeight);
+        d = flatPath(proj, landed, receiver.z);
     }
     return (
         <path

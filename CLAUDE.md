@@ -39,6 +39,7 @@ deip = dictionary eip
 si = soft introduction
 rww = reading/writing world
 td = tower deck
+rdb = reader definition box
 
 
 ## Terminology: "Learning" cards

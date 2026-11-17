@@ -1,4 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+/**
+ * The live audio route `unlock()` reads (via `readTTSSettings`). Mutable so a test can
+ * switch to 'media'; reset to the app default ('passthrough') before each test.
+ */
+let mockRoute: 'passthrough' | 'media' = 'passthrough';
+vi.mock('../hooks/useTTSSettings', () => ({
+    readTTSSettings: () => ({ autoplay: true, route: mockRoute, voice: 'female' }),
+}));
 
 /**
  * Regression tests for the "audio dies until I restart the app" bug.
@@ -17,6 +26,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
  *   1. the gesture listener is persistent, not one-shot;
  *   2. unlock() resumes a context that has gone un-running mid-session;
  *   3. a refused element play() does not latch, so a later gesture retries.
+ * Plus the media-route rule: no media element is ever played there (iOS would pause the
+ * user's music), and the audio session is declared 'ambient'.
  *
  * Covers: src/services/tts/CloudTTSProvider.ts → unlock, unlockContext,
  * unlockElement, ensureUnlockListener. Documented in docs/AUDIO_PLAYBACK.md § 5.
@@ -93,6 +104,7 @@ beforeEach(() => {
     contexts = [];
     elements = [];
     playResolves = true;
+    mockRoute = 'passthrough';
     const target = {
         addEventListener(type: string, handler: Listener, options?: AddEventListenerOptions) {
             registrations.push({ type, handler, options });
@@ -202,5 +214,37 @@ describe('CloudTTSProvider gesture unlock', () => {
         dispatch('pointerdown');
         await flush();
         expect(el.playCalls).toBe(2);
+    });
+
+    // The 2026-11-17 bug: unlock() primed the media elements on every route, and on iOS a
+    // media element's play() — even muted and silent — pauses the user's music, which is
+    // exactly what media mode promises not to do.
+    it('never plays a media element on the media route', async () => {
+        mockRoute = 'media';
+        const provider = await makeProvider();
+        provider.unlock();
+        dispatch('pointerdown');
+        await flush();
+        expect(elements.reduce((n, el) => n + el.playCalls, 0)).toBe(0);
+        // The context — media mode's own sink — is still primed.
+        expect(contexts[0]?.resumeCalls).toBeGreaterThan(0);
+    });
+
+    it('sets the iOS audio session to ambient on the media route, auto on passthrough', async () => {
+        const audioSession = { type: 'auto' };
+        const nav = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+        Object.defineProperty(globalThis, 'navigator', { value: { audioSession }, configurable: true });
+        try {
+            mockRoute = 'media';
+            const provider = await makeProvider();
+            provider.unlock();
+            expect(audioSession.type).toBe('ambient');
+            mockRoute = 'passthrough';
+            provider.unlock();
+            expect(audioSession.type).toBe('auto');
+        } finally {
+            if (nav) Object.defineProperty(globalThis, 'navigator', nav);
+            else delete (globalThis as Record<string, unknown>).navigator;
+        }
     });
 });

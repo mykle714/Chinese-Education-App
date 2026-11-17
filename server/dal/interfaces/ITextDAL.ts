@@ -5,6 +5,8 @@ export interface TextFieldUpdate {
   title?: string;
   content?: string;
   characterCount?: number;
+  /** `null` clears the icon (texts."iconId", migration 193); `undefined` leaves it. */
+  iconId?: string | null;
 }
 
 /**
@@ -20,6 +22,7 @@ export interface ITextDAL {
   /** Insert a user-created document; id and createdAt come from Postgres defaults. */
   insertUserText(data: {
     userId: string; title: string; content: string; language: string; characterCount: number;
+    iconId: string | null;
   }): Promise<Text>;
 
   /** Update the given columns; null when no row has `id`. Must name at least one column. */

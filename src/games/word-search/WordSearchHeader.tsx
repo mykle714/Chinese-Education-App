@@ -22,7 +22,7 @@ import AudioModeChip from "../../components/AudioModeChip";
  *     No Pinyin) the run was launched from. The HUD states the mode instead of offering
  *     a switch, which is what artboard 13 draws.
  *   - the hint button, into the play panel's `.hintbar` alongside its own charges and
- *     reveal (see WordSearchHintBar). Spending a hint is a game ACTION.
+ *     reveal (see src/games/shared/GameHintBar.tsx). Spending a hint is a game ACTION.
  *   - the settings cog itself, deleted along with `WordSearchSettingsDialog`: its last
  *     row, timer visibility, became an eye toggle in the HUD strip beside the clock it
  *     controls (see WordSearchStage), which left the sheet empty.

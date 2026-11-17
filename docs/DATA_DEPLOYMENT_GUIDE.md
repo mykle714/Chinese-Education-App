@@ -44,8 +44,9 @@ These were the only tables the push was ever allowed to touch. All others contai
 > See [SORT_PACKS_IMPLEMENTATION.md §2.1](./SORT_PACKS_IMPLEMENTATION.md).
 
 **Foreign keys**: `dictionaryentries_zh.iconId` and `dictionaryentries_es.iconId` FK-reference
-`icons8("icons8Id")` (`ON DELETE SET NULL`, migration 72). `users.avatarIconId` also references
-it (migration 77). Because `icons8` accrues PPE-only rows organically (users picking custom card
+`icons8("icons8Id")` (`ON DELETE SET NULL`, migration 72). `users.avatarIconId` (migration 77) and
+`texts."iconId"` (the Reader document icon, migration 193, also `ON DELETE SET NULL`) reference
+it too. Because `icons8` accrues PPE-only rows organically (users picking custom card
 icons), it cannot be truncated — a merge-only restore is used instead (see the dedicated section
 below). **Always merge-sync `icons8` before restoring `dictionaryentries_zh`/`_es`** in the same
 deploy: if the local dump references an icon id PPE's `icons8` doesn't have, the `COPY` during

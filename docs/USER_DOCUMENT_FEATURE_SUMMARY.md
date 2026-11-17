@@ -26,6 +26,7 @@ and `src/types.ts`).
 | `language` | `zh` / `es`; set on create, immutable afterwards |
 | `characterCount` | `content.length`, recomputed on every content update |
 | `isUserCreated` | `true` for every row the API creates |
+| `iconId` | optional FK → `icons8("icons8Id")`, `ON DELETE SET NULL` (**migration 193**); the learner-picked document icon. NULL = default glyph. See § Document icon |
 | `createdAt` | `now()` |
 
 Removed columns: `description` and the validation-doc linkage
@@ -52,8 +53,8 @@ Title derivation reads det through `IDictionaryDAL.findMultipleByWord1`.
 | GET | `/api/texts` | — | the user's documents in their `selectedLanguage`, newest first (`getUserTexts`) |
 | GET | `/api/texts/stats` | — | counts / total characters |
 | GET | `/api/texts/:id` | — | one document |
-| POST | `/api/texts` | `{ content, language? }` | **no title** — the server derives it |
-| PUT | `/api/texts/:id` | `{ title?, content? }` | owner only; `language` is rejected |
+| POST | `/api/texts` | `{ content, language?, iconId? }` | **no title** — the server derives it |
+| PUT | `/api/texts/:id` | `{ title?, content?, iconId? }` | owner only; `language` is rejected; `iconId: null` clears the icon, an absent `iconId` leaves it |
 | DELETE | `/api/texts/:id` | — | owner only |
 
 ### Title derivation
@@ -84,21 +85,366 @@ All under `src/features/reader/`.
 | File | Role |
 |---|---|
 | `ReaderPage.tsx` | `/reader` list (Node page); optimistic swipe-delete (`handleDelete`) |
-| `TextSidebar.tsx` | the list itself (one title per row) + the **New Document** button |
+| `TextSidebar.tsx` | the list body (despite the name — not a sidebar): the **New document** Bento tile + a `RowList` of `Row`s, one title per row |
 | `SwipeToDeleteRow.tsx` | iPhone-style swipe-left row that uncovers **Delete** |
 | `ReaderDocumentPage.tsx` | `/reader/:id` document page, including the `/reader/new` draft |
 | `readerPaths.ts` | `NEW_DOCUMENT_ID` / `NEW_DOCUMENT_PATH` |
-| `TextHeader.tsx` | title + vocab-processing status chips |
-| `TextArea.tsx` | reading textarea ⇄ editable textarea |
+| `TextHeader.tsx` | vocab-processing status pills only (the title is the page header's since 2026-11-17) |
+| `TextArea.tsx` | reading textarea ⇄ editable textarea; hosts the Pinyin-mode view over the (invisible) reading textarea |
+| `ReaderCpcdView.tsx` | the **Pinyin** display mode: the document as inline cpcd words + the Reader's own highlight (§ Display modes) |
+| `useReaderSettings.ts` | auto word-select (always on) + the per-device `displayMode` |
+| `englishTranslation.ts` + `useEnglishTranslations.ts` | English word → the Chinese det entry it translates to, for the keycap (§ English words) |
+| `ReaderKeycapPawn.tsx` | the keycap's empty face: a small resting pawn (§ Look) |
 | `ReaderEditToolbar.tsx` + `useReaderContentEditor.ts` | undo/redo/cancel/save for inline edit |
 | `DeleteDocumentDialog.tsx` | delete confirmation for the document header's trash icon |
+| `readerStyles.ts` | the shared `sx` fragments of the look below |
+| `ReaderReadAloudButton.tsx` + `useReaderReadAloud.ts` + `readAloudClauses.ts` | the display strip's play button: reads the document aloud from the caret (§ Read aloud) |
+| `useReaderAudioSettings.ts` + `src/components/AudioModeChip.tsx` → `ReaderAudioChip` | the display strip's audio chip: the Reader's own mute / default / media setting (§ Tap-to-hear) |
+| `src/components/VocabDisplayCard.tsx` | the dictionary keycap above the reading box (its only caller is the Reader) |
+
+### Look
+
+Code: `src/components/VocabDisplayCard.tsx`, `src/components/SenseList.tsx`;
+`ReaderDocumentPage.tsx` → the surface's `title`; `readerStyles.ts` → `readerCardSx`, `READER_CARD_RADIUS`, `readerMutedTextSx`,
+`readerMessageSx`, `readerPillButtonSx`; every component in the table above.
+
+The Reader wears the Friends panel's **flat** look (docs/FRIENDS_FEATURE.md,
+`src/features/friends/friendStyles.ts`), since 2026-11-16:
+
+- **Ground** — the paper (`COLORS.background`) on both pages, and the app's one footer,
+  the slab, on `/reader` (`/reader/:id` is footerless).
+- **Title** — the open document's title is the page header's title (`ReaderDocumentSurface`
+  `title`, ellipsized); "Reader" only while loading / not found.
+- **Dictionary keycap** (`VocabDisplayCard`, 2026-11-17) — the one raised object on the
+  page: a static keycap (white face, `COLORS.border` outline, rounded edge, 4px `COLORS.grey`
+  lip — the Tier 2 day keycap's colours). Header: the headword as a CPCD row (`ForeignText`
+  `md`, tone colours per the flp's `showPinyinColor`). Body: `SenseList`
+  (src/components/SenseList.tsx) — the eip's "Other Translations" list itself, same layout,
+  font and trailing star, tap a row for its commonality — with no section label. A
+  single-sense word lists its glosses. The keycap never takes focus from the reading box
+  (`preventDefault` on its mousedown, capture phase): a tap on a row would otherwise trip the blur →
+  refocus loop (`useTextSelection` → `handleTextAreaBlur`), whose re-selection can scroll
+  the textarea, and `SenseList` closes its popup on any scroll. The face's bottom padding is
+  4px, so four one-line senses fit in the fixed 210px height. A highlighted word with **no
+  entry** (no det row, no English translation, a grammar word) shows a small resting **pawn**
+  centred in the face (`ReaderKeycapPawn.tsx` — the iso kit's `pawnFigure` in ink with a
+  hard **centred** floor shadow on the white face — straight under the feet, not slid
+  down-right along the light (`IsoShadow` `centred`) — ~40px tall; passed as `VocabDisplayCard` → `emptyFace`,
+  a full-face centred layer). It replaced a "No dictionary entry found." line (2026-11-17).
+- **Keycap word actions** (2026-11-17) — the eip's speaker (`SpeakerButton`) sits just right
+  of the headword. At the header's right edge: a **More Info** keycap
+  (`src/features/reader/ReaderMoreInfoKey.tsx` — the flp's `MoreInfoPill` plate,
+  built to the Add key's recipe, shape included (its rounded rectangle, not the flp
+  More Info's capsule; no ↑ arrow) — eip palette `face` on an `edge` lip, the 1px outline ring, rounded edge, press and label type, sizes
+  shared via `eipAddKeySizes.ts`, and the Add key's fixed width at each size) and the eip's **Add ⇄ Added!**
+  key (`EipAddKey`). A word already in Learning shows "Added!"; tapping it removes the word.
+  **Side by side** (Add, then More Info at the far right) when the header row has room; **stacked, in both controls' `compact`
+  size, More Info on top, spread by three equal flex spacers (6px floor each; lips and the rest lift counted) between the face's top edge and the divider** when a long headword leaves too little
+  (the face's 12px sides and a 4px header gap keep a 2-character headword side by side on a
+  ~390px phone) (`VocabDisplayCard` → ACTION LAYOUT: a
+  ResizeObserver compares the row's room after the headword with the controls' recorded
+  side-by-side width, and calls the page's `renderHeaderActions(stacked)`).
+  `src/features/reader/useReaderWordActions.ts` owns the behaviour: `useTTS().speak` on the
+  det row adapted by `dictionaryEntryToVocabEntry`; More Info → `lookupVocabEntry` (the full
+  row) → `useEipTabs.openForRoot` → the page's `EipSheet`, configured like the Dictionary
+  page's (Synonyms + Related, word-tools rail, Learning key); and a `useLearningToggle` SEEDED
+  (`seedInLibrary`) from the document's vocab lookup — whose personal entries are exactly the
+  learner's Learning cards (`vetSortedClause`) — so the key is drawn the moment a word is
+  selected and the status fetch only confirms it; it goes inert while the eip is open (the eip runs its own) and re-fetches on close. While the
+  eip is open the reading box stops re-taking focus (`ReaderDocumentPage` →
+  `handleReadingBoxBlur`), and `eipOpen` counts in `anyDialogOpen` so focus returns when it
+  closes. `VocabDisplayCard` only places the controls (`onSpeak`, `isSpeaking`,
+  `renderHeaderActions`).
+- **Nothing-selected mode** (2026-11-17) — a document opens with **no word highlighted**:
+  the caret is parked at the top and the keycap's face shows the tap-to-navigate hint,
+  which replaced the 5 s `reader-tap-hint` notification (`ReaderTapHint.tsx`). The WHOLE
+  face becomes a miniature reading box, split by a dotted line at the real tap divide
+  (`ReaderTapOverlay` → `TAP_LEFT_ZONE_FRACTION`, the left third). Two sentences sit in the
+  right zone only, clear of the divide: "Tap the left or right side of the screen to move
+  the cursor." along the top and "Tap and hold on a word to jump to it." along the bottom.
+  A `touch_app` finger plays 3 rounds of glide-left → tap → glide-right → tap on the row
+  midway between them, then rests at its right-zone tap position
+  (the row measured from both sentences' edges), where it started. A zone fills `COLORS.grey` the
+  instant the finger's centre crosses into it (its real position read per animation frame)
+  and `COLORS.greyA` for the tap; `prefers-reduced-motion` shows only the resting diagram.
+  **Tapping the demo** flashes the matching real zone (the tap region: the whole screen
+  below the display strip — READER_SEGMENTATION.md) twice
+  (`ReaderTapOverlay` → `flash`, `COLORS.grey` multiplied so the text stays dark) — mobile
+  only, as the overlay itself is. The request is cleared when the pulse ends (`onFlashEnd` →
+  `clearTapZoneFlash`): the overlay unmounts in edit mode, so a request still set would
+  replay on Cancel/Save. The learner's first selection that lands on a word ends
+  the mode for good; a gesture that selects nothing (a back-tap at the very top, a click in
+  whitespace) keeps it. Only leaving the document and coming back (a remount) restores it.
+  Mechanism: `useTextSelection` → `awaitingFirstSelection` / `noteUserInteraction` — until
+  the learner touches the box (TextArea's `onKeyDown` / `onPointerDown`, which also catch
+  ReaderTapOverlay's synthetic arrows and long-press pointerdown), auto word-select and the
+  card lookup stand down, so the focus-driven `select` events (initial focus, the blur →
+  refocus loop, leaving edit mode) cannot highlight the first word on their own.
+  Code: `src/features/reader/useTextSelection.ts`, `TextArea.tsx` → `onUserInteraction`,
+  `ReaderTapHint.tsx` (the demo + `READER_NAVIGATION_HINT`), `VocabDisplayCard` → `idleHint`
+  (a ReactNode slot it only centres).
+- **Cards and rows** — white on the paper with the `rowBorder` hairline and no shadow:
+  `Row`s (16px) for documents, SectionCard's 18px radius for the reading box and the delete
+  dialog. A user document's row has a blue avatar glyph
+  (`description`), a built-in text's a grey one (`menu_book`).
+- **Actions** — New document is a half-width `compact` Bento tile (blue, `edit_note`) in
+  the grid's left column, dressed exactly like the Friends tab's action tiles: title
+  only, no subtitle, the title at the bottom-left. Buttons are pills with a ramp MID fill and ink text (`readerPillButtonSx`):
+  Save blue, Delete red, Cancel white. Undo/redo are bare icon buttons.
+- **States** — loading, empty, not-found and errors are plain text lines
+  (`readerMutedTextSx` / `readerMessageSx`), not spinners or MUI Alerts. A failed
+  swipe-delete's line dismisses on tap.
+- **Reading box focus** — the reading box is focused the whole time it is open, so it
+  keeps the hairline when focused; only the edit-mode field firms to `COLORS.border`.
+
+### English words
+
+Code: `englishTranslation.ts` → `englishLookupKeys`, `pickBestEnglishMatch`,
+`ENGLISH_GRAMMAR_WORDS`, `documentEnglishWords`; `useEnglishTranslations.ts`;
+`useTextSelection.ts` → `handleTextSelectionChange` (`translateEnglish`,
+`selectedByTranslation`); `ReaderDocumentPage.tsx` → `selectedInLibrary`;
+`src/api/dictionary.ts` → `fetchEnglishDictionaryMatches`;
+`POST /api/dictionary/englishMatches` → `DictionaryController.englishMatches` →
+`DictionaryService.findEnglishTranslations` → `DictionaryDAL.findCompleteEnglishMatches`.
+
+An English word in a Chinese document is a selectable span like any other (READER_SEGMENTATION.md).
+When it has no det row of its own, the keycap shows the **Chinese word it translates to**,
+drawn exactly as a highlighted Chinese word (no marker; owner's call 2026-11-17) — headword,
+senses, speaker, More Info and Add all act on the Chinese entry. The text itself is unchanged
+in both display modes (Pinyin mode draws English as plain text, no pinyin under it).
+
+- **Lookup keys** — each word (lowercased, possessive `'s` dropped) plus naive
+  stripped-ending forms: `-ies/-ied → y`, `-es`, `-s` (not `-ss`), `-d`, `-ed`, `-ing`,
+  `-ing → e`, `-ily → y`, `-ly`, `-r`, `-er`, `-st`, `-est`, with a doubled final consonant
+  undone ("running" → running, runne, runn, run). ALL keys are looked up, because a gloss
+  can carry the ending as easily as the stem. Other contractions ("don't") and grammar
+  words (articles, prepositions, conjunctions, auxiliaries/modals — `ENGLISH_GRAMMAR_WORDS`;
+  pronouns and "not" are kept) get no keys, so the keycap shows its empty face.
+- **Server match** — per key, the one det row having a sense that IS the key: the search
+  ladder's "complete English" normalization (`DictionaryDAL` → `normalizedSenseSql`: no
+  parentheticals, lowercased, a leading `to`/`the`/`a`/`an` dropped, senses split on `'; '`).
+  Best row: highest `frequencyScore` (unscored last), then earliest matching sense, then
+  lowest `difficulty`, then shortest headword. Partial matches never count. One full pass over
+  every sense of the table (~1 s on dev's 115k zh rows, flat in the number of keys — the keys
+  are hash-joined against the normalized senses), so it runs **once per document open**: the
+  hook keys its effect on the document's key set (never on `token`), and each selection then
+  resolves synchronously. Capped at 5,000 keys per request (`ENGLISH_LOOKUP_MAX_TERMS`).
+- **Best match per word** (client, naive) — across the word's keys: commoner entry, then
+  earlier sense, then the less-stripped key ("news" → 新闻 over "new" → 新), then easier
+  entry. "running" → 跑 (via "run", score 5) beats the literal "running" → 一连 (score 3).
+- **Add key** — seeded like a Chinese word's, so it is drawn with the keycap rather than
+  clipping in later. The translation is usually not among the document's loaded cards, so
+  the seed comes from the English lookup itself: `DictionaryController.englishMatches` reads
+  the matched headwords' Learning status in the same request (`VocabEntryDAL.findByTokens`,
+  the document lookup's own read) and returns `inLearning` per match;
+  `useEnglishTranslations` → `translationInLearning(word1)` hands it to `useLearningToggle`
+  as `seedInLibrary`. The toggle's status fetch still runs and corrects a stale seed.
+- **Chinese only** — Spanish is paused; the service returns no matches for another language
+  and the hook never fetches (docs/DEFERRED_WORK.md).
+- **Known limit** — matches resolve on selection only: an English word highlighted before
+  the lookup lands stays empty until the next selection (the same is true of Chinese words
+  before the vocab lookup).
+
+### Display modes
+
+Code: `useReaderSettings.ts` → `ReaderDisplayMode`, `displayMode` / `setDisplayMode`;
+`ReaderDocumentPage.tsx` → `.reader-document-display-strip`; `ReaderDisplayToggle.tsx`;
+`ReaderCpcdView.tsx` (whole file); `TextArea.tsx` → `cpcdView`;
+`ReaderDocumentPage.tsx` → `showCpcd`, `cpcdScrollRef`, `.reader-page-tap-region`;
+`ReaderTapOverlay.tsx` → `scrollRef`, `nativeSelection`; `useTextSelection.ts` →
+`selectionRange`, `selectRange`; `documentSegmentation.ts` → `buildReaderPronunciationMap`.
+
+A **display strip** sits under the dictionary keycap (inside the keyboard-lift fold): a row
+whose right edge holds `ReaderDisplayToggle`: the Account sheet's goals switch (the
+app-wide themed MUI `Switch`, "on" track recoloured to a ramp Mark tier — here `bluMk`, as
+`AccountPane` → `goalSwitchOnSx` does with `redMk` / `orgMk`) flanked by its labels,
+**Text ◯━ Pinyin** — off = Text, on = Pinyin; the current mode's label is ink, the other
+`textFaint`, and tapping a label picks it. Its left edge holds the audio controls: the read-aloud button (§ Read aloud), then the
+tap-to-hear audio chip (§ Tap-to-hear). While editing, all three are `visibility: hidden`
+(the strip keeps its height, so the text box does not jump) — edit mode is always the plain
+field. The switch commits **deferred** (`ReaderDisplayToggle` → `SWITCH_ANIMATION_MS`,
+`pendingMode`): a tap flips the switch and labels at once and hands the mode to the page
+~200ms later, after MUI's 150ms thumb slide, because mounting `ReaderCpcdView` blocks the
+main thread and would otherwise make the thumb jump instead of slide. The choice is stored **per device** (`localStorage` `reader.displayMode`, default
+`text`; owner's call 2026-11-17).
+
+- **Text** — the read-only textarea, highlight = the browser's `::selection`.
+- **Pinyin** — the longdef display's look (`LongDefinitionDisplay` → parts path): one
+  `pre-line` paragraph where every gsa word is an inline-block cpcd at `sm` (`ForeignText`,
+  tone colours per the device's `showPinyinColor`), so lines wrap between words, never
+  inside one. Every line is pinned to one cpcd line's height (`cpcdNaturalSize('sm')`),
+  blank lines included. Punctuation and Latin words are drawn in a box matching a cpcd char
+  cell, so they sit on the character line. Pinyin per word comes from
+  `buildReaderPronunciationMap` — the same first-match rule as the keycap's
+  `findDictionaryMatch`, so the pinyin under a word agrees with the entry it opens.
+
+**Navigation is identical in both modes — by construction.** A cpcd paragraph cannot be a
+textarea, so the Pinyin mode does NOT have its own navigation: the reading textarea stays
+mounted, focused and navigable underneath with its text at `opacity: 0`, and remains the one
+selection model. `ReaderTapOverlay`'s zone taps, the arrow keys, auto word-select, the
+nothing-selected mode and the keycap lookup all run unchanged. `ReaderCpcdView` is only a
+**highlight renderer**: it reads `useTextSelection` → `selectionRange` (the state twin of
+`lastSelectionRef`), highlights the span that starts AND ends exactly there (the text
+mode's selection tint, as a background + box-shadow bleed, so no reflow), and scrolls it
+into view with one line of margin (measured against its own scroll box, not
+`scrollIntoView`, which would also scroll the overflow-hidden page). Switching modes keeps
+the reader's place. Two overlay differences only: a vertical drag scrolls the cpcd view's
+box (`scrollRef`), and a long-press / horizontal drag does not hand off to native selection
+(`nativeSelection={false}` — the textarea is invisible). Instead it **jumps to the word under
+the finger** (`ReaderTapOverlay` → `selectWordAt`, "WORD JUMP"): it hit-tests through the
+overlay with `elementsFromPoint` for a `[data-span-index]` cpcd word inside the view and
+clicks it — the same `onClick` → `selectRange` path as a desktop click — then keeps
+re-selecting under the finger until release, so "Tap and hold on a word to jump to it"
+(`ReaderTapHint` → `READER_JUMP_HINT`) holds in both modes. A press over punctuation or a
+gap selects nothing. In both modes the overlay suppresses the browser's own long-press
+`contextmenu` (the "right click" menu), since the overlay owns that gesture. On desktop (no
+overlay) clicking a word selects it (`selectRange`), mirroring a click placing the caret;
+the view's `mousedown` `preventDefault` keeps the textarea's focus so the blur → refocus loop
+cannot restore the old range over the click.
+
+Known limits: yī/bù sandhi is applied per word (`ForeignText`), not across a word boundary
+as the est's sentence-level pass does; the account-level `showSegmentSpaces` setting is not
+read (words sit at their natural column spacing).
+
+### Read aloud
+
+Code: `ReaderReadAloudButton.tsx`; `useReaderReadAloud.ts` → `useReaderReadAloud`,
+`learnedMsPerUnit`, `CLIP_LEAD_MS` / `CLIP_TAIL_MS`, `PREFETCH_AHEAD`;
+`readAloudClauses.ts` → `buildReadAloudClauses`, `MAX_CLAUSE_CHARS`, `classifySpanVoices`,
+`splitVoiceRuns`, `GLUED_LETTERS_MAX`; `useReaderReadAloud.ts` → `documentTTSLang`;
+`ReaderDocumentPage.tsx` → `readAloud`, `.reader-read-aloud-stop-shield`;
+`useReaderWordActions.ts` → `suspendLearningStatus`; `useTTS.ts` → `speakSentence`
+(`options.onStart`, `options.lang`), `prefetchSentence` (`lang`). Tests: `src/__tests__/readAloudClauses.test.ts`.
+
+The **Read** pill (read-aloud) at the display strip's left edge reads the document aloud **from the
+caret**, starting at the word the caret is on. If nothing is selected yet, it reads from the
+top, and a caret after the last word also reads from the top. It works in both display modes
+and is hidden while editing. While it plays, the pill turns `bluM` and reads **Stop**.
+
+- **One clip per clause.** `buildReadAloudClauses` cuts the text at 。！？，：；!?; and
+  newlines, and at ASCII `.` `,` `:` only when followed by whitespace, so 3.5, 1,000 and 10:30
+  stay whole. A run of break marks and closing quotes stays with the clause before it. **、,
+  —— and … do not split** (owner's call 2026-11-17): a list reads as one phrase. A clause
+  with no word is skipped. A clause longer than `MAX_CLAUSE_CHARS` (120; the server caps TTS
+  text at 200) is cut at a word boundary. Each clause carries the pinyin hint built from the
+  Pinyin mode's map (zh only; dropped if any Han word lacks one). The next
+  `PREFETCH_AHEAD` (2) clauses are synthesized ahead, so there is no gap between clips.
+- **The document's language, and English words in English.** Clips are read in the
+  document's language (`documentTTSLang`: zh → `zh-CN`), not the study language. Other
+  languages still fall back to the study language (Spanish is paused). In a **zh document**
+  a clause is cut further into **voice runs**, each its own clip
+  (`ReadAloudClause.voice`), so English words get the English voice (`en-US`) instead of
+  the Chinese one with its accent: "我昨天买了 iPhone 15，" → 我昨天买了 · iPhone 15，.
+  `classifySpanVoices` rules: a Latin-letter word is English, except one of at most
+  `GLUED_LETTERS_MAX` (2) letters touching a Han character (T恤, A股, 卡拉OK); a bare number
+  is English only straight after an English word (iPhone 15), so 3个 and 2024年 stay Chinese.
+  Punctuation between runs stays with the run before. Where two runs meet with NO
+  punctuation between them (a **seam**, `ReadAloudClause.joinsPrevious` / `joinsNext`), the
+  synthesized edge silence on that side of both clips is trimmed (`TTSRequest.trimSilence`,
+  docs/AUDIO_PLAYBACK.md § 3c), so the switch is not heard as a ~350 ms pause; a run boundary
+  with a comma keeps its pause. The highlight's lead/tail margin shrinks to
+  `TRIMMED_EDGE_MS` on a trimmed edge. An English run has no pinyin hint and
+  does not feed `learnedMsPerUnit`. The male/female Narration voice applies to both
+  languages (server `TTSService` → `voiceForLang`). A voice switch is heard as a second
+  speaker, and the sentence's intonation restarts at it.
+- **The highlight follows the audio.** It moves word by word, and the word in the selection
+  is the current word, not a separate highlight (owner's call 2026-11-17). Each word is
+  selected through `useTextSelection.selectRange`, as a tap would select it, so the keycap
+  shows the word being heard and the Pinyin view paints and scrolls to it. The text mode
+  scrolls the textarea with `scrollSelectionIntoView`. Which **clause** is playing is
+  exact: one clause is one clip, and the next clip starts only when the last one ends, so
+  the page never drifts out of sync. The **word** inside a clause is estimated: when the
+  clip starts, the provider reports its real length (`TTSRequest.onStart`,
+  docs/AUDIO_PLAYBACK.md § 3c). Each word starts at its share of that length, weighted by
+  syllables (Han character 1, digit 1, Latin letter ⅓, punctuation ½ as a pause), inside
+  the clip minus `CLIP_LEAD_MS` / `CLIP_TAIL_MS` of edge silence. Those constants were
+  tuned by ear. An estimate error stays inside one clause.
+  When the browser-voice fallback plays (no duration), the clause is paced on
+  `learnedMsPerUnit`, the session's running average of cloud-clip speaking speed (default
+  250 ms per syllable).
+- **Any tap stops it AND still does its job; scrolling does not stop it** (owner's call
+  2026-11-17, replacing the old swallow-the-tap stop shield). While playing,
+  window capture-phase listeners (`useReaderReadAloud` → ANY INPUT STOPS IT) stop the
+  reading on a touch tap's pointerup (moved ≤ `TAP_SLOP_PX`), on a mouse pointerdown (so a
+  desktop click on the textarea is not overwritten by the run), or on any key press, and
+  swallow nothing: the input then reaches its target. A tap on the text steps from the word
+  being read (ReaderTapOverlay), the keycap's speaker speaks, More Info opens the eip, the
+  chip and the switch switch. The **Read/Stop pill** is exempt (`READ_ALOUD_CONTROL_ATTR`
+  on `ReaderReadAloudButton`) and stops through its own onClick: stopping first would turn
+  it back into "Read" before its click lands, and the click would restart the reading.
+  A touch drag (past 10 px, scrolled by ReaderTapOverlay) or a mouse wheel keeps reading;
+  the view then stops following the read word until `FOLLOW_RESUME_MS` (3 s) after the last
+  scroll (`useReaderReadAloud` → `noteManualScroll` / `isFollowPaused`, also honoured by
+  `ReaderCpcdView`'s keep-in-view effect). An arrow key likewise stops it and moves on
+  from the word that was being read. The caret stays on the **estimated current word** (owner's call 2026-11-17). A clip that never
+  starts (no `onStart`) ends the run instead of racing through the document in silence.
+  Unmounting the page or changing the content also stops it.
+- **Mute does not silence it.** Pressing play is a manual press (`speakSentence`), so it
+  speaks on Mute like every speaker button (docs/AUDIO_PLAYBACK.md § 4). The route
+  (default or media) comes from the strip's audio chip (§ Tap-to-hear), the Voice from the
+  narration settings.
+- **The keycap's Add key stands down while reading** (`suspendLearningStatus`). Its
+  per-word status fetch would otherwise fire about 4 times a second. The key reappears on
+  the word where reading stopped.
+
+### Tap-to-hear
+
+Code: `useReaderAudioSettings.ts` → `useReaderAudioSettings`; `src/components/AudioModeChip.tsx`
+→ `ReaderAudioChip`; `ReaderDocumentPage.tsx` → `tapToHearRef` (the TAP-TO-HEAR effect),
+`.reader-document-display-strip__audio`; `useReaderWordActions.ts` → `autoSpeakSelected`;
+`src/hooks/useTTS.ts` → `surfaceAutoSpeak`; `src/services/tts/CloudTTSProvider.ts` →
+`setRouteOverride`, `effectiveRoute`.
+
+The display strip's audio chip, next to the Read pill, is the app-wide audio chip's skin
+(same glyphs, labels and cycle order: **mute → default → media**) bound to a **separate
+setting** (owner's call 2026-11-17), because "speak each word I move to" is a different
+behaviour from the flp's card-flip narration.
+
+- **default / media** — moving the selection to a new word speaks it, as if the keycap's
+  speaker were pressed. An English word speaks its Chinese translation, the keycap's word.
+  A word with no entry speaks nothing.
+- **mute** — tapping plays nothing. The keycap speaker and Read still speak.
+- Stored **per device** (`localStorage` `reader.audio`, `{ autoplay, route }` like
+  `tts.settings`, so mute → on restores the route). Default: **default** (autoplay on,
+  passthrough).
+- **The route is the page's.** While the document page is mounted, the chip's route
+  outranks the app-wide one for every clip the page plays (tap-to-hear, the keycap speaker,
+  Read) through `CloudTTSProvider.setRouteOverride`, released on unmount (docs/AUDIO_PLAYBACK.md
+  § 5). The app-wide autoplay flag does not gate tap-to-hear (`useTTS` trigger `'surface'`);
+  the media-mode fallback rule still applies.
+- Fires on a change of the selection **range** only. Re-renders, the blur → refocus loop and
+  closing the eip restore the same range and stay silent. A document opens with nothing
+  selected, so the first sound is the learner's first tap. Silent while Read is stepping the
+  selection and in edit mode. Tapping the chip never makes a sound; muting cuts off a word
+  mid-clip.
+
+**Preloading** (`useReaderAudioPreload.ts` → `useReaderAudioPreload`; `src/api/tts.ts` →
+`prewarmTtsClips`; `server/controllers/TTSController.ts` → `prewarm`;
+`server/services/CardAudioService.ts` → `prewarmClips`). An unheard word otherwise costs a
+round trip to our server plus, the first time anyone plays it, a Google synthesis. Two
+layers, both only while the chip is not on mute and not editing, both standing down while
+Read plays:
+
+- **Server pre-warm on open.** Every distinct keycap word of the document (each gsa span
+  resolved like the keycap: det row, else English translation) goes once, in document order,
+  to `POST /api/tts/prewarm`. It answers 202 at once and synthesizes the misses to the disk
+  cache in the background, 4 at a time (`PREWARM_CLIP_CONCURRENCY`; max 600 clips of ≤ 20
+  chars per call). Words resolved later (the English lookup) go as a follow-up batch; a ref
+  stops anything going twice. Default voice only.
+- **Neighbour prefetch per move.** Landing on a word fetches the next 3 and the previous 1
+  word into the browser (`useTTS().prefetch`), so tapping forward or back plays at once.
+
+Both send the pinyin `useTTS().speak` would (`resolveDisplayPronunciation` on the adapted
+entry), so the warmed clip is the one played. `TTSService.synthesize` joins a request to an
+in-flight synthesis of the same clip (`inFlightSyntheses`), so a pre-warm racing a tap pays
+Google once.
 
 ### Creating a document
 
-Code: `TextSidebar.tsx` (New Document) → `ReaderPage.tsx` → `handleCreateNew`;
+Code: `TextSidebar.tsx` (New document tile) → `ReaderPage.tsx` → `handleCreateNew`;
 `ReaderDocumentPage.tsx` → `blankDraft`, `saveNewDraft`, `handleCancelEdit`.
 
-There is no create dialog. **New Document** navigates to `/reader/new`, which
+There is no create dialog. **New document** navigates to `/reader/new`, which
 `ReaderDocumentPage` opens as an in-memory blank draft, **already in edit mode**
 (the editable textarea focuses itself, raising the keyboard). Nothing exists
 server-side yet:
@@ -121,6 +467,31 @@ still accepts `title`, but no client sends it.
 Neither the list nor the open document shows the character count or the creation
 date (removed 2026-11-05); `characterCount` and `createdAt` are still on the wire.
 
+#### Document icon
+
+Code: `ReaderEditToolbar.tsx` → the `iconId` / `onPickIcon` props and
+`.reader-edit-toolbar__icon-button`; `ReaderDocumentPage.tsx` → the DOCUMENT ICON comment,
+`draftIconId`, `iconPickerOpen`, the `IconPickerDialog` mount; `src/components/IconPickerDialog.tsx`;
+`TextSidebar.tsx` → `iconSrc` on the row; `src/components/primitives/Row.tsx` → `iconSrc`;
+server: `TextService` → `validateIconId`, `TextDAL.insertUserText` / `updateFields`.
+
+- **Picking.** In edit mode the toolbar shows a 32px outlined square after undo/redo. It
+  holds a 22px preview of the draft icon, or a muted `add_photo_alternate` glyph when
+  there is none. Tapping it opens the shared `IconPickerDialog` (the avatar picker's
+  browser: an empty search lists cached icons, typing searches icons8). The dialog
+  caches the icon (`ensureIcon8`) before it hands the id over, so the id always satisfies
+  the FK. **Remove icon** clears it.
+- **Draft semantics.** The icon is part of the edit draft, like the content. It is seeded
+  from `text.iconId` on Edit (null for a new draft), sent with Save (`POST` for a new
+  draft, `PUT` otherwise, always with `iconId`, so `null` clears it), and dropped by Cancel.
+  It is **not** on the undo/redo stack: that history is the text's typing bursts.
+- **Display.** The `/reader` list row's 36px avatar shows the icon (`Row`'s `iconSrc`)
+  on the document's blue fill, in place of the `description` glyph. Documents without an
+  icon keep the glyph. The document page itself does not show it outside edit mode.
+- **Validation.** `TextService.validateIconId` checks shape only (a string of 1–64
+  characters, or null). Existence is the FK's job, so a bogus id fails the write with
+  a 500 rather than a 400.
+
 ### Deleting a document
 
 Code: `SwipeToDeleteRow.tsx`; `TextSidebar.tsx` → `openRowId`; `ReaderPage.tsx` →
@@ -133,7 +504,7 @@ Code: `SwipeToDeleteRow.tsx`; `TextSidebar.tsx` → `openRowId`; `ReaderPage.tsx
   The row uses `touchAction: pan-y` and locks to an axis after 8px, so vertical drags
   still scroll the list. Tapping **Delete** deletes immediately, with no confirmation:
   the row leaves the list at once, and if `DELETE /api/texts/:id` fails it is put back
-  and an error alert shows above the list. Only `isUserCreated` rows can be swiped.
+  and an error line shows above the list. Only `isUserCreated` rows can be swiped.
 - **Open document** — the header's trash icon opens `DeleteDocumentDialog`
   (a confirmation), then returns to the list.
 
@@ -151,3 +522,8 @@ keyboard's top edge. Both use the keyboard's own slide durations and curves: the
 goes up as the keyboard rises and comes back down as it leaves. The trigger is the
 inset, not edit mode, so dismissing the keyboard mid-edit brings the header back with
 the editor still open. Reduced motion snaps both.
+
+The edit toolbar never takes focus (`ReaderEditToolbar.tsx` → the root's `onMouseDown`
+`preventDefault`, the beginner keyboard's `keepFocus` guard). Without it, a tap on the
+toolbar (a button or the empty strip) blurred the field, the keyboard dropped, and the
+lead unfolded mid-edit.

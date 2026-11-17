@@ -4,6 +4,7 @@ import TonedPronunciation from "../../components/TonedPronunciation";
 import WritingStage from "../../components/handwriting/WritingStage";
 import ResultStamp from "../../components/handwriting/ResultStamp";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
+import Icon from "../../components/Icon";
 import type { Ink } from "../../components/handwriting/types";
 import { WRITING_GRID_COLUMNS, type WritingGridCharacter } from "../../../server/contracts/writingGrid";
 import { WRITING_LEVELS, modeOfLevel } from "../../../server/contracts/writingLevels";
@@ -51,6 +52,14 @@ export type BoardPhase = "countdown" | "arrange" | "write" | "ended";
  *                       ink once written. Every cell keeps its pinyin at the bottom
  *                       centre (`PinyinCell`). ✓ / ✗ on every cell.
  *                       Tapping a cell that is not yet correct opens it for writing.
+ *                       HINTS (docs/WRITING_PRACTICE_REWORK.md § 2 "Hints"): a hinted
+ *                       cell is drawn and written at its override level
+ *                       (`levelOverrides`), and its level-name band shows that level's
+ *                       name after a lightbulb. While `pickingLevel` is set, the cells
+ *                       that hint would actually make EASIER (not yet ✓, and currently
+ *                       above the hint's level) wear an ink ring and are the only ones
+ *                       tappable; the rest dim and go inert. The tap goes to
+ *                       `onOpenCell`, and the page applies the hint instead.
  *   ended            — every cell ✓ (or the learner gave up — any verdict), each showing the learner's ink over the
  *                       character's full still shadow (all slots, any level), pinyin at
  *                       the bottom centre — the finished board to look back over.
@@ -65,6 +74,16 @@ interface WritingGridBoardProps {
     results: Record<string, CellResult>;
     inks: Record<string, Ink>;
     onReorder: (from: number, to: number) => void;
+    /**
+     * Phase 2 hints: a cell's writing level when a hint lowered it, keyed by char like
+     * `results` / `inks`. Absent = the slot's own level (its position + 1).
+     */
+    levelOverrides: Record<string, number>;
+    /**
+     * A hint offering is waiting for a cell, by its level (null = not picking). Only the
+     * cells it would LOWER are targets: a cell already at or below it is left alone.
+     */
+    pickingLevel: number | null;
     /**
      * `el` is the tapped cell's drawing area (`PinyinCell`'s upper square) — the editor
      * grows out of it (WritingPanel's morph), so its canvas lands on the cell's ink.
@@ -196,7 +215,7 @@ interface DragState {
     pointerId: number;
 }
 
-export default function WritingGridBoard({ cells, phase, results, inks, onReorder, onOpenCell }: WritingGridBoardProps) {
+export default function WritingGridBoard({ cells, phase, results, inks, onReorder, onOpenCell, levelOverrides, pickingLevel }: WritingGridBoardProps) {
     // The frame is measured (both axes); the board inside it is sized to fit.
     const frameRef = useRef<HTMLDivElement | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
@@ -329,10 +348,15 @@ export default function WritingGridBoard({ cells, phase, results, inks, onReorde
                     }}
                 />
             ))}
-            {cells.map((_, slot) => (
+            {cells.map((c, slot) => {
+                // Overrides exist only from Phase 2 on, where cells no longer move, so slot
+                // `slot` holds cell `slot` and its override can label the slot.
+                const hintedLevel = levelOverrides[c.char];
+                const hinted = hintedLevel !== undefined && hintedLevel < slot + 1;
+                return (
                 <Box
                     key={`slot-name-${slot}`}
-                    className="writing-grid-board__level-name"
+                    className={`writing-grid-board__level-name${hinted ? " writing-grid-board__level-name--hinted" : ""}`}
                     sx={{
                         position: "absolute",
                         left: slotX(slot),
@@ -345,13 +369,18 @@ export default function WritingGridBoard({ cells, phase, results, inks, onReorde
                         fontSize: 12,
                         fontWeight: 600,
                         color: COLORS.textSecondary,
+                        gap: "2px",
                         whiteSpace: "nowrap",
                         pointerEvents: "none",
                     }}
                 >
-                    {WRITING_LEVELS[slot]?.name ?? ""}
+                    {/* A hinted slot names the level it is now written at, after the same
+                        lightbulb as the Hint button, so the trade is legible at a glance. */}
+                    {hinted && <Icon name="lightbulb" size={13} color={COLORS.onSurface} fill={1} />}
+                    {WRITING_LEVELS[(hinted ? hintedLevel : slot + 1) - 1]?.name ?? ""}
                 </Box>
-            ))}
+                );
+            })}
 
             {/* Difficulty ends, at the first and last SLOTS (they label positions, so like
                 the level names they never move with a drag). Green / red are the ramp's
@@ -416,13 +445,23 @@ export default function WritingGridBoard({ cells, phase, results, inks, onReorde
             {cells.map((c, i) => {
                 const slot = slotOf.get(i) ?? i;
                 const isDragged = drag?.from === i;
-                const level = (drag ? slot : i) + 1;
+                const slotLevel = (drag ? slot : i) + 1;
+                // A hint only ever LOWERS a cell's level (WRITING_GRID_HINTS).
+                const level = Math.min(slotLevel, levelOverrides[c.char] ?? slotLevel);
                 const result = results[c.char] ?? "idle";
                 const ink = inks[c.char];
                 // Phase 2: an unfinished cell opens for writing. End board: ANY cell reopens its
                 // canvas as drawn, for a practice redraw (verified, never marked — the page).
-                const tappable =
+                const openable =
                     result !== "checking" && ((phase === "write" && result !== "correct") || phase === "ended");
+                // Pick mode: a target is an openable cell the hint would make easier. A
+                // cell already at or below the hint's level (e.g. Memorize on a Trace
+                // slot) is not a target — applying it would change nothing.
+                const picking = pickingLevel !== null;
+                const pickTarget = picking && openable && level > pickingLevel;
+                // While picking, ONLY targets take taps (a non-target must not fall
+                // through to opening the editor or to a no-op hint).
+                const tappable = picking ? pickTarget : openable;
                 const x = isDragged ? slotX(drag.from) + drag.dx : slotX(slot);
                 const y = isDragged ? slotY(drag.from) + drag.dy : slotY(slot);
                 return (
@@ -430,7 +469,7 @@ export default function WritingGridBoard({ cells, phase, results, inks, onReorde
                         key={c.char}
                         component={tappable ? "button" : "div"}
                         type={tappable ? "button" : undefined}
-                        className={`writing-grid-board__cell writing-grid-board__cell--${result}${isDragged ? " writing-grid-board__cell--dragging" : ""}`}
+                        className={`writing-grid-board__cell writing-grid-board__cell--${result}${isDragged ? " writing-grid-board__cell--dragging" : ""}${pickTarget ? " writing-grid-board__cell--pick-target" : ""}`}
                         onPointerDown={onPointerDown(i)}
                         // The editor projects out of the cell's drawing AREA, not the whole
                         // cell: the pinyin band shrinks and lifts the area, and the canvas must
@@ -443,16 +482,23 @@ export default function WritingGridBoard({ cells, phase, results, inks, onReorde
                             width: cell,
                             height: cell,
                             transform: `translate(${x}px, ${y}px)${isDragged ? " scale(1.06)" : ""}`,
-                            transition: isDragged ? "none" : "transform 180ms ease",
+                            transition: isDragged ? "none" : "transform 180ms ease, opacity 150ms linear",
                             zIndex: isDragged ? 3 : 1,
                             p: 0,
                             font: "inherit",
                             borderRadius: "14px",
-                            border: `1px solid ${COLORS.border}`,
+                            // Pick mode: a target swaps the hairline for the app's selected
+                            // ink ring (CLAUDE.md "Buttons & cards"); the rest dim below.
+                            border: `1px solid ${pickTarget ? COLORS.onSurface : COLORS.border}`,
                             // The verdict is carried by the corner ✓ / ✗ icon alone — the cell's
                             // ground stays white so the learner's ink reads against it unchanged.
                             bgcolor: COLORS.white,
-                            boxShadow: isDragged ? "0 8px 18px rgba(23, 22, 26, 0.18)" : "none",
+                            boxShadow: isDragged
+                                ? "0 8px 18px rgba(23, 22, 26, 0.18)"
+                                : pickTarget
+                                    ? `inset 0 0 0 1px ${COLORS.onSurface}`
+                                    : "none",
+                            opacity: picking && !pickTarget ? 0.35 : 1,
                             cursor: phase === "arrange" ? "grab" : tappable ? "pointer" : "default",
                             display: "flex",
                             flexDirection: "column",

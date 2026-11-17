@@ -75,6 +75,13 @@ the Deck Tower's writing world (§ Entry point).
     centred under the pair. The bar grows to hold the rows. Only the width is measured
     (`NotebookWordBar`), so the cells' height never feeds back into their size. A character
     missing from the corpus shows an empty cell.
+  - **Stroke-order hint.** A one-character word's lone cell is centred, leaving a bare strip
+    on each side; the LEFT strip carries the label "Tap for stroke order", stacked on three
+    fixed lines ("Tap for" / "stroke" / "order") (`NotebookWordBar` → `STROKE_HINT_LINES`,
+    `notebook-word-bar__stroke-hint`; `TEXT.caption` in `COLORS.textSecondary`, centred in
+    the strip). It is `aria-hidden` (the cell's own
+    aria-label already says "Tap to change") and pointer-transparent. Always shown for a
+    one-character word, whatever the aid state; 2–4 character words have no free strip.
   - **Stroke aid.** **Cycled per cell: tapping a shadow cell steps that position
     off → numbers → colored → off** (`strokeAid.ts` → `StrokeAid` / `nextStrokeAid`; each
     cell is its own `role="button"`, `notebook-word-bar__shadow-toggle`, whose aria-label

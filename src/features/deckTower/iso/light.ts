@@ -35,7 +35,7 @@
  * Depended on by: IsoShadow.tsx (draws it), DeckTowerPage.tsx (viewBox fitting),
  * usePawnMotion.ts (keeps the pawn's shadow on the floor, via `shadowSlide`).
  */
-import { translateRect, type WorldRect } from "./geometry";
+import { insetRect, translateRect, type WorldRect } from "./geometry";
 import { shadeHex } from "./palette";
 
 /**
@@ -152,6 +152,26 @@ export function shadowFootprint(footprint: WorldRect, casterZ: number, receiver:
     const slid = translateRect(footprint, slide.x, slide.y);
     const spread = shadowSpread(casterHeight);
     return { ...slid, w: slid.w + spread.x, d: slid.d + spread.y };
+}
+
+/**
+ * How far a CENTRED shadow (IsoShadow `centred`) reaches past its footprint on EVERY side.
+ * Matches the lit shadow's right-edge spread (`shadowSpread().x` ≈ 0.21), so the centred
+ * shadow is as visible as the lit one on its heavier side.
+ */
+const CENTRED_SHADOW_GROW = shadowSpread().x;
+
+/**
+ * A shadow straight under its caster, for a caster drawn ALONE on a flat UI surface (the
+ * Reader's dictionary keycap pawn, ReaderKeycapPawn) rather than in a lit iso scene.
+ * There, the down-right lit shadow reads as off-centre on a small centred figure. Not slid
+ * along the light: the footprint grows CENTRED_SHADOW_GROW on every side about its own
+ * centre, and the corner radius grows with it so a round foot stays round.
+ * A caster inside an iso scene keeps the lit shadow (`shadowFootprint`).
+ */
+export function centredShadowFootprint(footprint: WorldRect): WorldRect {
+    // A negative inset grows the rect about its centre, radius included (r + grow).
+    return insetRect(footprint, -CENTRED_SHADOW_GROW);
 }
 
 /**

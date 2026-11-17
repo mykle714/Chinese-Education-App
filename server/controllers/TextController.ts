@@ -26,7 +26,7 @@ export class TextController {
       }
 
       // No title in the request: TextService derives it from the content.
-      const { content, language } = req.body;
+      const { content, language, iconId } = req.body;
 
       // Content can be empty string for new documents, but must be present
       if (content === undefined || content === null) {
@@ -39,7 +39,9 @@ export class TextController {
 
       const textData: Omit<TextCreateData, 'userId'> = {
         content,
-        language
+        language,
+        // Optional icons8 id (texts."iconId"); shape-checked in TextService.
+        iconId
       };
 
       const newText = await this.textService.createText(userId, textData);
@@ -89,12 +91,14 @@ export class TextController {
       }
 
       const { id } = req.params;
-      const { title, content, language } = req.body;
+      const { title, content, language, iconId } = req.body;
 
       const updateData: TextUpdateData = {};
       if (title !== undefined) updateData.title = title;
       if (content !== undefined) updateData.content = content;
       if (language !== undefined) updateData.language = language;
+      // `null` is meaningful here (clear the icon), so only `undefined` is skipped.
+      if (iconId !== undefined) updateData.iconId = iconId;
 
       if (Object.keys(updateData).length === 0) {
         res.status(400).json({

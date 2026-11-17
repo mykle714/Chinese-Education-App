@@ -229,6 +229,13 @@ from what it falls on.
   with it, the sliver is `min(CONTACT_LIFT, 2.5 · casterHeight)` (`contactLift`,
   `CONTACT_LIFT_PER_HEIGHT`), which only bites below 0.06 units (one sheet of paper).
   `IsoPaperStack` and `IsoSortPlatform` pass a height; every other caster takes the full lift.
+- **A caster drawn alone on flat UI may take a centred shadow.** `IsoShadow` `centred`
+  (footprint form only) skips the slide and the front-edge spread, and grows the footprint
+  by `CENTRED_SHADOW_GROW` (= `shadowSpread().x` ≈ 0.21) on every side about its centre
+  (`light.ts` → `centredShadowFootprint`). It exists for a lone figure centred in a UI
+  surface, where a down-right shadow reads as off-centre. Its one user is the Reader's
+  keycap pawn (`src/features/reader/ReaderKeycapPawn.tsx`). Anything inside a lit iso scene
+  keeps the lit shadow.
 - **Tone comes from the receiver.** Shadows on the sky, the floor and a floor plate read as the
   same strength of shade. There are no per-receiver shadow colours in the palette.
 - **A shadow on the backdrop is see-through.** The platform's ground plane is not an svg

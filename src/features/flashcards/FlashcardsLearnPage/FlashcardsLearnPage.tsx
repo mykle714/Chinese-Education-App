@@ -313,7 +313,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     //   - the re-deal lands with cards → `lend`: "You're out of ready cards", over the
     //     first lent word; swiped or tapped off, study carries on;
     //   - nothing to deal even with the switch on (a focused world never lends; or the
-    //     dictionary has nothing left) → `done`: "Done for the day", which stays.
+    //     dictionary has nothing left) → `done`: "Done for the day!" (+ confetti), which stays.
     // A visit that starts dry (a tap on the empty tower) goes straight down this path.
     // The tower is not told any of it: its count is its own and simply stands at 0.
     const loopDry = !parked && !loading && !hasCard && gameBreak.phase === "cards";

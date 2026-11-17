@@ -93,6 +93,26 @@ found two locks eating input; both are now relaxed (see the hook's header, "Lock
 - Swipes were ignored during the 350 ms flip. A swipe there now counts; a tap there is
   still ignored.
 
+## Fly-out
+
+`useWorkingLoop` → `handleCardDismiss` / `FlyOut`, and `FlashCardSection` → `flyArmed`.
+
+The second real-flp run (2026-11-17) recorded fly-out clip chains. Every clipper (from
+`.mobile-demo-card-slot` up to `html`) spans the full screen width, so sideways the card is
+cut only at the screen edge. Clipping was not the bug. **Timing** was: the first painted
+frame of each fly-out landed 68–278 ms after lift-off, by which point the card was already
+mostly off-screen. The fixed 450 ms timer then cleared the fly-out before the rest could
+show.
+
+The dismiss's own update (slot swap, next card, narration, counters) runs synchronously
+before the first paint, so it now commits with `flyOut.armed = false`. In that state the
+flying slot holds at the release point and runs no animation. After the next paint
+(`utils/afterNextPaint.ts`) a light follow-up commit sets `armed = true`, which starts the
+keyframes (`towerFlyRight`, `towerTuck`, `writingThrow`, `writingPromote`). The
+`CARD_FLY_OUT_MS` timer counts from arming. The probe's `flp-flyout` record carries
+`commitAt` and `armedAt` (the `performance.now()` clock shared with `rects[].t`), so the
+arming lag and the smoothness of the frames can both be read off.
+
 ## Lifecycle
 
 A temporary dev tool. Once the classifier and the clip are fixed, decide with the owner

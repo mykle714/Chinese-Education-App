@@ -47,12 +47,13 @@ import BreakCardLayer from "./gameBreak/BreakCardLayer";
 import ReadyOutCardLayer, { type ReadyOutKind } from "./ReadyOutCardLayer";
 import { cardThrowSteps } from "./cardThrow";
 import { useFlpGestureProbe } from "./flpGestureProbe";
+import type { FlyOut } from "./useWorkingLoop";
 
 interface FlashCardSectionProps {
     currentEntry: VocabEntry | null;
     nextEntry: VocabEntry | null;
     activeFrontSlot: 0 | 1;
-    flyOut: { slot: 0 | 1; direction: 'left' | 'right' } | null;
+    flyOut: FlyOut | null;
     cardRef: React.RefObject<HTMLDivElement | null>;
     dragPosition: { x: number; y: number };
     isDragging: boolean;
@@ -630,6 +631,10 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                             {([0, 1] as const).map((slot) => {
                                 const isFront = slot === activeFrontSlot;
                                 const isThisSlotFlyingOut = flyOut?.slot === slot;
+                                // The fly-out's animations start only once armed (the paint after
+                                // the dismiss commit — useWorkingLoop → FlyOut). Until then the
+                                // flying slot holds at the release point.
+                                const flyArmed = flyOut?.armed === true;
                                 // Deck Tower, correct: slides off right (TOWER_FLY_RIGHT_KEYFRAMES).
                                 // Not the writing card: it is sent off by a tap, not a drag, so it
                                 // has no release point to slide from — a correct writing card plays its
@@ -661,6 +666,10 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                 if (towerTuck || towerFlyRight) {
                                     // The keyframes own the motion; this is only their start (`--tuck-from`
                                     // / `--fly-from`): the transform the finger let go at.
+                                    transform = `translate(${dragPosition.x}px, ${dragPosition.y}px) rotate(${dragPosition.x * 0.05}deg)`;
+                                    transition = 'none';
+                                    opacity = 1;
+                                } else if (isThisSlotFlyingOut && !flyArmed) {
                                     transform = `translate(${dragPosition.x}px, ${dragPosition.y}px) rotate(${dragPosition.x * 0.05}deg)`;
                                     transition = 'none';
                                     opacity = 1;
@@ -734,14 +743,14 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                             // into place under the throw. A keyframe for the same reason as
                                             // the throw — its key changes (`slot-X` → `front-N`) on promotion,
                                             // so it remounts and a transition would snap.
-                                            ...(writingFace && isFront && isAnimating ? {
+                                            ...(writingFace && isFront && isAnimating && flyArmed ? {
                                                 animation: `writingPromote ${CARD_FLY_OUT_MS}ms cubic-bezier(0.2, 0.8, 0.3, 1) both`,
                                                 "@keyframes writingPromote": {
                                                     "0%": { transform: "scale(0.97)", opacity: 0.9 },
                                                     "100%": { transform: "translate(0px, 0px) rotate(0deg) scale(1)", opacity: 1 },
                                                 },
                                             } : {}),
-                                            ...(towerTuck ? {
+                                            ...(!flyArmed ? {} : towerTuck ? {
                                                 "--tuck-from": transform,
                                                 animation: `towerTuck ${CARD_FLY_OUT_MS}ms linear forwards`,
                                                 "@keyframes towerTuck": TOWER_TUCK_KEYFRAMES,

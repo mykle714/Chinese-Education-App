@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { afterNextPaint } from "../../../utils/afterNextPaint";
 import type { RefObject } from "react";
 import { markFlashcard, undoFlashcardMark } from "../../../api/flashcards";
 import { fetchDistributedWorkingLoop, fetchLoopRefill, type WorkingLoopRequest } from "../../../api/workingLoop";
@@ -42,6 +43,17 @@ export interface CardDragControls {
 // The session's flp bar (server/contracts/studyMode.ts) — the Deck Tower world studied.
 export type { FlpWorld } from "../../../../server/contracts/studyMode";
 import type { FlpWorld } from "../../../../server/contracts/studyMode";
+
+/**
+ * The card flying out after a dismiss. `armed` is false for the dismiss's own commit (the
+ * slot holds at the release point) and true from the next paint, when its animation runs.
+ * Read by FlashCardSection (and the swipe-lab probe). Docs: docs/SWIPE_LAB.md § "Fly-out".
+ */
+export interface FlyOut {
+    slot: 0 | 1;
+    direction: "left" | "right";
+    armed: boolean;
+}
 
 interface UseWorkingLoopArgs {
     token: string | null;
@@ -87,7 +99,7 @@ export interface UseWorkingLoopReturn {
     isUndoing: boolean;
     lastMarkUndoSnapshot: LastMarkUndoSnapshot | null;
     activeFrontSlot: 0 | 1;
-    flyOut: { slot: 0 | 1; direction: "left" | "right" } | null;
+    flyOut: FlyOut | null;
     currentSideOneLanguage: SideOneLanguage;
     nextSideOneLanguage: SideOneLanguage;
     /**
@@ -195,7 +207,7 @@ export function useWorkingLoop({
     // Two-slot card stack: tracks which slot (0 or 1) is the front card and
     // which slot is currently animating off-screen.
     const [activeFrontSlot, setActiveFrontSlot] = useState<0 | 1>(0);
-    const [flyOut, setFlyOut] = useState<{ slot: 0 | 1; direction: "left" | "right" } | null>(null);
+    const [flyOut, setFlyOut] = useState<FlyOut | null>(null);
 
     // Side 1 language for the current card and the next (back-slot) card. Rolled
     // forward on dismiss so the peeking card's language matches what it will be
@@ -389,7 +401,9 @@ export function useWorkingLoop({
         // Begin fly-out: current front slot animates off-screen in the swipe
         // direction. The back slot (already showing the next card) is immediately
         // promoted to front.
-        setFlyOut({ slot: activeFrontSlot, direction });
+        // Un-armed: the flying slot is held at the release point while this dismiss's big
+        // synchronous update commits; it is armed after the next paint (below).
+        setFlyOut({ slot: activeFrontSlot, direction, armed: false });
         setActiveFrontSlot(prev => (1 - prev) as 0 | 1);
         setCurrentIndex(prev => (prev + 1) % workingLoop.length);
         // Promote the peeking card's language to current and choose the new
@@ -506,6 +520,16 @@ export function useWorkingLoop({
         // state. The flew-out slot snaps back to center (hidden behind the new
         // front card) and becomes the next back card. The drag layer resets its
         // own drag position via the resetKey effect on currentIndex change.
+        // Arm the fly-out only once the dismiss update above has painted. That update
+        // (slot swap, next card, narration, counters) runs synchronously before the first
+        // paint; an animation committed with it got its start time at commit, so on a phone
+        // its first visible frame landed 70–280 ms in — the card was already mostly
+        // off-screen — and the fixed timer then cut the rest short (docs/SWIPE_LAB.md
+        // § "Fly-out"). Armed in a light follow-up commit, it is painted at once and then
+        // runs on the compositor, unaffected by later main-thread work. The fly-out's
+        // clock starts here, so the full CARD_FLY_OUT_MS is always shown.
+        await new Promise<void>(resolve => afterNextPaint(resolve));
+        setFlyOut(prev => (prev ? { ...prev, armed: true } : prev));
         await new Promise(resolve => setTimeout(resolve, CARD_FLY_OUT_MS));
         setFlyOut(null);
         cardDragRef.current?.resetDragPosition();

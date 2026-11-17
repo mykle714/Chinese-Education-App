@@ -30,7 +30,7 @@ import {
  */
 
 interface ProbeInput {
-    flyOut: { slot: 0 | 1; direction: "left" | "right" } | null;
+    flyOut: { slot: 0 | 1; direction: "left" | "right"; armed: boolean } | null;
     shakeNonce: number;
     isFlipped: boolean;
     dragPosition: { x: number; y: number };
@@ -101,11 +101,20 @@ export function useFlpGestureProbe({ flyOut, shakeNonce, isFlipped, dragPosition
     isFlippedRef.current = isFlipped;
 
     // ── Verdict, read back from the props useCardDrag drives ───────────────────────────
+    // When the dismiss committed (un-armed fly-out) — the arming lag is measured from here.
+    const flyCommitAtRef = useRef<number | null>(null);
     useEffect(() => {
         if (!enabled || !flyOut) return;
         if (armedRef.current && !verdictRef.current) {
             verdictRef.current = flyOut.direction === "right" ? "dismiss-right" : "dismiss-left";
         }
+        // One record per fly-out: note the dismiss commit, sample once it is armed.
+        if (!flyOut.armed) {
+            flyCommitAtRef.current = now1();
+            return;
+        }
+        const armedAt = now1();
+        const commitAt = flyCommitAtRef.current;
 
         // Fly-out clip probe — runs for every fly-out, armed or not (a tap-dismissed
         // writing card flies too).
@@ -124,6 +133,9 @@ export function useFlpGestureProbe({ flyOut, shakeNonce, isFlipped, dragPosition
                 // The gesture that caused it, when there was one.
                 seq,
                 direction: flyOut.direction,
+                // performance.now() of the dismiss commit and of arming; rects[].t share it.
+                commitAt,
+                armedAt,
                 viewport: { w: window.innerWidth, h: window.innerHeight, vvH: window.visualViewport?.height },
                 frameRect: frame ? rectOf(frame) : null,
                 clipChain: chain,

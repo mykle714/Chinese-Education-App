@@ -16,7 +16,7 @@ CLAUDE.md § "Nonstandard deploys need a temp runbook"; the deploy procedure its
 > `schema_migrations` and `migrate.sh --dry-run`, and treat any disagreement as this
 > file (or the runbook banner) being stale.
 
-PPE is current through migration **192** (2026-11-15). Latest code deploy: `9173fc2` (2026-11-17, no migrations).
+PPE is current through migration **193** (2026-11-17). Latest code deploy: `9c08855` (2026-11-17, migration 193).
 
 ## Open runbooks
 
@@ -32,6 +32,8 @@ PPE is current through migration **192** (2026-11-15). Latest code deploy: `9173
 | [GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md](./GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md) | Gloss phase-2 half B, the runtime guard (**no migration**) | Deployed 2026-08-24; infrastructure checks passed | Someone must open a real game board and confirm it fills rather than coming back short (the one over-blocking symptom the checks cannot see) |
 
 ## Deploy history and lessons
+
+Deployed 2026-11-17 (`9c08855`), migration **193** (`texts."iconId"` → icons8, applied by hand after the rebuild and recorded in `schema_migrations`): Reader rework (read-aloud by clause, cpcd view, English translations, document icons), the shared `GameHintBar`, and the removal of the bound-form rule from the frequency rubric. `patch-bound-form-scores.js` had already been run on PPE before the deploy (109 entries stamped), so there was no post-deploy step. PPE still has an uncommitted, hand-edited `.claude/commands/oracle-backfill.md` (the `--dry-run` still bills the key warning); the pull applied cleanly around it.
 
 Deployed 2026-11-17 (`9173fc2`), no migrations: three-slot flp card stack and the swipe lab's removal (docs/FLP_CARD_GESTURES.md). The gesture logs on PPE were deleted. **Lesson:** the divergence check printed `1 1` (PPE held an unpushed data-snapshot commit, `a0b837e`), but it was chained in one SSH command with `git pull`, so the pull ran anyway. It came out linear, because the snapshot got rebased and pushed at the same moment, but only by luck. Run the divergence check as its own command and read it before pulling.
 

@@ -16,7 +16,7 @@ CLAUDE.md § "Nonstandard deploys need a temp runbook"; the deploy procedure its
 > `schema_migrations` and `migrate.sh --dry-run`, and treat any disagreement as this
 > file (or the runbook banner) being stale.
 
-PPE is current through migration **192** (2026-11-15). Latest code deploy: `56724c6` (2026-11-17, no migrations).
+PPE is current through migration **192** (2026-11-15). Latest code deploy: `fbef3bf` (2026-11-17, no migrations).
 
 ## Open runbooks
 
@@ -32,6 +32,8 @@ PPE is current through migration **192** (2026-11-15). Latest code deploy: `5672
 | [GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md](./GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md) | Gloss phase-2 half B, the runtime guard (**no migration**) | Deployed 2026-08-24; infrastructure checks passed | Someone must open a real game board and confirm it fills rather than coming back short (the one over-blocking symptom the checks cannot see) |
 
 ## Deploy history and lessons
+
+Deployed 2026-11-17 (`fbef3bf`), no migrations: the flp swipe fix. This covers ref-based `useCardDrag`, flick velocity, the relaxed fly-out and flip locks, and a flip no longer cancelling narration (docs/SWIPE_LAB.md). Committed alone like the deploy below. The first run's gesture log was moved aside on PPE as `server/logs/client-gestures-run1-2026-11-17.jsonl.bak`.
 
 Deployed 2026-11-17 (`56724c6`), no migrations: the swipe lab only (`/swipe-lab` + the `/api/diagnostics/gestures` sink, docs/SWIPE_LAB.md). It was committed alone, with the dev box's other uncommitted work left out, and build- and test-checked in a clean worktree of the staged tree.
 

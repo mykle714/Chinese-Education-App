@@ -774,7 +774,11 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                 // answer face (a card is only swiped once flipped), and the Deck
                                                 // Tower's correct swipe the same.
                                                 isFlipped={isFront ? isFlipped : holdsDismissedCard}
-                                                isAnimating={isAnimating}
+                                                // The front card keeps its flip transition through the previous
+                                                // card's fly-out: it can be tapped to flip then (useCardDrag →
+                                                // "Locks"). Only the flying/back slots freeze it, so the flying
+                                                // card's face swap on the slot change never animates.
+                                                isAnimating={isAnimating && !isFront}
                                                 showPinyinColor={showPinyinColor}
                                                 readingMode={readingMode}
                                                 sideOneLanguage={slotSideOneLanguages[slot]}

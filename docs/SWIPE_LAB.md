@@ -65,14 +65,33 @@ the same prompt again. Analysis must drop discarded seqs.
 Timestamps (`t`, `startedAt`, `verdictAt`, commit `t`) all share the page's
 `performance.now()` clock (event `timeStamp`), so they can be compared within one session.
 
-## What the classifier does today (the thing being tuned)
+## The classifier these records tune
 
-`useCardDrag` → `handleTouchEnd` (flipped card): `dragDistance < 10` → tap/shake;
-`|dragPosition.x| > CARD_DISMISS_THRESHOLD_VW × cardWidth` → dismiss; otherwise snap back.
-It reads **distance only**. There is no velocity term, and it reads the `dragPosition`
-STATE from its render closure rather than the release touch's coordinates. The data is
-meant to settle both points: how far a fast flick actually travels, and whether `commits`
-lag the finger at release.
+`src/features/flashcards/FlashcardsLearnPage/useCardDrag.ts` → `classifyRelease` (a pure
+function, replayable offline against these records). It reads the gesture from refs that
+every touch sample updates synchronously, and its thresholds live in
+`src/features/flashcards/constants.ts`:
+
+| Order | Rule | Constant(s) |
+|---|---|---|
+| 1 | The furthest raw travel is under the slop → tap | `CARD_TAP_SLOP` (10 px) |
+| 2 | The sideways release speed over the last 80 ms is at least 0.4 px/ms, the sideways travel is at least 12 px, and both point the same way → flick dismiss | `CARD_FLICK_MIN_VELOCITY`, `CARD_FLICK_MIN_DISTANCE`, `CARD_FLICK_WINDOW_MS` |
+| 3 | The amplified sideways travel is over 15% of the card width → dismiss, at any speed | `CARD_DISMISS_THRESHOLD_VW`, `CARD_DRAG_SENSITIVITY` |
+| 4 | Anything else → snap back | — |
+
+A slow, long drag counts as a swipe by distance (owner decision, 2026-11-17). The
+"nudge" lab prompt therefore now expects what the classifier does, even though its
+`expect` field still says `stay`.
+
+**History.** The first real-flp run (2026-11-17, 106 gestures) found 13 of 31 flicks lost.
+The old hook kept the drag in React state and classified the release from the last
+*rendered* `dragPosition`. Its touchmove listener held a stale `isDragging`, so a fast
+flick's moves were dropped before the heavy flp re-rendered. Replaying the new rules over
+that run recovers all 14 failed flicks and loses no swipe that had worked. The same run
+found two locks eating input; both are now relaxed (see the hook's header, "Locks"):
+- Taps were ignored during the previous card's 450 ms fly-out. A tap there now flips.
+- Swipes were ignored during the 350 ms flip. A swipe there now counts; a tap there is
+  still ignored.
 
 ## Lifecycle
 

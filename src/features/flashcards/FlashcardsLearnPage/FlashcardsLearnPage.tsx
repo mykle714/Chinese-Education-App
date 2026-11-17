@@ -477,9 +477,11 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     //
     // `isFlipped` is scoped to the card it was made on (useCardDrag), so this never
     // sees the outgoing card's flip on a freshly dismissed-to card. The cleanup
-    // still calls tts.cancel(); CloudTTSProvider's cancel() bumps its generation so
-    // an in-flight fetch is dropped before it reaches audio — which is what stops a
-    // zh-first card's narration when the user flips to its English face mid-utterance.
+    // Narration is cancelled only when the CARD changes (or the card is covered: parked,
+    // a break, the out-of-ready-cards card) — never by the flip. A zh-first card flipped
+    // to its English face mid-utterance finishes saying the word (owner, 2026-11-17: flip
+    // during audio, but don't interrupt it). CloudTTSProvider's cancel() bumps its
+    // generation so an in-flight fetch is dropped before it reaches audio.
     const shownFaceLanguage: SideOneLanguage = isFlipped
         ? (currentSideOneLanguage === 'zh' ? 'en' : 'zh')
         : currentSideOneLanguage;
@@ -505,8 +507,8 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         // autoSpeak is a no-op when autoplay is off, so the setting is enforced
         // in one place rather than re-checked at every narration site.
         tts.autoSpeak(currentEntry);
-        // Cancel narration if the user advances mid-utterance.
-        return () => tts.cancel();
+        // No cleanup here: the flip (narrateNow) must not cut the audio. The cancel lives
+        // in the effect below, keyed on the card alone.
         // CONTENT IDENTITY ONLY. `tts.autoplay` is deliberately NOT a dep: it used to
         // be, and the off → on edge then re-ran this effect and narrated the card
         // already on screen just because the learner tapped the header audio chip.
@@ -516,6 +518,12 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         // re-fire narration on every settings change.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [narrateNow, currentEntry?.id, parked, breakUp, readyOutUp]);
+    // Cancel narration when the learner advances mid-utterance (or the card is covered).
+    // Separate from the effect above so a flip — which changes narrateNow — doesn't.
+    useEffect(() => () => tts.cancel(),
+        // tts.cancel is stable (see above).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [currentEntry?.id, parked, breakUp, readyOutUp]);
 
     // EIC modal sheet — opened by the centered "More Info" pill button.
     const [isEicOpen, setIsEicOpen] = useState(false);

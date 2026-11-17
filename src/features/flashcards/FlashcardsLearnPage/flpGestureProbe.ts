@@ -115,7 +115,9 @@ export function useFlpGestureProbe({ flyOut, shakeNonce, isFlipped, dragPosition
         const chain = first ? clipChain(first) : [];
         const rects = sampleRects(pick);
         const seq = seqRef.current;
-        const timer = window.setTimeout(() => {
+        // NOT cancelled when flyOut clears: the loop clears it at CARD_FLY_OUT_MS, before
+        // this fires (that cancellation lost every fly-out record on the first run).
+        window.setTimeout(() => {
             rects.stop();
             void sendGestureRecords([{
                 kind: "flp-flyout",
@@ -128,10 +130,6 @@ export function useFlpGestureProbe({ flyOut, shakeNonce, isFlipped, dragPosition
                 rects: rects.samples,
             }]);
         }, CARD_FLY_OUT_MS + 60);
-        return () => {
-            window.clearTimeout(timer);
-            rects.stop();
-        };
     }, [enabled, flyOut]);
 
     useEffect(() => {

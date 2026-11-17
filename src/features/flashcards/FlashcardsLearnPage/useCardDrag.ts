@@ -1,5 +1,45 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { CARD_DISMISS_THRESHOLD_VW, CARD_DRAG_SENSITIVITY, TOWER_CARD_FLIP_MS } from "../constants";
+import {
+    CARD_DISMISS_THRESHOLD_VW,
+    CARD_DRAG_SENSITIVITY,
+    CARD_FLICK_MIN_DISTANCE,
+    CARD_FLICK_MIN_VELOCITY,
+    CARD_FLICK_WINDOW_MS,
+    CARD_TAP_SLOP,
+    TOWER_CARD_FLIP_MS,
+} from "../constants";
+
+/**
+ * The flp card's tap / drag / swipe controller.
+ *
+ * ── Why the gesture lives in refs (2026-11-17 rewrite) ──
+ * The previous version kept the drag in React STATE and classified the release from the
+ * last RENDERED dragPosition, with a touchmove listener whose closure was rebuilt on every
+ * isDragging change. Recorded real-flp input (docs/SWIPE_LAB.md) showed what that does on
+ * a phone: the flp's render is heavy, so a fast flick's touchmoves arrived before the
+ * re-render that "started" the drag and were dropped by a listener still holding
+ * isDragging=false, and touchend ran a handler from an equally stale render. 13 of 31 real
+ * flicks were lost — read as nothing, or as a tap (shake) — and the learner had to swipe
+ * again. Now every sample is recorded synchronously into `gestureRef`, the release is
+ * classified from the finger's real lift-off point, and React state is only the VISUAL
+ * copy (the card's translate + the drag-transition switch).
+ *
+ * ── Release classification (`classifyRelease`) ──
+ *   furthest travel < CARD_TAP_SLOP                       → tap
+ *   sideways release speed ≥ CARD_FLICK_MIN_VELOCITY and
+ *   sideways travel ≥ CARD_FLICK_MIN_DISTANCE             → flick (dismiss toward motion)
+ *   |amplified dx| > CARD_DISMISS_THRESHOLD_VW × width    → dismiss (distance, any speed)
+ *   otherwise                                             → snap back
+ *
+ * ── Locks ──
+ *  • Flip lock (flipMs after a flip): TAPS are swallowed, so a second tap can't remount
+ *    the card mid-flip into a shake; SWIPES are allowed (flip-then-flick).
+ *  • Fly-out (isAnimating): the new front card can be TAPPED to flip while the previous
+ *    card is still flying. A swipe classified during the fly-out is queued and fired the
+ *    moment it ends (the working loop refuses a dismiss mid-fly-out).
+ *
+ * Docs: docs/SWIPE_LAB.md (the data and thresholds), docs/DECK_TOWER.md (the flp).
+ */
 
 interface UseCardDragReturn {
     cardRef: React.RefObject<HTMLDivElement | null>;
@@ -36,6 +76,58 @@ interface UseCardDragReturn {
     };
 }
 
+/** A position sample of the gesture's tracked finger, on the event-timeStamp clock. */
+interface Sample { t: number; x: number; y: number }
+
+/** One press, from finger-down to lift-off. Mutated in place; never rendered. */
+interface Gesture {
+    /** Touch identifier being followed (null for the mouse). */
+    touchId: number | null;
+    start: Sample;
+    last: Sample;
+    /** Furthest raw distance from start reached at any point — the tap test reads this. */
+    maxDist: number;
+    /** Recent samples for the release-speed estimate (trimmed to the flick window). */
+    recent: Sample[];
+    /** Whether the card may follow this press (it was flipped when the press began). */
+    canDrag: boolean;
+    /** The press began inside the flip lock: a tap now is swallowed. */
+    inFlipLock: boolean;
+}
+
+type Release =
+    | { kind: "tap" }
+    | { kind: "dismiss"; direction: "left" | "right" }
+    | { kind: "snap" };
+
+/**
+ * Decide what a lift-off was. Pure — reads only the gesture and the card width — so the
+ * thresholds can be replayed offline against recorded input (docs/SWIPE_LAB.md).
+ */
+export function classifyRelease(g: Pick<Gesture, "start" | "last" | "maxDist" | "recent">, cardWidth: number): Release {
+    if (g.maxDist < CARD_TAP_SLOP) return { kind: "tap" };
+    const dx = g.last.x - g.start.x;
+
+    // Release speed over the last CARD_FLICK_WINDOW_MS. A finger that paused before
+    // lifting has no sample pair inside the window, so its speed reads 0 (not a flick).
+    const windowStart = g.last.t - CARD_FLICK_WINDOW_MS;
+    const inWindow = g.recent.filter((s) => s.t >= windowStart);
+    let vx = 0;
+    if (inWindow.length >= 2) {
+        const first = inWindow[0];
+        const dt = g.last.t - first.t;
+        if (dt > 0) vx = (g.last.x - first.x) / dt;
+    }
+    if (Math.abs(vx) >= CARD_FLICK_MIN_VELOCITY && Math.abs(dx) >= CARD_FLICK_MIN_DISTANCE && Math.sign(vx) === Math.sign(dx)) {
+        return { kind: "dismiss", direction: vx < 0 ? "left" : "right" };
+    }
+
+    if (Math.abs(dx * CARD_DRAG_SENSITIVITY) > CARD_DISMISS_THRESHOLD_VW * cardWidth) {
+        return { kind: "dismiss", direction: dx < 0 ? "left" : "right" };
+    }
+    return { kind: "snap" };
+}
+
 export function useCardDrag(
     isAnimating: boolean,
     onDismiss: (direction: 'left' | 'right') => void,
@@ -46,10 +138,6 @@ export function useCardDrag(
     flipMs: number = TOWER_CARD_FLIP_MS,
 ): UseCardDragReturn {
     const cardRef = useRef<HTMLDivElement>(null);
-    const dragStart = useRef({ x: 0, y: 0 });
-    // True while a mousedown is pending in flip-only mode (card not yet flipped).
-    // Kept as state so the document-level mouseup listener effect re-runs on change.
-    const [isFlipOnlyMouseDown, setIsFlipOnlyMouseDown] = useState(false);
 
     const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
@@ -66,33 +154,27 @@ export function useCardDrag(
     const isFlipped = isFlippedRaw && flippedForKeyRef.current === resetKey;
 
     // Exposed setter — only ever called with `false` (a fresh deck fetch forcing
-    // Side 1), so it clears the owning key alongside the flag.
+    // Side 1) or by revealAnswer with `true`, so it keys the flip like a tap does.
     const setIsFlipped = useCallback((value: boolean) => {
         flippedForKeyRef.current = value ? resetKey : null;
+        hasFlippedRef.current = hasFlippedRef.current || value;
+        if (value) setHasFlippedCurrentCard(true);
         setIsFlippedRaw(value);
         // resetKey is read at call time; a stale closure would mis-key the flip.
     }, [resetKey]);
     // Tracks whether the user has flipped the current card at least once.
-    // Dragging/dismissing is blocked until this is true.
+    // Dragging/dismissing is blocked until this is true. Mirrored in a ref so a press
+    // right after a flip sees it before the re-render lands.
     const [hasFlippedCurrentCard, setHasFlippedCurrentCard] = useState(false);
+    const hasFlippedRef = useRef(false);
     // Swipe-direction tutorial state: shown after a "wasted" tap on a flipped card.
     const [showSwipeHint, setShowSwipeHint] = useState(false);
     // Flip tutorial state: shown after a "wasted" drag on a not-yet-flipped card.
     const [showTapToFlipHint, setShowTapToFlipHint] = useState(false);
     const [shakeNonce, setShakeNonce] = useState(0);
-    // Tracks the latest cursor position while a mouse interaction is in progress.
-    // Used by the flip-only branch to distinguish a click from a swipe attempt
-    // (the drag path uses dragPosition; the flip-only path can't, because we
-    // intentionally don't translate the card before it's been flipped).
-    const lastMousePos = useRef({ x: 0, y: 0 });
 
-    // Flip-animation lockout. The one-way flip plays a `flipMs` linear
-    // transition; a second tap during that window would otherwise be treated as a
-    // tap on an already-flipped card and bump shakeNonce, which remounts the front
-    // card (key=`front-${shakeNonce}`) and cuts the flip short into a shake. We hold
-    // this lock for the flip's duration and ignore all taps/drags while it's set, so
-    // the next interaction can only land after the flip has fully completed. A ref
-    // (not state) keeps the event handlers from needing it as a dependency.
+    // Flip lock: true for `flipMs` after a flip (see the header). A ref so the press
+    // handlers read it synchronously.
     const flipLockRef = useRef(false);
     const flipLockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -101,25 +183,25 @@ export function useCardDrag(
     // Undo changes resetKey (currentIndex) and restores the flip in the same
     // batch, so the reset effect always runs afterwards and would otherwise
     // clobber the restored flip back to Side 1. Storing the key (rather than a
-    // bare flag) makes a stale value harmless: if the effect never runs for that
-    // key, the next genuine card change sees a mismatch, resets normally, and
-    // clears it.
+    // bare flag) makes a stale value harmless.
     const restoreFlippedForKeyRef = useRef<number | null>(null);
 
-    // Tracks whether the current touch interaction's touchstart was actually
-    // accepted (i.e. not swallowed by the isAnimating/flipLock gate). dragStart is
-    // a single ref shared across every card and is only refreshed inside an
-    // accepted touchstart, so a touch whose start was gated would leave dragStart
-    // pointing at the *previous* card's coordinates. handleTouchEnd reads this flag
-    // and bails when false, so it never measures tap distance against a stale point
-    // (which would misclassify a genuine tap as a drag attempt and shake instead of
-    // flipping).
-    const touchAcceptedRef = useRef(false);
+    // The press in progress, or null. See `Gesture`.
+    const gestureRef = useRef<Gesture | null>(null);
+    // Detaches the document listeners of the press in progress.
+    const detachRef = useRef<(() => void) | null>(null);
+    // A swipe classified during the previous card's fly-out, fired when it ends.
+    const pendingDismissRef = useRef<'left' | 'right' | null>(null);
 
-    // Perform the one-way Side 1 → Side 2 flip and arm the lockout. Shared by the
-    // touch and mouse tap paths so the lock behaves identically across input types.
-    const beginFlip = () => {
-        flippedForKeyRef.current = resetKey;
+    // Latest-render values for the document listeners, which are bound once per press.
+    const liveRef = useRef({ isAnimating, onDismiss, resetKey, flipMs });
+    liveRef.current = { isAnimating, onDismiss, resetKey, flipMs };
+
+    // Perform the one-way Side 1 → Side 2 flip and arm the lockout.
+    const beginFlip = useCallback(() => {
+        const { resetKey: key, flipMs: ms } = liveRef.current;
+        flippedForKeyRef.current = key;
+        hasFlippedRef.current = true;
         setIsFlippedRaw(true);
         setHasFlippedCurrentCard(true);
         setShowTapToFlipHint(false);
@@ -127,8 +209,8 @@ export function useCardDrag(
         if (flipLockTimer.current) clearTimeout(flipLockTimer.current);
         flipLockTimer.current = setTimeout(() => {
             flipLockRef.current = false;
-        }, flipMs);
-    };
+        }, ms);
+    }, []);
 
     // Put the card straight onto Side 2 without the tap-to-flip gate. Used when a
     // card the user already flipped is brought back into view (mark-undo): the
@@ -137,40 +219,48 @@ export function useCardDrag(
     const restoreFlipped = useCallback((targetResetKey: number) => {
         restoreFlippedForKeyRef.current = targetResetKey;
         flippedForKeyRef.current = targetResetKey;
+        hasFlippedRef.current = true;
         setIsFlippedRaw(true);
         setHasFlippedCurrentCard(true);
     }, []);
 
-    // Clear any pending lockout timer on unmount to avoid a stray callback.
+    // Drop the press in progress without classifying it.
+    const abandonGesture = useCallback(() => {
+        detachRef.current?.();
+        detachRef.current = null;
+        gestureRef.current = null;
+        setIsDragging(false);
+    }, []);
+
+    // Clear timers and listeners on unmount.
     useEffect(() => () => {
         if (flipLockTimer.current) clearTimeout(flipLockTimer.current);
+        detachRef.current?.();
     }, []);
 
     // Reset flip-tracking whenever the card changes. New cards always start on
-    // Side 1 (isFlipped=false) — the flip is one-way and the Side 1 language
-    // randomization lives in the parent page now. The one exception is an undo
-    // restore (restoreFlipped), where the incoming card is one the user already
-    // flipped, so it comes back on Side 2.
+    // Side 1 (isFlipped=false). The one exception is an undo restore (restoreFlipped).
     //
     // `resetCard` is the same reset for the non-undo case, also exposed so the working
     // loop can run it when it swaps the card WITHOUT changing resetKey (see the
     // UseCardDragReturn docblock). Refs + state setters only, so its identity is stable.
     const resetCard = useCallback(() => {
         restoreFlippedForKeyRef.current = null;
+        hasFlippedRef.current = false;
         setHasFlippedCurrentCard(false);
         flippedForKeyRef.current = null;
         setIsFlippedRaw(false);
         setShowSwipeHint(false);
         setShowTapToFlipHint(false);
         setShakeNonce(0);
-        // A pending press/drag belonged to the replaced card; drop it so its release
-        // can't flip or dismiss the new one.
-        setIsDragging(false);
-        setIsFlipOnlyMouseDown(false);
-        // A fresh card starts unflipped, so any in-flight flip lock is moot.
+        // A press begun on the replaced card must not flip or dismiss the new one.
+        // (A press begun on the NEW card during its predecessor's fly-out starts after
+        // this runs — the reset fires on the render that advanced resetKey.)
+        abandonGesture();
+        pendingDismissRef.current = null;
         flipLockRef.current = false;
         if (flipLockTimer.current) clearTimeout(flipLockTimer.current);
-    }, []);
+    }, [abandonGesture]);
 
     useEffect(() => {
         if (restoreFlippedForKeyRef.current === resetKey) {
@@ -187,224 +277,178 @@ export function useCardDrag(
         resetCard();
     }, [resetKey, resetCard]);
 
-    // Read the card's rendered pixel width at evaluation time.
-    // On desktop the frame is capped at 402px inside a wider viewport, so using
-    // window.innerWidth would produce a threshold that is far too large.
-    // Falls back to window.innerWidth only before the element has mounted.
+    // A swipe made during the fly-out fires the moment the fly-out ends.
+    useEffect(() => {
+        if (isAnimating || !pendingDismissRef.current) return;
+        const dir = pendingDismissRef.current;
+        pendingDismissRef.current = null;
+        setShowSwipeHint(false);
+        onDismiss(dir);
+    }, [isAnimating, onDismiss]);
+
+    // Read the card's rendered pixel width at evaluation time (the frame is capped on
+    // desktop, so window.innerWidth would over-size the threshold).
     const getCardWidth = () => cardRef.current?.offsetWidth ?? window.innerWidth;
 
-    const handleTouchStart = (e: React.TouchEvent) => {
-        // Ignore the whole interaction while a flip is mid-animation. Mark this
-        // touch as not-accepted so the matching touchend can't act on a stale
-        // dragStart left over from the previous card.
-        if (isAnimating || flipLockRef.current) {
-            touchAcceptedRef.current = false;
-            return;
-        }
-        touchAcceptedRef.current = true;
-
-        // Always record the start position so handleTouchEnd can measure drag distance,
-        // even when dragging is blocked (card not yet flipped).
-        const touch = e.touches[0];
-        dragStart.current = { x: touch.clientX, y: touch.clientY };
-
-        // Dragging is only allowed after the card has been flipped at least once
-        if (!hasFlippedCurrentCard) return;
-
-        setIsDragging(true);
+    // ── The press, input-agnostic ──────────────────────────────────────────────────────
+    const begin = (x: number, y: number, t: number, touchId: number | null): boolean => {
+        const { isAnimating: animating } = liveRef.current;
+        if (gestureRef.current) return false; // a second finger; keep following the first
+        const canDrag = hasFlippedRef.current;
+        // Mid-fly-out only a tap-to-flip on the new card is accepted; a flipped card
+        // can't be pressed yet (its fly-out predecessor still owns the dismiss slot).
+        if (animating && canDrag) return false;
+        const s = { t, x, y };
+        gestureRef.current = {
+            touchId,
+            start: s,
+            last: s,
+            maxDist: 0,
+            recent: [s],
+            canDrag,
+            inFlipLock: flipLockRef.current,
+        };
+        if (canDrag) setIsDragging(true);
+        return true;
     };
 
-    const handleTouchMove = useCallback((e: TouchEvent) => {
-        if (!isDragging || isAnimating) return;
+    const move = (x: number, y: number, t: number) => {
+        const g = gestureRef.current;
+        if (!g) return;
+        const s = { t, x, y };
+        g.last = s;
+        g.recent.push(s);
+        // Keep a little more than the flick window; the classifier filters exactly.
+        while (g.recent.length > 2 && g.recent[0].t < t - CARD_FLICK_WINDOW_MS * 2) g.recent.shift();
+        const dist = Math.hypot(x - g.start.x, y - g.start.y);
+        if (dist > g.maxDist) g.maxDist = dist;
+        if (g.canDrag) {
+            setDragPosition({
+                x: (x - g.start.x) * CARD_DRAG_SENSITIVITY,
+                y: (y - g.start.y) * CARD_DRAG_SENSITIVITY,
+            });
+        }
+    };
 
-        // Prevent default to avoid scrolling while dragging the card.
-        // Must be a native (non-React) listener registered with { passive: false }
-        // so that preventDefault() is actually honoured by the browser.
-        e.preventDefault();
+    const end = (x: number, y: number, t: number) => {
+        const g = gestureRef.current;
+        if (!g) return;
+        move(x, y, t);
+        detachRef.current?.();
+        detachRef.current = null;
+        gestureRef.current = null;
+        setIsDragging(false);
 
-        const touch = e.touches[0];
-        // Amplify the raw finger delta so the card outruns the finger slightly.
-        const deltaX = (touch.clientX - dragStart.current.x) * CARD_DRAG_SENSITIVITY;
-        const deltaY = (touch.clientY - dragStart.current.y) * CARD_DRAG_SENSITIVITY;
-        setDragPosition({ x: deltaX, y: deltaY });
-    }, [isDragging, isAnimating]);
+        const release = classifyRelease(g, getCardWidth());
 
-    // Attach touchmove as a non-passive native listener so preventDefault works
-    useEffect(() => {
-        const el = cardRef.current;
-        if (!el) return;
-        el.addEventListener('touchmove', handleTouchMove, { passive: false });
-        return () => el.removeEventListener('touchmove', handleTouchMove);
-    }, [handleTouchMove]);
-
-    const handleTouchEnd = (e: React.TouchEvent) => {
-        // Prevent the browser from firing synthetic mouse events (mousedown/mouseup/click)
-        // after this touch interaction, which would cause a double-flip bug.
-        // Guard on `cancelable`: when the touch sequence was a scroll, the browser marks
-        // touchend as non-cancelable and logs an "[Intervention] Ignored attempt to cancel a
-        // touchend event with cancelable=false" warning if we call preventDefault anyway. In
-        // that case there are no synthetic mouse events to suppress, so skipping it is safe.
-        if (e.cancelable) e.preventDefault();
-
-        // A flip is still animating — swallow this tap entirely (no flip, no shake)
-        // so it can't remount the card mid-flip.
-        if (flipLockRef.current) return;
-
-        // The matching touchstart was swallowed by the gate, so dragStart still
-        // holds the previous card's coordinates — measuring tap distance against it
-        // would misread this tap as a drag attempt and shake instead of flipping.
-        // Ignore the end entirely.
-        if (!touchAcceptedRef.current) return;
-
-        // If dragging hasn't started (blocked because card wasn't flipped),
-        // only flip if this was a genuine tap — finger barely moved.
-        if (!isDragging && !isAnimating) {
-            const endTouch = e.changedTouches[0];
-            const dist = Math.sqrt(
-                (endTouch.clientX - dragStart.current.x) ** 2 +
-                (endTouch.clientY - dragStart.current.y) ** 2
-            );
-            // One-way flip: only Side 1 → Side 2, never back.
-            if (dist < 10 && !hasFlippedCurrentCard) {
-                beginFlip();
-            } else if (!hasFlippedCurrentCard) {
-                // Drag attempt on an unflipped card: shake the card and fade in
-                // the "Tap to flip" hint. Mirrors the swipe-direction tutorial.
-                setShakeNonce(n => n + 1);
+        // Card not yet flipped: a tap flips it, anything else is a swipe attempt
+        // (shake + "Tap to flip" hint).
+        if (!g.canDrag) {
+            if (release.kind === "tap") {
+                if (!hasFlippedRef.current) beginFlip();
+            } else {
+                setShakeNonce((n) => n + 1);
                 setShowTapToFlipHint(true);
             }
             return;
         }
 
-        if (!isDragging || isAnimating) return;
-
-        setIsDragging(false);
-
-        const threshold = CARD_DISMISS_THRESHOLD_VW * getCardWidth();
-        const tapThreshold = 10; // Small movement threshold to distinguish tap from drag
-        const { x, y } = dragPosition;
-
-        // Calculate total drag distance
-        const dragDistance = Math.sqrt(x * x + y * y);
-
-        if (dragDistance < tapThreshold) {
-            // Tap on an already-flipped card: trigger the swipe tutorial — shake
-            // the card and fade in the ← Incorrect / Correct → hint labels.
+        if (release.kind === "tap") {
             setDragPosition({ x: 0, y: 0 });
-            if (isFlipped) {
-                setShakeNonce(n => n + 1);
-                setShowSwipeHint(true);
+            // Inside the flip lock a tap is swallowed: a shake would remount the card
+            // (key=`front-${shakeNonce}`) and cut the flip short.
+            if (g.inFlipLock) return;
+            // Tap on an already-flipped card: shake it and show the ← Incorrect /
+            // Correct → hint labels.
+            setShakeNonce((n) => n + 1);
+            setShowSwipeHint(true);
+        } else if (release.kind === "dismiss") {
+            // Fly out from the real lift-off point (the rendered dragPosition can be a
+            // frame or more behind the finger). The parent resets it after the fly-out.
+            setDragPosition({
+                x: (g.last.x - g.start.x) * CARD_DRAG_SENSITIVITY,
+                y: (g.last.y - g.start.y) * CARD_DRAG_SENSITIVITY,
+            });
+            if (liveRef.current.isAnimating) {
+                pendingDismissRef.current = release.direction;
+                return;
             }
-        } else if (Math.abs(x) > threshold) {
-            // Card dismissed — leave dragPosition at its current release position so
-            // the fly-out animation starts from where the user dropped it. The parent
-            // will call resetDragPosition() after the fly-out completes (450ms).
-            // Fade the hint out in lock-step with the fly-off.
             setShowSwipeHint(false);
-            onDismiss(x < 0 ? 'left' : 'right');
+            liveRef.current.onDismiss(release.direction);
         } else {
-            // Snap back
             setDragPosition({ x: 0, y: 0 });
         }
     };
 
-    // Mouse handlers for desktop.
-    // mousedown is the only React synthetic handler — it just records the start position
-    // and flips isDragging on. mousemove and mouseup are attached to the document via
-    // useEffect below, so rapid drags can never outpace the card's visual bounds and
-    // accidentally fire onMouseLeave, which would otherwise cancel the drag.
-    const handleMouseDown = (e: React.MouseEvent) => {
-        // Ignore the whole interaction while a flip is mid-animation.
-        if (isAnimating || flipLockRef.current) return;
-        if (!hasFlippedCurrentCard) {
-            // Dragging is blocked, but we still need to record the mousedown so that
-            // the document-level mouseup can fire a tap-to-flip — and so we can
-            // measure cursor distance to detect a swipe attempt before flipping.
-            dragStart.current = { x: e.clientX, y: e.clientY };
-            lastMousePos.current = { x: e.clientX, y: e.clientY };
-            setIsFlipOnlyMouseDown(true);
-            return;
-        }
-
-        dragStart.current = { x: e.clientX, y: e.clientY };
-        setIsDragging(true);
-    };
-
-    const handleDocumentMouseMove = useCallback((e: MouseEvent) => {
-        // Always track latest cursor position while listeners are attached so
-        // the flip-only mouseup can measure distance — but only update
-        // dragPosition (which visually translates the card) when truly dragging.
-        lastMousePos.current = { x: e.clientX, y: e.clientY };
-        if (!isDragging || isAnimating) return;
-
-        // Amplify the raw cursor delta so the card outruns the pointer slightly.
-        const deltaX = (e.clientX - dragStart.current.x) * CARD_DRAG_SENSITIVITY;
-        const deltaY = (e.clientY - dragStart.current.y) * CARD_DRAG_SENSITIVITY;
-        setDragPosition({ x: deltaX, y: deltaY });
-    }, [isDragging, isAnimating]);
-
-    const handleDocumentMouseUp = useCallback(() => {
-        // Handle the flip-only case: mousedown was recorded but dragging was blocked.
-        // Reachable only when !hasFlippedCurrentCard (mousedown gate at line 139),
-        // so the one-way Side 1 → Side 2 transition is safe here.
-        if (isFlipOnlyMouseDown) {
-            setIsFlipOnlyMouseDown(false);
-            if (!isAnimating) {
-                const dist = Math.sqrt(
-                    (lastMousePos.current.x - dragStart.current.x) ** 2 +
-                    (lastMousePos.current.y - dragStart.current.y) ** 2
-                );
-                if (dist < 10) {
-                    beginFlip();
-                } else {
-                    // Swipe attempt on an unflipped card — same treatment as touch.
-                    setShakeNonce(n => n + 1);
-                    setShowTapToFlipHint(true);
-                }
-            }
-            return;
-        }
-
-        if (!isDragging || isAnimating) return;
-        setIsDragging(false);
-
-        const threshold = CARD_DISMISS_THRESHOLD_VW * getCardWidth();
-        const tapThreshold = 10; // Small movement threshold to distinguish click from drag
-        const { x, y } = dragPosition;
-
-        // Calculate total drag distance
-        const dragDistance = Math.sqrt(x * x + y * y);
-
-        if (dragDistance < tapThreshold) {
-            // Click on an already-flipped card: trigger the swipe tutorial — shake
-            // the card and fade in the ← Incorrect / Correct → hint labels.
-            setDragPosition({ x: 0, y: 0 });
-            if (isFlipped) {
-                setShakeNonce(n => n + 1);
-                setShowSwipeHint(true);
-            }
-        } else if (Math.abs(x) > threshold) {
-            // Card dismissed — leave dragPosition at its release position so the
-            // fly-out animation starts from where the user dropped it.
-            setShowSwipeHint(false);
-            onDismiss(x < 0 ? 'left' : 'right');
-        } else {
-            // Snap back
-            setDragPosition({ x: 0, y: 0 });
-        }
-    }, [isDragging, isFlipOnlyMouseDown, isAnimating, dragPosition, isFlipped, onDismiss]);
-
-    // Attach document-level mouse listeners while a drag is in progress OR while
-    // a flip-only mousedown is pending (so the mouseup can still fire a tap-to-flip).
-    useEffect(() => {
-        if (!isDragging && !isFlipOnlyMouseDown) return;
-        document.addEventListener('mousemove', handleDocumentMouseMove);
-        document.addEventListener('mouseup', handleDocumentMouseUp);
-        return () => {
-            document.removeEventListener('mousemove', handleDocumentMouseMove);
-            document.removeEventListener('mouseup', handleDocumentMouseUp);
+    // ── Touch ──────────────────────────────────────────────────────────────────────────
+    // Only touchstart is a React handler. move/end/cancel are DOCUMENT listeners bound for
+    // the life of the press: they can't go stale with a render, they survive the card's
+    // element being remounted or re-slotted, and touchmove is non-passive so
+    // preventDefault() actually stops a scroll.
+    const handleTouchStart = (e: React.TouchEvent) => {
+        const touch = e.changedTouches[0];
+        if (!touch) return;
+        if (!begin(touch.clientX, touch.clientY, e.timeStamp, touch.identifier)) return;
+        const id = touch.identifier;
+        const find = (list: TouchList) => {
+            for (let i = 0; i < list.length; i++) if (list[i].identifier === id) return list[i];
+            return null;
         };
-    }, [isDragging, isFlipOnlyMouseDown, handleDocumentMouseMove, handleDocumentMouseUp]);
+        const onMove = (ev: TouchEvent) => {
+            const tp = find(ev.touches);
+            if (!tp) return;
+            if (ev.cancelable) ev.preventDefault();
+            move(tp.clientX, tp.clientY, ev.timeStamp);
+        };
+        const onEnd = (ev: TouchEvent) => {
+            const tp = find(ev.changedTouches);
+            if (!tp) return;
+            // Stop the browser from firing synthetic mouse events (mousedown/click) after
+            // this touch, which would double-flip. Non-cancelable when the touch became a
+            // scroll — then there are no synthetic events to suppress.
+            if (ev.cancelable) ev.preventDefault();
+            end(tp.clientX, tp.clientY, ev.timeStamp);
+        };
+        const onCancel = (ev: TouchEvent) => {
+            if (!find(ev.changedTouches)) return;
+            // The OS took the touch (a system gesture, an alert): no verdict, card home.
+            abandonGesture();
+            setDragPosition({ x: 0, y: 0 });
+        };
+        const opts = { passive: false } as AddEventListenerOptions;
+        document.addEventListener('touchmove', onMove, opts);
+        document.addEventListener('touchend', onEnd, opts);
+        document.addEventListener('touchcancel', onCancel);
+        detachRef.current = () => {
+            document.removeEventListener('touchmove', onMove, opts);
+            document.removeEventListener('touchend', onEnd, opts);
+            document.removeEventListener('touchcancel', onCancel);
+        };
+    };
+
+    // The release is handled by the document listener above; this only keeps the
+    // synthetic-mouse suppression for a touch whose start was refused (e.g. mid-fly-out).
+    const handleTouchEnd = (e: React.TouchEvent) => {
+        if (e.cancelable) e.preventDefault();
+    };
+
+    // ── Mouse (desktop) ────────────────────────────────────────────────────────────────
+    // Same press model; move/up are document listeners so a fast drag can't outrun the
+    // card and lose the gesture.
+    const handleMouseDown = (e: React.MouseEvent) => {
+        if (e.button !== 0) return;
+        if (!begin(e.clientX, e.clientY, e.timeStamp, null)) return;
+        const onMove = (ev: MouseEvent) => move(ev.clientX, ev.clientY, ev.timeStamp);
+        const onUp = (ev: MouseEvent) => end(ev.clientX, ev.clientY, ev.timeStamp);
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        detachRef.current = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        };
+    };
+
+    const resetDragPosition = useCallback(() => setDragPosition({ x: 0, y: 0 }), []);
 
     return {
         cardRef,
@@ -418,7 +462,7 @@ export function useCardDrag(
         showSwipeHint,
         showTapToFlipHint,
         shakeNonce,
-        resetDragPosition: () => setDragPosition({ x: 0, y: 0 }),
+        resetDragPosition,
         handlers: {
             onTouchStart: handleTouchStart,
             onTouchEnd: handleTouchEnd,

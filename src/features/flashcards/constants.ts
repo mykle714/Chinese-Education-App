@@ -126,8 +126,23 @@ export const CARD_DISMISS_THRESHOLD_VW = 0.15;
 // relative to the raw finger/cursor delta, so the card moves slightly faster than
 // the pointer (a value of 1 would track one-to-one). Applied uniformly to x and y
 // in useCardDrag's move handlers. Note this also makes the dismiss threshold easier
-// to reach, since the dismiss check reads the amplified dragPosition.
+// to reach, since the dismiss check reads the amplified finger delta.
 export const CARD_DRAG_SENSITIVITY = 1.6;
+
+// Flick detection (useCardDrag → classifyRelease). A release counts as a swipe when the
+// finger is still moving sideways fast enough at lift-off, even if it never reached the
+// distance threshold above. Tuned 2026-11-17 against recorded iPhone input
+// (docs/SWIPE_LAB.md): fast flicks released at 0.73–2.9 px/ms, slow drags, holds and
+// drag-out-and-back gestures at |v| ≤ 0.17 px/ms. All in RAW finger px (not amplified).
+/** Minimum sideways release speed, px/ms, for a flick. */
+export const CARD_FLICK_MIN_VELOCITY = 0.4;
+/** Minimum sideways finger travel, px, for a flick — keeps a jittery tap from flicking. */
+export const CARD_FLICK_MIN_DISTANCE = 12;
+/** How far back from lift-off the release speed is measured over, ms. */
+export const CARD_FLICK_WINDOW_MS = 80;
+/** Finger travel, px, under which a press is a tap — measured at the gesture's FURTHEST
+ *  point, so a drag out and back to the start is not a tap. */
+export const CARD_TAP_SLOP = 10;
 
 // Original card dimensions — source size used for scaling math.
 export const CARD_BASE_WIDTH = 295;

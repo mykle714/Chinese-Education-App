@@ -26,7 +26,7 @@ were NodePages before that.
 ### The action tiles
 
 `src/features/friends/FriendActionTiles.tsx`, rendered as cells of `FriendsBody`'s 3-column
-`Bento`. Code: `FriendActionTiles` → `pressScaleSx`, `FriendsBody` → `toggleView`,
+`Bento`. Code: `src/components/bento/toggleTileSx.ts` → `toggleTileSx` (shared with the Reader's collection tiles), `FriendActionTiles`, `FriendsBody` → `toggleView`,
 `friendsView.ts` → `FriendsView` / `FRIENDS_VIEW_ORDER`.
 
 * **Face** = the `BentoTile` `compact` tiles they always were: Send `blu`, Accept `grn`,

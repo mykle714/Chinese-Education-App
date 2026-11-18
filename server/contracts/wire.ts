@@ -1956,8 +1956,21 @@ export interface TextBase {
    * button (src/features/reader/ReaderEditToolbar.tsx); docs/USER_DOCUMENT_FEATURE_SUMMARY.md.
    */
   iconId?: string | null;
+  /**
+   * Which Reader collection the document belongs to (migration 194): 'document' or
+   * 'journal'. The `/reader` Documents / Journal tiles filter on it, and a journal card
+   * shows its `createdAt` date. Set once at create; docs/USER_DOCUMENT_FEATURE_SUMMARY.md
+   * § "Collections (Documents / Journal)".
+   */
+  kind: TextKind;
   createdAt: string;
+  /** Last save (migration 194; TextDAL.updateFields). Drives the "Recently edited" sort. */
+  updatedAt: string;
 }
+
+/** The Reader collections a document can belong to (texts.kind, migration 194). */
+export const TEXT_KINDS = ['document', 'journal'] as const;
+export type TextKind = (typeof TEXT_KINDS)[number];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Community (docs/COMMUNITY_PAGE.md)

@@ -2,6 +2,7 @@ import { Box, CircularProgress } from "@mui/material";
 import { LEADING, SIZE, WEIGHT } from '../../theme/scale';
 import { FONTS } from "../../theme/fonts";
 import { COLORS } from "../../theme/colors";
+import type { Tier2Look } from "../../timeOfDay/tier2Look";
 
 // The open document's vocabulary-processing status (ReaderDocumentPage), shown above the
 // dictionary keycap while there is something to report — nothing at all when idle.
@@ -14,13 +15,15 @@ import { COLORS } from "../../theme/colors";
 // Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Frontend.
 
 interface TextHeaderProps {
+    // The page's time-of-day look (ReaderDocumentPage → useTier2Look) — the pills' hairline.
+    look: Tier2Look;
     processingVocab: boolean;
     vocabError: string | null;
 }
 
-/** One status pill: a ramp MID fill with ink text. Not tappable, so the quiet
- *  `rowBorder` hairline rather than the button outline. */
-const statusPillSx = (fill: string) => ({
+/** One status pill: a ramp MID fill with ink text (a pastel by day and night). Not
+ *  tappable, so the quiet `line` hairline rather than the button outline. */
+const statusPillSx = (fill: string, look: Tier2Look) => ({
     display: "inline-flex",
     alignItems: "center",
     gap: "6px",
@@ -28,7 +31,7 @@ const statusPillSx = (fill: string) => ({
     py: 0.375,
     borderRadius: "999px",
     backgroundColor: fill,
-    border: `1px solid ${COLORS.rowBorder}`,
+    border: `1px solid ${look.line}`,
     fontFamily: FONTS.sans,
     fontSize: SIZE.caption,
     fontWeight: WEIGHT.semibold,
@@ -36,7 +39,7 @@ const statusPillSx = (fill: string) => ({
     color: COLORS.onSurface,
 }) as const;
 
-function TextHeader({ processingVocab, vocabError }: TextHeaderProps) {
+function TextHeader({ look, processingVocab, vocabError }: TextHeaderProps) {
     if (!processingVocab && !vocabError) return null;
     return (
         <Box
@@ -44,7 +47,7 @@ function TextHeader({ processingVocab, vocabError }: TextHeaderProps) {
             sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', pb: 1.5 }}
         >
             {processingVocab && (
-                <Box component="span" className="reader-page-vocab-processing-chip" sx={statusPillSx(COLORS.bluM)}>
+                <Box component="span" className="reader-page-vocab-processing-chip" sx={statusPillSx(COLORS.bluM, look)}>
                     <CircularProgress
                         className="reader-page-vocab-processing-spinner"
                         size={10}
@@ -56,7 +59,7 @@ function TextHeader({ processingVocab, vocabError }: TextHeaderProps) {
             )}
 
             {vocabError && (
-                <Box component="span" className="reader-page-vocab-error-chip" sx={statusPillSx(COLORS.redM)}>
+                <Box component="span" className="reader-page-vocab-error-chip" sx={statusPillSx(COLORS.redM, look)}>
                     Vocab processing failed
                 </Box>
             )}

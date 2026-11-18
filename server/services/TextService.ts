@@ -3,6 +3,7 @@ import { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
 import { Text, TextCreateData, TextUpdateData } from '../types/index.js';
 import { ValidationError, NotFoundError } from '../types/dal.js';
 import type { ITextDAL } from '../dal/interfaces/ITextDAL.js';
+import { TEXT_KINDS } from '../contracts/wire.js';
 import { sanitizeDocumentContent } from '../utils/sanitizeContent.js';
 import { deriveDocumentTitle, documentTitleSource } from '../utils/documentTitle.js';
 import {
@@ -78,6 +79,9 @@ export class TextService {
       // A draft can carry an icon from its first Save (docs/USER_DOCUMENT_FEATURE_SUMMARY.md
       // § "Document icon"); omitted → no icon.
       iconId: textData.iconId ?? null,
+      // The Reader collection (texts.kind, migration 194). The Reader sends 'journal'
+      // when New document was tapped with the Journal tile selected; omitted → 'document'.
+      kind: textData.kind ?? 'document',
     });
 
     console.log(`[TEXT-SERVICE] ✅ Created new user document:`, {
@@ -288,6 +292,10 @@ export class TextService {
     }
 
     this.validateIconId(data.iconId);
+
+    if (data.kind !== undefined && !(TEXT_KINDS as readonly string[]).includes(data.kind)) {
+      throw new ValidationError(`Invalid kind. Must be one of: ${TEXT_KINDS.join(', ')}`);
+    }
   }
 
   /**

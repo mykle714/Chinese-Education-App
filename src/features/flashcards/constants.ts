@@ -31,6 +31,12 @@ export const FC_FONT_CJK = FONTS.cjk;
 // and the CSS transform transition (FlashCardSection) MUST stay in lock-step,
 // so both derive from this single constant. Changing it here changes both.
 export const CARD_FLY_OUT_MS = 450;
+// The LAST card's incorrect swipe (a one-card loop): it flies fully off-screen, then slides
+// back in on top with "Last card!" across it (FlashCardSection → LAST_CARD_RETURN_KEYFRAMES;
+// useWorkingLoop → `FlyOut.returnsAlone`). Longer than a plain fly-out because it is two
+// moves, and the return must read as deliberate. The loop's fly-out timer uses it in place
+// of CARD_FLY_OUT_MS for that one case. Docs: docs/FLP_CARD_GESTURES.md § "The last card".
+export const LAST_CARD_RETURN_MS = 800;
 // How far off-screen to throw a card (px). 900px safely clears the 402px frame on all viewports.
 export const FLY_OUT_X = 900;
 // Rotation (deg) applied when a card flies off — more dramatic than the gentle drag tilt.

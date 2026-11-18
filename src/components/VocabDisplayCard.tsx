@@ -42,8 +42,10 @@ const FIXED_CARD_HEIGHT = 210;
 const KEYCAP_LIP = 4;
 
 // The keycap's colours: the Tier 2 DAY keycap's (src/timeOfDay/tier2Look.ts → day
-// surfaces) — a white face, `COLORS.grey` lip, `COLORS.border` outline. Fixed, not the
-// time-of-day look: the Reader is on the paper ground, not a Tier 2 page.
+// surfaces) — a white face, `COLORS.grey` lip, `COLORS.border` outline. Fixed, NOT the
+// time-of-day look, although the Reader has been a Tier 2 page since 2026-11-17: the owner
+// kept the keycap a lit white card on the night slate, because its contents (SenseList, the
+// More Info / Add keys) follow the Settings theme like the eip, not the clock.
 const KEYCAP_FACE = COLORS.white;
 const KEYCAP_EDGE = COLORS.grey;
 const KEYCAP_OUTLINE = COLORS.border;

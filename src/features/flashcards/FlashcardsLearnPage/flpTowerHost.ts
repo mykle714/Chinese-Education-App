@@ -17,7 +17,7 @@ export type { PlateTones };
  *   - the page is transparent and its header is the over-the-sky study header
  *     (TowerStudyHeader), and its card stack behaves as the tower's top card
  *     (FlashCardSection);
- *   - its page buttons (Write it, Compare, More Info) are drawn as the tower's floor-plate
+ *   - its page buttons (Compare, Customize, More Info) are drawn as the tower's floor-plate
  *     push button, in white (`plateTones`; towerPlate.ts);
  *   - every swipe and undo is reported, so the host can take cards off its tower and put
  *     them back. The tower's count is the host's OWN figure: the flp never sizes it (no
@@ -38,6 +38,13 @@ export interface FlpTowerHost {
      * game-break counter over. Its working loop is kept.
      */
     parked: boolean;
+    /**
+     * The world's focus switch is on (docs/FOCUS_MODE.md): its deals never lend, so running
+     * out of ready cards ends on "Done for the day!", not the lend card. Read by the card
+     * shown behind the loop's last card (FlashcardsLearnPage → `readyOutBacking`). Absent on a
+     * parked host, which shows no cards.
+     */
+    focused?: boolean;
     /** The learner left the session (back arrow, or "Leave anyway" on the sort offer). */
     onExit: () => void;
     /**

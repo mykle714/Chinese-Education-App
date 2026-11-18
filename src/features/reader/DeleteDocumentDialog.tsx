@@ -14,24 +14,30 @@ import { COLORS } from '../../theme/colors';
 import { FONTS } from '../../theme/fonts';
 import { LEADING, SIZE, WEIGHT } from '../../theme/scale';
 import { READER_CARD_RADIUS, readerMessageSx, readerPillButtonSx } from './readerStyles';
+import type { Tier2Look } from '../../timeOfDay/tier2Look';
 
-// The open document's delete confirmation (ReaderDocumentPage header → trash icon).
-// The /reader list does NOT use it: list rows delete by swipe, with no confirmation
+// Delete confirmation for the open document (ReaderDocumentPage header → trash icon)
+// and for the /reader GRID view (a card's ⋯ menu → Delete, via ReaderPage).
+// The /reader LIST view does NOT use it: rows delete by swipe, with no confirmation
 // (SwipeToDeleteRow). Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Deleting a document.
 //
-// Flat look (readerStyles.ts): a white card at SectionCard's 18px radius with the
-// hairline and no elevation shadow, sentence-case title, and the two actions as pills —
-// Cancel white, Delete the red MID fill (the Friends panel's Remove), both ink text.
-// An error is a plain red line, not an MUI Alert.
+// Flat look (readerStyles.ts): a card on the host page's time-of-day `look` (white by
+// day, slate at night — the dialog portals to <body>, so the host hands its look in) at
+// SectionCard's 18px radius with the hairline and no elevation shadow, sentence-case
+// title, and the two actions as pills — Cancel the neutral surface pill, Delete the red
+// MID fill (the Friends panel's Remove, a pastel by day and night). An error is a plain
+// ink line, not an MUI Alert.
 
 interface DeleteDocumentDialogProps {
+    /** The host page's time-of-day look (ReaderPage / ReaderDocumentPage → useTier2Look). */
+    look: Tier2Look;
     open: boolean;
     text: Text | null;
     onClose: () => void;
     onSuccess: () => void;
 }
 
-function DeleteDocumentDialog({ open, text, onClose, onSuccess }: DeleteDocumentDialogProps) {
+function DeleteDocumentDialog({ look, open, text, onClose, onSuccess }: DeleteDocumentDialogProps) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -75,8 +81,8 @@ function DeleteDocumentDialog({ open, text, onClose, onSuccess }: DeleteDocument
             PaperProps={{
                 elevation: 0,
                 sx: {
-                    backgroundColor: COLORS.white,
-                    border: `1px solid ${COLORS.rowBorder}`,
+                    backgroundColor: look.surface,
+                    border: `1px solid ${look.line}`,
                     borderRadius: READER_CARD_RADIUS,
                     mx: 2,
                 },
@@ -84,19 +90,19 @@ function DeleteDocumentDialog({ open, text, onClose, onSuccess }: DeleteDocument
         >
             <DialogTitle
                 className="reader-delete-dialog__title"
-                sx={{ fontFamily: FONTS.sans, fontSize: SIZE.subtitle, fontWeight: WEIGHT.bold, lineHeight: LEADING.tight, color: COLORS.onSurface, pb: 1 }}
+                sx={{ fontFamily: FONTS.sans, fontSize: SIZE.subtitle, fontWeight: WEIGHT.bold, lineHeight: LEADING.tight, color: look.ink, pb: 1 }}
             >
                 Delete document?
             </DialogTitle>
             <DialogContent className="reader-delete-dialog__content" sx={{ pb: 1 }}>
                 <DialogContentText
                     className="reader-delete-dialog__message"
-                    sx={{ fontFamily: FONTS.sans, fontSize: SIZE.body, lineHeight: LEADING.normal, color: COLORS.textSecondary }}
+                    sx={{ fontFamily: FONTS.sans, fontSize: SIZE.body, lineHeight: LEADING.normal, color: look.muted }}
                 >
                     "{text.title}" will be deleted. This can't be undone.
                 </DialogContentText>
                 {error && (
-                    <Typography className="reader-delete-dialog__error" sx={{ ...readerMessageSx, mt: 1.5 }}>
+                    <Typography className="reader-delete-dialog__error" sx={{ ...readerMessageSx(look), mt: 1.5 }}>
                         {error}
                     </Typography>
                 )}
@@ -106,7 +112,7 @@ function DeleteDocumentDialog({ open, text, onClose, onSuccess }: DeleteDocument
                     className="reader-delete-dialog__cancel"
                     onClick={handleClose}
                     disabled={loading}
-                    sx={readerPillButtonSx(COLORS.white)}
+                    sx={readerPillButtonSx(look)}
                 >
                     Cancel
                 </Button>
@@ -114,7 +120,7 @@ function DeleteDocumentDialog({ open, text, onClose, onSuccess }: DeleteDocument
                     className="reader-delete-dialog__confirm"
                     onClick={handleDelete}
                     disabled={loading}
-                    sx={readerPillButtonSx(COLORS.redM)}
+                    sx={readerPillButtonSx(look, COLORS.redM)}
                 >
                     {loading ? 'Deleting…' : 'Delete'}
                 </Button>

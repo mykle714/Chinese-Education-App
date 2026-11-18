@@ -3,7 +3,7 @@ import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import NodePageHeader from "../../components/NodePageHeader";
 import { usePageSlide } from "../../hooks/usePageSlide";
-import { COLORS } from "../../theme/colors";
+import type { Tier2Look } from "../../timeOfDay/tier2Look";
 
 // READER DOCUMENT SURFACE — the open-document view of the Reader, routed at
 // `/reader/:id` (ReaderDocumentPage.tsx) and presented as a footerless NODE-STYLE
@@ -24,13 +24,17 @@ import { COLORS } from "../../theme/colors";
 // to `/reader` while a clone of this surface slides out to the right — the route
 // change lets `Layout`'s pathname effect clear the skip-enter latch normally, same
 // as every other routed leaf/node page.
+//
+// TIME OF DAY: the surface is painted with the page's Tier 2 look (`look.ground`, from
+// ReaderDocumentPage → useTier2Look — docs/SHELF_REDESIGN.md § 7b): the sky tint by day,
+// slate at night; the header's title and back arrow take `look.ink`.
 
+// The ground colour is set inline (it follows the clock); everything else is static.
 const Surface = styled(Box)(() => ({
     position: "absolute",
     inset: 0,
     display: "flex",
     flexDirection: "column",
-    backgroundColor: COLORS.background,
     // Painted above the list LeafPage purely by DOM order (it renders after the
     // list surface); usePageSlide's exit clone sits above both at zIndex 50.
     overflow: "hidden",
@@ -46,6 +50,8 @@ const Body = styled(Box)(() => ({
 }));
 
 interface ReaderDocumentSurfaceProps {
+    /** The page's time-of-day look: the ground and the header ink. */
+    look: Tier2Look;
     title: string;
     // Invoked by the back arrow. Called IMMEDIATELY when the exit starts (the
     // list beneath must be current while the clone slides away), not after.
@@ -57,6 +63,7 @@ interface ReaderDocumentSurfaceProps {
 }
 
 const ReaderDocumentSurface: React.FC<ReaderDocumentSurfaceProps> = ({
+    look,
     title,
     onBack,
     rightContent,
@@ -72,9 +79,9 @@ const ReaderDocumentSurface: React.FC<ReaderDocumentSurfaceProps> = ({
         <Surface
             ref={surfaceRef}
             className="reader-document-surface"
-            style={style}
+            style={{ ...style, backgroundColor: look.ground }}
         >
-            <NodePageHeader title={title} onBack={handleBack} rightContent={rightContent} />
+            <NodePageHeader title={title} onBack={handleBack} rightContent={rightContent} titleColor={look.ink} />
             <Body className="reader-document-surface__body">{children}</Body>
         </Surface>
     );

@@ -1,15 +1,14 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Box, Collapse, Typography, useTheme, useMediaQuery } from "@mui/material";
 import { useNotificationFor } from "../../components/notifications/useNotify";
 import { HeaderIconButton } from "../../components/PageHeader";
-import { COLORS } from "../../theme/colors";
 import ReaderDocumentSurface from "./ReaderDocumentSurface";
 import { useAuth } from "../../AuthContext";
-import { useTheme as useCustomTheme } from "../../contexts/ThemeContext";
 import { API_BASE_URL } from "../../constants";
 import { apiPost, apiPut, ApiError } from "../../api/http";
 import { NEW_DOCUMENT_ID } from "./readerPaths";
+import type { TextKind } from "../../../server/contracts/wire";
 import VocabDisplayCard from "../../components/VocabDisplayCard";
 import { useVocabularyUpdate } from "../../contexts/VocabularyUpdateContext";
 import { processDocumentForTokens } from "../../utils/tokenUtils";
@@ -46,6 +45,7 @@ import { useTextSelection } from "./useTextSelection";
 import { useEnglishTranslations } from "./useEnglishTranslations";
 import { useReaderSettings } from "./useReaderSettings";
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { useTier2Look } from "../../timeOfDay/useTier2Look";
 import { useLockBodyScroll } from "../../hooks/useLockBodyScroll";
 import {
     useKeyboardInset,
@@ -81,9 +81,18 @@ function ReaderDocumentPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const theme = useTheme();
-    const customTheme = useCustomTheme();
+    // Tier 2 time-of-day look (docs/SHELF_REDESIGN.md § 7b): sky-tint ground by day, slate
+    // at night, like the Dictionary. Called ONCE here and passed down. The dictionary
+    // keycap (VocabDisplayCard) and the eip sheet do NOT take it — the keycap stays the
+    // white day keycap and the eip follows the Settings theme (owner's call 2026-11-17).
+    const look = useTier2Look();
     const { token, user } = useAuth();
     const isNewDraft = id === NEW_DOCUMENT_ID;
+    // A new draft's collection (texts.kind, migration 194): `/reader/new?kind=journal`
+    // when ReaderPage's Journal tile was selected (readerPaths.ts → newDocumentPath).
+    // Read only for a draft; it is sent on the first Save and fixed from then on.
+    const [searchParams] = useSearchParams();
+    const draftKind: TextKind = searchParams.get('kind') === 'journal' ? 'journal' : 'document';
     // Set on a draft's first Save, just before the URL is replaced with the new id —
     // so the fetch effect below, which re-runs on the id change, knows the page
     // already holds this document (and its processed vocab) and skips a reload.
@@ -138,7 +147,7 @@ function ReaderDocumentPage() {
         }
         if (isNewDraft) {
             setNotFound(false);
-            setText(blankDraft(user?.selectedLanguage));
+            setText(blankDraft(user?.selectedLanguage, draftKind));
             contentEditor.enterEditMode('');
             setDraftIconId(null);
             setLoading(false);
@@ -219,10 +228,11 @@ function ReaderDocumentPage() {
         textSelection.handleTextSelectionChange(event);
     }, [textSelection]);
 
-    // Selection tint: a touch stronger on the Dark theme so it reads on the dark ground.
+    // Selection tint: a touch stronger at night so it reads on the slate reading card.
+    // Keyed on the time-of-day look (the card's colour), not the Settings theme.
     const selectionColors = useMemo(() => ({
-        backgroundColor: theme.palette.primary.main + (customTheme.themeMode === 'dark' ? '40' : '30'), // 25% / ~19% opacity
-    }), [customTheme.themeMode, theme.palette.primary.main]);
+        backgroundColor: theme.palette.primary.main + (look.dark ? '40' : '30'), // 25% / ~19% opacity
+    }), [look.dark, theme.palette.primary.main]);
 
     // Vocabulary update listeners: keep loadedPersonalCards in sync with entries
     // added/edited/removed elsewhere in the app while this document is open.
@@ -310,7 +320,17 @@ function ReaderDocumentPage() {
         setTapZoneFlash((prev) => ({ side, id: (prev?.id ?? 0) + 1 }));
     }, []);
     const clearTapZoneFlash = useCallback(() => setTapZoneFlash(null), []);
-    const navigationHint = useMemo(() => <ReaderTapHint onZoneTap={flashTapZone} />, [flashTapZone]);
+    // The finger demo plays only the FIRST time the hint shows on this page. A long-press
+    // on empty space brings the hint back (ReaderTapOverlay → `onClearSelection`), and
+    // there it appears at rest (owner's call 2026-11-17).
+    const [tapDemoPlayed, setTapDemoPlayed] = useState(false);
+    useEffect(() => {
+        if (!showNavigationHint) setTapDemoPlayed(true);
+    }, [showNavigationHint]);
+    const navigationHint = useMemo(
+        () => <ReaderTapHint onZoneTap={flashTapZone} playDemo={!tapDemoPlayed} />,
+        [flashTapZone, tapDemoPlayed]
+    );
     // The keycap's face for a highlighted word with no entry: a small resting pawn. Built
     // once — VocabDisplayCard's memo compares it by identity.
     const keycapEmptyFace = useMemo(() => <ReaderKeycapPawn />, []);
@@ -516,13 +536,14 @@ function ReaderDocumentPage() {
             content: contentEditor.draft,
             language: user?.selectedLanguage || 'zh',
             iconId: draftIconId,
+            kind: draftKind,
         });
         await vocabularyProcessing.processDocumentVocabulary(created);
         setText(created);
         contentEditor.exitEditMode();
         justCreatedIdRef.current = created.id;
         navigate(`/reader/${created.id}`, { replace: true });
-    }, [contentEditor, user?.selectedLanguage, draftIconId, vocabularyProcessing, navigate]);
+    }, [contentEditor, user?.selectedLanguage, draftIconId, draftKind, vocabularyProcessing, navigate]);
 
     const handleSaveEdit = useCallback(async () => {
         if (!text) return;
@@ -587,6 +608,7 @@ function ReaderDocumentPage() {
                     icon="edit"
                     label="Edit document"
                     title="Edit document"
+                    color={look.ink2}
                     onClick={handleEdit}
                 />
             )}
@@ -596,7 +618,8 @@ function ReaderDocumentPage() {
                     icon="delete"
                     label="Delete document"
                     title="Delete document"
-                    color={COLORS.dangerInk}
+                    // dangerInk is plain ink in v2; the look's ink so it reads at night.
+                    color={look.ink}
                     onClick={handleDelete}
                 />
             )}
@@ -605,6 +628,7 @@ function ReaderDocumentPage() {
 
     return (
         <ReaderDocumentSurface
+            look={look}
             // The document's own title is the page title (2026-11-17; it used to be a
             // 22px heading above the dictionary card, under a header that said "Reader").
             // "Reader" only while there is no document yet (loading / not found).
@@ -617,6 +641,7 @@ function ReaderDocumentPage() {
             below FlashcardsLearnPage's header (CardEditToolbar.tsx). */}
             <Collapse in={contentEditor.editMode} timeout={EDIT_TOOLBAR_ANIM_MS} easing={EDIT_TOOLBAR_ANIM_EASING} unmountOnExit>
                 <ReaderEditToolbar
+                    look={look}
                     canUndo={contentEditor.canUndo}
                     canRedo={contentEditor.canRedo}
                     onUndo={contentEditor.undo}
@@ -633,11 +658,11 @@ function ReaderDocumentPage() {
             {/* Plain muted lines rather than a spinner / MUI Alert — the Reader's flat
                 look (readerStyles.ts), the Friends board's loading copy. */}
             {loading && (
-                <Typography className="reader-document-loading" sx={readerMutedTextSx}>Loading…</Typography>
+                <Typography className="reader-document-loading" sx={readerMutedTextSx(look)}>Loading…</Typography>
             )}
 
             {!loading && notFound && (
-                <Typography className="reader-document-not-found" sx={readerMutedTextSx}>Document not found.</Typography>
+                <Typography className="reader-document-not-found" sx={readerMutedTextSx(look)}>Document not found.</Typography>
             )}
 
             {!loading && text && (
@@ -665,6 +690,7 @@ function ReaderDocumentPage() {
                         sx={{ flexShrink: 0 }}
                     >
                         <TextHeader
+                            look={look}
                             processingVocab={vocabularyProcessing.processingVocab}
                             vocabError={vocabularyProcessing.vocabError}
                         />
@@ -697,6 +723,7 @@ function ReaderDocumentPage() {
                                 sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
                             >
                                 <ReaderReadAloudButton
+                                    look={look}
                                     playing={readAloud.playing}
                                     onStart={readAloud.start}
                                     onStop={readAloud.stop}
@@ -713,12 +740,14 @@ function ReaderDocumentPage() {
                                 >
                                     <ReaderAudioChip
                                         className="reader-document-audio-chip"
+                                        ink={look.ink2}
                                         mode={readerAudio.mode}
                                         onCycle={readerAudio.cycleMode}
                                     />
                                 </Box>
                             </Box>
                             <ReaderDisplayToggle
+                                look={look}
                                 className="reader-document-display-mode-toggle"
                                 value={readerSettings.displayMode}
                                 onChange={readerSettings.setDisplayMode}
@@ -729,6 +758,7 @@ function ReaderDocumentPage() {
 
                     <Box className="reader-page-text-content-area" sx={{ flexGrow: 1, minHeight: 0, display: 'flex', gap: 3, position: 'relative' }}>
                         <TextArea
+                            look={look}
                             selectedText={text}
                             autoSelectEnabled={readerSettings.autoSelectEnabled && !contentEditor.editMode}
                             segmentSpans={segmentSpans}
@@ -754,6 +784,7 @@ function ReaderDocumentPage() {
                                     onSelectRange={textSelection.selectRange}
                                     scrollRef={cpcdScrollRef}
                                     isAutoScrollPaused={readAloud.isFollowPaused}
+                                    inkColor={look.ink}
                                 />
                             ) : undefined}
                         />
@@ -780,9 +811,12 @@ function ReaderDocumentPage() {
                                 <ReaderTapOverlay
                                     inputRef={textSelection.inputRef}
                                     scrollRef={showCpcd ? cpcdScrollRef : undefined}
-                                    nativeSelection={!showCpcd}
+                                    wordSource={showCpcd ? "pinyin" : "text"}
+                                    onSelectSpanAtOffset={textSelection.selectSpanAtOffset}
+                                    onClearSelection={textSelection.clearSelection}
                                     flash={tapZoneFlash}
                                     onFlashEnd={clearTapZoneFlash}
+                                    night={look.dark}
                                 />
                             </Box>
                         )}
@@ -803,9 +837,13 @@ function ReaderDocumentPage() {
                 showSynonymsRelated
                 showWordTools
                 showLearning
+                // The keycap's own Learning toggle: while the eip shows the selected word
+                // its Add key IS the keycap's, so a tap updates both (useReaderWordActions).
+                sharedLearning={wordActions.sharedLearning}
             />
 
             <DeleteDocumentDialog
+                look={look}
                 open={deleteDialogOpen}
                 text={text}
                 onClose={() => setDeleteDialogOpen(false)}
@@ -836,15 +874,18 @@ function ReaderDocumentPage() {
  * the page renders matter (TextHeader: the title); the id is the
  * NEW_DOCUMENT_ID sentinel the page checks for.
  */
-function blankDraft(language: Text['language'] | undefined): Text {
+function blankDraft(language: Text['language'] | undefined, kind: TextKind): Text {
+    const now = new Date().toISOString();
     return {
         id: NEW_DOCUMENT_ID,
-        title: 'New Document',
+        title: kind === 'journal' ? 'New Journal Entry' : 'New Document',
         content: '',
         language: language || 'zh',
         characterCount: 0,
         isUserCreated: true,
-        createdAt: new Date().toISOString(),
+        kind,
+        createdAt: now,
+        updatedAt: now,
     };
 }
 

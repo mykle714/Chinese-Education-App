@@ -35,12 +35,18 @@ interface SwipeToDeleteRowProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onDelete: () => void;
+    /**
+     * The page ground behind the row (the Tier 2 look's `ground` — TextSidebar). The
+     * sliding content is painted with it so the Row's rounded corners read against the
+     * page exactly as an unswipeable row's do, by day and by night.
+     */
+    groundColor: string;
     /** Disables the swipe (e.g. while the row's delete request is in flight). */
     disabled?: boolean;
     children: ReactNode;
 }
 
-function SwipeToDeleteRow({ open, onOpenChange, onDelete, disabled = false, children }: SwipeToDeleteRowProps) {
+function SwipeToDeleteRow({ open, onOpenChange, onDelete, groundColor, disabled = false, children }: SwipeToDeleteRowProps) {
     const restingOffset = open ? -DELETE_BUTTON_WIDTH_PX : 0;
     // Live offset while a finger is down; null = not dragging (render the resting offset).
     const [dragOffset, setDragOffset] = useState<number | null>(null);
@@ -165,9 +171,9 @@ function SwipeToDeleteRow({ open, onOpenChange, onDelete, disabled = false, chil
                 sx={{
                     position: "relative",
                     // Opaque so the Delete button only shows where the content has slid
-                    // away. The paper ground, so the white Row's rounded corners read
-                    // against the page exactly as an unswipeable row's do.
-                    backgroundColor: COLORS.background,
+                    // away. The page ground (`groundColor`), so the Row's rounded corners
+                    // read against the page exactly as an unswipeable row's do.
+                    backgroundColor: groundColor,
                     borderRadius: ROW_RADIUS,
                     transform: `translateX(${offset}px)`,
                     transition: dragOffset === null ? SETTLE_TRANSITION : "none",

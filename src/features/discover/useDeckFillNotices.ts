@@ -26,7 +26,7 @@ import {
  * (reaching the goal, undo) is a state change and can bring it back.
  *
  * Arrival deck: ONE read of the core world's ready counts on mount, with `ignoreFocus`
- * (focus mode scopes the tower's figure to today's 25-card set, but this is about the whole
+ * (focus mode scopes the tower's figure to today's 30-card set, but this is about the whole
  * deck). It is not re-read after a sort: the visit's sorts are added on the client
  * (`countedSorts`, from the page's session decks), which is also how Undo is handled.
  *

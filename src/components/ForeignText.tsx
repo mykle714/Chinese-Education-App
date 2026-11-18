@@ -1,6 +1,6 @@
 import React from "react";
 import { Box } from "@mui/material";
-import CPCDRow, { type CPCDRowItem, type CPCDSize } from "./CPCDRow";
+import CPCDRow, { type CPCDRowGroup, type CPCDRowItem, type CPCDSize } from "./CPCDRow";
 import CPCDBlock, { type CPCDBlockItem } from "./CPCDBlock";
 import CPCDInline, { type CPCDInlineItem } from "./CPCDInline";
 import { useAuth } from "../AuthContext";
@@ -13,7 +13,7 @@ import { WEIGHT } from "../theme/scale";
 // Re-export so call sites can build items without importing CPCDRow/CPCDBlock
 // directly. ForeignText is the public container; CPCDRow/CPCDBlock are its
 // Chinese-script implementations.
-export type { CPCDRowItem, CPCDBlockItem, CPCDInlineItem, CPCDSize };
+export type { CPCDRowGroup, CPCDRowItem, CPCDBlockItem, CPCDInlineItem, CPCDSize };
 
 interface ForeignTextBaseProps {
     // Language of the text being rendered. When omitted, falls back to the
@@ -110,6 +110,10 @@ interface ForeignTextProps extends ForeignTextBaseProps {
     // call site needs per-character control the high-level API can't express —
     // e.g. interactivity, selection, or cell measurement (SegmentedSentenceDisplay).
     items?: CPCDRowItem[];
+    // Row layout + `items` only: unbreakable, addressable runs of items (CPCDRowGroup —
+    // e.g. one per word, so a wrapped row breaks only between words and each word can
+    // be highlighted / clicked as a unit). First user: the Reader's Pinyin view.
+    groups?: CPCDRowGroup[];
 }
 
 // Languages written in Latin script with no per-character pronunciation overlay.
@@ -158,6 +162,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
     showPinyin = true,
     useToneColor = true,
     items,
+    groups,
     pinyinShift = true,
     selectable = false,
     tapToCopy = false,
@@ -258,6 +263,7 @@ const ForeignText: React.FC<ForeignTextProps> = ({
     return (
         <CPCDRow
             items={resolvedItems}
+            groups={groups}
             size={size}
             compact={compact}
             bold={bold}

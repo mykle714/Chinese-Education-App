@@ -1,13 +1,14 @@
 import React from "react";
 import { Box, Card, CardContent, Typography, useTheme } from "@mui/material";
 import { senseLabelForIndex, resolveSelectedSenseIndex } from "../../../utils/definitionUtils";
-import { DraggableCardContainer, SwipeHintLabel, FlipHintLabel, cardSlotPadding, type CardSlotPadding } from "./styled";
+import { DraggableCardContainer, SwipeHintLabel, FlipHintLabel, LastCardLabel, cardSlotPadding, type CardSlotPadding } from "./styled";
 import {
     CORRECT_WASH,
     INCORRECT_WASH,
     CARD_DISMISS_THRESHOLD_VW,
     CARD_FLY_OUT_TRANSITION,
     CARD_FLY_OUT_MS,
+    LAST_CARD_RETURN_MS,
     FLY_OUT_X,
     FLY_OUT_ROTATION,
     TOWER_CARD_FLIP_MS,
@@ -55,6 +56,9 @@ interface FlashCardSectionProps {
     deepEntry: VocabEntry | null;
     activeFrontSlot: CardSlot;
     flyOut: FlyOut | null;
+    /** Don't draw the front: the loop's only card was just passed and may not come back
+     *  (useWorkingLoop → `frontVacated`). The card behind it shows through. */
+    frontVacated?: boolean;
     cardRef: React.RefObject<HTMLDivElement | null>;
     dragPosition: { x: number; y: number };
     isDragging: boolean;
@@ -159,6 +163,15 @@ interface FlashCardSectionProps {
      * the loop has cards, and in place of the empty-state card when it has none.
      */
     readyOutCard?: ReadyOutKind | null;
+    /** What a `pending` top card shows (ReadyOutCardLayer `look`). */
+    readyOutLook?: Exclude<ReadyOutKind, "pending">;
+    /**
+     * The out-of-ready-cards card drawn BEHIND the loop's last card, or null
+     * (ReadyOutCardLayer `backing`; decided by FlashcardsLearnPage → `readyOutBacking`).
+     * Under every slot, so it shows wherever no card covers it: behind the dragged front,
+     * through the last card's return, and in the empty frame until the top card lands.
+     */
+    readyOutBacking?: Exclude<ReadyOutKind, "pending"> | null;
     /** The `lend` card finished flying off. Must be stable (the memo). */
     onReadyOutCardGone?: () => void;
 }
@@ -205,7 +218,7 @@ const TOWER_TUCK_DEPTH_SCALE = 0.9;
 /**
  * The Deck Tower's correct swipe (direction right): from where the finger let go
  * (`--fly-from`) to off-screen right, on CARD_FLY_OUT_TRANSITION's ease. A keyframe, not a transition, for the reason WRITING_THROW_KEYFRAMES
- * gives: the dismiss re-keys the flying slot (`front-N` → `slot-X`), so the wrapper remounts
+ * gives: the dismiss re-keys the flying slot (`slot-X-front-N` → `slot-X`), so the wrapper remounts
  * already at its target and a transition has no "from" — the card vanished at release
  * instead of sliding off.
  */
@@ -228,7 +241,7 @@ const TOWER_TUCK_KEYFRAMES = {
  * plays a keyframe "grab and throw" (cardThrow.ts → `cardThrowSteps`, the motion itself).
  *
  * A keyframe animation (not a transition) on purpose: on dismiss the flying slot's key
- * changes (`front-N` → `slot-X`), so the wrapper remounts — a transition would have no
+ * changes (`slot-X-front-N` → `slot-X`), so the wrapper remounts — a transition would have no
  * "from" state and the card would jump straight off-screen. An animation plays on mount.
  * Total length is CARD_FLY_OUT_MS so the loop's fly-out timeout still lines up.
  * Docs: docs/WRITING_PRACTICE_REWORK.md § 3.
@@ -477,6 +490,49 @@ const CardFace: React.FC<{
     );
 };
 
+/**
+ * The LAST card's incorrect swipe (useWorkingLoop → `FlyOut.returnsAlone`; docs/
+ * FLP_CARD_GESTURES.md § "The last card"). A one-card loop has nothing to promote, so the
+ * plain tuck would slide the card back UNDER a front that is the very same card, already
+ * sitting there — the swipe looked like it did nothing. Instead, from where the finger let
+ * go (`--tuck-from`), the card flies fully off the left exactly as the tuck does
+ * (TOWER_TUCK_OFFSCREEN, same ease-in), waits off-screen a beat, and slides back in ON TOP
+ * at full size (no depth scale: it is the front again, not a card under it), decelerating
+ * into the resting pose. The front slot is hidden for the whole move, so this flying copy
+ * is the only card on screen; when the fly-out ends the front takes over at the identical
+ * pose. While it is off-screen (LAST_CARD_TURN_AT) it swaps from the face it was sent off
+ * on to the fresh card's Side 1, and gains the "Last card!" label (LastCardLabel).
+ * LAST_CARD_RETURN_MS long — the loop's fly-out timer waits that long for this case.
+ *
+ * The swap is two layers in the flying slot (LAST_CARD_LEAVING_KEYFRAMES /
+ * LAST_CARD_ARRIVING_KEYFRAMES), not a state change, so it runs on the SAME animation clock
+ * as the motion. It used to be a JS timer set when the fly-out armed; right after a swipe the
+ * main thread is busy (the mark request, narration, the counters), the timer fired late, and
+ * the card started sliding back in still on its answer face before snapping to Side 1.
+ */
+const LAST_CARD_RETURN_KEYFRAMES = {
+    "0%": { transform: "var(--tuck-from)", animationTimingFunction: "cubic-bezier(0.5, 0, 0.9, 0.6)" },
+    "34%": { transform: `${TOWER_TUCK_OFFSCREEN} scale(1)` },
+    "46%": { transform: `${TOWER_TUCK_OFFSCREEN} scale(1)`, animationTimingFunction: "cubic-bezier(0.15, 0.7, 0.3, 1)" },
+    "100%": { transform: "translate(0%, 0%) rotate(0deg) scale(1)" },
+};
+/** When, as a share of LAST_CARD_RETURN_MS, the returning card swaps faces: mid-way through its off-screen hold (34%–46%). */
+const LAST_CARD_TURN_AT = 0.4;
+const LAST_CARD_TURN_PCT = `${LAST_CARD_TURN_AT * 100}%`;
+// The two layers of the returning card: the face it was sent off on until the turn, then the
+// fresh Side 1. `step-end` holds each segment's start value until the next keyframe, so the
+// swap is a single-frame cut at LAST_CARD_TURN_AT, while the card is off-screen.
+const LAST_CARD_LEAVING_KEYFRAMES = {
+    "0%": { opacity: 1, animationTimingFunction: "step-end" },
+    [LAST_CARD_TURN_PCT]: { opacity: 0 },
+    "100%": { opacity: 0 },
+};
+const LAST_CARD_ARRIVING_KEYFRAMES = {
+    "0%": { opacity: 0, animationTimingFunction: "step-end" },
+    [LAST_CARD_TURN_PCT]: { opacity: 1 },
+    "100%": { opacity: 1 },
+};
+
 const noop = () => {};
 
 const FlashCardSection: React.FC<FlashCardSectionProps> = ({
@@ -485,6 +541,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     deepEntry,
     activeFrontSlot,
     flyOut,
+    frontVacated = false,
     cardRef,
     dragPosition,
     isDragging,
@@ -517,6 +574,8 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     cardsCovered = false,
     cardFrameRef,
     readyOutCard = null,
+    readyOutLook,
+    readyOutBacking = null,
     onReadyOutCardGone,
 }) => {
     const theme = useTheme();
@@ -568,6 +627,28 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
     const holdOutgoing = !!writingFace || gameBreak !== null;
     const [outgoingEntry, setOutgoingEntry] = React.useState<VocabEntry | null>(currentEntry);
     if (!flyOut && outgoingEntry?.id !== currentEntry?.id) setOutgoingEntry(currentEntry);
+
+    // The last card's return (LAST_CARD_RETURN_KEYFRAMES).
+    // Not when a game break is due: its card takes the back position and comes up on top
+    // (BreakCardLayer), so the card plays the plain tuck under it instead.
+    const returnsAlone = flyOut?.returnsAlone === true && gameBreak === null;
+    // `lastCardLabelFor`: the card that came back, which keeps the "Last card!" label while it
+    // is the front with nothing behind it; the label goes with the next dismiss, or as soon as
+    // a refill puts a card behind it. Recorded when the return ENDS, so during the return
+    // it still says whether the card wore the label when it was swiped (the leaving layer).
+    // Both updates are render-time (like `outgoingEntry` above), not an effect: the front
+    // must carry the label on the very frame it takes over from the returning copy.
+    const [lastCardLabelFor, setLastCardLabelFor] = React.useState<number | null>(null);
+    const [returnInFlightFor, setReturnInFlightFor] = React.useState<number | null>(null);
+    if (returnsAlone && currentEntry && returnInFlightFor !== currentEntry.id) setReturnInFlightFor(currentEntry.id);
+    if (!flyOut && returnInFlightFor !== null) {
+        setLastCardLabelFor(returnInFlightFor);
+        setReturnInFlightFor(null);
+    }
+    // Shown on the front card at rest: the card that came back, still alone, and not while
+    // "Tap to flip" holds the same spot in the top band.
+    const frontShowsLastCard = !flyOut && currentEntry !== null && lastCardLabelFor === currentEntry.id
+        && nextEntry === null && !(showTapToFlipHint && !isFlipped);
 
     // Side 1 language pairs with its slot's entry — not its slot index — so the
     // peeking card behind shows the correct language before promotion.
@@ -621,7 +702,13 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                         },
                     }}
                 >
-                    {currentEntry ? (
+                    {readyOutBacking && (
+                        // Before the slots in the DOM, at z-index 0: every card draws over it.
+                        <ReadyOutCardLayer key="backing" kind={readyOutBacking} backing onGone={noop} />
+                    )}
+                    {/* Also while a card is still flying: the last card's reply can empty the
+                        loop mid-flight, and unmounting the stack then cut the card off. */}
+                    {currentEntry || flyOut ? (
                         // Three-slot card stack (useWorkingLoop → CardSlot): front, back and deep
                         // rotate on each dismiss; docs/FLP_CARD_GESTURES.md § "The stack".
                         // The back card is pre-populated with the next card's content so no
@@ -641,12 +728,61 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                 // are checked first below, so without this guard they swallow the throw.
                                 // (An incorrect writing card still tucks back into the deck: towerTuck.)
                                 const towerFlyRight = !writingFace && isThisSlotFlyingOut && flyOut!.direction === 'right';
+                                // The last card's incorrect swipe: off-screen and back on top
+                                // (LAST_CARD_RETURN_KEYFRAMES), drawn as two layers — see the
+                                // render below.
+                                const lastCardReturn = isThisSlotFlyingOut && returnsAlone;
+                                // While the last card is away, the front (the same card) is not drawn:
+                                // the returning copy is the only card, landing where the front waits.
+                                const hiddenForReturn = isFront && returnsAlone;
+                                // The loop's only card, passed: the front would be the same card
+                                // again; not drawn until the server says what comes next.
+                                const hiddenForVacated = isFront && frontVacated;
                                 // This slot shows the DISMISSED card, on the face it was sent off from.
-                                const holdsDismissedCard = isThisSlotFlyingOut && (holdOutgoing || towerFlyRight);
+                                const holdsDismissedCard = isThisSlotFlyingOut && (holdOutgoing || towerFlyRight || lastCardReturn);
                                 const entry = holdsDismissedCard ? outgoingEntry : slotEntries[slot];
                                 // During a break only the card still flying out may show.
                                 const hiddenForBreak = gameBreak === "active" && !isThisSlotFlyingOut;
                                 const writingRole = isThisSlotFlyingOut ? "flying" : isFront ? "front" : "peek";
+                                // One card face in this slot. A function because the last card's return
+                                // draws two (leaving + arriving); every other slot draws one.
+                                const renderFace = (
+                                    faceEntry: VocabEntry,
+                                    flipped: boolean,
+                                    sideOne: SideOneLanguage,
+                                    drag: { x: number; y: number },
+                                    role: "front" | "peek" | "flying",
+                                ) => (
+                                    <CardFace
+                                        entry={faceEntry}
+                                        isFlipped={flipped}
+                                        // The front card keeps its flip transition through the previous
+                                        // card's fly-out: it can be tapped to flip then (useCardDrag →
+                                        // "Locks"). Only the flying/back slots freeze it, so the flying
+                                        // card's face swap on the slot change never animates.
+                                        isAnimating={isAnimating && !isFront}
+                                        showPinyinColor={showPinyinColor}
+                                        readingMode={readingMode}
+                                        sideOneLanguage={sideOne}
+                                        dragPosition={drag}
+                                        dismissThreshold={dismissThreshold}
+                                        isFront={isFront}
+                                        isProminent={isFront || isThisSlotFlyingOut}
+                                        // Only show the speaker on the active front card —
+                                        // tapping it on the back/flying-out card would race the animation.
+                                        onSpeak={isFront ? onSpeak : undefined}
+                                        speakingKey={isFront ? speakingKey : null}
+                                        // Edit canvas applies only to the active front card's back face.
+                                        editCanvas={isFront ? editCanvas : undefined}
+                                        // Only the active front card is interactive, so only it persists picks.
+                                        onPersistSense={isFront ? onPersistSense : undefined}
+                                        // The back card is exposed while the front
+                                        // card passes edge-on through the flip — blank
+                                        // its content for that window.
+                                        contentHidden={!isFront && flipInProgress}
+                                        writingFace={writingFace ? (side) => writingFace(faceEntry, side, role) : undefined}
+                                    />
+                                );
 
                                 // Compute transform and transition for this slot:
                                 // - Flying out: animate to off-screen position
@@ -660,9 +796,9 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                 // the keyframes own transform and z-index for the whole fly-out.
                                 // Every card, the writing card included: a wrong answer goes back into
                                 // the deck. From a tap, `--tuck-from` is just the resting pose.
-                                const towerTuck = isThisSlotFlyingOut && flyOut!.direction === 'left';
+                                const towerTuck = isThisSlotFlyingOut && flyOut!.direction === 'left' && !lastCardReturn;
 
-                                if (towerTuck || towerFlyRight) {
+                                if (towerTuck || towerFlyRight || lastCardReturn) {
                                     // The keyframes own the motion; this is only their start (`--tuck-from`
                                     // / `--fly-from`): the transform the finger let go at.
                                     transform = `translate(${dragPosition.x}px, ${dragPosition.y}px) rotate(${dragPosition.x * 0.05}deg)`;
@@ -709,7 +845,14 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
 
                                 return (
                                     <Box
-                                        key={isFront ? `front-${shakeNonce}` : `slot-${slot}`}
+                                        // Scoped to the SLOT. A bare `front-N` key would move with the
+                                        // front role: on a dismiss React matched it to the promoted card
+                                        // and reused the OLD front's component — still rotated 180° from
+                                        // its flip — so the new card played a flip back to Side 1 the
+                                        // moment the old one left. With the slot in the key, both the
+                                        // flying slot (`slot-X-front-N` → `slot-X`) and the promoted one
+                                        // (`slot-Y` → `slot-Y-front-N`) mount fresh, already on their face.
+                                        key={isFront ? `slot-${slot}-front-${shakeNonce}` : `slot-${slot}`}
                                         ref={isFront ? cardRef : undefined}
                                         // Handlers are detached during a fie edit: the card must not flip
                                         // or swipe away under a gesture aimed at the editor.
@@ -726,7 +869,9 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                             // longer `isFront` once the slots swap, and a tapped writing
                                             // card starts its throw dead centre, over the new front.
                                             // Under them: the back card, then the deep card.
-                                            zIndex: isThisSlotFlyingOut ? 3 : isFront ? 2 : roleOf(slot) === 1 ? 1 : 0,
+                                            // Over the out-of-ready-cards card too (z 4) when it comes up
+                                            // mid-flight: the last card flies off over it, not under it.
+                                            zIndex: isThisSlotFlyingOut ? (readyOutCard ? 5 : 3) : isFront ? 2 : roleOf(slot) === 1 ? 1 : 0,
                                             transform,
                                             transition,
                                             opacity,
@@ -736,9 +881,12 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                             // own `visible`, which beats it, and the game falling away at
                                             // its end would otherwise uncover the card early.
                                             ...(hiddenForBreak && { opacity: 0, pointerEvents: 'none' }),
+                                            // No taps either: a flip landed on the hidden front would
+                                            // jump the card the moment the returning copy hands over.
+                                            ...((hiddenForReturn || hiddenForVacated) && { opacity: 0, pointerEvents: 'none' }),
                                             // Writing flp: the promoted back card grows from its peek pose
                                             // into place under the throw. A keyframe for the same reason as
-                                            // the throw — its key changes (`slot-X` → `front-N`) on promotion,
+                                            // the throw — its key changes (`slot-X` → `slot-X-front-N`) on promotion,
                                             // so it remounts and a transition would snap.
                                             ...(writingFace && isFront && isAnimating && flyArmed ? {
                                                 animation: `writingPromote ${CARD_FLY_OUT_MS}ms cubic-bezier(0.2, 0.8, 0.3, 1) both`,
@@ -747,7 +895,11 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                                     "100%": { transform: "translate(0px, 0px) rotate(0deg) scale(1)", opacity: 1 },
                                                 },
                                             } : {}),
-                                            ...(!flyArmed ? {} : towerTuck ? {
+                                            ...(!flyArmed ? {} : lastCardReturn ? {
+                                                "--tuck-from": transform,
+                                                animation: `lastCardReturn ${LAST_CARD_RETURN_MS}ms linear forwards`,
+                                                "@keyframes lastCardReturn": LAST_CARD_RETURN_KEYFRAMES,
+                                            } : towerTuck ? {
                                                 "--tuck-from": transform,
                                                 animation: `towerTuck ${CARD_FLY_OUT_MS}ms linear forwards`,
                                                 "@keyframes towerTuck": TOWER_TUCK_KEYFRAMES,
@@ -772,42 +924,73 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                             } : {}),
                                         }}
                                     >
-                                        {entry && (
-                                            <CardFace
-                                                entry={entry}
-                                                // A held flying card stays on the face it was sent off from: the
-                                                // writing card's graded back, and — before a game break — the
-                                                // answer face (a card is only swiped once flipped), and the Deck
-                                                // Tower's correct swipe the same.
-                                                isFlipped={isFront ? isFlipped : holdsDismissedCard}
-                                                // The front card keeps its flip transition through the previous
-                                                // card's fly-out: it can be tapped to flip then (useCardDrag →
-                                                // "Locks"). Only the flying/back slots freeze it, so the flying
-                                                // card's face swap on the slot change never animates.
-                                                isAnimating={isAnimating && !isFront}
-                                                showPinyinColor={showPinyinColor}
-                                                readingMode={readingMode}
-                                                sideOneLanguage={slotSideOneLanguages[slot]}
-                                                // Suppress the drag overlay on the newly promoted card while
-                                                // the previous card is still flying out (isAnimating window).
-                                                dragPosition={(isFront && isAnimating) ? { x: 0, y: 0 } : dragPosition}
-                                                dismissThreshold={dismissThreshold}
-                                                isFront={isFront}
-                                                isProminent={isFront || isThisSlotFlyingOut}
-                                                // Only show the speaker on the active front card —
-                                                // tapping it on the back/flying-out card would race the animation.
-                                                onSpeak={isFront ? onSpeak : undefined}
-                                                speakingKey={isFront ? speakingKey : null}
-                                                // Edit canvas applies only to the active front card's back face.
-                                                editCanvas={isFront ? editCanvas : undefined}
-                                                // Only the active front card is interactive, so only it persists picks.
-                                                onPersistSense={isFront ? onPersistSense : undefined}
-                                                // The back card is exposed while the front
-                                                // card passes edge-on through the flip — blank
-                                                // its content for that window.
-                                                contentHidden={!isFront && flipInProgress}
-                                                writingFace={writingFace ? (side) => writingFace(entry, side, writingRole) : undefined}
-                                            />
+                                        {lastCardReturn ? (
+                                            // The returning last card, as two layers cut over on the
+                                            // animation's own clock (LAST_CARD_TURN_AT, off-screen):
+                                            // leaving — the face it was sent off on, wearing the label
+                                            // only if it already did; arriving — the fresh card on Side 1
+                                            // ("peek": the front's own reset state, not interactive),
+                                            // labelled. Not armed yet = still at the release point,
+                                            // so only the leaving layer shows.
+                                            <>
+                                                <Box
+                                                    className="mobile-demo-last-card-leaving"
+                                                    sx={{
+                                                        position: "absolute",
+                                                        inset: 0,
+                                                        ...(flyArmed && {
+                                                            animation: `lastCardLeaving ${LAST_CARD_RETURN_MS}ms linear forwards`,
+                                                            "@keyframes lastCardLeaving": LAST_CARD_LEAVING_KEYFRAMES,
+                                                        }),
+                                                    }}
+                                                >
+                                                    {outgoingEntry && renderFace(outgoingEntry, true, slotSideOneLanguages[slot], dragPosition, "flying")}
+                                                    <LastCardLabel
+                                                        className="mobile-demo-last-card-label"
+                                                        visible={outgoingEntry !== null && lastCardLabelFor === outgoingEntry.id}
+                                                    >
+                                                        Last card!
+                                                    </LastCardLabel>
+                                                </Box>
+                                                <Box
+                                                    className="mobile-demo-last-card-arriving"
+                                                    sx={{
+                                                        position: "absolute",
+                                                        inset: 0,
+                                                        opacity: 0,
+                                                        ...(flyArmed && {
+                                                            animation: `lastCardArriving ${LAST_CARD_RETURN_MS}ms linear forwards`,
+                                                            "@keyframes lastCardArriving": LAST_CARD_ARRIVING_KEYFRAMES,
+                                                        }),
+                                                    }}
+                                                >
+                                                    {/* No drag wash: it is a fresh card, not the one being swiped. */}
+                                                    {currentEntry && renderFace(currentEntry, false, sideOneLanguage, { x: 0, y: 0 }, "peek")}
+                                                    <LastCardLabel className="mobile-demo-last-card-label" visible>
+                                                        Last card!
+                                                    </LastCardLabel>
+                                                </Box>
+                                            </>
+                                        ) : (
+                                            <>
+                                                {entry && renderFace(
+                                                    entry,
+                                                    // A held flying card stays on the face it was sent off from: the
+                                                    // writing card's graded back, and — before a game break — the
+                                                    // answer face (a card is only swiped once flipped), and the Deck
+                                                    // Tower's correct swipe the same.
+                                                    isFront ? isFlipped : holdsDismissedCard,
+                                                    slotSideOneLanguages[slot],
+                                                    // Suppress the drag overlay on the newly promoted card while
+                                                    // the previous card is still flying out (isAnimating window).
+                                                    (isFront && isAnimating) ? { x: 0, y: 0 } : dragPosition,
+                                                    writingRole,
+                                                )}
+                                                {/* The front card that came back alone keeps its label (frontShowsLastCard). */}
+                                                <LastCardLabel className="mobile-demo-last-card-label" visible={isFront && frontShowsLastCard}>
+                                                    Last card!
+                                                </LastCardLabel>
+                                            </>
                                         )}
                                     </Box>
                                 );
@@ -823,7 +1006,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                                 </BreakCardLayer>
                             )}
                         </>
-                    ) : readyOutCard ? null : (
+                    ) : readyOutCard || readyOutBacking ? null : (
                         <Card
                             className="mobile-demo-flashcard-empty"
                             sx={{
@@ -855,7 +1038,7 @@ const FlashCardSection: React.FC<FlashCardSectionProps> = ({
                         </Card>
                     )}
                     {readyOutCard && (
-                        <ReadyOutCardLayer key={readyOutCard} kind={readyOutCard} onGone={onReadyOutCardGone ?? noop} />
+                        <ReadyOutCardLayer key={readyOutCard} kind={readyOutCard} look={readyOutLook} onGone={onReadyOutCardGone ?? noop} />
                     )}
                     {/* Swipe-direction tutorial labels — in the card's top corners, centred in its
                         top band (`--card-hint-band`; styled.ts). Children of the FRAME, not of a

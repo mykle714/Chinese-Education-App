@@ -162,7 +162,7 @@ export interface SceneBox {
 }
 
 /**
- * The session's plate-style buttons (Write it, Compare, More Info — the flp's towerPlate.ts):
+ * The session's plate-style buttons (Compare, Customize, More Info — the flp's towerPlate.ts):
  * the floor plate's slab in WHITE, per the design — its walls stepped down from white the
  * way a plate's are from its band (`bandMaterial`), so they read as light greys.
  */
@@ -210,6 +210,8 @@ export function useTowerStudy(opts: {
     dealtWorlds: readonly TowerWorldId[];
     /** The climb has ended: the tower stands at `cards` again in the tower view. */
     onClimbedOut: (world: TowerWorldId, cards: number) => void;
+    /** Each world's focus switch, passed to the studied session's host (`FlpTowerHost.focused`). */
+    focusedWorlds: Record<TowerWorldId, boolean>;
 }): TowerStudy {
     const { unit, card } = opts;
     const [phase, setPhase] = useState<TowerStudyPhase>("idle");
@@ -575,6 +577,8 @@ export function useTowerStudy(opts: {
         return h;
     };
 
+    // The studied world's focus switch, for its host (a dep below, so a flip re-makes the host).
+    const studiedFocused = world !== null && opts.focusedWorlds[world];
     const sessions: TowerStudySession[] = useMemo(
         () =>
             mountedWorlds.map((w) => {
@@ -595,12 +599,13 @@ export function useTowerStudy(opts: {
                     cardsCovered: phase === "preparing" || phase === "diving" || phase === "climbing",
                     cardFrameRef,
                     plateTones: STUDY_PLATE_TONES,
+                    focused: studiedFocused,
                 };
                 return { world: w, key, host };
             }),
         // `handlesFor` / `parkedHostFor` read refs and stable callbacks only.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [mountedWorlds, dealKeys, world, phase]
+        [mountedWorlds, dealKeys, world, phase, studiedFocused]
     );
 
     const e = easeDive(u);

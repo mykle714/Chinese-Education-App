@@ -1,6 +1,6 @@
 import { alpha } from "@mui/material/styles";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Box } from "@mui/material";
+import { Box, type SxProps, type Theme } from "@mui/material";
 import CpcdPopup from "./CpcdPopup";
 import { copyToClipboard } from "../utils/copyToClipboard";
 import { getToneColor } from "../utils/toneColors";
@@ -45,6 +45,42 @@ export interface CPCDRowItem extends CpcdCharItem {
     // unchanged; it is never shown (or copied). Set via ForeignText's `maskChar`. First
     // user: the writing flp's used-in hint, in the hint pawn's bubble (docs/HINT_PAWN.md).
     masked?: boolean;
+    // Size the cell to its own text instead of a fixed `charCount × COLUMN_WIDTH` column —
+    // for a run with no pinyin that is not a CJK character: a Latin word, a digit run, a
+    // punctuation mark. Padded by half the column overlap on each side (the side bearing a
+    // fixed column has), so the row's negative cell overlap tucks it in exactly like a
+    // character. First user: the Reader's Pinyin view (ReaderCpcdView), whose rows carry
+    // a whole paragraph — punctuation and English words included.
+    autoWidth?: boolean;
+    // Keep the pinyin band (padding-bottom) on a cell that has no pinyin, so a wrapped line
+    // made only of such cells (punctuation, Latin) is as tall as a line of characters.
+    // Same first user.
+    reservePinyinBand?: boolean;
+}
+
+/**
+ * A run of consecutive items wrapped in one inline-block element (`groups` prop).
+ *
+ * - **Unbreakable**: a wrapped row never breaks a line inside a group, so a group
+ *   is how a caller keeps a multi-character word (and the punctuation glued to it) on one
+ *   line while the row still wraps between groups.
+ * - **Addressable**: the wrapper carries the caller's class, data attributes, styling
+ *   (e.g. a word highlight that covers the cells AND the pinyin band) and click handler.
+ *
+ * Groups may nest (a word inside a word+punctuation unit) but must not partially overlap.
+ * The cells inside keep their positions in the row's one coordinate space (the wrappers
+ * are not positioned), so the pinyin collision solver still runs across group boundaries.
+ * Docs: docs/CPCD_PINYIN_SHIFT.md § "Groups".
+ */
+export interface CPCDRowGroup {
+    // Item index range, [start, end).
+    start: number;
+    end: number;
+    className?: string;
+    sx?: SxProps<Theme>;
+    // Extra attributes on the wrapper, e.g. `{ "data-span-index": 3 }`.
+    attrs?: Record<string, string | number>;
+    onClick?: () => void;
 }
 
 /**
@@ -78,6 +114,9 @@ function MaskedCharMark({ color }: { color?: string }) {
 
 interface CPCDRowProps {
     items: CPCDRowItem[];
+    // Unbreakable / addressable runs of items (see CPCDRowGroup). Omitted → every cell
+    // is a direct child of the row, as before.
+    groups?: CPCDRowGroup[];
     size?: CPCDSize;
     compact?: boolean;
     flexWrap?: "nowrap" | "wrap";
@@ -155,6 +194,7 @@ const TAP_SLOP_PX = 10;
 
 const CPCDRow: React.FC<CPCDRowProps> = ({
     items,
+    groups,
     size = "sm",
     compact = false,
     flexWrap = "nowrap",
@@ -302,7 +342,10 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
             const extents: PinyinExtent[] = idxs.map((i) => {
                 const cell = cellRefs.current[i];
                 const item = items[i];
-                const boxWidth = Math.max(1, [...item.character].length) * columnWidth;
+                // An auto-width cell's box is whatever its text measured to.
+                const boxWidth = item.autoWidth && cell
+                    ? cell.offsetWidth
+                    : Math.max(1, [...item.character].length) * columnWidth;
                 return {
                     center: cell ? cell.offsetLeft + boxWidth / 2 : 0,
                     boxWidth,
@@ -356,6 +399,154 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
         return () => ro.disconnect();
     }, []);
 
+    // Groups, outermost first at each start (a wider group before the narrower one it
+    // contains), so the recursive render below can nest them.
+    const sortedGroups = (groups ?? [])
+        .filter((g) => g.start < g.end)
+        .slice()
+        .sort((a, b) => a.start - b.start || b.end - a.end);
+
+    // One character cell. `firstInGroup`: the first child of a group wrapper takes no
+    // overlap margin — the WRAPPER takes it instead, so the wrapper's box (and any
+    // highlight drawn on it) lines up with its cells.
+    const renderCell = (item: CPCDRowItem, i: number, firstInGroup: boolean) => {
+            const charCount = Math.max(1, [...item.character].length);
+            const cellWidth = charCount * columnWidth;
+            const isInteractive = item.interactive ?? false;
+            const showPinyin = item.showPinyin !== false && !!item.pinyin;
+            // Reserved vertical space (below the glyph) for the pinyin row.
+            // Kept even when showPinyin is false so toggling pinyin visibility
+            // doesn't shift surrounding layout.
+            const cellPaddingBottomForPinyin =
+                showPinyin || item.pinyin || item.reservePinyinBand ? `${pinyinReservedHeight}px` : "0px";
+            return (
+                <Box
+                    key={i}
+                    ref={(node: HTMLDivElement | null) => {
+                        cellRefs.current[i] = node;
+                        item.cellRef?.(node);
+                    }}
+                    className="char-pinyin-display cpcd-row__char-cell"
+                    onMouseEnter={isInteractive ? item.onHoverStart : undefined}
+                    // Stop pointerdown from bubbling on interactive cells so that
+                    // an ancestor's "tap background → deselect" handler doesn't
+                    // fire when the user taps a character directly.
+                    onPointerDown={isInteractive ? (e) => e.stopPropagation() : undefined}
+                    // A TAP toggles; a drag does not. Without the slop check, a finger
+                    // that lands on a word, drags (a tab swipe, a sheet resize, a
+                    // scroll) and lifts still fired touchend here and opened the popup.
+                    onTouchStart={
+                        isInteractive && item.onTapToggle
+                            ? (e) => {
+                                  const t = e.touches[0];
+                                  touchStartRef.current = t ? { x: t.clientX, y: t.clientY } : null;
+                              }
+                            : undefined
+                    }
+                    onTouchEnd={
+                        isInteractive && item.onTapToggle
+                            ? (e) => {
+                                  e.preventDefault();
+                                  const start = touchStartRef.current;
+                                  touchStartRef.current = null;
+                                  const t = e.changedTouches[0];
+                                  if (start && t && Math.hypot(t.clientX - start.x, t.clientY - start.y) > TAP_SLOP_PX) return;
+                                  item.onTapToggle!();
+                              }
+                            : undefined
+                    }
+                    onTouchCancel={() => { touchStartRef.current = null; }}
+                    // inline-block (not flex) so multi-cell selection serializes as
+                    // a single line of characters with no inter-cell newlines.
+                    sx={{
+                        display: "inline-block",
+                        verticalAlign: "top",
+                        textAlign: "center",
+                        width: item.autoWidth ? "auto" : `${cellWidth}px`,
+                        ...(item.autoWidth && {
+                            paddingLeft: `${overlapAbs / 2}px`,
+                            paddingRight: `${overlapAbs / 2}px`,
+                            whiteSpace: "pre",
+                        }),
+                        marginLeft: firstInGroup ? 0 : `${overlap}px`,
+                        paddingTop: VERTICAL_PADDING[size],
+                        paddingBottom: cellPaddingBottomForPinyin,
+                        boxSizing: "border-box",
+                        borderRadius: "6px",
+                        border: `${CELL_BORDER_PX}px solid${item.selected ? "" : " transparent"}`,
+                        borderColor: item.selected ? "text.primary" : "transparent",
+                        // A translucent wash of the blue MARK (highlighter) tier — the selection
+                        // tint SegmentedSentenceDisplay's highlight overlay uses too.
+                        backgroundColor: item.selected ? alpha(COLORS.bluMk, 0.18) : "transparent",
+                        cursor: isInteractive ? "pointer" : "default",
+                        transition: "border-color 0.15s ease, background-color 0.15s ease",
+                        fontSize: charFontSize,
+                        fontWeight: bold ? WEIGHT.bold : WEIGHT.regular,
+                        fontFamily: FONTS.cjk,
+                        // Per-card Contrast override colors the glyph only (not the
+                        // pinyin); falls back to the theme default. docs/CARD_ICON_LAYOUT.md.
+                        color: characterColor ?? "text.primary",
+                        lineHeight: CHAR_LINE_HEIGHT,
+                        // Covers the masked mark too, which stands in for the glyph.
+                        "& .char-pinyin-display__character, & .char-pinyin-display__mask": {
+                            position: "relative",
+                            top: `${
+                                centerHiddenPinyinGlyph && item.pinyin
+                                    ? centeredGlyphDropPx
+                                    : GLYPH_DROP_PX[size]
+                            }px`,
+                        },
+                    }}
+                >
+                    {item.masked ? (
+                        <MaskedCharMark color={characterColor} />
+                    ) : (
+                        <span className="char-pinyin-display__character">{item.character}</span>
+                    )}
+                </Box>
+            );
+    };
+
+    // Render items [from, to), wrapping each group's run (recursively, for nested groups).
+    // `insideGroup`: these nodes are a group's children, so the first one takes no margin.
+    const renderNodes = (from: number, to: number, pending: CPCDRowGroup[], insideGroup: boolean): React.ReactNode[] => {
+        const nodes: React.ReactNode[] = [];
+        let i = from;
+        while (i < to) {
+            const group = pending.find((g) => g.start === i && g.end <= to);
+            const firstHere = insideGroup && nodes.length === 0;
+            if (!group) {
+                nodes.push(renderCell(items[i], i, firstHere));
+                i++;
+                continue;
+            }
+            // The groups strictly inside this one (a group never partially overlaps another).
+            const inner = pending.filter((g) => g !== group && g.start >= group.start && g.end <= group.end);
+            nodes.push(
+                <Box
+                    key={`g${group.start}-${group.end}`}
+                    component="span"
+                    className={["cpcd-row__group", group.className].filter(Boolean).join(" ")}
+                    onClick={group.onClick}
+                    {...group.attrs}
+                    sx={[
+                        {
+                            display: "inline-block",
+                            verticalAlign: "top",
+                            whiteSpace: "nowrap",
+                            marginLeft: firstHere ? 0 : `${overlap}px`,
+                        },
+                        ...(Array.isArray(group.sx) ? group.sx : [group.sx]),
+                    ]}
+                >
+                    {renderNodes(group.start, group.end, inner, true)}
+                </Box>
+            );
+            i = group.end;
+        }
+        return nodes;
+    };
+
     // Compose the caller's className with the stable cpcd-row base class and the
     // optional selectable modifier. The CSS desktop selection rule keys off
     // `.cpcd-row--selectable` so selection is opt-in per instance.
@@ -385,99 +576,9 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                     ...(justifyContent === "center" && { textAlign: "center" }),
                     ...(justifyContent === "flex-start" && { textAlign: "left" }),
                     ...(justifyContent === "flex-end" && { textAlign: "right" }),
-                    "& > *": { marginLeft: `${overlap}px` },
                 }}
             >
-                {items.map((item, i) => {
-                    const charCount = Math.max(1, [...item.character].length);
-                    const cellWidth = charCount * columnWidth;
-                    const isInteractive = item.interactive ?? false;
-                    const showPinyin = item.showPinyin !== false && !!item.pinyin;
-                    // Reserved vertical space (below the glyph) for the pinyin row.
-                    // Kept even when showPinyin is false so toggling pinyin visibility
-                    // doesn't shift surrounding layout.
-                    const cellPaddingBottomForPinyin = showPinyin || item.pinyin ? `${pinyinReservedHeight}px` : "0px";
-                    return (
-                        <Box
-                            key={i}
-                            ref={(node: HTMLDivElement | null) => {
-                                cellRefs.current[i] = node;
-                                item.cellRef?.(node);
-                            }}
-                            className="char-pinyin-display cpcd-row__char-cell"
-                            onMouseEnter={isInteractive ? item.onHoverStart : undefined}
-                            // Stop pointerdown from bubbling on interactive cells so that
-                            // an ancestor's "tap background → deselect" handler doesn't
-                            // fire when the user taps a character directly.
-                            onPointerDown={isInteractive ? (e) => e.stopPropagation() : undefined}
-                            // A TAP toggles; a drag does not. Without the slop check, a finger
-                            // that lands on a word, drags (a tab swipe, a sheet resize, a
-                            // scroll) and lifts still fired touchend here and opened the popup.
-                            onTouchStart={
-                                isInteractive && item.onTapToggle
-                                    ? (e) => {
-                                          const t = e.touches[0];
-                                          touchStartRef.current = t ? { x: t.clientX, y: t.clientY } : null;
-                                      }
-                                    : undefined
-                            }
-                            onTouchEnd={
-                                isInteractive && item.onTapToggle
-                                    ? (e) => {
-                                          e.preventDefault();
-                                          const start = touchStartRef.current;
-                                          touchStartRef.current = null;
-                                          const t = e.changedTouches[0];
-                                          if (start && t && Math.hypot(t.clientX - start.x, t.clientY - start.y) > TAP_SLOP_PX) return;
-                                          item.onTapToggle!();
-                                      }
-                                    : undefined
-                            }
-                            onTouchCancel={() => { touchStartRef.current = null; }}
-                            // inline-block (not flex) so multi-cell selection serializes as
-                            // a single line of characters with no inter-cell newlines.
-                            sx={{
-                                display: "inline-block",
-                                verticalAlign: "top",
-                                textAlign: "center",
-                                width: `${cellWidth}px`,
-                                paddingTop: VERTICAL_PADDING[size],
-                                paddingBottom: cellPaddingBottomForPinyin,
-                                boxSizing: "border-box",
-                                borderRadius: "6px",
-                                border: `${CELL_BORDER_PX}px solid${item.selected ? "" : " transparent"}`,
-                                borderColor: item.selected ? "text.primary" : "transparent",
-                                // A translucent wash of the blue MARK (highlighter) tier — the selection
-                                // tint SegmentedSentenceDisplay's highlight overlay uses too.
-                                backgroundColor: item.selected ? alpha(COLORS.bluMk, 0.18) : "transparent",
-                                cursor: isInteractive ? "pointer" : "default",
-                                transition: "border-color 0.15s ease, background-color 0.15s ease",
-                                fontSize: charFontSize,
-                                fontWeight: bold ? WEIGHT.bold : WEIGHT.regular,
-                                fontFamily: FONTS.cjk,
-                                // Per-card Contrast override colors the glyph only (not the
-                                // pinyin); falls back to the theme default. docs/CARD_ICON_LAYOUT.md.
-                                color: characterColor ?? "text.primary",
-                                lineHeight: CHAR_LINE_HEIGHT,
-                                // Covers the masked mark too, which stands in for the glyph.
-                                "& .char-pinyin-display__character, & .char-pinyin-display__mask": {
-                                    position: "relative",
-                                    top: `${
-                                        centerHiddenPinyinGlyph && item.pinyin
-                                            ? centeredGlyphDropPx
-                                            : GLYPH_DROP_PX[size]
-                                    }px`,
-                                },
-                            }}
-                        >
-                            {item.masked ? (
-                                <MaskedCharMark color={characterColor} />
-                            ) : (
-                                <span className="char-pinyin-display__character">{item.character}</span>
-                            )}
-                        </Box>
-                    );
-                })}
+                {renderNodes(0, items.length, sortedGroups, false)}
             </Box>
 
             {/* Pinyin block — absolutely positioned overlay containing all pinyin

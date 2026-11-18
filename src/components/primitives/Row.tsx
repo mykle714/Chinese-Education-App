@@ -70,7 +70,38 @@ export interface RowProps {
     onClick?: (e: React.MouseEvent) => void;
     className?: string;
     sx?: SxProps<Theme>;
+    /**
+     * Re-colours the row's face, hairline and text for a page whose ground is not paper —
+     * a Tier 2 page at night passes its time-of-day look (src/timeOfDay/tier2Look.ts →
+     * Tier2Look satisfies this shape, so `tones={look}` works). The avatar keeps its
+     * pastel fill and ink glyph either way (pastels stay pastel on slate). Omitted = the
+     * paper-ground day tones (ROW_DAY_TONES). Caller: features/reader/TextSidebar.tsx.
+     */
+    tones?: RowTones;
 }
+
+/** The colours `tones` can override — field names match Tier2Look's. */
+export interface RowTones {
+    /** The row's face. */
+    surface: string;
+    /** Its 1px hairline. */
+    line: string;
+    /** Title ink. */
+    ink: string;
+    /** The trailing value. */
+    ink2: string;
+    /** Subtitle, meta line and chevron. */
+    muted: string;
+}
+
+/** The paper-ground row, as every caller without `tones` draws it. */
+const ROW_DAY_TONES: RowTones = {
+    surface: COLORS.white,
+    line: COLORS.rowBorder,
+    ink: COLORS.onSurface,
+    ink2: COLORS.iconColor,
+    muted: COLORS.textSecondary,
+};
 
 /**
  * Turns a row into a real anchor when it has a `to`, a real button when it only has an
@@ -109,7 +140,12 @@ export const Row: React.FC<RowProps> = ({
     onClick,
     className,
     sx,
+    tones,
 }) => {
+    // Day callers keep their exact colours: the meta line and chevron stay `textFaint`
+    // (fainter than the subtitle) unless a `tones` set is passed, which has one muted tier.
+    const t = tones ?? ROW_DAY_TONES;
+    const faint = tones ? tones.muted : COLORS.textFaint;
     // v2: avatars are the hue's MID tier ("Mid: … avatars", artboards 5 and 8) and the
     // glyph on them is ink — there is no per-hue ink tier any more.
     const fill = RAMP[hue].mid;
@@ -133,8 +169,8 @@ export const Row: React.FC<RowProps> = ({
                     display: "flex",
                     alignItems: "center",
                     gap: "12px",
-                    backgroundColor: COLORS.white,
-                    border: `1px solid ${COLORS.rowBorder}`,
+                    backgroundColor: t.surface,
+                    border: `1px solid ${t.line}`,
                     borderRadius: "16px",
                     padding: "11px 13px",
                     width: "100%",
@@ -183,7 +219,7 @@ export const Row: React.FC<RowProps> = ({
             <Box className="row__text" sx={{ flex: 1, minWidth: 0 }}>
                 <Typography
                     className="row__title"
-                    sx={{ fontFamily: FONTS.sans, fontSize: 14.5, fontWeight: 600, letterSpacing: "-0.01em", color: COLORS.onSurface }}
+                    sx={{ fontFamily: FONTS.sans, fontSize: 14.5, fontWeight: 600, letterSpacing: "-0.01em", color: t.ink }}
                 >
                     {title}
                 </Typography>
@@ -193,7 +229,7 @@ export const Row: React.FC<RowProps> = ({
                         sx={{
                             fontFamily: FONTS.sans,
                             fontSize: 11.5,
-                            color: COLORS.textSecondary,
+                            color: t.muted,
                             marginTop: "2px",
                             whiteSpace: "nowrap",
                             overflow: "hidden",
@@ -213,7 +249,7 @@ export const Row: React.FC<RowProps> = ({
                         sx={{
                             ...DATA_TYPE,
                             fontSize: 10.5,
-                            color: COLORS.textFaint,
+                            color: faint,
                             marginTop: "3px",
                             display: "flex",
                             alignItems: "center",
@@ -228,13 +264,13 @@ export const Row: React.FC<RowProps> = ({
             {value !== undefined && (
                 <Typography
                     className="row__value"
-                    sx={{ ...DATA_TYPE, fontSize: 11, color: COLORS.iconColor, flexShrink: 0 }}
+                    sx={{ ...DATA_TYPE, fontSize: 11, color: t.ink2, flexShrink: 0 }}
                 >
                     {value}
                 </Typography>
             )}
             {trailing}
-            {chevron && <Icon name="chevron_right" size={17} color={COLORS.textFaint} />}
+            {chevron && <Icon name="chevron_right" size={17} color={faint} />}
         </Box>
     );
 };

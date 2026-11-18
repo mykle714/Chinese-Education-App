@@ -2245,6 +2245,10 @@ results*. It **supersedes several decisions above** — the full-bleed rows, the
     through root CSS variables (`tier2Chrome.ts` → `tier2Var`), so it is themed only while
     a Tier 2 page is up; claims are counted so a slide between two Tier 2 pages never clears
     the newcomer's look. `useTier2Look` also claims the browser-chrome strip (`useThemeColor`).
+  - **Other Tier 2 pages** wear the same look through the same hook: Lessons
+    (`LessonsPage.tsx`), the vocab cdp (`VocabCardDetailPage.tsx`), and — since 2026-11-17 —
+    both Reader pages (`/reader`, `/reader/:id`; USER_DOCUMENT_FEATURE_SUMMARY.md § Look,
+    which lists what the Reader leaves unthemed: its pastels and its dictionary keycap).
   - **Not themed:** the slab footer + Menu popover (Settings theme only since 2026-11-15), the beginner keyboard (always grey since 2026-11-15), the es `PinyinKeypad`, the AI suggestion card (its own AI surface) and
     the `DelayedCircularProgress` spinner. (The read-only card page `/dictionary/card/:word`
     that also wore the ground was deleted 2026-11-10.)
@@ -2268,6 +2272,47 @@ Time of day: `src/timeOfDay/tier2Look.ts` → `tier2LookAt`, `Tier2Look`;
 `src/timeOfDay/useTier2Look.ts`; `src/components/DictionaryEntryRow.tsx` → `tones`.
 **Docs:** `docs/DICTIONARY_NUMBERED_PINYIN_SEARCH.md`,
 `docs/DICTIONARY_AI_FALLBACK_SEARCH.md`, `docs/WORD_COMPARE_FEATURE.md`.
+
+### 7c · Search history
+
+A `history` glyph sits at the right end of the search field (SearchField `endAction`). Tapping
+it slides a **recent searches** list in from the right screen edge over the results. The list
+uses the page's own vocabulary: a lowercase slab label with a quiet "Clear all", then one result
+slab of rows. Tapping a row's text re-runs that query: the field fills, the debounce searches,
+the query moves back to the top of the list and the list slides away. The row's trailing ✕ is a
+**sibling** button, not nested in the row button, so removing a query never also re-runs it.
+Focusing or typing in the field, or tapping the glyph again, also slides the list away. While the list is
+out, the glyph is inked rather than muted.
+
+- **Storage: per device** (owner's call 2026-11-17). localStorage key
+  `dictionary.searchHistory.<userId>.<language>`; no table, no API. The list is newest first,
+  capped at 50, and de-duplicated on trimmed lower-cased text (the newest spelling wins). Corrupt
+  or unavailable storage reads as an empty list.
+- **When a query is saved.** The page searches as you type, so a debounced term alone is not
+  intent ("hel" on the way to "hello"). A query is committed on any of these:
+  1. the learner opens a result (the eip);
+  2. Enter or the keyboard's Search key, including the beginner keyboard's ā-pad action key,
+     which dispatches a real Enter (IME-composition Enters are ignored);
+  3. a scroll of the page or a sideways swipe of a result's dd, counted only within 1.5 s of a
+     real touch, pointer or wheel gesture, because layout changes also fire `scroll`;
+  4. the term sitting unchanged for 5 s.
+
+  Triggers 3 and 4 also require the term to have hits on screen (rows, segment groups or an AI
+  card), and each auto trigger fires at most once per term. Triggers 1 and 2 always save.
+  Nothing auto-saves while the list covers the results.
+- **The slide.** The results layer and the history layer share one CSS grid cell, so neither
+  leaves the flow. When the list is fully open, the results layer collapses (`height: 0`) so the
+  page is only as tall as the list. The slide runs from `100vw`, not 100% of its own width, so
+  it enters from the screen edge. It uses the Friends view swap's 280 ms
+  `cubic-bezier(0.2, 0.8, 0.2, 1)` in, and that curve time-reversed (`cubic-bezier(0.8, 0.2, 0.8, 0.8)`) out, so the exit eases away rather than snapping off. The Container clips with `overflow-x: clip`, so the slide
+  never makes the page scroll sideways. Reduced motion skips the slide.
+
+**Code:** `src/features/dictionary/dictionarySearchHistory.ts` → `readHistory`, `addToHistory`,
+`removeFromHistory`, `clearHistory`, `MAX_HISTORY`;
+`src/features/dictionary/useDictionarySearchHistory.ts` → `useDictionarySearchHistory`
+(`SETTLE_MS`, `GESTURE_WINDOW_MS`); `src/features/dictionary/DictionarySearchHistoryPanel.tsx`;
+`src/features/dictionary/DictionaryPage.tsx` → `HistoryPhase`, `historySlideIn`,
+`handleHistorySelect`; `src/components/SearchField.tsx` → `onSubmit`, `endAction`.
 
 ## 8 · Friends — `/friends` — **Size: M**
 

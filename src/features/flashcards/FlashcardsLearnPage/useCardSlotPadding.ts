@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState, type RefObject } from "react";
+import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { cardSlotPadding, CARD_SLOT_BOTTOM_INSET_FALLBACK, type CardSlotPadding } from "./styled";
 
 /**
@@ -23,13 +23,23 @@ import { cardSlotPadding, CARD_SLOT_BOTTOM_INSET_FALLBACK, type CardSlotPadding 
  * @param slotRef       the card slot (FlashCardSection's outer flex:1 Box)
  * @param contentRef    ContentArea — the affordance's offsetParent
  * @param affordanceRef the More Info pill (null on a surface that has none)
+ * @param topBandRef    an overlay band across the TOP of the slot — the flp's word-tools
+ *                      rail (`.mobile-demo-word-tools-band`). The top pad clears it. Its
+ *                      LAST non-zero height is kept while the rail is hidden (the
+ *                      out-of-ready-cards card, the icon editor), so hiding the rail never
+ *                      moves the card; `topBandFallback` stands in until it is first measured.
+ * @param topBandFallback px, the band's height before its first measurement (0 = no band)
  */
 export function useCardSlotPadding(
     slotRef: RefObject<HTMLElement | null>,
     contentRef: RefObject<HTMLElement | null>,
     affordanceRef: RefObject<HTMLElement | null>,
+    topBandRef?: RefObject<HTMLElement | null>,
+    topBandFallback = 0,
 ): CardSlotPadding {
-    const [pad, setPad] = useState<CardSlotPadding>(() => cardSlotPadding(0));
+    const [pad, setPad] = useState<CardSlotPadding>(() => cardSlotPadding(0, undefined, topBandFallback));
+    // The band's last measured height (see `topBandRef`).
+    const topBandHeight = useRef(topBandFallback);
 
     useLayoutEffect(() => {
         const measure = () => {
@@ -42,7 +52,9 @@ export function useCardSlotPadding(
             const inset = affordance
                 ? Math.max(0, content.clientHeight - affordance.offsetTop)
                 : CARD_SLOT_BOTTOM_INSET_FALLBACK;
-            const next = cardSlotPadding(slot.offsetHeight, inset);
+            const bandHeight = topBandRef?.current?.offsetHeight ?? 0;
+            if (bandHeight > 0) topBandHeight.current = bandHeight;
+            const next = cardSlotPadding(slot.offsetHeight, inset, topBandHeight.current);
             // Identity-stable when nothing changed, so this never re-renders the card stack
             // on an incidental resize notification.
             setPad((prev) => (prev.top === next.top && prev.bottom === next.bottom ? prev : next));
@@ -50,7 +62,7 @@ export function useCardSlotPadding(
         measure();
 
         const ro = new ResizeObserver(measure);
-        for (const el of [slotRef.current, contentRef.current, affordanceRef.current]) {
+        for (const el of [slotRef.current, contentRef.current, affordanceRef.current, topBandRef?.current ?? null]) {
             if (el) ro.observe(el);
         }
         // Rotation / browser-chrome changes can alter the slot height without any observed
@@ -60,8 +72,8 @@ export function useCardSlotPadding(
             ro.disconnect();
             window.removeEventListener("resize", measure);
         };
-        // All three are stable ref objects — this effect is mount-scoped.
-    }, [slotRef, contentRef, affordanceRef]);
+        // All four are stable ref objects — this effect is mount-scoped.
+    }, [slotRef, contentRef, affordanceRef, topBandRef]);
 
     return pad;
 }

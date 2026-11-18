@@ -289,7 +289,7 @@ into the deck like every tower card (`towerTuck`, starting from its resting pose
 promoted one (`zIndex` 3), since it starts dead centre over it, and the promoted card grows
 from its peek pose with its own keyframe (`writingPromote`) for the same remount reason;
 `sendOff` resets `shakeNonce` in the dismiss batch so the promoted card's
-`front-${shakeNonce}` key does not change again mid-animation. The card
+`slot-${slot}-front-${shakeNonce}` key does not change again mid-animation. The card
 flying out keeps its graded back face (`FlashCardSection` holds the outgoing entry; the hook
 holds its frozen attempt). The word-tools rail stays hidden (`Write it` is redundant and
 `Compare` would show the characters); More Info is gated on the flip like everywhere else,

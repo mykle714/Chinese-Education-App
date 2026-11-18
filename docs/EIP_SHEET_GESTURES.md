@@ -545,8 +545,10 @@ it — and appears on every word drilled into from it. It is the app's only Lear
 (the dictionary cdp's glowing `LearningToggle` was deleted with that page, 2026-11-10). acp
 offers none. **Outside the eip** it has one mount: the Reader's dictionary keycap
 (VocabDisplayCard `renderHeaderActions`, wired by `src/features/reader/useReaderWordActions.ts`),
-under the light palette `useEipColors` returns outside a provider; that hook's toggle goes
-inert while the Reader's eip is open so the two never disagree. There it also uses the key's
+under the light palette `useEipColors` returns outside a provider. That toggle is SHARED with
+the Reader's eip (EipSheet `sharedLearning`): while the eip shows the selected word, its trail
+key runs on the keycap's state, so a tap in the eip flips the keycap's key behind the sheet
+(drilled-into words use the sheet's own hook). There it also uses the key's
 **`compact` size** (`size` prop; `KEY_SIZES`, width in `eipAddKeySizes.ts`) when the keycap
 stacks its controls under a long headword — same press arithmetic, smaller key.
 
@@ -566,7 +568,11 @@ this replaced it.) Code: `src/hooks/useLearningToggle.ts` → `inLibraryOnLoad`,
 `FlashcardsLearnPage.tsx` → `eipAddKeyShown`.
 
 **Both eip keycaps carry the straight-lip rounded edge** (a 1px top rim light just inside the
-outline ring, a 0.5px fillet over the lip; docs/designGuidelines.md § "The rounded edge").
+outline ring; docs/designGuidelines.md § "The rounded edge"). The headword tile also draws the
+0.5px fillet over its lip; the **Add key does not** (nor the Reader's More Info key built to
+its recipe, `src/features/reader/ReaderMoreInfoKey.tsx`): its inset outline ring sits between
+face and fillet, so the fillet's face→lip blend read as a near-white seam under the outline
+(dropped 2026-11-17 — the outlined-key exception). Code: `EipAddKey.tsx` → `restShadow`.
 
 **Both eip keycaps press the same way** — the Add key and the headword tile use the app's
 raised-key press, `src/theme/keycapPress.ts` → `keycapPressSx`: they SNAP down onto the lip
@@ -596,7 +602,7 @@ tap's click does heavy work. A release sooner than `KEYCAP_MIN_HELD_MS` (100 ms,
 drag, a scroll) or a `pointercancel` lets it up at once. Disabled keys (`:disabled`,
 `aria-disabled="true"`) are skipped, presses are per pointer, and a `MutationObserver` puts
 the class back if React rewrites a held key's `className` (the Add key flips to Added! on
-the tap itself). No consumer wires anything: the tower plates (Write it, Compare, More
+the tap itself). No consumer wires anything: the tower plates (Compare, Customize, More
 Info), these two eip keys, the acp toolbar, the Dictionary page's keycaps and the beginner
 keyboard all get it by spreading `keycapPressSx`.
 

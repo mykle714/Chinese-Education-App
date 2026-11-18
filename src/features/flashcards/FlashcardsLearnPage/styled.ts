@@ -281,6 +281,8 @@ export const CARD_SLOT_BOTTOM_GAP = 8;
  * under-reserves for the one frame before the first measure lands.
  */
 export const CARD_SLOT_BOTTOM_INSET_FALLBACK = 56;
+/** Breathing room between the bottom of a top band (the flp's word-tools rail) and the card. */
+export const CARD_SLOT_TOP_BAND_GAP = 12;
 
 export interface CardSlotPadding {
     /** Top padding in the resting layout (advanced edit mode adds a measured toolbar inset). */
@@ -300,22 +302,31 @@ export interface CardSlotPadding {
  *
  * @param slotHeight px height of the card slot (0 before it has been measured)
  * @param bottomInset px band at the bottom of the slot owned by the eip affordance
+ * @param topBand px band at the TOP of the slot owned by an overlay (the flp's word-tools
+ *                rail, which floats over the slot rather than taking layout space). The top
+ *                pad never drops below it plus CARD_SLOT_TOP_BAND_GAP. 0 = none.
  */
 export function cardSlotPadding(
     slotHeight: number,
     bottomInset = CARD_SLOT_BOTTOM_INSET_FALLBACK,
+    topBand = 0,
 ): CardSlotPadding {
     const bottom = Math.round(Math.max(0, bottomInset) + CARD_SLOT_BOTTOM_GAP);
+    const bandClearance = topBand > 0 ? Math.round(topBand + CARD_SLOT_TOP_BAND_GAP) : 0;
     // Elastic top pad: full 48px once the slot is ~480px tall, shrinking proportionally
     // below that so a short slot spends its height on the card rather than on whitespace.
     // An unmeasured slot (height 0) rests at the max so the first paint isn't cramped.
-    if (slotHeight <= 0) return { top: CARD_SLOT_TOP_PAD_MAX, bottom, sum: CARD_SLOT_TOP_PAD_MAX + bottom };
-    const top = Math.round(
+    if (slotHeight <= 0) {
+        const top = Math.max(CARD_SLOT_TOP_PAD_MAX, bandClearance);
+        return { top, bottom, sum: top + bottom };
+    }
+    const elasticTop = Math.round(
         Math.min(
             CARD_SLOT_TOP_PAD_MAX,
             Math.max(CARD_SLOT_TOP_PAD_MIN, slotHeight * CARD_SLOT_TOP_PAD_RATIO),
         ),
     );
+    const top = Math.max(elasticTop, bandClearance);
     return { top, bottom, sum: top + bottom };
 }
 
@@ -418,6 +429,36 @@ export const FlipHintLabel = styled(Box, {
     transition: "opacity 0.28s ease, transform 0.28s ease",
     pointerEvents: "none",
     userSelect: "none",
+    zIndex: 10,
+    whiteSpace: "nowrap",
+}));
+
+// "Last card!" — across the top of the loop's ONLY card once an incorrect mark has sent it
+// off and back (FlashCardSection → LAST_CARD_RETURN_KEYFRAMES; docs/FLP_CARD_GESTURES.md §
+// "The last card"). A child of the CARD's slot, not of the frame like the hints above, so it
+// slides back in with the card. Centred in the card's top band, on the same line as
+// FlipHintLabel; FlashCardSection hides it while that hint is up so the two never overlap.
+// Ink (`flashcard.onSurface`, --ink) and larger than the hints: it names a state, not an
+// instruction, and must read the moment the card lands.
+export const LastCardLabel = styled(Box, {
+    shouldForwardProp: (prop) => prop !== "visible",
+})<{ visible: boolean }>(({ visible, theme }) => ({
+    position: "absolute",
+    top: `calc(${HINT_BAND_CSS} / 2)`,
+    left: "50%",
+    fontFamily: FC_FONT,
+    fontSize: SIZE.subtitle,
+    fontWeight: WEIGHT.bold,
+    lineHeight: 1,
+    letterSpacing: "0.02em",
+    color: theme.palette.flashcard.onSurface,
+    opacity: visible ? 1 : 0,
+    transform: "translate(-50%, -50%)",
+    // No fade: it appears while the card is off-screen, and at the hand-over from the
+    // returning copy to the front a fade-in on the front's copy would blink the label.
+    pointerEvents: "none",
+    userSelect: "none",
+    // Over the card's faces (CardFace sits at the slot's default stacking level).
     zIndex: 10,
     whiteSpace: "nowrap",
 }));

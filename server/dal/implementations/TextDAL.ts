@@ -1,7 +1,7 @@
 import type { ITextDAL, TextFieldUpdate } from '../interfaces/ITextDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import { ValidationError } from '../../types/dal.js';
-import type { Text } from '../../types/index.js';
+import type { Text, TextKind } from '../../types/index.js';
 
 /**
  * Data access for `texts` — see ITextDAL.
@@ -18,13 +18,15 @@ export class TextDAL implements ITextDAL {
 
   async insertUserText(data: {
     userId: string; title: string; content: string; language: string; characterCount: number;
-    iconId: string | null;
+    iconId: string | null; kind: TextKind;
   }): Promise<Text> {
+    // createdAt / updatedAt come from their now() defaults, so a new document's
+    // "last edited" equals its creation time.
     const { rows } = await this.run<Text>(
-      `INSERT INTO texts ("userId", title, content, language, "characterCount", "iconId", "isUserCreated")
-       VALUES ($1, $2, $3, $4, $5, $6, true)
+      `INSERT INTO texts ("userId", title, content, language, "characterCount", "iconId", kind, "isUserCreated")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true)
        RETURNING *`,
-      [data.userId, data.title, data.content, data.language, data.characterCount, data.iconId]
+      [data.userId, data.title, data.content, data.language, data.characterCount, data.iconId, data.kind]
     );
     if (rows.length === 0) throw new Error('Failed to create text');
     return rows[0];
@@ -46,6 +48,9 @@ export class TextDAL implements ITextDAL {
       sets.push(`${column} = $${values.length}`);
     }
     if (sets.length === 0) throw new ValidationError('No fields to update');
+    // Every save stamps the last-edited time (texts."updatedAt", migration 194) — the
+    // Reader list's "Recently edited" sort. An icon change counts as an edit too.
+    sets.push('"updatedAt" = now()');
     values.push(id);
 
     const { rows } = await this.run<Text>(

@@ -23,6 +23,8 @@ import type { DictionaryEntry, Language } from "../../types";
  *     document's vocab lookup so the key is there the moment a word is selected (the status
  *     fetch then confirms it); inert (no key) for an undiscoverable word, and while the
  *     read-aloud is running (`suspendLearningStatus`). Failures raise a notification.
+ *     The same toggle is shared with the eip (`sharedLearning` → EipSheet), so the eip's
+ *     Add key and the keycap's are one state for the selected word.
  *
  * Layer: feature hook (src/features/reader). Reaches into src/features/flashcards for the
  * eip (useEipTabs), as the Dictionary page does. Depended on by ReaderDocumentPage.
@@ -55,12 +57,21 @@ export function useReaderWordActions(
 
     const eip = useEipTabs({ language });
     const [eipOpen, setEipOpen] = useState(false);
-    // Inert while the eip is open: the eip runs its OWN Learning toggle (EipSheet
-    // `showLearning`) for the same word, and the two hooks do not share state. Going null
-    // → the word again on close re-runs the status fetch, so a change made in the eip
-    // shows on the keycap's key afterwards (until that fetch lands it shows its last state).
-    const learning = useLearningToggle(eipOpen || suspendLearningStatus ? null : vocabEntry, language, selectedInLibrary);
+    // ONE Learning toggle for the selected word, live while the eip is open too: the page
+    // hands it to the eip (EipSheet `sharedLearning`), which uses it — instead of its own
+    // hook — whenever the eip is showing this same word. So a tap on the eip's Add key
+    // flips the keycap's key in the background at once, and vice versa; there is no
+    // second copy of the word's status to fall out of step. A drilled-into word is a
+    // different entry, so the eip runs its own toggle for it.
+    // Stands down (no key) while the read-aloud steps the selection.
+    const learning = useLearningToggle(suspendLearningStatus ? null : vocabEntry, language, selectedInLibrary);
     useNotificationFor(learning.error, learning.clearError, { id: "reader-learning-error", tone: "error", autoHideMs: 2500 });
+    // What the page passes to EipSheet `sharedLearning`; null when there is no live toggle
+    // to share (no word, or the read-aloud has it standing down), so the eip uses its own.
+    const sharedLearning = useMemo(
+        () => (vocabEntry && learning.available ? { entryKey: vocabEntry.entryKey, state: learning } : null),
+        [vocabEntry, learning],
+    );
     // The word whose lookup is in flight; a later More Info tap supersedes it.
     const pendingLookupRef = useRef<string | null>(null);
     const { openForRoot } = eip;
@@ -87,6 +98,7 @@ export function useReaderWordActions(
         autoSpeakSelected,
         isSpeaking: !!selected && tts.speakingKey === selected.word1,
         learning,
+        sharedLearning,
         eip,
         eipOpen,
         openMoreInfo,

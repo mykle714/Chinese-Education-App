@@ -27,7 +27,9 @@ and `src/types.ts`).
 | `characterCount` | `content.length`, recomputed on every content update |
 | `isUserCreated` | `true` for every row the API creates |
 | `iconId` | optional FK → `icons8("icons8Id")`, `ON DELETE SET NULL` (**migration 193**); the learner-picked document icon. NULL = default glyph. See § Document icon |
-| `createdAt` | `now()` |
+| `kind` | `'document'` (default) / `'journal'`, `CHECK chk_texts_kind` (**migration 194**); the Reader collection. Set on create only. See § Collections |
+| `createdAt` | `now()`. Nullable in the schema (no `NOT NULL`), though every API insert sets it |
+| `updatedAt` | `now()` default, `NOT NULL` (**migration 194**, backfilled from `createdAt`); stamped by `TextDAL.updateFields` on every update. Drives the "Recently edited" sort |
 
 Removed columns: `description` and the validation-doc linkage
 (`validationEntryId` / `validationLanguage` / `validationField`) were dropped by
@@ -53,8 +55,8 @@ Title derivation reads det through `IDictionaryDAL.findMultipleByWord1`.
 | GET | `/api/texts` | — | the user's documents in their `selectedLanguage`, newest first (`getUserTexts`) |
 | GET | `/api/texts/stats` | — | counts / total characters |
 | GET | `/api/texts/:id` | — | one document |
-| POST | `/api/texts` | `{ content, language?, iconId? }` | **no title** — the server derives it |
-| PUT | `/api/texts/:id` | `{ title?, content?, iconId? }` | owner only; `language` is rejected; `iconId: null` clears the icon, an absent `iconId` leaves it |
+| POST | `/api/texts` | `{ content, language?, iconId?, kind? }` | **no title** — the server derives it; `kind` ∈ `TEXT_KINDS` (default `document`) |
+| PUT | `/api/texts/:id` | `{ title?, content?, iconId? }` | owner only; `language` is rejected; `iconId: null` clears the icon, an absent `iconId` leaves it; every update stamps `updatedAt` |
 | DELETE | `/api/texts/:id` | — | owner only |
 
 ### Title derivation
@@ -85,10 +87,17 @@ All under `src/features/reader/`.
 | File | Role |
 |---|---|
 | `ReaderPage.tsx` | `/reader` list (Node page); optimistic swipe-delete (`handleDelete`) |
-| `TextSidebar.tsx` | the list body (despite the name — not a sidebar): the **New document** Bento tile + a `RowList` of `Row`s, one title per row |
+| `TextSidebar.tsx` | the list body (despite the name — not a sidebar): the top tile row (`ReaderCollectionTiles`) + the grid (`ReaderDocumentGrid`) or a `RowList` of `Row`s (§ List views) |
+| `ReaderCollectionTiles.tsx` | the top row: the **Documents / Journal** toggle pair (§ Collections) |
+| `ReaderListToolbar.tsx` | the row under it: **New document** pill · sort · grid/list (§ List toolbar) |
+| `ReaderSortMenu.tsx` | the toolbar's sort icon + menu (§ Sorting) |
+| `readerListOrder.ts` | pure list logic: `filterByCollection`, `sortTexts`, `formatJournalDate`, `readerDocumentHue` / `readerDocumentGlyph` |
+| `useStoredChoice.ts` | the per-device localStorage choice behind `useReaderListView`, `useReaderCollection` (`reader.collection`), `useReaderListSort` (`reader.listSort`) |
+| `ReaderDocumentGrid.tsx` | the default **grid** view: 2-column cards, centred icon, title below, ⋯ → Delete (§ List views) |
+| `useReaderListView.ts` | the per-device grid ⇄ list choice (`reader.listView`), switched by the header icon |
 | `SwipeToDeleteRow.tsx` | iPhone-style swipe-left row that uncovers **Delete** |
 | `ReaderDocumentPage.tsx` | `/reader/:id` document page, including the `/reader/new` draft |
-| `readerPaths.ts` | `NEW_DOCUMENT_ID` / `NEW_DOCUMENT_PATH` |
+| `readerPaths.ts` | `NEW_DOCUMENT_ID` / `NEW_DOCUMENT_PATH` / `newDocumentPath(kind)` |
 | `TextHeader.tsx` | vocab-processing status pills only (the title is the page header's since 2026-11-17) |
 | `TextArea.tsx` | reading textarea ⇄ editable textarea; hosts the Pinyin-mode view over the (invisible) reading textarea |
 | `ReaderCpcdView.tsx` | the **Pinyin** display mode: the document as inline cpcd words + the Reader's own highlight (§ Display modes) |
@@ -105,14 +114,35 @@ All under `src/features/reader/`.
 ### Look
 
 Code: `src/components/VocabDisplayCard.tsx`, `src/components/SenseList.tsx`;
-`ReaderDocumentPage.tsx` → the surface's `title`; `readerStyles.ts` → `readerCardSx`, `READER_CARD_RADIUS`, `readerMutedTextSx`,
-`readerMessageSx`, `readerPillButtonSx`; every component in the table above.
+`ReaderDocumentPage.tsx` → the surface's `title`, `look`; `ReaderPage.tsx` → `look`;
+`readerStyles.ts` → `READER_CARD_RADIUS`, `readerMenuPaperSx`, `readerMutedTextSx`,
+`readerMessageSx`, `readerPillButtonSx`; `src/timeOfDay/useTier2Look.ts`;
+`src/components/primitives/Row.tsx` → `tones`; `src/components/NodePageHeader.tsx` →
+`titleColor`; every component in the table above.
 
-The Reader wears the Friends panel's **flat** look (docs/FRIENDS_FEATURE.md,
-`src/features/friends/friendStyles.ts`), since 2026-11-16:
+The Reader wears the Friends panel's **flat** shapes (docs/FRIENDS_FEATURE.md,
+`src/features/friends/friendStyles.ts`, since 2026-11-16) on the **Tier 2 time-of-day**
+colours (since 2026-11-17 — the Dictionary's look, SHELF_REDESIGN.md § 7b "Time of day"):
 
-- **Ground** — the paper (`COLORS.background`) on both pages, and the app's one footer,
-  the slab, on `/reader` (`/reader/:id` is footerless).
+- **Time of day** — each page (`ReaderPage`, `ReaderDocumentPage`) calls `useTier2Look()`
+  once and passes the `look` down to every piece that paints a surface or text; the
+  `readerStyles.ts` fragments all take it. By **day** the ground is the pale sky tint
+  (#E0F3FF) with white surfaces and the app's ink; at **night** the ground is #1E2735 with
+  #2A3446 surfaces (grid cards, list rows via `Row` `tones`, the reading box, menus, the
+  delete dialog, the edit toolbar's icon button, the neutral Cancel / idle Read pills) and
+  light ink — the page title and back arrow included (NodePage `headerTitleColor`,
+  `NodePageHeader` `titleColor`). The selection tint is a touch stronger at night
+  (`selectionColors`, keyed on `look.dark`, no longer the Settings theme). In the Pinyin
+  display mode `ReaderCpcdView` `inkColor` colours the characters and uncoloured pinyin.
+  The tap-zone flash lifts (translucent white) at night instead of multiplying grey
+  (`ReaderTapOverlay` `night`).
+  **Not themed:** pastel fills (Documents / Journal tiles, icon tiles and row avatars, Save,
+  New document, playing Read, Delete, status pills — pastels stay pastel on slate), the
+  **dictionary keycap** (stays the white day keycap — its contents follow the Settings theme,
+  owner's call 2026-11-17), the eip sheet and `IconPickerDialog` (Settings theme), and the
+  slab footer (Settings theme, `footerChrome.ts`).
+- **Ground** — the time-of-day ground on both pages, and the app's one footer, the slab, on
+  `/reader` (`/reader/:id` is footerless).
 - **Title** — the open document's title is the page header's title (`ReaderDocumentSurface`
   `title`, ellipsized); "Reader" only while loading / not found.
 - **Dictionary keycap** (`VocabDisplayCard`, 2026-11-17) — the one raised object on the
@@ -150,7 +180,7 @@ The Reader wears the Friends panel's **flat** look (docs/FRIENDS_FEATURE.md,
   page's (Synonyms + Related, word-tools rail, Learning key); and a `useLearningToggle` SEEDED
   (`seedInLibrary`) from the document's vocab lookup — whose personal entries are exactly the
   learner's Learning cards (`vetSortedClause`) — so the key is drawn the moment a word is
-  selected and the status fetch only confirms it; it goes inert while the eip is open (the eip runs its own) and re-fetches on close. While the
+  selected and the status fetch only confirms it; the same toggle drives the eip's Add key while the eip shows that word (`useReaderWordActions` → `sharedLearning` → `EipSheet` `sharedLearning`), so a tap in the eip flips the keycap's key behind the sheet at once; a drilled-into word runs the eip's own toggle. While the
   eip is open the reading box stops re-taking focus (`ReaderDocumentPage` →
   `handleReadingBoxBlur`), and `eipOpen` counts in `anyDialogOpen` so focus returns when it
   closes. `VocabDisplayCard` only places the controls (`onSpeak`, `isSpeaking`,
@@ -162,40 +192,47 @@ The Reader wears the Friends panel's **flat** look (docs/FRIENDS_FEATURE.md,
   (`ReaderTapOverlay` → `TAP_LEFT_ZONE_FRACTION`, the left third). Two sentences sit in the
   right zone only, clear of the divide: "Tap the left or right side of the screen to move
   the cursor." along the top and "Tap and hold on a word to jump to it." along the bottom.
-  A `touch_app` finger plays 3 rounds of glide-left → tap → glide-right → tap on the row
+  A `touch_app` finger plays 2 rounds of glide-left → tap → glide-right → tap on the row
   midway between them, then rests at its right-zone tap position
   (the row measured from both sentences' edges), where it started. A zone fills `COLORS.grey` the
   instant the finger's centre crosses into it (its real position read per animation frame)
   and `COLORS.greyA` for the tap; `prefers-reduced-motion` shows only the resting diagram.
   **Tapping the demo** flashes the matching real zone (the tap region: the whole screen
   below the display strip — READER_SEGMENTATION.md) twice
-  (`ReaderTapOverlay` → `flash`, `COLORS.grey` multiplied so the text stays dark) — mobile
+  (`ReaderTapOverlay` → `flash`, `COLORS.grey` multiplied so the text stays dark; a
+  translucent white at night) — mobile
   only, as the overlay itself is. The request is cleared when the pulse ends (`onFlashEnd` →
   `clearTapZoneFlash`): the overlay unmounts in edit mode, so a request still set would
   replay on Cancel/Save. The learner's first selection that lands on a word ends
-  the mode for good; a gesture that selects nothing (a back-tap at the very top, a click in
-  whitespace) keeps it. Only leaving the document and coming back (a remount) restores it.
-  Mechanism: `useTextSelection` → `awaitingFirstSelection` / `noteUserInteraction` — until
-  the learner touches the box (TextArea's `onKeyDown` / `onPointerDown`, which also catch
-  ReaderTapOverlay's synthetic arrows and long-press pointerdown), auto word-select and the
-  card lookup stand down, so the focus-driven `select` events (initial focus, the blur →
-  refocus loop, leaving edit mode) cannot highlight the first word on their own.
+  the mode; a gesture that selects nothing (a back-tap at the very top, a click in
+  whitespace) keeps it. **A long-press on empty space** (no word under the finger — a gap,
+  punctuation, past a line's end, a blank line; mobile, both display modes) **brings it
+  back** (owner's call 2026-11-17): the highlight and the keycap's entry are dropped and the
+  caret is parked at the pressed character (text mode; the Pinyin mode keeps the old
+  selection's start), so the next forward tap steps on from there. The returning hint shows
+  its finger **at rest** — the demo plays only the first time on a page
+  (`ReaderDocumentPage` → `tapDemoPlayed` → `ReaderTapHint` `playDemo`). A remount (leaving
+  the document and coming back) also restores the mode, demo included.
+  Mechanism: `useTextSelection` → `awaitingFirstSelection` / `noteUserInteraction` /
+  `clearSelection` — until the learner touches the box (TextArea's `onKeyDown` /
+  `onPointerDown`, which also catch ReaderTapOverlay's synthetic arrows), auto word-select
+  and the card lookup stand down, so the focus-driven `select` events (initial focus, the
+  blur → refocus loop, leaving edit mode) cannot highlight the first word on their own.
+  `clearSelection` resets that interaction flag too, so the same guard holds after a return.
   Code: `src/features/reader/useTextSelection.ts`, `TextArea.tsx` → `onUserInteraction`,
   `ReaderTapHint.tsx` (the demo + `READER_NAVIGATION_HINT`), `VocabDisplayCard` → `idleHint`
-  (a ReactNode slot it only centres).
-- **Cards and rows** — white on the paper with the `rowBorder` hairline and no shadow:
+  (a ReactNode slot it only centres), `ReaderTapOverlay.tsx` → `engageWordJump`.
+- **Cards and rows** — the look's surface (white by day) with its `line` hairline and no shadow:
   `Row`s (16px) for documents, SectionCard's 18px radius for the reading box and the delete
   dialog. A user document's row has a blue avatar glyph
   (`description`), a built-in text's a grey one (`menu_book`).
-- **Actions** — New document is a half-width `compact` Bento tile (blue, `edit_note`) in
-  the grid's left column, dressed exactly like the Friends tab's action tiles: title
-  only, no subtitle, the title at the bottom-left. Buttons are pills with a ramp MID fill and ink text (`readerPillButtonSx`):
-  Save blue, Delete red, Cancel white. Undo/redo are bare icon buttons.
+- **Actions** — New document is a blue pill in the list toolbar (§ List toolbar). Buttons are pills with a ramp MID fill and ink text (`readerPillButtonSx`):
+  Save blue, Delete red, Cancel the neutral surface pill (`readerPillButtonSx(look)`, no fill). Undo/redo are bare icon buttons.
 - **States** — loading, empty, not-found and errors are plain text lines
   (`readerMutedTextSx` / `readerMessageSx`), not spinners or MUI Alerts. A failed
   swipe-delete's line dismisses on tap.
 - **Reading box focus** — the reading box is focused the whole time it is open, so it
-  keeps the hairline when focused; only the edit-mode field firms to `COLORS.border`.
+  keeps the hairline when focused; only the edit-mode field firms to the look's `outline`.
 
 ### English words
 
@@ -250,9 +287,11 @@ in both display modes (Pinyin mode draws English as plain text, no pinyin under 
 Code: `useReaderSettings.ts` → `ReaderDisplayMode`, `displayMode` / `setDisplayMode`;
 `ReaderDocumentPage.tsx` → `.reader-document-display-strip`; `ReaderDisplayToggle.tsx`;
 `ReaderCpcdView.tsx` (whole file); `TextArea.tsx` → `cpcdView`;
+`ReaderCpcdView.tsx` → `buildParagraphs`; `CPCDRow.tsx` → `CPCDRowGroup`;
 `ReaderDocumentPage.tsx` → `showCpcd`, `cpcdScrollRef`, `.reader-page-tap-region`;
-`ReaderTapOverlay.tsx` → `scrollRef`, `nativeSelection`; `useTextSelection.ts` →
-`selectionRange`, `selectRange`; `documentSegmentation.ts` → `buildReaderPronunciationMap`.
+`ReaderTapOverlay.tsx` → `scrollRef`, `wordSource`, `selectWordAt`, `startFling`;
+`textSelectionUtils.ts` → `textareaOffsetAtPoint`; `useTextSelection.ts` →
+`selectionRange`, `selectRange`, `selectSpanAtOffset`, `clearSelection`; `documentSegmentation.ts` → `buildReaderPronunciationMap`.
 
 A **display strip** sits under the dictionary keycap (inside the keyboard-lift fold): a row
 whose right edge holds `ReaderDisplayToggle`: the Account sheet's goals switch (the
@@ -269,12 +308,20 @@ main thread and would otherwise make the thumb jump instead of slide. The choice
 `text`; owner's call 2026-11-17).
 
 - **Text** — the read-only textarea, highlight = the browser's `::selection`.
-- **Pinyin** — the longdef display's look (`LongDefinitionDisplay` → parts path): one
-  `pre-line` paragraph where every gsa word is an inline-block cpcd at `sm` (`ForeignText`,
-  tone colours per the device's `showPinyinColor`), so lines wrap between words, never
-  inside one. Every line is pinned to one cpcd line's height (`cpcdNaturalSize('sm')`),
-  blank lines included. Punctuation and Latin words are drawn in a box matching a cpcd char
-  cell, so they sit on the character line. Pinyin per word comes from
+- **Pinyin** — **one cpcd row per newline-delimited paragraph** at `sm` (owner's call
+  2026-11-17; it used to be one row per gsa word). Built by `ReaderCpcdView` →
+  `buildParagraphs` and rendered through `ForeignText` `items` + `groups` (tone colours per
+  the device's `showPinyinColor`). Characters sit evenly spaced straight through word
+  boundaries, and the pinyin collision solver (docs/CPCD_PINYIN_SHIFT.md) runs across
+  words and punctuation. Each gsa word is a `CPCDRowGroup`, an unbreakable inline-block
+  that also carries the highlight, `data-span-index` and the click, so lines still wrap
+  **only between words**. Punctuation and spaces are glued to a neighbour word in an outer
+  group (closers and spaces to the word before, opening quotes and brackets to the word
+  after), so a line never starts with "，". Punctuation and Latin words are pinyin-less,
+  text-width cells (`autoWidth`) that keep the pinyin band (`reservePinyinBand`), so every
+  line is one cpcd line tall (`cpcdNaturalSize('sm')`), blank lines included. 一/不 sandhi
+  runs once over each whole paragraph (`applyYiBuSandhi`), so it now applies across word
+  boundaries. Pinyin per word comes from
   `buildReaderPronunciationMap` — the same first-match rule as the keycap's
   `findDictionaryMatch`, so the pinyin under a word agrees with the entry it opens.
 
@@ -288,23 +335,38 @@ nothing-selected mode and the keycap lookup all run unchanged. `ReaderCpcdView` 
 mode's selection tint, as a background + box-shadow bleed, so no reflow), and scrolls it
 into view with one line of margin (measured against its own scroll box, not
 `scrollIntoView`, which would also scroll the overflow-hidden page). Switching modes keeps
-the reader's place. Two overlay differences only: a vertical drag scrolls the cpcd view's
-box (`scrollRef`), and a long-press / horizontal drag does not hand off to native selection
-(`nativeSelection={false}` — the textarea is invisible). Instead it **jumps to the word under
-the finger** (`ReaderTapOverlay` → `selectWordAt`, "WORD JUMP"): it hit-tests through the
-overlay with `elementsFromPoint` for a `[data-span-index]` cpcd word inside the view and
-clicks it — the same `onClick` → `selectRange` path as a desktop click — then keeps
-re-selecting under the finger until release, so "Tap and hold on a word to jump to it"
-(`ReaderTapHint` → `READER_JUMP_HINT`) holds in both modes. A press over punctuation or a
-gap selects nothing. In both modes the overlay suppresses the browser's own long-press
-`contextmenu` (the "right click" menu), since the overlay owns that gesture. On desktop (no
+the reader's place.
+
+**The tap overlay (mobile) in both modes.** `ReaderTapOverlay` covers the reading box with
+`touch-action: none` and owns every gesture: a tap is a zone step, a vertical drag scrolls,
+a long-press or horizontal drag is a WORD JUMP. The modes differ only in what it scrolls and
+hit-tests (`scrollRef`, `wordSource`).
+- **Scrolling + MOMENTUM.** The overlay moves the scroll target's `scrollTop` by hand (the
+  textarea, or the cpcd view's box via `scrollRef`) — the browser cannot, since the overlay
+  is a sibling, not an ancestor — so it also supplies the fling the browser would have:
+  the release velocity (averaged over the last `VELOCITY_WINDOW_MS`, 100 ms) coasts on with
+  exponential decay (`DECAY_TAU_MS` 325, iOS-like) until slow or at the end of the range
+  (`startFling`). A touch during a fling stops it and is not also a tap.
+- **WORD JUMP** — "Tap and hold on a word to jump to it" (`READER_JUMP_HINT`). A still
+  finger held `LONG_PRESS_MS` (400 ms) selects the word under it, then keeps re-selecting
+  under the finger until release (`selectWordAt`). Text mode resolves the point to a
+  character with a mirror of the textarea laid over it (`textareaOffsetAtPoint`: the
+  browser's caret hit test inside the mirror, then a check that the character's box really
+  contains the point) and selects its gsa word (`selectSpanAtOffset`). The Pinyin mode
+  hit-tests through the overlay with `elementsFromPoint` for a `[data-span-index]` cpcd word
+  and clicks it — the same `onClick` → `selectRange` path as a desktop click. A press over
+  **empty space** returns to Nothing-selected mode (§ Look); gaps crossed while sliding keep
+  the last word. (It used to hand text mode's long-press to the browser's native selection
+  by dispatching a synthetic `pointerdown`, which never worked: browsers do not start a
+  selection from an untrusted event.)
+- The overlay suppresses the browser's own long-press `contextmenu` (the "right click"
+  menu), since it owns that gesture. On desktop (no
 overlay) clicking a word selects it (`selectRange`), mirroring a click placing the caret;
 the view's `mousedown` `preventDefault` keeps the textarea's focus so the blur → refocus loop
 cannot restore the old range over the click.
 
-Known limits: yī/bù sandhi is applied per word (`ForeignText`), not across a word boundary
-as the est's sentence-level pass does; the account-level `showSegmentSpaces` setting is not
-read (words sit at their natural column spacing).
+Known limits: the account-level `showSegmentSpaces` setting is not read (words sit at
+the natural column spacing, with no gap between words).
 
 ### Read aloud
 
@@ -378,7 +440,10 @@ and is hidden while editing. While it plays, the pill turns `bluM` and reads **S
   `ReaderCpcdView`'s keep-in-view effect). An arrow key likewise stops it and moves on
   from the word that was being read. The caret stays on the **estimated current word** (owner's call 2026-11-17). A clip that never
   starts (no `onStart`) ends the run instead of racing through the document in silence.
-  Unmounting the page or changing the content also stops it.
+  Unmounting the page or changing the content also stops it, and so does **backgrounding
+  the app** — switching apps, locking the screen, hiding the tab (`useBackgroundPause`,
+  `src/games/runtime/useBackgroundPause.ts`: `visibilitychange` + iOS `pagehide`). Stopping is
+  the pause: the caret stays on the word being read, so Read resumes from there.
 - **Mute does not silence it.** Pressing play is a manual press (`speakSentence`), so it
   speaks on Mute like every speaker button (docs/AUDIO_PLAYBACK.md § 4). The route
   (default or media) comes from the strip's audio chip (§ Tap-to-hear), the Voice from the
@@ -439,9 +504,105 @@ entry), so the warmed clip is the one played. `TTSService.synthesize` joins a re
 in-flight synthesis of the same clip (`inFlightSyntheses`), so a pre-warm racing a tap pays
 Google once.
 
+### List views
+
+Code: `useReaderListView.ts` → `useReaderListView`, `ReaderListView`; `ReaderPage.tsx` →
+`pendingDelete`, `handleConfirmedDelete`; `ReaderListToolbar.tsx` → `.reader-page__view-toggle`;
+`TextSidebar.tsx` → `view`; `ReaderDocumentGrid.tsx`.
+
+`/reader` draws its documents one of two ways, under the same selector and toolbar.
+The toolbar's right-most icon (§ List toolbar) switches between them. Its glyph
+names the view a tap switches *to*: `view_list` in the grid, `grid_view` in the list. The
+choice is saved **per device** (localStorage `reader.listView`, like `reader.displayMode`).
+An unset or unknown value means the grid.
+
+- **Grid (default)** — `ReaderDocumentGrid`: a 2-column CSS grid with the Bento's gutters
+  (16px sides, 10px gap), so its two columns line up with the Documents / Journal tiles. Each card is a
+  **4:5 portrait** cell (`aspectRatio: 4 / 5`; 2:3 and A4 read too tall), with the icon and title centred vertically. Each card has
+  the `Row`'s flat skin (white, `rowBorder` hairline, 16px radius, no rounded edge because
+  it isn't raised). The document's icon sits centred in a 64px pastel tile (`RAMP[hue].mid` +
+  `markOutline` ring; yellow for a journal entry, blue for your own documents, grey for
+  built-ins — `readerDocumentHue`). A card without `iconId` shows the fallback glyph
+  (`readerDocumentGlyph`: `auto_stories` / `description` / `menu_book`). A journal entry's
+  card adds its `createdAt` date (`formatJournalDate`, e.g. "Tue, Nov 17, 2026") under the
+  title; in the list view the same date is the row's subtitle. The title sits below the tile, centred, and wraps
+  to two lines before an ellipsis. Your own documents carry a **⋯** button in the top-right
+  corner (a sibling of the card's button, not nested inside it). It opens a one-item menu,
+  **Delete**, which opens `DeleteDocumentDialog` (§ Deleting a document). Built-in texts
+  have no ⋯.
+- **List** — the `RowList` of `Row`s with swipe-to-delete, described in § Look and
+  § Deleting a document.
+
+There is no rename UI in either view (§ Editing).
+
+### Collections (Documents / Journal)
+
+Code: `ReaderCollectionTiles.tsx`; `src/components/bento/toggleTileSx.ts` → `toggleTileSx`;
+`readerListOrder.ts` → `ReaderCollection`, `READER_COLLECTION_ORDER`, `filterByCollection`;
+`useReaderCollection.ts`; `ReaderPage.tsx` → `handleSelectCollection`, `visibleTexts`,
+`handleCreateNew`; `TextSidebar.tsx` → `collection`, `slideFrom`, `EMPTY_MESSAGE`;
+`readerPaths.ts` → `newDocumentPath`; `ReaderDocumentPage.tsx` → `draftKind`, `blankDraft`;
+server: `TextController.createText` / `TextService.createText` (`kind`, validated against
+`TEXT_KINDS` in `server/contracts/wire.ts`); migration 194.
+
+The top of `/reader` is a 2-up row of `compact` Bento tiles (the default 2-column `Bento`,
+the Friends tab's action-tile shape):
+
+| Tile | Hue | Role |
+|---|---|---|
+| **Documents** | `pur` | press to show only `kind = 'document'` (built-in texts included) |
+| **Journal** | `yel` | press to show only `kind = 'journal'` |
+
+Documents and Journal are plain **switch buttons**: pressing one shows that collection
+(**Documents by default**; pressing the current one does nothing). Neither tile shows a
+selected state — both always rest at their MID fill (owner, 2026-11-17: no Friends-style
+two-state look). They borrow only the shared press feel (`toggleTileSx` with
+`dimmed = false`: a press sinks the tile to `scale(0.76)` and it springs back). There is no
+"everything" view (a stored `all` from the first build reads as Documents). Changing the selection slides the list body in from the
+side of the new position (Documents 0 · Journal 1), as Friends' views
+do; reduced motion skips the slide. The selection persists per device
+(`reader.collection`).
+
+A **journal entry** is an ordinary document in every other respect (same editor, reading
+view, icon, delete). It is created by tapping the toolbar's pill while Journal is selected (it then reads **New
+entry** and opens `/reader/new?kind=journal`); the draft's
+`?kind=journal` is sent as `kind` on the first Save and is fixed afterwards (there is no
+"move to journal" yet). Its date is its `createdAt`.
+
+### List toolbar
+
+Code: `ReaderListToolbar.tsx` (`TOOLBAR_CONTROL_PX`); `ReaderSortMenu.tsx`; `ReaderPage.tsx`.
+
+One row under the selector, on the 16px gutters: **New document** on the left — a blue
+filled pill (`readerPillButtonSx(COLORS.bluM)`, text only; "New entry" while
+Journal is selected) — and on the right the **sort** menu then the **grid ⇄ list** toggle,
+both the `outlined` `HeaderIconButton` skin (36px box with the --line2 ring; off the header
+a button needs its own edge). Every control is 36px tall. The page header carries no
+actions. (Until 2026-11-17 sort and view were header icons and New document a Bento tile.)
+
+### Sorting
+
+Code: `ReaderSortMenu.tsx`; `readerListOrder.ts` → `READER_SORT_OPTIONS`, `sortTexts`;
+`useReaderListSort.ts`; `ReaderPage.tsx` → `visibleTexts`; `TextDAL.updateFields` (stamps
+`updatedAt`).
+
+A `sort` icon sits in the list toolbar left of the grid/list toggle and opens a flat menu
+(`readerMenuPaperSx`); the current order wears a check. Sorting is client-side over the
+already-fetched list, after the collection filter:
+
+| Option | Order |
+|---|---|
+| Newest first (default) | `createdAt` desc — the server's own order |
+| Oldest first | `createdAt` asc |
+| Title A–Z | `localeCompare` in the document's language (zh: pinyin collation) |
+| Recently edited | `updatedAt` desc (any save, including an icon change, counts) |
+| Longest first | `characterCount` desc |
+
+Every key breaks ties newest-first. The choice persists per device (`reader.listSort`).
+
 ### Creating a document
 
-Code: `TextSidebar.tsx` (New document tile) → `ReaderPage.tsx` → `handleCreateNew`;
+Code: `ReaderListToolbar.tsx` (New document pill) → `ReaderPage.tsx` → `handleCreateNew`;
 `ReaderDocumentPage.tsx` → `blankDraft`, `saveNewDraft`, `handleCancelEdit`.
 
 There is no create dialog. **New document** navigates to `/reader/new`, which
@@ -450,7 +611,7 @@ There is no create dialog. **New document** navigates to `/reader/new`, which
 server-side yet:
 
 - **Save** is disabled while the draft is blank. The first Save `POST`s
-  `{ content, language }`, processes the new document's vocabulary, leaves edit
+  `{ content, language, iconId, kind }` (`kind` from `?kind=`, § Collections), processes the new document's vocabulary, leaves edit
   mode and `replace`-navigates to `/reader/<new id>`, so Back returns to the list
   rather than to an empty draft. `justCreatedIdRef` stops the fetch effect from
   reloading the document it already holds after the URL change.
@@ -472,7 +633,7 @@ date (removed 2026-11-05); `characterCount` and `createdAt` are still on the wir
 Code: `ReaderEditToolbar.tsx` → the `iconId` / `onPickIcon` props and
 `.reader-edit-toolbar__icon-button`; `ReaderDocumentPage.tsx` → the DOCUMENT ICON comment,
 `draftIconId`, `iconPickerOpen`, the `IconPickerDialog` mount; `src/components/IconPickerDialog.tsx`;
-`TextSidebar.tsx` → `iconSrc` on the row; `src/components/primitives/Row.tsx` → `iconSrc`;
+`TextSidebar.tsx` → `iconSrc` on the row; `ReaderDocumentGrid.tsx` → `.reader-document-grid__icon-image`; `src/components/primitives/Row.tsx` → `iconSrc`;
 server: `TextService` → `validateIconId`, `TextDAL.insertUserText` / `updateFields`.
 
 - **Picking.** In edit mode the toolbar shows a 32px outlined square after undo/redo. It
@@ -485,7 +646,7 @@ server: `TextService` → `validateIconId`, `TextDAL.insertUserText` / `updateFi
   from `text.iconId` on Edit (null for a new draft), sent with Save (`POST` for a new
   draft, `PUT` otherwise, always with `iconId`, so `null` clears it), and dropped by Cancel.
   It is **not** on the undo/redo stack: that history is the text's typing bursts.
-- **Display.** The `/reader` list row's 36px avatar shows the icon (`Row`'s `iconSrc`)
+- **Display.** The `/reader` grid card's 64px tile and the list row's 36px avatar show the icon (`Row`'s `iconSrc`)
   on the document's blue fill, in place of the `description` glyph. Documents without an
   icon keep the glyph. The document page itself does not show it outside edit mode.
 - **Validation.** `TextService.validateIconId` checks shape only (a string of 1–64
@@ -495,9 +656,10 @@ server: `TextService` → `validateIconId`, `TextDAL.insertUserText` / `updateFi
 ### Deleting a document
 
 Code: `SwipeToDeleteRow.tsx`; `TextSidebar.tsx` → `openRowId`; `ReaderPage.tsx` →
-`handleDelete`; `DeleteDocumentDialog.tsx`.
+`handleDelete`, `handleConfirmedDelete`; `ReaderDocumentGrid.tsx` → the ⋯ menu;
+`DeleteDocumentDialog.tsx`.
 
-- **List (`/reader`)** — iPhone style. Drag a row left to slide it aside and uncover
+- **List view (`/reader`)** — iPhone style. Drag a row left to slide it aside and uncover
   a **Delete** button (80px, `DELETE_BUTTON_WIDTH_PX`) behind its right edge. Releasing
   past half that width leaves the row open; otherwise it springs shut. Only one row is
   open at a time, and tapping an open row closes it rather than opening the document.
@@ -505,6 +667,9 @@ Code: `SwipeToDeleteRow.tsx`; `TextSidebar.tsx` → `openRowId`; `ReaderPage.tsx
   still scroll the list. Tapping **Delete** deletes immediately, with no confirmation:
   the row leaves the list at once, and if `DELETE /api/texts/:id` fails it is put back
   and an error line shows above the list. Only `isUserCreated` rows can be swiped.
+- **Grid (`/reader`)** — a card's ⋯ menu → **Delete** opens `DeleteDocumentDialog`
+  (a confirmation, unlike the swipe). The dialog sends the `DELETE` itself and shows any
+  failure inline. On success `ReaderPage.handleConfirmedDelete` drops the card.
 - **Open document** — the header's trash icon opens `DeleteDocumentDialog`
   (a confirmation), then returns to the list.
 

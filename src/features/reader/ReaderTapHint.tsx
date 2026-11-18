@@ -18,8 +18,9 @@ import { TAP_LEFT_ZONE_FRACTION, type TapZoneSide } from "./ReaderTapOverlay";
  * comes back to rest there (`home`), on the row midway between the two sentences. A zone fills `COLORS.grey` (hover)
  * the moment the finger's centre crosses into it — tracked per animation frame from the
  * finger's real position (FINGER TRACKING), not when the glide ends — and `COLORS.greyA`
- * for the tap (the finger shrinks with it), back to the hover grey on release. Under `prefers-reduced-motion` the loop never starts and
- * the diagram stays in its resting state.
+ * for the tap (the finger shrinks with it), back to the hover grey on release. Under `prefers-reduced-motion`,
+ * or with `playDemo` false (the hint shown again after a long-press on empty space), the
+ * loop never starts and the diagram stays in its resting state.
  *
  * TAP-TO-LOCATE: tapping the face itself reports which side was hit (`onZoneTap`), and
  * the page flashes that REAL zone over the reading box (ReaderTapOverlay → `flash`).
@@ -37,7 +38,7 @@ export const READER_NAVIGATION_HINT = "Tap the left or right side of the screen 
 // (ReaderTapOverlay → engagePassthrough hands a long-press to native selection).
 export const READER_JUMP_HINT = "Tap and hold on a word to jump to it.";
 
-const DEMO_CYCLES = 3;
+const DEMO_CYCLES = 2;
 // Until the two sentences are measured (first layout only), the finger's vertical centre.
 const FINGER_TOP_FALLBACK = "50%";
 // The sentences' inset from the face's top / bottom edge, px.
@@ -106,13 +107,17 @@ interface ReaderTapHintProps {
     holdText?: string;
     // Tapping the face → which side of the divide was hit (TAP-TO-LOCATE).
     onZoneTap?: (side: TapZoneSide) => void;
+    // False → skip the DEMO LOOP and show the resting diagram (the page passes false once
+    // the demo has played: the hint returning after a long-press on empty space).
+    playDemo?: boolean;
 }
 
-export default function ReaderTapHint({ text = READER_NAVIGATION_HINT, holdText = READER_JUMP_HINT, onZoneTap }: ReaderTapHintProps) {
+export default function ReaderTapHint({ text = READER_NAVIGATION_HINT, holdText = READER_JUMP_HINT, onZoneTap, playDemo = true }: ReaderTapHintProps) {
     const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
-    // Index into DEMO_FRAMES; each frame schedules the next until the last (rest) frame.
-    const [frameIndex, setFrameIndex] = useState(0);
     const lastIndex = DEMO_FRAMES.length - 1;
+    // Index into DEMO_FRAMES; each frame schedules the next until the last (rest) frame.
+    // Without the demo it starts (and stays) on that rest frame.
+    const [frameIndex, setFrameIndex] = useState(() => (playDemo ? 0 : lastIndex));
 
     useEffect(() => {
         if (reducedMotion || frameIndex >= lastIndex) return;

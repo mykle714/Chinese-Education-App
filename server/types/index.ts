@@ -23,6 +23,7 @@ import type {
   Language,
   StarterPackBucket,
   TextBase,
+  TextKind,
   UserGender,
   UserProfile,
   ValidationField,
@@ -379,6 +380,7 @@ export interface VocabEntryUpdateData {
  * so it stays that way.
  */
 export type Text = TextBase;
+export type { TextKind };
 
 /**
  * Text creation data. No title: TextService.createText derives it from the content
@@ -390,6 +392,8 @@ export interface TextCreateData {
   language?: Language;
   /** Optional icons8 id (texts."iconId", migration 193); omitted/null = no icon. */
   iconId?: string | null;
+  /** Reader collection (texts.kind, migration 194); omitted = 'document'. */
+  kind?: TextKind;
 }
 
 export interface TextUpdateData {

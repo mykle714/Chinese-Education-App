@@ -1,15 +1,8 @@
 import { memo, useEffect, useMemo, useRef } from "react";
 import { Box } from "@mui/material";
-import ForeignText from "../../components/ForeignText";
-import {
-    CHAR_FONT_SIZE,
-    CHAR_LINE_HEIGHT,
-    PINYIN_RESERVED_HEIGHT,
-    VERTICAL_PADDING,
-    cpcdNaturalSize,
-    fontPx,
-} from "../../components/cpcdLayout";
-import { FONTS } from "../../theme/fonts";
+import ForeignText, { type CPCDRowGroup, type CPCDRowItem } from "../../components/ForeignText";
+import { cpcdNaturalSize } from "../../components/cpcdLayout";
+import { applyYiBuSandhi } from "../../utils/toneSandhi";
 import type { Language } from "../../types";
 import type { SegmentSpan } from "./documentSegmentation";
 
@@ -17,10 +10,11 @@ import type { SegmentSpan } from "./documentSegmentation";
  * READER CPCD VIEW — the Reader's **Pinyin** display mode (useReaderSettings →
  * `displayMode: 'pinyin'`, toggled by the pill under the dictionary keycap).
  *
- * Draws the whole document the way the longdef display draws its embedded Chinese
- * (LongDefinitionDisplay → parts path): one flowing `pre-line` paragraph in which
- * every gsa word is an inline-block cpcd (character, pinyin under it), so lines wrap
- * BETWEEN words and never split one.
+ * Draws the document as cpcd (character, pinyin under it): ONE cpcd row per
+ * newline-delimited paragraph, punctuation and Latin words included as pinyin-less cells,
+ * so characters sit evenly spaced and the pinyin collision solver works across words.
+ * Each gsa word is an unbreakable group inside the row, so lines wrap BETWEEN words and
+ * never split one (see "Document → paragraph rows" below).
  *
  * ── Why it owns no selection logic ──────────────────────────────────────────────
  * A cpcd paragraph cannot be a `<textarea>`, so it has no native caret or
@@ -33,8 +27,8 @@ import type { SegmentSpan } from "./documentSegmentation";
  * keeps it scrolled into view. Switching modes therefore keeps the reader's place.
  *
  * Layer: feature presentational component (src/features/reader). Depends on the shared
- * cpcd container (ForeignText) and the cpcd size tables (components/cpcdLayout.ts) so
- * non-word runs line up with the words' glyph boxes.
+ * cpcd container (ForeignText `items` + `groups` → CPCDRow), the cpcd size tables
+ * (components/cpcdLayout.ts) and the 一/不 sandhi pass (utils/toneSandhi.ts).
  * Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Display modes"; docs/READER_SEGMENTATION.md.
  */
 
@@ -57,121 +51,198 @@ const HIGHLIGHT_BLEED_PX = 2;
 // scrollSelectionIntoView).
 const SCROLL_MARGIN_PX = LINE_PX;
 
-// ── Document → render runs ───────────────────────────────────────────────────────
+// ── Document → paragraph rows ────────────────────────────────────────────────────
+//
+// ROW PER PARAGRAPH (owner's call 2026-11-17): every newline-delimited paragraph is ONE
+// cpcd row (ForeignText `items` → CPCDRow), not one row per word. That buys:
+//   - even character spacing straight through word boundaries (no inter-word gap), and
+//   - the pinyin collision solver (docs/CPCD_PINYIN_SHIFT.md) running across words and
+//     punctuation, so a long syllable pushes its neighbours apart even in the next word;
+//   - 一/不 sandhi across word boundaries (我 / 不 / 去), since the whole paragraph's
+//     reading goes through `applyYiBuSandhi` at once.
+// The row still breaks lines ONLY BETWEEN WORDS: each gsa word is a CPCDRowGroup (an
+// unbreakable inline-block that also carries the highlight, `data-span-index` and the
+// click), and punctuation / spaces are glued to their neighbour word in an outer group so
+// a line never starts with "，" or a space, nor ends with "“".
 
-type ReaderRun =
-    // A gsa word: tappable/highlightable, drawn as cpcd (Han) or plain text (Latin, digits).
-    | { kind: "word"; spanIndex: number; text: string; isHan: boolean }
-    // Whitespace between words, newlines included — left to `pre-line` to lay out.
-    | { kind: "space"; text: string }
-    // Anything else between words (punctuation, symbols): drawn in a glyph box so it sits
-    // on the words' character line, but it is not a word and is never highlighted.
-    | { kind: "mark"; text: string };
+// Item tags, for gluing non-word items to a neighbour word.
+type ItemTag =
+    | "word" // part of a gsa word
+    | "prev" // closing punctuation / whitespace — sticks to the word BEFORE it
+    | "next"; // opening punctuation (quotes, brackets) — sticks to the word AFTER it
+
+interface ReaderParagraph {
+    items: CPCDRowItem[];
+    // Per gsa word in this paragraph: its span index and its item range [start, end).
+    words: Array<{ spanIndex: number; start: number; end: number }>;
+    // Word + glued punctuation ranges, only where they differ from the word's own range.
+    units: Array<{ start: number; end: number }>;
+}
 
 const HAN_REGEX = /\p{Script=Han}/u;
+// Marks that open a phrase and so belong to the word after them.
+const OPENING_MARKS = new Set([..."“‘（《「『【〈〔［｛([{<"]);
+// Stand-in "character" for a non-Han item in the paragraph's sandhi pass: no reading,
+// so a 一/不 before it is phrase-final (toneSandhi.ts → applyYiBuSandhi).
+const SANDHI_BREAK = "\uFFFC";
 
-/** Slice the document into word runs (one per gsa span) and the gaps between them. */
-function buildRuns(content: string, spans: SegmentSpan[]): ReaderRun[] {
-    const runs: ReaderRun[] = [];
-    const pushGap = (gap: string) => {
-        // Split on whitespace, KEEPING it (the capture group), so spaces/newlines and
-        // marks alternate: "，\n\n“" → ["，", "\n\n", "“"].
-        for (const piece of gap.split(/(\s+)/)) {
-            if (!piece) continue;
-            runs.push(/^\s+$/.test(piece) ? { kind: "space", text: piece } : { kind: "mark", text: piece });
-        }
+/** Slice the document into paragraph rows (see the section comment). */
+function buildParagraphs(
+    content: string,
+    spans: SegmentSpan[],
+    pronunciations: Map<string, string>,
+    useToneColor: boolean,
+): ReaderParagraph[] {
+    const paragraphs: ReaderParagraph[] = [];
+    let items: CPCDRowItem[] = [];
+    let tags: ItemTag[] = [];
+    let words: ReaderParagraph["words"] = [];
+    // The paragraph's per-item sandhi input, aligned 1:1 with `items`.
+    let sandhiChars: string[] = [];
+    let sandhiSyllables: string[] = [];
+
+    // A pinyin-less, text-width item (punctuation, spaces, Latin words). It keeps the
+    // pinyin band so every line is one cpcd line tall (LINE_PX).
+    const pushPlain = (text: string, tag: ItemTag) => {
+        items.push({ character: text, autoWidth: true, reservePinyinBand: true });
+        tags.push(tag);
+        sandhiChars.push(SANDHI_BREAK);
+        sandhiSyllables.push("");
     };
+
+    const closeParagraph = () => {
+        // One pass over the whole paragraph, so sandhi sees across word boundaries.
+        const surface = applyYiBuSandhi(sandhiChars.join(""), sandhiSyllables);
+        surface.forEach((syllable, i) => {
+            if (syllable) items[i] = { ...items[i], pinyin: syllable };
+        });
+        // Glue each word's neighbouring punctuation to it (see ItemTag).
+        const units: ReaderParagraph["units"] = [];
+        for (const word of words) {
+            let start = word.start;
+            while (start > 0 && tags[start - 1] === "next") start--;
+            let end = word.end;
+            while (end < items.length && tags[end] === "prev") end++;
+            if (start !== word.start || end !== word.end) units.push({ start, end });
+        }
+        paragraphs.push({ items, words, units });
+        items = [];
+        tags = [];
+        words = [];
+        sandhiChars = [];
+        sandhiSyllables = [];
+    };
+
+    const pushGap = (gap: string) => {
+        // Newlines end the paragraph; everything else is a space run or a mark.
+        gap.split("\n").forEach((line, lineIndex) => {
+            if (lineIndex > 0) closeParagraph();
+            for (const piece of line.split(/(\s+)/)) {
+                if (!piece) continue;
+                if (/^\s+$/.test(piece)) {
+                    pushPlain(piece, "prev");
+                    continue;
+                }
+                // One item per mark, so "，“" splits into a closer and an opener.
+                for (const mark of piece) pushPlain(mark, OPENING_MARKS.has(mark) ? "next" : "prev");
+            }
+        });
+    };
+
     let cursor = 0;
     spans.forEach((span, spanIndex) => {
         if (span.start > cursor) pushGap(content.slice(cursor, span.start));
-        runs.push({ kind: "word", spanIndex, text: span.text, isHan: HAN_REGEX.test(span.text) });
+        const start = items.length;
+        if (HAN_REGEX.test(span.text)) {
+            // A cpcd word: one fixed-column item per character, zipped with its reading.
+            const pronunciation = pronunciations.get(span.text);
+            const syllables = pronunciation ? pronunciation.trim().split(/\s+/) : [];
+            [...span.text].forEach((character, i) => {
+                items.push({ character, pinyin: syllables[i] ?? "", showPinyin: true, useToneColor, reservePinyinBand: true });
+                tags.push("word");
+                sandhiChars.push(character);
+                sandhiSyllables.push(syllables[i] ?? "");
+            });
+        } else {
+            // A Latin word / digit run: one text-width item, no reading.
+            pushPlain(span.text, "word");
+        }
+        words.push({ spanIndex, start, end: items.length });
         cursor = span.end;
     });
     if (cursor < content.length) pushGap(content.slice(cursor));
-    return runs;
+    closeParagraph();
+    return paragraphs;
 }
 
-// A plain run boxed exactly like a cpcd char cell (padding-top, the glyph's line box,
-// then the empty pinyin band as padding-bottom), so punctuation and Latin words sit on
-// the same character line as the cpcd words beside them.
-const glyphBoxSx = {
-    display: "inline-block",
-    verticalAlign: "top",
-    fontFamily: FONTS.cjk,
-    fontSize: CHAR_FONT_SIZE[WORD_SIZE],
-    lineHeight: `${Math.round(fontPx(CHAR_FONT_SIZE[WORD_SIZE]) * CHAR_LINE_HEIGHT)}px`,
-    paddingTop: VERTICAL_PADDING[WORD_SIZE],
-    paddingBottom: `${PINYIN_RESERVED_HEIGHT[WORD_SIZE]}px`,
-    whiteSpace: "nowrap",
-} as const;
+// ── One paragraph ────────────────────────────────────────────────────────────────
 
-// ── One word ─────────────────────────────────────────────────────────────────────
-
-interface ReaderCpcdWordProps {
-    spanIndex: number;
-    text: string;
-    isHan: boolean;
-    pronunciation: string | undefined;
-    selected: boolean;
+interface ReaderCpcdParagraphProps {
+    paragraph: ReaderParagraph;
+    // The selected word's span index when it is in THIS paragraph, else -1 — so a
+    // selection step re-renders only the paragraph(s) it leaves and enters.
+    selectedSpanIndex: number;
     highlightColor: string;
-    showPinyinColor: boolean;
     language: Language;
     onSelectSpan: (spanIndex: number) => void;
+    // The characters' ink (ReaderCpcdView `inkColor`).
+    inkColor: string;
 }
 
-// Memoised: a document is hundreds of words and a selection step changes only two of
-// them (the old word and the new one), so every other word must skip the re-render —
-// each cpcd row runs a layout pass of its own (CPCDRow → positionPinyins).
-const ReaderCpcdWord = memo(function ReaderCpcdWord({
-    spanIndex,
-    text,
-    isHan,
-    pronunciation,
-    selected,
+// Memoised: each cpcd row runs a layout pass of its own on render (CPCDRow →
+// positionPinyins), so only the paragraphs a selection step touches may re-render.
+const ReaderCpcdParagraph = memo(function ReaderCpcdParagraph({
+    paragraph,
+    selectedSpanIndex,
     highlightColor,
-    showPinyinColor,
     language,
     onSelectSpan,
-}: ReaderCpcdWordProps) {
-    return (
-        <Box
-            component="span"
-            className={`reader-cpcd-view__word${selected ? " reader-cpcd-view__word--selected" : ""}`}
-            data-span-index={spanIndex}
-            // On desktop (no overlay) a click selects the word, the same as clicking into
-            // the textarea places the caret in it. On mobile ReaderTapOverlay covers the
-            // view and turns a tap into a zone step, exactly as in the text mode — but its
-            // long-press clicks this element programmatically (ReaderTapOverlay → WORD
-            // JUMP), so the `data-span-index` attribute and this handler serve both.
-            onClick={() => onSelectSpan(spanIndex)}
-            sx={[
-                isHan
-                    ? { display: "inline-block", verticalAlign: "top" }
-                    : glyphBoxSx,
-                {
+    inkColor,
+}: ReaderCpcdParagraphProps) {
+    const groups = useMemo<CPCDRowGroup[]>(() => [
+        // Word + glued punctuation: unbreakable, otherwise inert.
+        ...paragraph.units.map((unit) => ({ ...unit, className: "reader-cpcd-view__unit" })),
+        ...paragraph.words.map(({ spanIndex, start, end }) => {
+            const selected = spanIndex === selectedSpanIndex;
+            return {
+                start,
+                end,
+                className: `reader-cpcd-view__word${selected ? " reader-cpcd-view__word--selected" : ""}`,
+                // On desktop (no overlay) a click selects the word, the same as clicking
+                // into the textarea places the caret in it. On mobile ReaderTapOverlay
+                // covers the view and turns a tap into a zone step, exactly as in the text
+                // mode — but its long-press clicks this element programmatically
+                // (ReaderTapOverlay → WORD JUMP), so `data-span-index` and the click
+                // handler serve both.
+                attrs: { "data-span-index": spanIndex },
+                onClick: () => onSelectSpan(spanIndex),
+                sx: {
                     cursor: "pointer",
                     borderRadius: "6px",
-                    // The text mode's `::selection` tint (ReaderDocumentPage → selectionColors),
-                    // so the two modes highlight in the same color.
+                    // The text mode's `::selection` tint (ReaderDocumentPage →
+                    // selectionColors), so the two modes highlight in the same color.
                     backgroundColor: selected ? highlightColor : "transparent",
                     boxShadow: selected ? `0 0 0 ${HIGHLIGHT_BLEED_PX}px ${highlightColor}` : "none",
                 },
-            ]}
-        >
-            {isHan ? (
-                <ForeignText
-                    language={language}
-                    text={text}
-                    pronunciation={pronunciation}
-                    size={WORD_SIZE}
-                    flexWrap="nowrap"
-                    showPinyin
-                    useToneColor={showPinyinColor}
-                />
-            ) : (
-                text
-            )}
-        </Box>
+            };
+        }),
+    ], [paragraph, selectedSpanIndex, highlightColor, onSelectSpan]);
+    // (inkColor is read by the ForeignText below, not by `groups`.)
+
+    // A blank line (from "\n\n") still takes one cpcd line, keeping the rhythm.
+    if (paragraph.items.length === 0) {
+        return <Box className="reader-cpcd-view__blank-line" sx={{ height: `${LINE_PX}px` }} />;
+    }
+    return (
+        <ForeignText
+            className="reader-cpcd-view__paragraph"
+            language={language}
+            items={paragraph.items}
+            groups={groups}
+            size={WORD_SIZE}
+            flexWrap="wrap"
+            characterColor={inkColor}
+        />
     );
 });
 
@@ -198,6 +269,10 @@ interface ReaderCpcdViewProps {
     // True → skip the keep-in-view scroll for this selection change: the learner scrolled
     // away during a read-aloud (useReaderReadAloud → isFollowPaused).
     isAutoScrollPaused?: () => boolean;
+    // Text ink — the page's time-of-day look (ReaderDocumentPage → useTier2Look → `ink`):
+    // the characters, and the pinyin when tone colouring is off (CPCDRow draws uncoloured
+    // pinyin as `inherit`, so it takes the scroll box's colour). Light at night.
+    inkColor: string;
 }
 
 function ReaderCpcdView({
@@ -211,8 +286,12 @@ function ReaderCpcdView({
     onSelectRange,
     scrollRef,
     isAutoScrollPaused,
+    inkColor,
 }: ReaderCpcdViewProps) {
-    const runs = useMemo(() => buildRuns(content, segmentSpans), [content, segmentSpans]);
+    const paragraphs = useMemo(
+        () => buildParagraphs(content, segmentSpans, pronunciations, showPinyinColor),
+        [content, segmentSpans, pronunciations, showPinyinColor]
+    );
 
     // span start offset → span index, for mapping the textarea's range to a word.
     const spanIndexByStart = useMemo(() => {
@@ -231,7 +310,7 @@ function ReaderCpcdView({
         return index !== undefined && segmentSpans[index].end === end ? index : -1;
     }, [selectionRange, spanIndexByStart, segmentSpans]);
 
-    // Stable across renders so the memoised words don't all re-render on a step; reads
+    // Stable across renders so the memoised paragraphs don't all re-render on a step; reads
     // the latest spans through a ref.
     const spansRef = useRef(segmentSpans);
     spansRef.current = segmentSpans;
@@ -282,33 +361,28 @@ function ReaderCpcdView({
                 // The textarea's 16px gutter (TextArea → '& .MuiInputBase-input' padding).
                 padding: 2,
                 boxSizing: "border-box",
-                whiteSpace: "pre-line",
+                // Each paragraph row's line is exactly one cpcd cell tall; pinning the
+                // strut to the same height keeps it from adding any.
                 lineHeight: `${LINE_PX}px`,
                 // Hide the cpcd rows' caret/selection on desktop; the highlight is ours.
                 userSelect: "none",
+                // Inherited by uncoloured pinyin (see `inkColor`).
+                color: inkColor,
             }}
         >
-            {runs.map((run, index) => {
-                if (run.kind === "space") return <span key={index}>{run.text}</span>;
-                if (run.kind === "mark") {
-                    return (
-                        <Box key={index} component="span" className="reader-cpcd-view__mark" sx={glyphBoxSx}>
-                            {run.text}
-                        </Box>
-                    );
-                }
+            {paragraphs.map((paragraph, index) => {
+                const first = paragraph.words[0]?.spanIndex ?? -1;
+                const last = paragraph.words[paragraph.words.length - 1]?.spanIndex ?? -1;
+                const selectedHere = selectedSpanIndex >= first && selectedSpanIndex <= last && first >= 0;
                 return (
-                    <ReaderCpcdWord
+                    <ReaderCpcdParagraph
                         key={index}
-                        spanIndex={run.spanIndex}
-                        text={run.text}
-                        isHan={run.isHan}
-                        pronunciation={pronunciations.get(run.text)}
-                        selected={run.spanIndex === selectedSpanIndex}
+                        paragraph={paragraph}
+                        selectedSpanIndex={selectedHere ? selectedSpanIndex : -1}
                         highlightColor={highlightColor}
-                        showPinyinColor={showPinyinColor}
                         language={language}
                         onSelectSpan={selectSpan}
+                        inkColor={inkColor}
                     />
                 );
             })}

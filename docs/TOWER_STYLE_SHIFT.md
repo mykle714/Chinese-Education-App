@@ -91,7 +91,7 @@ lag at night.
 |---|---|---|
 | Deck Tower scene (cards, plates, platform, lever, hatch) | `src/features/deckTower/` | DECK_TOWER.md, ISO_ART_FRAMEWORK.md |
 | flp card stock and the vet cdp's hero card | `CardFaceSide` + `cardStockVars` | § Card stock above |
-| flp page buttons: Write it, Compare, More Info | `src/theme/towerPlate.ts` → `towerPlateSx` | DECK_TOWER.md § "Studying the tower" → "The buttons" |
+| flp page buttons: Compare, Customize, More Info | `src/theme/towerPlate.ts` → `towerPlateSx` | DECK_TOWER.md § "Studying the tower" → "The buttons" |
 | flp game break's card (card stock, plates, glyph token) | `gameBreak/GameBreakCard.tsx`, `BreakCardLayer.tsx` | FLP_GAME_BREAKS.md § 5 |
 | flp study header + audio chip | `TowerStudyHeader.tsx` (`tone="bare"`) | DECK_TOWER.md § "Studying the tower" → "The audio chip" |
 | acp's on-deck cards, its skipped-cards sheet and td's cards page (rim + panel, drawn as one thick panel: a 4px wall with a hairline rounded edge (`src/theme/roundedEdge.ts`) and a near-solid cast shadow on the ground, no outline) | `src/features/discover/sortCardStock.ts` → `sortCardStockSx` | SORT_CARDS_REQUIREMENTS.md § 4.5, § 5.1a |

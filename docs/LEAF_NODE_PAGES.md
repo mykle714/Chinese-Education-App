@@ -536,8 +536,9 @@ The Reader is TWO routed pages, following the same fetch-by-id cdp pattern as
   A plain scrolling `NodePage` (since 2026-11-16; it was a fixed shell whose list
   scrolled inside a 500px "sidebar" box): the header scrolls away with the list and a
   closing `FooterSpacer` keeps the last row clear of the slab. `TextSidebar`'s
-  `onTextSelect` calls `useSlideNavigate()` to `/reader/${text.id}`, and its New document tile
-  slides to `/reader/new` (`NEW_DOCUMENT_PATH`, `readerPaths.ts`), a blank draft
+  `onTextSelect` calls `useSlideNavigate()` to `/reader/${text.id}`, and the list toolbar's
+  New document pill (`ReaderListToolbar`) slides to `/reader/new` (`newDocumentPath`,
+  `readerPaths.ts`; `?kind=journal` while the Journal tile is selected), a blank draft
   the document page opens in edit mode
   ([USER_DOCUMENT_FEATURE_SUMMARY.md](./USER_DOCUMENT_FEATURE_SUMMARY.md) § Creating a document).
 - **Open document** (`/reader/:id`, `ReaderDocumentPage.tsx`) — fetches its own

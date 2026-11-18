@@ -3,12 +3,15 @@ import { Box, TextField } from "@mui/material";
 import { selectRelativeSpan, type SegmentSpan } from "./documentSegmentation";
 import { FONTS } from "../../theme/fonts";
 import { SIZE } from "../../theme/scale";
-import { COLORS } from "../../theme/colors";
 import type { Text } from "../../types";
+import type { Tier2Look } from "../../timeOfDay/tier2Look";
 import { READER_CARD_RADIUS } from "./readerStyles";
 
 
 interface TextAreaProps {
+    // The page's time-of-day look (ReaderDocumentPage → useTier2Look): the reading card's
+    // face, hairline and text ink — white by day, slate at night.
+    look: Tier2Look;
     selectedText: Text | null;
     autoSelectEnabled: boolean;
     // GSA word spans for the current document (docs/READER_SEGMENTATION.md) —
@@ -25,8 +28,8 @@ interface TextAreaProps {
     // Re-asserts focus when the reading box is blurred.
     onBlur: React.FocusEventHandler<HTMLInputElement | HTMLTextAreaElement>;
     // A real learner gesture in the reading box (key press, pointer down — incl.
-    // ReaderTapOverlay's synthetic arrows and its long-press pointerdown). Lets
-    // useTextSelection leave its NOTHING-SELECTED MODE on the next selection.
+    // ReaderTapOverlay's synthetic arrows). Lets useTextSelection leave its
+    // NOTHING-SELECTED MODE on the next selection.
     onUserInteraction?: () => void;
     // Edit mode (see ReaderEditToolbar / useReaderContentEditor): swaps the reading
     // box (tap-to-navigate, auto-select, no typing) for a plain editable textarea
@@ -43,6 +46,7 @@ interface TextAreaProps {
 }
 
 function TextArea({
+    look,
     selectedText,
     autoSelectEnabled,
     segmentSpans,
@@ -181,7 +185,7 @@ function TextArea({
                             fontSize: SIZE.subtitle,
                             fontFamily: FONTS.cjk,
                             letterSpacing: '0.02em',
-                            color: COLORS.onSurface,
+                            color: look.ink,
                             // No padding on the outlined root: padding here would sit
                             // OUTSIDE the textarea's scroll surface, so scrolled text
                             // was cut off 16px short of the box's border. The gutter
@@ -215,7 +219,7 @@ function TextArea({
                                     backgroundColor: selectionColors.backgroundColor,
                                 },
                                 '&::placeholder': {
-                                    color: COLORS.textFaint,
+                                    color: look.muted,
                                     opacity: 1,
                                 },
                             }
@@ -240,8 +244,8 @@ function TextArea({
                                 overscrollBehavior: 'contain',
                                 touchAction: 'pan-y',
                             },
-                            // Flat look (readerStyles.ts): the box is a white card on the
-                            // paper ground — SectionCard's 18px radius and `rowBorder`
+                            // Flat look (readerStyles.ts): the box is a card in the
+                            // look's surface (white by day, slate at night) on the ground — SectionCard's 18px radius and `rowBorder`
                             // hairline. The reading box is focused the whole time it is
                             // open (it drives word selection), so a focus ring would be a
                             // permanent heavy border: reading mode keeps the hairline, and
@@ -249,17 +253,17 @@ function TextArea({
                             // outline (`border`, --line2). No hover change.
                             // (Until 2026-11-16: markOutline at rest, `wood` on hover, an
                             // ink ring when focused.)
-                            backgroundColor: COLORS.white,
+                            backgroundColor: look.surface,
                             borderRadius: READER_CARD_RADIUS,
                             '& fieldset': {
-                                borderColor: COLORS.rowBorder,
+                                borderColor: look.line,
                                 borderWidth: '1px',
                             },
                             '&:hover fieldset': {
-                                borderColor: COLORS.rowBorder,
+                                borderColor: look.line,
                             },
                             '&.Mui-focused fieldset': {
-                                borderColor: editMode ? COLORS.border : COLORS.rowBorder,
+                                borderColor: editMode ? look.outline : look.line,
                                 borderWidth: '1px',
                             },
                         },
@@ -268,7 +272,7 @@ function TextArea({
                     placeholder={editMode ? "Paste or write your text here…" : "Select a text to begin reading…"}
                 />
         );
-    }, [selectedText, onTextChange, onAutoWordSelect, onTextSelectionChange, autoSelectEnabled, segmentSpans, selectionColors, inputRef, onBlur, onUserInteraction, editMode, draftContent, onDraftChange, showCpcd]);
+    }, [selectedText, onTextChange, onAutoWordSelect, onTextSelectionChange, autoSelectEnabled, segmentSpans, selectionColors, inputRef, onBlur, onUserInteraction, editMode, draftContent, onDraftChange, showCpcd, look]);
 
     if (!memoizedTextField) return null;
 

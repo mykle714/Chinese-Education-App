@@ -4,6 +4,7 @@ import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
 import type { ReaderDisplayMode } from "./useReaderSettings";
+import type { Tier2Look } from "../../timeOfDay/tier2Look";
 
 /**
  * ReaderDisplayToggle — the Text ⇄ Pinyin switch at the right of the Reader's display
@@ -13,7 +14,8 @@ import type { ReaderDisplayMode } from "./useReaderSettings";
  * (its look comes from the `MuiSwitch` theme override in ThemeContext), with only the
  * "on" track recoloured to a ramp Mark tier — the same treatment as
  * pages/account/AccountPane.tsx → `goalSwitchOnSx`. Flanked by its two labels,
- * "Text  ◯━  Pinyin"; the label of the current mode is ink, the other faint.
+ * "Text  ◯━  Pinyin"; the label of the current mode is ink, the other muted — both from the
+ * page's time-of-day `look`, so they read on the night slate.
  * Off = Text, on = Pinyin. Tapping either label also picks that mode.
  *
  * Layer: feature presentational component (src/features/reader); state lives in
@@ -21,7 +23,7 @@ import type { ReaderDisplayMode } from "./useReaderSettings";
  * Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Display modes".
  */
 
-// The "on" track colour. Blue: the Reader's own hue (its New document tile and the
+// The "on" track colour. Blue: the Reader's own hue (its New document pill and the
 // vocab-processing pill are blue), as a ramp Mark tier like the goal switches' redMk / orgMk.
 const PINYIN_ON_TRACK = COLORS.bluMk;
 
@@ -34,6 +36,8 @@ const PINYIN_ON_TRACK = COLORS.bluMk;
 const SWITCH_ANIMATION_MS = 200;
 
 interface ReaderDisplayToggleProps {
+    // The page's time-of-day look (ReaderDocumentPage → useTier2Look) — the labels' ink.
+    look: Tier2Look;
     value: ReaderDisplayMode;
     onChange: (mode: ReaderDisplayMode) => void;
     className?: string;
@@ -41,7 +45,7 @@ interface ReaderDisplayToggleProps {
     hidden?: boolean;
 }
 
-function ReaderDisplayToggle({ value, onChange, className, hidden = false }: ReaderDisplayToggleProps) {
+function ReaderDisplayToggle({ look, value, onChange, className, hidden = false }: ReaderDisplayToggleProps) {
     // DEFERRED COMMIT: the mode the switch already shows but has not yet handed to the
     // page (null = none in flight). The switch and labels draw this optimistic value.
     const [pendingMode, setPendingMode] = useState<ReaderDisplayMode | null>(null);
@@ -81,7 +85,7 @@ function ReaderDisplayToggle({ value, onChange, className, hidden = false }: Rea
                 fontFamily: FONTS.sans,
                 fontSize: SIZE.caption,
                 fontWeight: WEIGHT.semibold,
-                color: shownMode === mode ? COLORS.onSurface : COLORS.textFaint,
+                color: shownMode === mode ? look.ink : look.muted,
                 cursor: "pointer",
                 userSelect: "none",
             }}

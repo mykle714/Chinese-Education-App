@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useBackgroundPause } from "../../games/runtime/useBackgroundPause";
 import { useTTS } from "../../hooks/useTTS";
 import type { TTSLang } from "../../services/tts";
 import type { SegmentSpan } from "./documentSegmentation";
@@ -292,6 +293,15 @@ export function useReaderReadAloud({
             window.removeEventListener("wheel", noteManualScroll, true);
         };
     }, [playing, stop, noteManualScroll]);
+
+    // BACKGROUNDING STOPS THE READING: switching to another app, locking the screen or
+    // hiding the tab ends the run (useBackgroundPause: `visibilitychange` + iOS `pagehide`).
+    // Stopping IS the pause — the caret stays on the word being read, so Read picks up
+    // from there on return.
+    const { paused: backgrounded } = useBackgroundPause(playing);
+    useEffect(() => {
+        if (backgrounded) stop();
+    }, [backgrounded, stop]);
 
     // The document changed under the run (a save): its offsets are meaningless now.
     const stopRef = useRef(stop);

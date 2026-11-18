@@ -48,7 +48,8 @@ import { COLORS } from "./colors";
  *          top layers; it reuses these constants).
  *   Inset: no current users (the footer's active tab dropped its keycap lip 2026-11-10).
  *   Straight lip: theme/towerPlate.ts (`restShadow` — flp plate buttons, game-break plates),
- *          gameBreak/GameBreakCard.tsx (the game token), FlashcardsLearnPage/EipAddKey.tsx,
+ *          gameBreak/GameBreakCard.tsx (the game token), FlashcardsLearnPage/EipAddKey.tsx +
+ *          reader/ReaderMoreInfoKey.tsx (rim light only — outlined keys skip the fillet),
  *          FlashcardsLearnPage/EipEntryHeader.tsx (headword tile), discover/AddCardsPage.tsx
  *          (`keycapShadow`), dictionary/DictionaryPageParts.tsx (`Keycap`),
  *          beginnerKeyboard/keycapStyle.ts (`keycapShadow`, every bk key), games/match-speed/

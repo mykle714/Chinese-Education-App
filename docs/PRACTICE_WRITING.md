@@ -50,10 +50,6 @@ There is exactly **one** entry point per page, the `Write it` pill on `WordTools
 (`src/components/WordToolsRail.tsx`, `rail` appearance) — a rail **above** the card and
 outside its boundary, because the drill acts on the WORD, not on the card. Hosts:
 
-- **flp** — `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx`. A press
-  while the question face is up flips the card first (`revealAnswer`, wired as
-  `WordToolsRail` `onToolPress` in the capture phase so it runs before the button's own
-  handler), so the popup never opens over an unrevealed answer.
 - **vocab cdp** — `src/features/flashcards/VocabCardDetailPage.tsx`
 - **Dictionary page eip** — `src/features/flashcards/FlashcardsLearnPage/EipSheet.tsx`
   (`showWordTools`, from `src/features/dictionary/DictionaryPage.tsx`). The
@@ -62,7 +58,8 @@ outside its boundary, because the drill acts on the WORD, not on the card. Hosts
   entry with no vet row records no Writing mark (`WordToolsRail` passes
   `vocabEntryId={entry.id || undefined}`)
 
-**Removed placements.** The compact `icon` button that stacked above the speaker on the
+**Removed placements.** The flp's `Write it` pill was removed on 2026-11-17: the flp
+renders `WordToolsRail` with `showWriteIt={false}` (Compare and Customize stay). The compact `icon` button that stacked above the speaker on the
 card face (`ChineseBlock`'s `showWriting` prop) was deleted on 2026-08-28 — a relic of
 the pre-rail design that put a word tool inside the card. `ChineseBlock` now renders the
 speaker only, and the `icon` appearance + `hideStarBadge` prop are gone with it. The eip's

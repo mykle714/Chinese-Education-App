@@ -1,13 +1,32 @@
 import { useState } from "react";
-import { Box, Typography } from "@mui/material";
-import { Bento, BentoTile } from "../../components/bento";
+import { Box, Typography, useMediaQuery } from "@mui/material";
+import { keyframes } from "@mui/material/styles";
 import { Row, RowList } from "../../components/primitives";
 import SwipeToDeleteRow from "./SwipeToDeleteRow";
+import ReaderDocumentGrid from "./ReaderDocumentGrid";
+import type { ReaderListView } from "./useReaderListView";
 import type { Text } from "../../types";
 import { readerMessageSx, readerMutedTextSx } from "./readerStyles";
+import type { Tier2Look } from "../../timeOfDay/tier2Look";
 import { iconImageUrl } from "../../cardIcons/cardIconLayout";
+import { formatJournalDate, isJournal, readerDocumentGlyph, readerDocumentHue, type ReaderCollection } from "./readerListOrder";
+
+/** The collection swap's slide — the Friends tab's (FriendsBody VIEW_SLIDE_*). */
+const COLLECTION_SLIDE_MS = 280;
+const COLLECTION_SLIDE_EASING = "cubic-bezier(0.2, 0.8, 0.2, 1)";
+const slideInFromRight = keyframes`from { transform: translateX(100%); } to { transform: translateX(0); }`;
+const slideInFromLeft = keyframes`from { transform: translateX(-100%); } to { transform: translateX(0); }`;
+
+/** Empty-state copy per collection. */
+const EMPTY_MESSAGE: Record<ReaderCollection, string> = {
+    document: "No documents yet.",
+    journal: "No journal entries yet. Tap New entry to write one.",
+};
 
 interface TextSidebarProps {
+    /** The page's time-of-day look (ReaderPage → useTier2Look): rows, cards, copy colours. */
+    look: Tier2Look;
+    /** Already filtered to `collection` and sorted (ReaderPage, readerListOrder.ts). */
     texts: Text[];
     loading: boolean;
     error: string | null;
@@ -15,24 +34,34 @@ interface TextSidebarProps {
     actionError: string | null;
     onDismissActionError: () => void;
     onTextSelect: (text: Text) => void;
-    onCreateNew: () => void;
-    // Swipe-left → Delete. Deletes immediately (iPhone style, no confirmation).
+    // LIST view: swipe-left → Delete. Deletes immediately (iPhone style, no confirmation).
     onDelete: (text: Text) => void;
+    // Which body to draw (the toolbar's grid/list toggle, useReaderListView.ts).
+    view: ReaderListView;
+    // GRID view: Delete from a card's ⋯ menu — ReaderPage confirms first.
+    onRequestDelete: (text: Text) => void;
+    /** The selected collection tile (useReaderCollection.ts). Keys the slide + empty copy. */
+    collection: ReaderCollection;
+    /** Where the body enters from after a collection change; null = no slide (first paint). */
+    slideFrom: "left" | "right" | null;
 }
 
 /**
  * The Reader's document list (`/reader`, rendered by ReaderPage) in the Friends panel's
- * flat look (readerStyles.ts):
+ * flat look on the Tier 2 time-of-day ground (readerStyles.ts):
  *
- *   - ONE half-width `compact` Bento tile on top, in the LEFT column — "New document" —
- *     dressed exactly like the Friends tab's action tiles (FriendActionTiles): `compact`
- *     height, title only (no subtitle), the title at the tile's bottom-left, the ghost
- *     glyph top-right. Creating is a destination-shaped tap, not an MUI contained button.
- *     Half width, no subtitle (owner's call 2026-11-17): the full-width `low` tile with
- *     a subtitle read as too big for the page's one action.
- *   - A `RowList` of white `Row`s below (the shelf system's `.rw`): a 36px pastel avatar
+ *   - ABOVE it (rendered by ReaderPage, not here): the Documents / Journal selector
+ *     (ReaderCollectionTiles) and the list toolbar (ReaderListToolbar: New document,
+ *     sort, grid/list). Changing the collection slides this body in from the side the new
+ *     tile sits on (Friends' carousel rule) — `collection` + `slideFrom`.
+ *   - Below it, ONE of two bodies, by `view` (the header toggle on ReaderPage,
+ *     useReaderListView.ts): the GRID (default) is ReaderDocumentGrid — 2-column cards,
+ *     centred icon, title below, Delete behind a ⋯ menu with a confirmation; the LIST is
+ *     described next.
+ *   - LIST: a `RowList` of `Row`s on the look's surface (white by day, slate at night — `tones`) (the shelf system's `.rw`): a 36px pastel avatar
  *     glyph (or the document's picked icon, texts."iconId"), the title, and a chevron
- *     because the row navigates. A learner's own document
+ *     because the row navigates. A journal entry (texts.kind = 'journal') wears the
+ *     yellow avatar and its `createdAt` date as the subtitle. A learner's own document
  *     wears the blue avatar and can be swiped left to Delete (SwipeToDeleteRow); a
  *     built-in text wears grey and cannot.
  *   - Loading / empty / error states are plain text lines, as on the Friends board.
@@ -42,34 +71,27 @@ interface TextSidebarProps {
  * Layer: feature view (src/features/reader).
  */
 function TextSidebar({
+    look,
     texts,
     loading,
     error,
     actionError,
     onDismissActionError,
     onTextSelect,
-    onCreateNew,
     onDelete,
+    view,
+    onRequestDelete,
+    collection,
+    slideFrom,
 }: TextSidebarProps) {
     // At most one row is swiped open at a time; opening another closes this one.
     const [openRowId, setOpenRowId] = useState<string | null>(null);
+    const reduceMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
     return (
         <Box className="reader-page-sidebar-content" sx={{ display: "flex", flexDirection: "column" }}>
-            {/* New document — opens `/reader/new`, a blank draft in edit mode. One column
-                wide; as the grid's only child it lands in the left column on its own. */}
-            <Bento className="reader-page-sidebar-actions">
-                <BentoTile
-                    className="reader-page-sidebar-new-document-tile"
-                    title="New document"
-                    hue="blu"
-                    icon="edit_note"
-                    variant="compact"
-                    onClick={onCreateNew}
-                />
-            </Bento>
 
             {error && (
-                <Typography className="reader-page-sidebar-error" sx={{ ...readerMessageSx, px: "22px", pt: 1.5 }}>
+                <Typography className="reader-page-sidebar-error" sx={{ ...readerMessageSx(look), px: "22px", pt: 1.5 }}>
                     {error}
                 </Typography>
             )}
@@ -80,7 +102,7 @@ function TextSidebar({
                 <Typography
                     className="reader-page-sidebar-action-error"
                     onClick={onDismissActionError}
-                    sx={{ ...readerMessageSx, px: "22px", pt: 1.5, cursor: "pointer" }}
+                    sx={{ ...readerMessageSx(look), px: "22px", pt: 1.5, cursor: "pointer" }}
                 >
                     {actionError}
                 </Typography>
@@ -89,30 +111,47 @@ function TextSidebar({
             {/* Loading text rather than a spinner: the list is one small query and a
                 spinner flashes more than it informs (same call as the Friends board). */}
             {loading && (
-                <Typography className="reader-page-sidebar-loading" sx={readerMutedTextSx}>Loading…</Typography>
+                <Typography className="reader-page-sidebar-loading" sx={readerMutedTextSx(look)}>Loading…</Typography>
             )}
 
+            {/* The swapped area. `key={collection}` remounts the body so its slide plays;
+                `overflow: hidden` keeps it from painting over the tiles mid-slide. */}
+            <Box className="reader-page-sidebar-collection-viewport" sx={{ overflow: "hidden" }}>
+            <Box
+                key={collection}
+                className={`reader-page-sidebar-collection reader-page-sidebar-collection--${collection}`}
+                sx={slideFrom && !reduceMotion
+                    ? { animation: `${slideFrom === "right" ? slideInFromRight : slideInFromLeft} ${COLLECTION_SLIDE_MS}ms ${COLLECTION_SLIDE_EASING}` }
+                    : undefined}
+            >
             {!loading && !error && texts.length === 0 && (
-                <Typography className="reader-page-sidebar-empty" sx={readerMutedTextSx}>
-                    No documents yet.
+                <Typography className="reader-page-sidebar-empty" sx={readerMutedTextSx(look)}>
+                    {EMPTY_MESSAGE[collection]}
                 </Typography>
             )}
 
             {/* Texts list — each user document is a SwipeToDeleteRow (swipe left →
             Delete). No per-row edit: content is edited inside the open document. */}
-            {!loading && !error && texts.length > 0 && (
+            {!loading && !error && texts.length > 0 && view === "grid" && (
+                <ReaderDocumentGrid look={look} texts={texts} onTextSelect={onTextSelect} onRequestDelete={onRequestDelete} />
+            )}
+
+            {!loading && !error && texts.length > 0 && view === "list" && (
                 <RowList className="reader-page-sidebar-texts-list">
                     {texts.map((text) => {
                         const row = (
                             <Row
                                 className="reader-page-sidebar-text-button"
-                                icon={text.isUserCreated ? "description" : "menu_book"}
+                                icon={readerDocumentGlyph(text)}
                                 // The learner's picked icon (texts."iconId") replaces the
                                 // glyph; the glyph stays the fallback for documents without one.
                                 iconSrc={text.iconId ? iconImageUrl(text.iconId) : undefined}
-                                hue={text.isUserCreated ? "blu" : "grey"}
+                                hue={readerDocumentHue(text)}
                                 title={text.title}
+                                // A journal entry's date (its createdAt); other documents have no subtitle.
+                                subtitle={isJournal(text) ? formatJournalDate(text.createdAt) : undefined}
                                 chevron
+                                tones={look}
                                 onClick={() => onTextSelect(text)}
                             />
                         );
@@ -120,6 +159,7 @@ function TextSidebar({
                             <Box className="reader-page-sidebar-text-item" key={text.id}>
                                 {text.isUserCreated ? (
                                     <SwipeToDeleteRow
+                                        groundColor={look.ground}
                                         open={openRowId === text.id}
                                         onOpenChange={(isOpen) => setOpenRowId(isOpen ? text.id : null)}
                                         onDelete={() => {
@@ -135,6 +175,8 @@ function TextSidebar({
                     })}
                 </RowList>
             )}
+            </Box>
+            </Box>
         </Box>
     );
 }

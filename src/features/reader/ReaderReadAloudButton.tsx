@@ -3,14 +3,15 @@ import Icon from "../../components/Icon";
 import { COLORS } from "../../theme/colors";
 import { readerPillButtonSx } from "./readerStyles";
 import { READ_ALOUD_CONTROL_ATTR } from "./useReaderReadAloud";
+import type { Tier2Look } from "../../timeOfDay/tier2Look";
 
 /**
  * ReaderReadAloudButton — the play/stop pill at the LEFT of the Reader's display strip
  * (ReaderDocumentPage → `.reader-document-display-strip`), opposite the Text ⇄ Pinyin
  * switch. Starts useReaderReadAloud from the caret.
  *
- * The Reader's pill recipe (readerStyles → readerPillButtonSx): white with "Read"
- * while idle, and the Reader's own blue mid tier (`COLORS.bluM`, the toolbar Save's fill)
+ * The Reader's pill recipe (readerStyles → readerPillButtonSx): the neutral surface pill
+ * (white by day, slate at night — the page's time-of-day `look`) with "Read" while idle, and the Reader's own blue mid tier (`COLORS.bluM`, the toolbar Save's fill)
  * with "Stop" while playing, so the state reads at a glance. Ink text either way (a hue
  * never carries text). While playing, any tap on the page stops the reading and still
  * reaches its target (useReaderReadAloud → ANY INPUT STOPS IT); this pill is exempt from
@@ -21,6 +22,7 @@ import { READ_ALOUD_CONTROL_ATTR } from "./useReaderReadAloud";
  * Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Read aloud".
  */
 interface ReaderReadAloudButtonProps {
+    look: Tier2Look;
     playing: boolean;
     onStart: () => void;
     onStop: () => void;
@@ -29,7 +31,7 @@ interface ReaderReadAloudButtonProps {
     hidden?: boolean;
 }
 
-function ReaderReadAloudButton({ playing, onStart, onStop, disabled = false, hidden = false }: ReaderReadAloudButtonProps) {
+function ReaderReadAloudButton({ look, playing, onStart, onStop, disabled = false, hidden = false }: ReaderReadAloudButtonProps) {
     return (
         <Button
             className={`reader-read-aloud-button${playing ? " reader-read-aloud-button--playing" : ""}`}
@@ -42,13 +44,13 @@ function ReaderReadAloudButton({ playing, onStart, onStop, disabled = false, hid
             disabled={disabled}
             aria-label={playing ? "Stop reading aloud" : "Read aloud from the cursor"}
             sx={{
-                ...readerPillButtonSx(playing ? COLORS.bluM : COLORS.white),
+                ...readerPillButtonSx(look, playing ? COLORS.bluM : undefined),
                 gap: 0.5,
                 pl: 1.25,
                 visibility: hidden ? "hidden" : "visible",
             }}
         >
-            <Box component="span" className="reader-read-aloud-button__icon" sx={{ display: "inline-flex", color: COLORS.onSurface }}>
+            <Box component="span" className="reader-read-aloud-button__icon" sx={{ display: "inline-flex", color: playing ? COLORS.onSurface : look.ink }}>
                 <Icon name={playing ? "stop" : "play_arrow"} size={18} />
             </Box>
             {playing ? "Stop" : "Read"}

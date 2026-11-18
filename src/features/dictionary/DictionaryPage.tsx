@@ -6,7 +6,10 @@ import {
     Typography,
     Box,
     Alert,
+    IconButton,
+    keyframes,
 } from '@mui/material';
+import Icon from '../../components/Icon';
 import DelayedCircularProgress from '../../components/DelayedCircularProgress';
 import AiDictionaryEntryCard from '../../components/AiDictionaryEntryCard';
 import { useAuth } from '../../AuthContext';
@@ -32,6 +35,31 @@ import {
     DictionaryNoResults,
 } from './DictionaryPageParts';
 import { groupByMatchSection, matchSectionLabel } from './dictionaryMatchSections';
+import DictionarySearchHistoryPanel from './DictionarySearchHistoryPanel';
+import { useDictionarySearchHistory } from './useDictionarySearchHistory';
+
+// ── The history panel's slide (docs/SHELF_REDESIGN.md § 7c "Search history") ──────────
+// The same duration and easing as the Friends view swap (FriendsBody → VIEW_SLIDE_MS), so
+// the app has one "slide across" motion. It travels a full viewport width, not its own
+// width: the panel sits inside the Container's padding, and starting at 100vw makes it
+// enter from the SCREEN edge rather than appear out of a line 16px inside it.
+const HISTORY_SLIDE_MS = 280;
+// The slide-in decelerates (the Friends page's view-slide curve). The slide-out runs the
+// SAME curve time-reversed — cubic-bezier(x1,y1,x2,y2) mirrors to (1−x2, 1−y2, 1−x1, 1−y1) —
+// so it eases away and accelerates off-screen. Reusing the ease-out curve for the exit made it
+// cover ~80% of the distance in its first ~80 ms, so every close looked faster than the open.
+const HISTORY_SLIDE_IN_EASING = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
+const HISTORY_SLIDE_OUT_EASING = 'cubic-bezier(0.8, 0.2, 0.8, 0.8)';
+const historySlideIn = keyframes`from { transform: translateX(100vw); } to { transform: translateX(0); }`;
+const historySlideOut = keyframes`from { transform: translateX(0); } to { transform: translateX(100vw); }`;
+/**
+ * closed → opening → open → closing → closed. `opening`/`closing` are the slides; in
+ * `open` the results layer underneath collapses so the page is only as tall as the list.
+ */
+type HistoryPhase = 'closed' | 'opening' | 'open' | 'closing';
+
+const prefersReducedMotion = () =>
+    typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 // The search field as drawn in the 2026-10-29 redesign (artboard "Dictionary · search +
 // results", `.field`): a 50px well with a 14px corner, and a 2px INK ring while focused
@@ -124,6 +152,51 @@ function DictionaryPage() {
 
     // Ref for the search input — the es PinyinKeypad inserts accents at its caret.
     const searchInputRef = useRef<HTMLInputElement>(null);
+    // The page's content root — scopes the history's scroll trigger (useDictionarySearchHistory).
+    const pageRootRef = useRef<HTMLDivElement>(null);
+
+    // ── Search history (docs/SHELF_REDESIGN.md § 7c "Search history") ────────────────
+    const [historyPhase, setHistoryPhase] = useState<HistoryPhase>('closed');
+    const historyVisible = historyPhase !== 'closed';
+    const {
+        entries: historyEntries,
+        commit: commitHistory,
+        remove: removeHistoryEntry,
+        clearAll: clearAllHistory,
+    } = useDictionarySearchHistory({
+        userId: user?.id,
+        language: userLanguage,
+        activeTerm: debouncedSearchTerm,
+        hasResults: !loading && (entries.length > 0 || segmentGroups.length > 0 || !!aiEntry),
+        // Nothing auto-saves while the list covers the results — the learner isn't looking at them.
+        autoCommitEnabled: !historyVisible,
+        rootRef: pageRootRef,
+    });
+
+    // Reduced motion skips the slides (their animationend would never fire to advance the phase).
+    const openHistory = useCallback(() => setHistoryPhase(prefersReducedMotion() ? 'open' : 'opening'), []);
+    const closeHistory = useCallback(() => setHistoryPhase((p) =>
+        p === 'closed' ? p : prefersReducedMotion() ? 'closed' : 'closing'), []);
+    const handleHistorySlideEnd = useCallback((event: React.AnimationEvent) => {
+        // animationend bubbles: the rows' touch ripples end too. Only the layer's own slide counts.
+        if (event.target !== event.currentTarget) return;
+        setHistoryPhase((p) => (p === 'opening' ? 'open' : p === 'closing' ? 'closed' : p));
+    }, []);
+
+    // A history row re-runs its query: fill the field (the debounce then searches it),
+    // move it back to the top of the list, and slide the list away.
+    const handleHistorySelect = useCallback((query: string) => {
+        setSearchInput(query);
+        commitHistory(query);
+        closeHistory();
+    }, [setSearchInput, commitHistory, closeHistory]);
+
+    // Focusing the field or typing means the learner is writing a NEW query — the list gets
+    // out of the way. (Tapping the history icon blurs the field first, so it never fights this.)
+    const handleSearchInputChange = useCallback((next: string) => {
+        setSearchInput(next);
+        closeHistory();
+    }, [setSearchInput, closeHistory]);
 
     // No auto-focus on visit (removed 2026-10-12): the learner taps the search box
     // to raise a keyboard. The 2026-10-10 auto-focus effect was deferred one frame to
@@ -167,6 +240,8 @@ function DictionaryPage() {
 
     const handleEntryClick = useCallback(async (entry: DictionaryEntry) => {
         const word = entry.word1;
+        // Opening a result is the strongest sign the query was meant — save it.
+        commitHistory(debouncedSearchTerm);
         pendingLookupRef.current = word;
         try {
             const full = await lookupVocabEntry(word, userLanguage);
@@ -182,7 +257,7 @@ function DictionaryPage() {
         } finally {
             if (pendingLookupRef.current === word) pendingLookupRef.current = null;
         }
-    }, [eip, userLanguage]);
+    }, [eip, userLanguage, commitHistory, debouncedSearchTerm]);
 
     // Zero hits and no AI card / note standing in for them → the recessed empty well.
     const showNoResults = !loading && !!debouncedSearchTerm && entries.length === 0 && segmentGroups.length === 0
@@ -208,6 +283,7 @@ function DictionaryPage() {
             horizontalPan
         >
         <Container
+            ref={pageRootRef}
             className="dictionary-page"
             maxWidth="lg"
             sx={{
@@ -215,6 +291,10 @@ function DictionaryPage() {
                 display: 'flex',
                 flexDirection: 'column',
                 minHeight: 'calc(100% - 8px)',
+                // The history panel slides in from 100vw; clip it at the screen edge so the
+                // slide never widens the page into a horizontal scroll. `clip`, not `hidden`:
+                // it makes no scroll container, so nothing inside changes behaviour.
+                overflowX: 'clip',
             }}
         >
             {/* No page title here on purpose: the MobileTabScreen header already
@@ -240,9 +320,24 @@ function DictionaryPage() {
                         size="medium"
                         placeholder={searchPlaceholderFor(userLanguage)}
                         value={searchInput}
-                        onChange={setSearchInput}
+                        onChange={handleSearchInputChange}
                         onClear={clearSearch}
+                        onSubmit={commitHistory}
+                        onFocus={closeHistory}
                         inputRef={searchInputRef}
+                        endAction={
+                            <IconButton
+                                className="dictionary-page__history-toggle"
+                                aria-label={historyVisible ? 'Hide recent searches' : 'Show recent searches'}
+                                aria-pressed={historyVisible}
+                                size="small"
+                                edge="end"
+                                onClick={historyVisible ? closeHistory : openHistory}
+                            >
+                                {/* Ink while the list is out, the field's muted glyph colour otherwise. */}
+                                <Icon name="history" size={22} color={historyVisible ? look.ink : look.muted} />
+                            </IconButton>
+                        }
                         inputAttributes={{
                             // Open on the learner's own (OS) keyboard rather than a beginner
                             // keyboard; the switch bar still offers 写 and ā. Per-field only —
@@ -257,181 +352,221 @@ function DictionaryPage() {
                 </Box>
             )}
 
-            {/* The AI keycap (canAskAi), right-aligned under the field. No result count since
-                2026-10-29 (owner's call) — the section labels say what was found. Left out when
-                the empty well below already offers the wide Ask AI button. */}
-            {debouncedSearchTerm && !loading && (canAskAi || askingAi) && !showNoResults && (
-                <DictionaryAskAiRow askingAi={askingAi} onAskAi={askAi} look={look} />
-            )}
-
-            {/* AI synthetic entry — rendered at the TOP of the results (above breakdown / regular
-                results) so a just-generated answer is immediately visible. A cached answer shows
-                without a tap. An "Ask AI" tap mounts the card in its compact loading phase
-                ("Asking AI…"); the SAME instance then grows into the answer, so the white card
-                never blinks out between the two (AiDictionaryEntryCard → useAnimatedHeight). On
-                a no-match / error the card unmounts and the note below takes its place.
-                See docs/DICTIONARY_AI_FALLBACK_SEARCH.md. */}
-            {((!loading && aiEntry) || askingAi) && (
-                <Box className="dictionary-page__ai-result" sx={{ mb: 3 }}>
-                    <AiDictionaryEntryCard entry={aiEntry} look={look} />
-                </Box>
-            )}
-            {!askingAi && aiNoMatch && (
-                <Box className="dictionary-page__ai-no-match" sx={{ mb: 3 }}>
-                    <Typography variant="body2" sx={{ color: look.muted }}>
-                        AI couldn't find a likely match for "{debouncedSearchTerm}".
-                    </Typography>
-                </Box>
-            )}
-            {!askingAi && aiError && (
-                <Box className="dictionary-page__ai-error" sx={{ mb: 3 }}>
-                    <Typography variant="body2" color="error">
-                        The AI request didn't go through. Tap AI to try again.
-                    </Typography>
-                </Box>
-            )}
-            {!askingAi && aiLimitReached && (
-                <Box className="dictionary-page__ai-limit" sx={{ mb: 3 }}>
-                    <Typography variant="body2" sx={{ color: look.muted }}>
-                        {aiLimitMessage || "You've reached your daily limit of AI lookups. Try again tomorrow."}
-                    </Typography>
-                </Box>
-            )}
-
-            {/* Error Message */}
-            {error && (
-                <Alert className="dictionary-page__error-alert" severity="error" sx={{ mb: 3 }}>
-                    {error}
-                </Alert>
-            )}
-
-            {/* Loading State (first page only — later pages load under the results) */}
-            {loading && (
-                <Box className="dictionary-page__loading-spinner" sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                    <DelayedCircularProgress />
-                </Box>
-            )}
-
-            {/* Segment Mode Results — one slab per group:
-                  1. All exact matches across all segments (in segment order); every group
-                     after the first is headed by its segment.
-                  2. All "starts with" groups (in segment order), each headed by its label. */}
-            {!loading && isSegmentMode && segmentGroups.length > 0 && (
-                <Box className="dictionary-page__segment-results" sx={{ mb: 3 }}>
-                    {segmentGroups
-                        .filter(g => g.exactEntries.length > 0)
-                        .map((group, idx) => (
-                            <Box key={`exact-${group.segment}`} className="dictionary-page__segment-exact-group">
-                                {idx > 0 && (
-                                    <DictionarySlabLabel className="dictionary-page__segment-label" look={look}>{group.segment}</DictionarySlabLabel>
-                                )}
-                                <DictionaryResultSlab className="dictionary-page__segment-exact-list" look={look}>
-                                    {group.exactEntries.map((entry) => (
-                                        <DictionaryEntryRow key={entry.id} entry={entry} onClick={handleEntryClick} language={userLanguage} headwordTapToCopy variant="slab" tones={look} swipeGloss />
-                                    ))}
-                                </DictionaryResultSlab>
-                            </Box>
-                        ))
-                    }
-
-                    {segmentGroups
-                        .filter(g => g.prefixEntries.length > 0)
-                        .map((group) => (
-                            <Box key={`prefix-${group.segment}`} className="dictionary-page__segment-prefix-section">
-                                <DictionarySlabLabel className="dictionary-page__starts-with-label" look={look}>
-                                    Starts with “{group.segment}”
-                                </DictionarySlabLabel>
-                                <DictionaryResultSlab className="dictionary-page__segment-prefix-list" look={look}>
-                                    {group.prefixEntries.map((entry) => (
-                                        <DictionaryEntryRow key={entry.id} entry={entry} onClick={handleEntryClick} language={userLanguage} headwordTapToCopy variant="slab" tones={look} swipeGloss />
-                                    ))}
-                                </DictionaryResultSlab>
-                            </Box>
-                        ))
-                    }
-                </Box>
-            )}
-
-            {/* Regular search results — one labelled slab per kind of match (English “long”,
-                Pinyin “long”, English starts with …, Pinyin starts with …, Other), in the
-                server's rank order. Sections are runs of the server's `matchKind`, so the next
-                infinite-scroll page simply extends the last one or opens the next
-                (dictionaryMatchSections.ts). */}
-            {!loading && !isSegmentMode && entries.length > 0 && (
-                <Box className="dictionary-page__results" sx={{ mb: 3 }}>
-                    {groupByMatchSection(entries).map((section, index) => (
-                        <Box
-                            key={`${section.key}-${index}`}
-                            className={`dictionary-page__match-section dictionary-page__match-section--${section.key}`}
-                        >
-                            <DictionarySlabLabel
-                                className="dictionary-page__match-section-label"
-                                look={look}
-                                first={index === 0}
-                            >
-                                {matchSectionLabel(section.key, debouncedSearchTerm, userLanguage)}
-                            </DictionarySlabLabel>
-                            <DictionaryResultSlab className="dictionary-page__results-list" look={look}>
-                                {section.entries.map((entry) => (
-                                    <DictionaryEntryRow
-                                        key={entry.id}
-                                        entry={entry}
-                                        onClick={handleEntryClick}
-                                        language={userLanguage}
-                                        headwordTapToCopy
-                                        variant="slab"
-                                        tones={look}
-                                        swipeGloss
-                                    />
-                                ))}
-                            </DictionaryResultSlab>
-                        </Box>
-                    ))}
-                    {hasMore && <DictionaryLoadMore onReach={loadMore} loading={loadingMore} look={look} />}
-                </Box>
-            )}
-
-            {/* No Results — suppressed while an AI card / no-match / error note stands in for it. */}
-            {showNoResults && (
-                <DictionaryNoResults term={debouncedSearchTerm} showAskAi={canAskAi} onAskAi={askAi} look={look} />
-            )}
-
-            {/* Empty State */}
-            {!loading && !debouncedSearchTerm && (
-                // Everything centred on one axis: the title, then the examples as a
-                // centred text-only block of three columns (example – name), each column
-                // flush left so the examples and dashes line up.
-                <Box className="dictionary-page__empty-state" sx={{ textAlign: 'center', py: 8 }}>
-                    <Typography className="dictionary-page__welcome-title" variant="h6" sx={{ color: look.ink, mb: 0.5 }}>
-                        {welcome.title}
-                    </Typography>
-                    {welcome.intro && (
-                        <Typography className="dictionary-page__welcome-intro" variant="body2" sx={{ color: look.muted, textWrap: 'pretty' }}>
-                            {welcome.intro}
-                        </Typography>
+            {/* Results ⇄ history stack. Both layers share ONE grid cell, so the history panel
+                slides in over the results without either being taken out of flow; once fully
+                open, the results layer collapses so the page is only as tall as the list. */}
+            <Box className="dictionary-page__body" sx={{ display: 'grid', flex: 1, alignContent: 'start' }}>
+            <Box
+                className="dictionary-page__results-layer"
+                aria-hidden={historyPhase === 'open' || undefined}
+                sx={[
+                    { gridArea: '1 / 1', minWidth: 0 },
+                    historyPhase === 'open' && { visibility: 'hidden', height: 0, overflow: 'hidden' },
+                ]}
+            >
+                    {/* The AI keycap (canAskAi), right-aligned under the field. No result count since
+                        2026-10-29 (owner's call) — the section labels say what was found. Left out when
+                        the empty well below already offers the wide Ask AI button. */}
+                    {debouncedSearchTerm && !loading && (canAskAi || askingAi) && !showNoResults && (
+                        <DictionaryAskAiRow askingAi={askingAi} onAskAi={askAi} look={look} />
                     )}
-                    {welcome.examples.length > 0 && (
-                        <Box
-                            className="dictionary-page__welcome-examples"
-                            sx={{ display: 'grid', gridTemplateColumns: 'auto auto auto', justifyContent: 'center', columnGap: 1, rowGap: 0.75, mt: 2, textAlign: 'left' }}
-                        >
-                            {welcome.examples.map(({ query, kind }) => (
-                                <Box key={query} className="dictionary-page__welcome-example" sx={{ display: 'contents' }}>
-                                    <Typography className="dictionary-page__welcome-example-query" variant="body2" sx={{ color: look.ink2 }}>
-                                        {query}
-                                    </Typography>
-                                    <Typography className="dictionary-page__welcome-example-dash" variant="body2" sx={{ color: look.muted }}>
-                                        –
-                                    </Typography>
-                                    <Typography className="dictionary-page__welcome-example-kind" variant="body2" sx={{ color: look.muted }}>
-                                        {kind}
-                                    </Typography>
+
+                    {/* AI synthetic entry — rendered at the TOP of the results (above breakdown / regular
+                        results) so a just-generated answer is immediately visible. A cached answer shows
+                        without a tap. An "Ask AI" tap mounts the card in its compact loading phase
+                        ("Asking AI…"); the SAME instance then grows into the answer, so the white card
+                        never blinks out between the two (AiDictionaryEntryCard → useAnimatedHeight). On
+                        a no-match / error the card unmounts and the note below takes its place.
+                        See docs/DICTIONARY_AI_FALLBACK_SEARCH.md. */}
+                    {((!loading && aiEntry) || askingAi) && (
+                        <Box className="dictionary-page__ai-result" sx={{ mb: 3 }}>
+                            <AiDictionaryEntryCard entry={aiEntry} look={look} />
+                        </Box>
+                    )}
+                    {!askingAi && aiNoMatch && (
+                        <Box className="dictionary-page__ai-no-match" sx={{ mb: 3 }}>
+                            <Typography variant="body2" sx={{ color: look.muted }}>
+                                AI couldn't find a likely match for "{debouncedSearchTerm}".
+                            </Typography>
+                        </Box>
+                    )}
+                    {!askingAi && aiError && (
+                        <Box className="dictionary-page__ai-error" sx={{ mb: 3 }}>
+                            <Typography variant="body2" color="error">
+                                The AI request didn't go through. Tap AI to try again.
+                            </Typography>
+                        </Box>
+                    )}
+                    {!askingAi && aiLimitReached && (
+                        <Box className="dictionary-page__ai-limit" sx={{ mb: 3 }}>
+                            <Typography variant="body2" sx={{ color: look.muted }}>
+                                {aiLimitMessage || "You've reached your daily limit of AI lookups. Try again tomorrow."}
+                            </Typography>
+                        </Box>
+                    )}
+
+                    {/* Error Message */}
+                    {error && (
+                        <Alert className="dictionary-page__error-alert" severity="error" sx={{ mb: 3 }}>
+                            {error}
+                        </Alert>
+                    )}
+
+                    {/* Loading State (first page only — later pages load under the results) */}
+                    {loading && (
+                        <Box className="dictionary-page__loading-spinner" sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                            <DelayedCircularProgress />
+                        </Box>
+                    )}
+
+                    {/* Segment Mode Results — one slab per group:
+                          1. All exact matches across all segments (in segment order); every group
+                             after the first is headed by its segment.
+                          2. All "starts with" groups (in segment order), each headed by its label. */}
+                    {!loading && isSegmentMode && segmentGroups.length > 0 && (
+                        <Box className="dictionary-page__segment-results" sx={{ mb: 3 }}>
+                            {segmentGroups
+                                .filter(g => g.exactEntries.length > 0)
+                                .map((group, idx) => (
+                                    <Box key={`exact-${group.segment}`} className="dictionary-page__segment-exact-group">
+                                        {idx > 0 && (
+                                            <DictionarySlabLabel className="dictionary-page__segment-label" look={look}>{group.segment}</DictionarySlabLabel>
+                                        )}
+                                        <DictionaryResultSlab className="dictionary-page__segment-exact-list" look={look}>
+                                            {group.exactEntries.map((entry) => (
+                                                <DictionaryEntryRow key={entry.id} entry={entry} onClick={handleEntryClick} language={userLanguage} headwordTapToCopy variant="slab" tones={look} swipeGloss />
+                                            ))}
+                                        </DictionaryResultSlab>
+                                    </Box>
+                                ))
+                            }
+
+                            {segmentGroups
+                                .filter(g => g.prefixEntries.length > 0)
+                                .map((group) => (
+                                    <Box key={`prefix-${group.segment}`} className="dictionary-page__segment-prefix-section">
+                                        <DictionarySlabLabel className="dictionary-page__starts-with-label" look={look}>
+                                            Starts with “{group.segment}”
+                                        </DictionarySlabLabel>
+                                        <DictionaryResultSlab className="dictionary-page__segment-prefix-list" look={look}>
+                                            {group.prefixEntries.map((entry) => (
+                                                <DictionaryEntryRow key={entry.id} entry={entry} onClick={handleEntryClick} language={userLanguage} headwordTapToCopy variant="slab" tones={look} swipeGloss />
+                                            ))}
+                                        </DictionaryResultSlab>
+                                    </Box>
+                                ))
+                            }
+                        </Box>
+                    )}
+
+                    {/* Regular search results — one labelled slab per kind of match (English “long”,
+                        Pinyin “long”, English starts with …, Pinyin starts with …, Other), in the
+                        server's rank order. Sections are runs of the server's `matchKind`, so the next
+                        infinite-scroll page simply extends the last one or opens the next
+                        (dictionaryMatchSections.ts). */}
+                    {!loading && !isSegmentMode && entries.length > 0 && (
+                        <Box className="dictionary-page__results" sx={{ mb: 3 }}>
+                            {groupByMatchSection(entries).map((section, index) => (
+                                <Box
+                                    key={`${section.key}-${index}`}
+                                    className={`dictionary-page__match-section dictionary-page__match-section--${section.key}`}
+                                >
+                                    <DictionarySlabLabel
+                                        className="dictionary-page__match-section-label"
+                                        look={look}
+                                        first={index === 0}
+                                    >
+                                        {matchSectionLabel(section.key, debouncedSearchTerm, userLanguage)}
+                                    </DictionarySlabLabel>
+                                    <DictionaryResultSlab className="dictionary-page__results-list" look={look}>
+                                        {section.entries.map((entry) => (
+                                            <DictionaryEntryRow
+                                                key={entry.id}
+                                                entry={entry}
+                                                onClick={handleEntryClick}
+                                                language={userLanguage}
+                                                headwordTapToCopy
+                                                variant="slab"
+                                                tones={look}
+                                                swipeGloss
+                                            />
+                                        ))}
+                                    </DictionaryResultSlab>
                                 </Box>
                             ))}
+                            {hasMore && <DictionaryLoadMore onReach={loadMore} loading={loadingMore} look={look} />}
                         </Box>
                     )}
+
+                    {/* No Results — suppressed while an AI card / no-match / error note stands in for it. */}
+                    {showNoResults && (
+                        <DictionaryNoResults term={debouncedSearchTerm} showAskAi={canAskAi} onAskAi={askAi} look={look} />
+                    )}
+
+                    {/* Empty State */}
+                    {!loading && !debouncedSearchTerm && (
+                        // Everything centred on one axis: the title, then the examples as a
+                        // centred text-only block of three columns (example – name), each column
+                        // flush left so the examples and dashes line up.
+                        <Box className="dictionary-page__empty-state" sx={{ textAlign: 'center', py: 8 }}>
+                            <Typography className="dictionary-page__welcome-title" variant="h6" sx={{ color: look.ink, mb: 0.5 }}>
+                                {welcome.title}
+                            </Typography>
+                            {welcome.intro && (
+                                <Typography className="dictionary-page__welcome-intro" variant="body2" sx={{ color: look.muted, textWrap: 'pretty' }}>
+                                    {welcome.intro}
+                                </Typography>
+                            )}
+                            {welcome.examples.length > 0 && (
+                                <Box
+                                    className="dictionary-page__welcome-examples"
+                                    sx={{ display: 'grid', gridTemplateColumns: 'auto auto auto', justifyContent: 'center', columnGap: 1, rowGap: 0.75, mt: 2, textAlign: 'left' }}
+                                >
+                                    {welcome.examples.map(({ query, kind }) => (
+                                        <Box key={query} className="dictionary-page__welcome-example" sx={{ display: 'contents' }}>
+                                            <Typography className="dictionary-page__welcome-example-query" variant="body2" sx={{ color: look.ink2 }}>
+                                                {query}
+                                            </Typography>
+                                            <Typography className="dictionary-page__welcome-example-dash" variant="body2" sx={{ color: look.muted }}>
+                                                –
+                                            </Typography>
+                                            <Typography className="dictionary-page__welcome-example-kind" variant="body2" sx={{ color: look.muted }}>
+                                                {kind}
+                                            </Typography>
+                                        </Box>
+                                    ))}
+                                </Box>
+                            )}
+                        </Box>
+                    )}
+            </Box>
+            {historyVisible && (
+                <Box
+                    className="dictionary-page__history-layer"
+                    onAnimationEnd={handleHistorySlideEnd}
+                    sx={{
+                        gridArea: '1 / 1',
+                        minWidth: 0,
+                        zIndex: 1,
+                        // Opaque ground so the results don't show through mid-slide.
+                        backgroundColor: look.ground,
+                        animation: historyPhase === 'opening'
+                            ? `${historySlideIn} ${HISTORY_SLIDE_MS}ms ${HISTORY_SLIDE_IN_EASING} both`
+                            : historyPhase === 'closing'
+                                ? `${historySlideOut} ${HISTORY_SLIDE_MS}ms ${HISTORY_SLIDE_OUT_EASING} both`
+                                : 'none',
+                    }}
+                >
+                    <DictionarySearchHistoryPanel
+                        entries={historyEntries}
+                        look={look}
+                        onSelect={handleHistorySelect}
+                        onRemove={removeHistoryEntry}
+                        onClearAll={clearAllHistory}
+                    />
                 </Box>
             )}
+            </Box>
 
             <FooterSpacer />
         </Container>

@@ -4,7 +4,7 @@ import type { RefObject } from "react";
 import { markFlashcard, undoFlashcardMark } from "../../../api/flashcards";
 import { fetchDistributedWorkingLoop, fetchLoopRefill, type WorkingLoopRequest } from "../../../api/workingLoop";
 import { insertBehindFront, removeFromLoop } from "./loopSplice";
-import { CARD_FLY_OUT_MS } from "../constants";
+import { CARD_FLY_OUT_MS, LAST_CARD_RETURN_MS } from "../constants";
 import { isProvisional } from "../../../utils/provisionalCards";
 import { useMarkedLentWords } from "../../../hooks/useMarkedLentWords";
 import type {
@@ -61,6 +61,15 @@ export interface FlyOut {
     slot: CardSlot;
     direction: "left" | "right";
     armed: boolean;
+    /**
+     * An incorrect mark on the loop's ONLY card: there is no other card to promote, so the
+     * same card goes off-screen and slides back in on top, labelled "Last card!"
+     * (FlashCardSection → LAST_CARD_RETURN_KEYFRAMES), over LAST_CARD_RETURN_MS rather
+     * than CARD_FLY_OUT_MS. Without it the stack "advanced" onto the same card with no
+     * visible change, which read as a broken swipe. Docs: docs/FLP_CARD_GESTURES.md §
+     * "The last card".
+     */
+    returnsAlone: boolean;
 }
 
 interface UseWorkingLoopArgs {
@@ -112,6 +121,15 @@ export interface UseWorkingLoopReturn {
     lastMarkUndoSnapshot: LastMarkUndoSnapshot | null;
     activeFrontSlot: CardSlot;
     flyOut: FlyOut | null;
+    /**
+     * The front card is the loop's only card, just marked correct, and the server has not
+     * said yet whether a replacement comes. In a one-card loop the stack advances onto the
+     * same card, so without this the swiped card would sit back on the front while its copy
+     * flies off — and then vanish when the reply empties the loop. FlashCardSection does not
+     * draw the front while this is set, so the card behind (the out-of-ready-cards backing
+     * card) shows instead. Docs: docs/FLP_CARD_GESTURES.md § "The last card".
+     */
+    frontVacated: boolean;
     currentSideOneLanguage: SideOneLanguage;
     nextSideOneLanguage: SideOneLanguage;
     /**
@@ -220,6 +238,8 @@ export function useWorkingLoop({
     // slot is currently animating off-screen. Back = front + 1, deep = front + 2 (mod 3).
     const [activeFrontSlot, setActiveFrontSlot] = useState<CardSlot>(0);
     const [flyOut, setFlyOut] = useState<FlyOut | null>(null);
+    // The id of the loop's only card while its correct mark is in flight (`frontVacated`).
+    const [soleCardLeavingId, setSoleCardLeavingId] = useState<number | null>(null);
 
     // Side 1 language for the current card and the next (back-slot) card. Rolled
     // forward on dismiss so the peeking card's language matches what it will be
@@ -237,6 +257,8 @@ export function useWorkingLoop({
     const deepEntry: VocabEntry | null =
         workingLoop.length > 2 ? workingLoop[(currentIndex + 2) % workingLoop.length] : null;
     const deepSideOneLanguage = sideOneForCard(deepEntry, world);
+    // By id: a replacement patched into the loop is a different card, and shows at once.
+    const frontVacated = currentEntry !== null && currentEntry.id === soleCardLeavingId;
 
     // Temporary (provisional) cards the server lent once the session's lend switch came
     // on (docs/PROVISIONAL_CARDS.md). The words the learner MARKED are recorded at the mark
@@ -420,7 +442,11 @@ export function useWorkingLoop({
         // promoted to front.
         // Un-armed: the flying slot is held at the release point while this dismiss's big
         // synchronous update commits; it is armed after the next paint (below).
-        setFlyOut({ slot: activeFrontSlot, direction, armed: false });
+        // The loop's only card, marked wrong, comes straight back (FlyOut.returnsAlone).
+        const returnsAlone = !isCorrect && workingLoop.length === 1;
+        setFlyOut({ slot: activeFrontSlot, direction, armed: false, returnsAlone });
+        // The only card, passed: it is not coming straight back (frontVacated).
+        if (isCorrect && workingLoop.length === 1) setSoleCardLeavingId(currentCard.id);
         // The back slot is promoted; the flying slot lands as the new deep card.
         setActiveFrontSlot(prev => ((prev + 1) % 3) as CardSlot);
         setCurrentIndex(prev => (prev + 1) % workingLoop.length);
@@ -532,7 +558,10 @@ export function useWorkingLoop({
                 // if something unexpected throws after all retries are exhausted.
                 console.error("Unhandled error in markCard background task:", err);
                 setError("Failed to save progress. Please check your connection.");
-            });
+            })
+            // The reply is in (and applied above, in its own batch): the loop now holds the
+            // replacement, nothing, or — suppressed / failed — the same card, shown again.
+            .finally(() => setSoleCardLeavingId(prev => (prev === currentCard.id ? null : prev)));
 
         // Wait for the fly-out CSS transition to complete, then clear the fly-out
         // state. The flew-out slot snaps back to center (hidden behind the new
@@ -548,7 +577,16 @@ export function useWorkingLoop({
         // clock starts here, so the full CARD_FLY_OUT_MS is always shown.
         await new Promise<void>(resolve => afterNextPaint(resolve));
         setFlyOut(prev => (prev ? { ...prev, armed: true } : prev));
-        await new Promise(resolve => setTimeout(resolve, CARD_FLY_OUT_MS));
+        if (returnsAlone) {
+            // The card comes back as a fresh front, on Side 1. `currentIndex` does not move
+            // in a one-card loop ((0 + 1) % 1 = 0), so useCardDrag's per-card reset (keyed
+            // on it) never fires and the card would return still flipped. The front slot is
+            // hidden for the whole return (FlashCardSection), so resetting it now is unseen;
+            // the flying copy keeps its own face until it is off-screen. On the page's
+            // cardDragRef this also wipes a writing card's graded attempt.
+            cardDragRef.current?.resetCard();
+        }
+        await new Promise(resolve => setTimeout(resolve, returnsAlone ? LAST_CARD_RETURN_MS : CARD_FLY_OUT_MS));
         setFlyOut(null);
         cardDragRef.current?.resetDragPosition();
         setIsAnimating(false);
@@ -665,6 +703,7 @@ export function useWorkingLoop({
         lastMarkUndoSnapshot,
         activeFrontSlot,
         flyOut,
+        frontVacated,
         currentSideOneLanguage,
         nextSideOneLanguage,
         handleCardDismiss,

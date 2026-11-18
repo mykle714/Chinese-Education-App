@@ -701,6 +701,7 @@ const DeckTowerPage: React.FC = () => {
         // first. Not before sign-in: the session deals for the account.
         dealtWorlds: user?.id !== undefined ? [worldId, ...shownWorlds.filter((w) => w !== worldId)] : [],
         onClimbedOut: (w, n) => climbedOut.current(w, n),
+        focusedWorlds: { core: readyCounts.core.focusOn, reading: readyCounts.reading.focusOn, writing: readyCounts.writing.focusOn },
     });
     const studying = (id: TowerWorldId) => study.active && study.world === id;
     // While a session is up the footer slides away, the edge swipe is blocked (a game-like

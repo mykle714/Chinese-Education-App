@@ -12,10 +12,16 @@ interface NodePageHeaderProps {
     title: string;
     onBack: () => void;
     rightContent?: React.ReactNode;
+    /**
+     * Title and back-arrow ink, forwarded to PageHeader's `titleColor` — for a header over
+     * a ground the default ink does not read on (the Reader document's night slate,
+     * features/reader/ReaderDocumentSurface.tsx). Undefined = PageHeader's default ink.
+     */
+    titleColor?: string;
 }
 
-const NodePageHeader: React.FC<NodePageHeaderProps> = ({ title, onBack, rightContent }) => (
-    <PageHeader title={title} showBack arrowDirection="left" onBack={onBack} rightContent={rightContent} />
+const NodePageHeader: React.FC<NodePageHeaderProps> = ({ title, onBack, rightContent, titleColor }) => (
+    <PageHeader title={title} showBack arrowDirection="left" onBack={onBack} rightContent={rightContent} titleColor={titleColor} />
 );
 
 export default NodePageHeader;

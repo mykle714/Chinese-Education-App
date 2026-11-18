@@ -18,7 +18,7 @@ import { CARD_BASELINES } from './wire.js';
 import { STUDY_MIX_QUOTAS, STUDY_MIX_FILL_ORDER, type BandQuota } from './studyMix.js';
 
 /** The most cards a focused world serves in one streak day. */
-export const FOCUS_DAILY_CARDS = 25;
+export const FOCUS_DAILY_CARDS = 30;
 
 /**
  * Off-cooldown cards (all four utcm bands) a world must hold before its lever appears.
@@ -28,11 +28,11 @@ export const FOCUS_DAILY_CARDS = 25;
 export const FOCUS_LEVER_THRESHOLD = 80;
 
 /**
- * The daily set's band quotas: Study Mix's 1-2-2-5 (per 10) scaled to the 25, i.e.
- * 2 Mastered / 5 Comfortable / 5 Unfamiliar / 13 Target. 25 is not a multiple of 10, so
- * each band's scaled share is floored and the slots that leaves over go one each to the
- * bands in STUDY_MIX_FILL_ORDER (Target first) — the same order a short band's shortfall
- * is borrowed in. Derived, never restated, so the snapshot keeps the flp's proportions if
+ * The daily set's band quotas: Study Mix's 1-2-2-5 (per 10) scaled to the 30, i.e.
+ * 3 Mastered / 6 Comfortable / 6 Unfamiliar / 15 Target. When the cap is not a multiple
+ * of 10, each band's scaled share is floored and the slots that leaves over go one each to
+ * the bands in STUDY_MIX_FILL_ORDER (Target first) — the same order a short band's
+ * shortfall is borrowed in. Derived, never restated, so the snapshot keeps the flp's proportions if
  * the Mix shape or the cap ever changes; the quotas always sum to FOCUS_DAILY_CARDS.
  */
 export const FOCUS_QUOTAS: readonly BandQuota[] = (() => {

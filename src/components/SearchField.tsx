@@ -59,6 +59,20 @@ export interface SearchFieldProps {
      */
     endAction?: React.ReactNode;
     /**
+     * Enter / the keyboard's Search key. The field searches as you type, so this is not
+     * needed to run a search; hosts use it as a signal of intent (the Dictionary saves the
+     * term to its search history — features/dictionary/useDictionarySearchHistory.ts).
+     * Also fires for the beginner keyboard's ā-pad action key, which dispatches a real
+     * Enter keydown (PinyinToneKeyboard).
+     */
+    onSubmit?: (term: string) => void;
+    /**
+     * The input gains focus (a tap into the field, or the clear button's re-focus). The
+     * Dictionary uses it to slide its search history away — focusing means "I'm about to
+     * type a new query" (features/dictionary/DictionaryPage.tsx).
+     */
+    onFocus?: () => void;
+    /**
      * Extra attributes for the underlying `<input>` itself — e.g. the dictionary's
      * `data-beginner-keyboard-default="os"`, or `enterKeyHint: "search"` (which labels
      * the OS keyboard's return key AND the beginner keyboard's ā-pad action key —
@@ -80,6 +94,8 @@ const SearchField: React.FC<SearchFieldProps> = ({
     size = "small",
     className,
     endAction,
+    onSubmit,
+    onFocus,
     inputAttributes,
     sx,
 }) => {
@@ -111,6 +127,12 @@ const SearchField: React.FC<SearchFieldProps> = ({
             placeholder={placeholder}
             value={value}
             onChange={(e) => onChange(e.target.value)}
+            onKeyDown={onSubmit ? (e) => {
+                // Skip the Enter that confirms an IME composition (pinyin → 汉字 on an OS
+                // keyboard); only a bare Enter means "search this".
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) onSubmit(value);
+            } : undefined}
+            onFocus={onFocus}
             inputRef={attachRef}
             inputProps={inputAttributes}
             InputProps={{

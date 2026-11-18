@@ -17,7 +17,7 @@ export interface PlateTones {
 
 /**
  * towerPlate — the Deck Tower's floor-plate push button, redrawn in HTML for the flp's
- * page-level buttons (`Write it`, `Compare`, `More Info`, and — slab only — the header's
+ * page-level buttons (`Compare`, `Customize`, `More Info`, and — slab only — the header's
  * audio chip) while the session runs inside the tower (FlpTowerHost; docs/DECK_TOWER.md § "Studying the tower" → "The buttons").
  *
  * The plate in the scene (IsoFloorLabel `raised`, pressed by usePlatePress) is a thin slab
@@ -133,7 +133,7 @@ export function towerPlateSx(tones: PlateTones, baseTransform = "") {
 }
 
 /**
- * The tower session's word-tools rail (`Write it` · `Compare` · `Customize`) at a smaller size than
+ * The tower session's word-tools rail (`Compare` · `Customize`; no `Write it` in the flp) at a smaller size than
  * WORD_TOOL_PILL_SX's 11px-padded, 12.5px pill: over the tower the plates sit between
  * the study header and the card, and full-size pills (plus the plate's 5 px wall) read
  * as heavier than the card they caption. Layered after `towerPlateSx` in
@@ -145,9 +145,8 @@ export function towerPlateSx(tones: PlateTones, baseTransform = "") {
  *
  * Width: a fixed `TOWER_RAIL_PILL_WIDTH` each instead of WORD_TOOL_PILL_SX's `flex: 1`
  * (which stretches them across the card), so the pills sit as a centred group and stay the
- * same width as each other. Three of them (3 × 104 px + gaps = 326 px) are wider than the
- * card, so TOWER_RAIL_SX also lifts the rail's card-width cap. `Write it` is wrapped in a star
- * Badge whose root is the rail's flex child, so the rail must pin that root too.
+ * same width as each other. TOWER_RAIL_SX lifts the rail's card-width cap so a centred group
+ * never overflows off-centre.
  */
 export const TOWER_RAIL_PILL_WIDTH = 104;
 
@@ -160,13 +159,16 @@ export const TOWER_RAIL_PILL_SIZE_SX = {
 } as const;
 
 /**
- * The rail container's half of the tower sizing: pins `Write it`'s Badge root (the
- * rail's own sx stretches it with `flex: 1`) to the same fixed width as the other pills,
- * and lifts WordToolsRail's `CARD_BASE_WIDTH` cap — three fixed pills are wider than the
- * card, and a capped rail would overflow them off-centre.
+ * The rail container's half of the tower sizing: lifts WordToolsRail's `CARD_BASE_WIDTH`
+ * cap, so the fixed-width pills stay a centred group however many there are, and widens
+ * the rail's 7 px gap to `TOWER_RAIL_GAP` — two 104 px plates 7 px apart read as one
+ * bunched block over the card (owner, 2026-11-17). (It used to pin `Write it`'s
+ * star-Badge root too; the flp dropped `Write it` on 2026-11-17.)
  * Merged into WordToolsRail `sx` by FlashcardsLearnPage.tsx while in the tower.
  */
+export const TOWER_RAIL_GAP = 24;
+
 export const TOWER_RAIL_SX = {
     maxWidth: "none",
-    "& .MuiBadge-root": { flex: `0 0 ${TOWER_RAIL_PILL_WIDTH}px` },
+    gap: `${TOWER_RAIL_GAP}px`,
 } as const;

@@ -26,7 +26,7 @@ export class TextController {
       }
 
       // No title in the request: TextService derives it from the content.
-      const { content, language, iconId } = req.body;
+      const { content, language, iconId, kind } = req.body;
 
       // Content can be empty string for new documents, but must be present
       if (content === undefined || content === null) {
@@ -41,7 +41,9 @@ export class TextController {
         content,
         language,
         // Optional icons8 id (texts."iconId"); shape-checked in TextService.
-        iconId
+        iconId,
+        // Optional Reader collection (texts.kind, migration 194); validated in TextService.
+        kind
       };
 
       const newText = await this.textService.createText(userId, textData);

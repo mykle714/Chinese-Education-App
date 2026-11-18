@@ -3,6 +3,7 @@ import Icon from "../../components/Icon";
 import { COLORS } from "../../theme/colors";
 import { readerPillButtonSx } from "./readerStyles";
 import { iconImageUrl } from "../../cardIcons/cardIconLayout";
+import type { Tier2Look } from "../../timeOfDay/tier2Look";
 
 // READER EDIT TOOLBAR — drops in below the document header while the Edit
 // toggle is on (docs/LEAF_NODE_PAGES.md § Reader). Undo/redo and the document-icon
@@ -13,13 +14,15 @@ import { iconImageUrl } from "../../cardIcons/cardIconLayout";
 // not necessarily the saved one — or a muted placeholder glyph when there is none.
 // Tapping it asks the host to open the shared IconPickerDialog; the host owns the draft.
 //
-// Flat look (readerStyles.ts), like the Friends panel: the strip is the paper ground
-// over a hairline, undo/redo are bare icon buttons (muted icon ink, the app's other bare
-// icon buttons), and Cancel / Save are pills — Cancel white, Save the blue MID fill the
-// Friends tab's Send button wears, both with ink text. (Until 2026-11-16 these were
+// Flat look (readerStyles.ts), like the Friends panel, coloured by the page's
+// time-of-day `look` (ReaderDocumentPage → useTier2Look; slate at night): the strip is
+// the page ground over a hairline, undo/redo are bare icon buttons (ink2, the app's other
+// bare icon buttons), and Cancel / Save are pills — Cancel the neutral surface pill, Save
+// the blue MID fill the Friends tab's Send button wears (a pastel by day and night). (Until 2026-11-16 these were
 // lowercase MUI text buttons on the grey header strip, with Save in white-on-infoInk —
 // white text on a hue, which the palette rules out.)
 const ReaderEditToolbar: React.FC<{
+    look: Tier2Look;
     canUndo: boolean;
     canRedo: boolean;
     onUndo: () => void;
@@ -34,13 +37,13 @@ const ReaderEditToolbar: React.FC<{
     iconId: string | null;
     // Opens the icon picker (ReaderDocumentPage owns the dialog and the draft).
     onPickIcon: () => void;
-}> = ({ canUndo, canRedo, onUndo, onRedo, onCancel, onSave, saving, saveDisabled = false, iconId, onPickIcon }) => {
+}> = ({ look, canUndo, canRedo, onUndo, onRedo, onCancel, onSave, saving, saveDisabled = false, iconId, onPickIcon }) => {
     const iconButtonSx = {
-        color: COLORS.iconColor,
+        color: look.ink2,
         // See CardEditToolbar.tsx: opts out of the ~300ms double-tap-zoom delay so
         // rapid undo/redo taps register immediately on touch devices.
         touchAction: "manipulation",
-        "&.Mui-disabled": { color: COLORS.iconColor, opacity: 0.35 },
+        "&.Mui-disabled": { color: look.ink2, opacity: 0.35 },
     } as const;
 
     return (
@@ -62,8 +65,8 @@ const ReaderEditToolbar: React.FC<{
                 gap: 1,
                 px: 2,
                 py: 1,
-                backgroundColor: COLORS.background,
-                borderBottom: `1px solid ${COLORS.rowBorder}`,
+                backgroundColor: look.ground,
+                borderBottom: `1px solid ${look.line}`,
             }}
         >
             <IconButton
@@ -104,9 +107,10 @@ const ReaderEditToolbar: React.FC<{
                     height: 32,
                     p: 0,
                     borderRadius: "10px",
-                    border: `1px solid ${COLORS.border}`,
-                    backgroundColor: COLORS.white,
-                    "&:hover": { backgroundColor: COLORS.rowHoverBg },
+                    border: `1px solid ${look.outline}`,
+                    backgroundColor: look.surface,
+                    // Hover keeps the surface (a pressed tint over slate would need a blend).
+                    "&:hover": { backgroundColor: look.surface },
                 }}
             >
                 {iconId ? (
@@ -128,7 +132,7 @@ const ReaderEditToolbar: React.FC<{
                 className="reader-edit-toolbar__cancel"
                 onClick={onCancel}
                 disabled={saving}
-                sx={readerPillButtonSx(COLORS.white)}
+                sx={readerPillButtonSx(look)}
             >
                 Cancel
             </Button>
@@ -136,7 +140,7 @@ const ReaderEditToolbar: React.FC<{
                 className="reader-edit-toolbar__save"
                 onClick={onSave}
                 disabled={saving || saveDisabled}
-                sx={readerPillButtonSx(COLORS.bluM)}
+                sx={readerPillButtonSx(look, COLORS.bluM)}
             >
                 {saving ? (
                     <CircularProgress size={14} thickness={5} sx={{ color: COLORS.onSurface }} className="reader-edit-toolbar__save-spinner" />

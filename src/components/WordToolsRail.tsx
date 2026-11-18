@@ -24,6 +24,9 @@ import type { VocabEntry } from "../types";
  * deleted 2026-11-05 together with the card-note feature that shared it). With note
  * gone it was a one-item menu, so it joined the other two here.
  *
+ * The flp hides `Write it` (`showWriteIt={false}`); the cdp and the Dictionary/Reader
+ * eip keep it.
+ *
  * Each pill self-hides when it cannot act — writing is Chinese-only and capped at four
  * characters (its button owns that gate), Compare needs a host that can receive the
  * word, Customize needs a card to edit (absent in the Dictionary eip) — and
@@ -61,6 +64,11 @@ export interface WordToolsRailProps {
      * flip the card to its answer face first (FlashcardsLearnPage `revealAnswer`).
      */
     onToolPress?: () => void;
+    /**
+     * Render the `Write it` pill. Default true. The flp turns it off (owner, 2026-11-17):
+     * writing practice there is the wflp's job, not a side tool on every card.
+     */
+    showWriteIt?: boolean;
     className?: string;
     sx?: SxProps<Theme>;
     /**
@@ -69,12 +77,22 @@ export interface WordToolsRailProps {
      * (src/features/flashcards/FlashcardsLearnPage/towerPlate.ts).
      */
     pillSx?: SxProps<Theme>;
+    /**
+     * Drawn but greyed and inert, like the flp's `More Info` pill (styled.ts →
+     * `MoreInfoPill` `isDisabled`, opacity 0.32): the flp sets it while the card under the
+     * rail is not a word (a game break, the out-of-ready-cards card). Taps are still
+     * SWALLOWED (the buttons are `disabled`, the rail stops the press): falling through
+     * would land on the tower's tap-off-the-card Back. Covers `Compare` and `Customize`
+     * only: `Write it` has no disabled state, and its one host that disables (the flp)
+     * does not show it.
+     */
+    disabled?: boolean;
 }
 
-export const WordToolsRail: React.FC<WordToolsRailProps> = ({ entry, onCompare, onCustomize, onToolPress, className, sx, pillSx }) => {
+export const WordToolsRail: React.FC<WordToolsRailProps> = ({ entry, onCompare, onCustomize, onToolPress, showWriteIt = true, className, sx, pillSx, disabled = false }) => {
     // Re-checked here purely to decide whether the CONTAINER is worth rendering;
     // PracticeWritingButton owns the real gate and returns null on its own.
-    const writingEligible = entry.language === "zh" && [...entry.entryKey].length <= 4;
+    const writingEligible = showWriteIt && entry.language === "zh" && [...entry.entryKey].length <= 4;
     if (!writingEligible && !onCompare && !onCustomize) return null;
 
     // These pages sit inside flip/drag-sensitive surfaces (the flp card is directly
@@ -98,25 +116,30 @@ export const WordToolsRail: React.FC<WordToolsRailProps> = ({ entry, onCompare, 
                     "& .MuiBadge-root": { display: "flex", flex: 1, minWidth: 0 },
                     "& .MuiBadge-root > *": { width: "100%" },
                 },
+                disabled && { opacity: 0.32, "& button": { cursor: "default" } },
                 ...(Array.isArray(sx) ? sx : [sx]),
             ]}
             onPointerDown={stop}
-            onClickCapture={onToolPress}
+            onClickCapture={disabled ? undefined : onToolPress}
+            aria-disabled={disabled || undefined}
         >
-            <PracticeWritingButton
-                character={entry.entryKey}
-                language={entry.language}
-                // `|| undefined` so a dictionary-only entry (no vet row) records no
-                // writing mark rather than posting one against card 0.
-                vocabEntryId={entry.id || undefined}
-                appearance="rail"
-                railSx={pillSx}
-            />
+            {showWriteIt && (
+                <PracticeWritingButton
+                    character={entry.entryKey}
+                    language={entry.language}
+                    // `|| undefined` so a dictionary-only entry (no vet row) records no
+                    // writing mark rather than posting one against card 0.
+                    vocabEntryId={entry.id || undefined}
+                    appearance="rail"
+                    railSx={pillSx}
+                />
+            )}
             {onCompare && (
                 <Typography
                     component="button"
                     type="button"
                     className="word-tools-rail__compare"
+                    disabled={disabled}
                     onClick={(e) => { stop(e); onCompare(entry); }}
                     onMouseDown={stop}
                     onTouchStart={stop}
@@ -131,6 +154,7 @@ export const WordToolsRail: React.FC<WordToolsRailProps> = ({ entry, onCompare, 
                     component="button"
                     type="button"
                     className="word-tools-rail__customize"
+                    disabled={disabled}
                     onClick={(e) => { stop(e); onCustomize(); }}
                     onMouseDown={stop}
                     onTouchStart={stop}

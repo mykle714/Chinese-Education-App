@@ -1,4 +1,4 @@
-import type { Text } from '../../types/index.js';
+import type { Text, TextKind } from '../../types/index.js';
 
 /** The columns `TextDAL.updateFields` may change. Language is immutable after creation. */
 export interface TextFieldUpdate {
@@ -19,13 +19,16 @@ export interface TextFieldUpdate {
  * Referenced by: docs/USER_DOCUMENT_FEATURE_SUMMARY.md, docs/BACKEND_LAYERING.md § 4.
  */
 export interface ITextDAL {
-  /** Insert a user-created document; id and createdAt come from Postgres defaults. */
+  /** Insert a user-created document; id, createdAt and updatedAt come from Postgres defaults. */
   insertUserText(data: {
     userId: string; title: string; content: string; language: string; characterCount: number;
-    iconId: string | null;
+    iconId: string | null; kind: TextKind;
   }): Promise<Text>;
 
-  /** Update the given columns; null when no row has `id`. Must name at least one column. */
+  /**
+   * Update the given columns and stamp `updatedAt = now()`; null when no row has `id`.
+   * Must name at least one column.
+   */
   updateFields(id: string, fields: TextFieldUpdate): Promise<Text | null>;
 
   /** Delete one document. True when a row was removed. */

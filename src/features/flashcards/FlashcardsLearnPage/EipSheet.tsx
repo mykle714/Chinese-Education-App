@@ -5,7 +5,7 @@ import type { useEipTabs } from "./useEipTabs";
 import { useFlashcardLearnSettings } from "../../../hooks/useFlashcardLearnSettings";
 import { useNotificationFor } from "../../../components/notifications/useNotify";
 import WordToolsRail from "../../../components/WordToolsRail";
-import { useLearningToggle } from "../../../hooks/useLearningToggle";
+import { useLearningToggle, type LearningToggleState } from "../../../hooks/useLearningToggle";
 import type { Language, VocabEntry } from "../../../types";
 
 /**
@@ -25,7 +25,9 @@ import type { Language, VocabEntry } from "../../../types";
  * the only host that turns on `showWordTools`) and the saved-card cdp
  * (`features/flashcards/VocabCardDetailPage`, which since 2026-11-10 drills in through
  * this trail instead of navigating; with the Dictionary page it turns on
- * `showSynonymsRelated` + `showLearning`). The flp mounts `InfoCardSection` itself: it
+ * `showSynonymsRelated` + `showLearning`), and the Reader document page
+ * (`features/reader/ReaderDocumentPage`, the Dictionary page's configuration plus
+ * `sharedLearning`, so its keycap's Add key and the eip's are one state). The flp mounts `InfoCardSection` itself: it
  * mirrors a flipping card face (`isFlipped`) and wires extras.
  *
  * Layer: feature component (src/features/flashcards). Docs: docs/EIP_SHEET_GESTURES.md (mount
@@ -56,6 +58,11 @@ interface EipSheetProps {
     // appears on every word drilled into from it). The saved-card cdp: its root is the
     // saved card the page is about, so the key there would only offer to un-save it.
     learningSkipsRoot?: boolean;
+    // With `showLearning`: a host's own Learning toggle for one word. While the showing
+    // tab is that word (`entryKey` match) the trail's key uses THIS state instead of the
+    // sheet's hook, so the host's key for the word updates with every tap here (and the
+    // sheet's hook stays inert — no second status fetch). The Reader: its keycap's key.
+    sharedLearning?: { entryKey: string; state: LearningToggleState } | null;
     // Stack depth handed to SheetPanel (0 = root). acp passes 1 while its hidden
     // skipped-cards sheet is open, so an eip opened from that sheet stacks above it.
     depth?: number;
@@ -65,7 +72,7 @@ interface EipSheetProps {
 }
 
 const EipSheet: React.FC<EipSheetProps> = ({
-    eip, open, onClose, onSpeak, onSpeakSentence, speakingKey, showSynonymsRelated, showWordTools, showLearning, learningSkipsRoot, depth = 0, defaultHeightRatio,
+    eip, open, onClose, onSpeak, onSpeakSentence, speakingKey, showSynonymsRelated, showWordTools, showLearning, learningSkipsRoot, sharedLearning, depth = 0, defaultHeightRatio,
 }) => {
     const { settings: learnSettings } = useFlashcardLearnSettings();
     const active = eip.activeTab;
@@ -74,14 +81,17 @@ const EipSheet: React.FC<EipSheetProps> = ({
     // Membership of the SHOWING word — re-fetched as the trail moves between words.
     // Fed `null` unless the host asked for it, which leaves the hook inert (no fetch).
     const learningShown = !!showLearning && !(learningSkipsRoot && eip.activeIndex === 0);
-    const learning = useLearningToggle(
-        learningShown ? entryTab?.entry ?? null : null,
+    // The host's toggle applies only to its own word; any other tab runs the sheet's hook.
+    const useShared = learningShown && !!sharedLearning && entryTab?.entry.entryKey === sharedLearning.entryKey;
+    const ownLearning = useLearningToggle(
+        learningShown && !useShared ? entryTab?.entry ?? null : null,
         (entryTab?.entry.language ?? "zh") as Language,
     );
+    const learning = useShared && sharedLearning ? sharedLearning.state : ownLearning;
     // The trail-full notice, and Learning failures only — a successful add/remove is shown
-    // by the toggle (docs/NOTIFICATIONS.md).
+    // by the toggle (docs/NOTIFICATIONS.md). A shared toggle's failures are the host's to raise.
     useEipOverflowNotice(eip.overflowSignal);
-    useNotificationFor(learning.error, learning.clearError, { id: "eip-sheet-learning-error", tone: "error", autoHideMs: 2500 });
+    useNotificationFor(ownLearning.error, ownLearning.clearError, { id: "eip-sheet-learning-error", tone: "error", autoHideMs: 2500 });
 
     return (
         <>

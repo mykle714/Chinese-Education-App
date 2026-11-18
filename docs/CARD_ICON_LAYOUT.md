@@ -43,7 +43,7 @@ The arrangement is **per user, per word** because it is stored on the vet row
 ### Entry point: the `Customize` pill
 
 The editor is opened from the **`Customize`** pill on the word-tools rail above the card
-(`src/components/WordToolsRail.tsx` → `onCustomize`, beside `Write it` and `Compare`), on both
+(`src/components/WordToolsRail.tsx` → `onCustomize`, beside `Compare`, and `Write it` on the cdp only), on both
 card surfaces:
 
 | Surface | Handler | Behaviour |
@@ -435,9 +435,19 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
      = `[12, 48]`. The bottom pad cannot shrink (it is a hard reservation), so on a short slot
      the reservation is paid out of the whitespace **above** the card instead of out of the
      card. A roomy slot (≳480px) still rests at the familiar 48px.
+   - `pad.top` also **clears the word-tools rail** (`Compare` / `Customize`): never less than
+     the rail band's height + `CARD_SLOT_TOP_BAND_GAP` (12). The rail is not in the flex flow:
+     it sits in `.mobile-demo-word-tools-band`, an absolute overlay across the top of
+     `ContentArea` (FlashcardsLearnPage → `wordToolsBandRef`), measured via `offsetHeight` like
+     the pill. The band's LAST non-zero height is kept while the rail is hidden (icon editor,
+     out-of-ready-cards card), with `WORD_TOOLS_BAND_FALLBACK` (54) before its first
+     measurement, so hiding the rail never moves the card. A width-bound card (vertical slack)
+     is centred in the full slot, so it sits higher than it did below an in-flow rail;
+     a height-bound one stops below the rail.
 
    There is no feedback loop: the slot's height comes from the `ContentArea` flex layout and
-   the pill is absolutely positioned, so neither moves when the padding changes.
+   the pill and the rail band are absolutely positioned, so none of them moves when the
+   padding changes.
 
    **Animations (all share one timing — both directions).** The toolbar drop, the
    advanced-rows reveal, and the card slot's toolbar inset all run at `CARD_EDIT_ANIM_MS = 300` with

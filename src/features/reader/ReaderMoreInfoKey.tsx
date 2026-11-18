@@ -3,7 +3,7 @@ import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { WEIGHT } from "../../theme/scale";
 import { keycapPressSx } from "../../theme/keycapPress";
-import { roundedEdgeFilletDown, roundedEdgeRimLightTop } from "../../theme/roundedEdge";
+import { roundedEdgeRimLightTop } from "../../theme/roundedEdge";
 import { useEipColors } from "../flashcards/FlashcardsLearnPage/useEipPalette";
 import { EIP_ADD_KEY_SIZES, type EipAddKeySize } from "../flashcards/FlashcardsLearnPage/eipAddKeySizes";
 
@@ -39,10 +39,10 @@ export default function ReaderMoreInfoKey({ onClick, size = "regular" }: ReaderM
     const k = EIP_ADD_KEY_SIZES[size];
     const colors = useEipColors();
     // EipAddKey's shadow stack, resting "Add" state: outline ring, rim light under it, the
-    // fillet over the lip, the lip.
+    // lip. No fillet — an outlined key skips it (see EipAddKey; designGuidelines.md
+    // § "The rounded edge").
     const ring = `inset 0 0 0 1px ${colors.dark ? "rgba(255, 255, 255, 0.12)" : COLORS.border}`;
     const rim = roundedEdgeRimLightTop(colors.face, 1);
-    const fillet = roundedEdgeFilletDown(colors.face, colors.edge);
     return (
         <ButtonBase
             className={`reader-more-info-key reader-more-info-key--${size}`}
@@ -69,7 +69,7 @@ export default function ReaderMoreInfoKey({ onClick, size = "regular" }: ReaderM
                 // match it here for equal key heights.
                 minHeight: `calc(${k.icon}px + ${PADDING[size].split(" ")[0]} * 2)`,
                 ...keycapPressSx({
-                    restShadow: `${ring}, ${rim}, ${fillet}, 0 ${k.lipAdd}px 0 ${colors.edge}`,
+                    restShadow: `${ring}, ${rim}, 0 ${k.lipAdd}px 0 ${colors.edge}`,
                     pressedShadow: `${ring}, ${rim}`,
                     restY: k.restAddY,
                     pressedY: k.sink,

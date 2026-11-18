@@ -45,7 +45,7 @@ Sub-document: [FOCUS_MODE.md](./FOCUS_MODE.md) — the **focus lever** in each p
 left floor corner on screen (`IsoLever`, `useFocusLever`, `useLeverMotion`; layout
 `TOWER_LAYOUT.leverAt`, whose hatch is the pawns' second obstacle). It shows on the Learning
 deck once the world holds 80 off-cooldown cards (or focus is on), and switches the world to a
-daily cap of 25 (`FOCUS_DAILY_CARDS`). While focus is on, the world's ready counts — and so its Learning tower —
+daily cap of 30 (`FOCUS_DAILY_CARDS`). While focus is on, the world's ready counts — and so its Learning tower —
 cover only today's remaining focus set.
 
 Parent: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (sub-documents table).
@@ -1312,7 +1312,7 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
   | Event (`FlpTowerHost`) | Tower |
   |---|---|
   | Correct swipe on a card the learner owns (`onMarked(true, false)`, at the swipe) | −1 card (never below 0) — the flp slides the marked card off right, still on its answer face, from where the finger let go (FlashCardSection `TOWER_FLY_RIGHT_KEYFRAMES`, the held `outgoingEntry`) |
-  | Incorrect swipe | unchanged — the flp flies the card fully off-screen left, then slides it back in under the new top card (FlashCardSection `TOWER_TUCK_KEYFRAMES`) |
+  | Incorrect swipe | unchanged — the flp flies the card fully off-screen left, then slides it back in under the new top card (FlashCardSection `TOWER_TUCK_KEYFRAMES`); the loop's ONLY card instead comes back on top, labelled "Last card!" (`LAST_CARD_RETURN_KEYFRAMES`, [FLP_CARD_GESTURES.md](./FLP_CARD_GESTURES.md) § "The last card") |
   | Correct swipe on a LENT card (`onMarked(true, true)`) | unchanged — a lent card was never on the tower |
   | Undo of a correct mark on an owned card (`onUndone(true, false)`) | +1 card |
   | Game break's correct mark (`onGameCardCleared` via `useBreakClears`, off the mark's response; not a suppressed mark or a lent card — the card also leaves the working loop, FLP_GAME_BREAKS.md § 4a) | tallied, unchanged until the game ends |
@@ -1407,8 +1407,8 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
   panel (`--card-panel-clip`, CARD_ICON_LAYOUT.md § "Where the clip lives"). Fixed tokens,
   not the theme's `flashCard`. (Not washed at night — § Time of day → "The wash".)
   See TOWER_STYLE_SHIFT.md § "Card stock".
-- **The buttons.** The session's page buttons — the word-tools rail's `Write it`,
-  `Compare` and `Customize` and the `More Info` pill — are the tower's floor-plate push button redrawn in
+- **The buttons.** The session's page buttons — the word-tools rail's `Compare` and
+  `Customize` (no `Write it`: the flp passes `showWriteIt={false}`, 2026-11-17) and the `More Info` pill — are the tower's floor-plate push button redrawn in
   HTML (`src/theme/towerPlate.ts` → `towerPlateSx`):
   a WHITE plate (`FlpTowerHost.plateTones` = `bandMaterial(COLORS.white)`,
   `useTowerStudy.ts` → `STUDY_PLATE_TONES`: white face, walls stepped down to light greys), seen from the
@@ -1420,16 +1420,20 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
   press (`src/theme/keycapPress.ts` → `keycapPressSx`; every HTML keycap snaps since
   2026-10-29). The in-scene plate (`usePlatePress`) still animates its 80 ms sink and 220 ms
   overshoot pop; the HTML copy deliberately does not, and skips its wait-to-bottom-out. No `COLORS.border` outline, like the scene's plate.
-  Wired through `WordToolsRail` `pillSx` (→ `PracticeWritingButton` `railSx`) and
-  `MoreInfoPill` `plate` (`styled.ts`). The rail's plates (`Write it` · `Compare` · `Customize`)
+  Wired through `WordToolsRail` `pillSx` and
+  `MoreInfoPill` `plate` (`styled.ts`). The rail's plates (`Compare` · `Customize`)
   are also sized down from the shared pill (`towerPlate.ts` → `TOWER_RAIL_PILL_SIZE_SX`: 7 px
   vertical padding, 11 px type, 15 px glyph) and fixed at `TOWER_RAIL_PILL_WIDTH` (104 px) each
-  as a centred group; `TOWER_RAIL_SX` pins `Write it`'s Badge root and lifts the rail's
-  card-width cap, since three pills (326 px) are wider than the card. `More Info` keeps its size. Any rail plate pressed while the question
+  as a centred group `TOWER_RAIL_GAP` (24 px) apart; `TOWER_RAIL_SX` sets that gap and lifts
+  the rail's card-width cap so the group stays centred. `More Info` keeps its size. While the card under them is not a word (a game break, the
+  out-of-ready-cards card, or the last card just passed — `useWorkingLoop.ts` → `frontVacated`)
+  every button stays drawn but greyed and inert at opacity 0.32: `MoreInfoPill` `isDisabled`,
+  `WordToolsRail` `disabled` (`FlashcardsLearnPage` → `railDisabled`; with no word on the
+  front the rail keeps the last word's buttons, `lastRailEntry`). Any rail plate pressed while the question
   face is up flips the card first (`FlashcardsLearnPage` → `revealAnswer`, wired as
   `WordToolsRail` `onToolPress`); `Customize` then waits for the flip to land before opening
   the fie ([CARD_ICON_LAYOUT.md](./CARD_ICON_LAYOUT.md) § "Entry point").
-- **The lettering.** The session's button labels (`Write it`, `Compare`, `Customize`,
+- **The lettering.** The session's button labels (`Compare`, `Customize`,
   `More Info`) are set in 975 Maru SC
   (`src/theme/towerPlate.ts` → `TOWER_STUDY_FONT`, which is `FONTS.cjk`), overriding only the
   family: size, weight, case and tracking stay as each control defines them. The face ships
@@ -1484,9 +1488,11 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
 `src/api/workingLoop.ts` (`WorkingLoopRequest.lend`), `src/api/flashcards.ts`
 (`MarkFlashcardRequest.lend`), `src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts`
 (`lendMode`, `enableLend`, `resetLend`), `FlashcardsLearnPage.tsx` (`readyOut`, `loopDry`,
-`onReadyOutCardGone`, the parking effect), `ReadyOutCardLayer.tsx` (`ReadyOutKind`, the copy),
-`FlashCardSection.tsx` (`readyOutCard`), `gameBreak/interimCardPlate.ts` (the "Got it!" plate),
-`useTowerStudy.ts` (`onMarked` / `onUndone` with `lent`).
+`onReadyOutCardGone`, `readyOutNext`, `readyOutBacking`, `readyOutLook`, the parking effect),
+`ReadyOutCardLayer.tsx` (`ReadyOutKind`, the copy, `backing`, `look`),
+`FlashCardSection.tsx` (`readyOutCard`, `readyOutBacking`, `readyOutLook`),
+`gameBreak/interimCardPlate.ts` (the "Got it!" plate),
+`useTowerStudy.ts` (`onMarked` / `onUndone` with `lent`; `focusedWorlds` → `FlpTowerHost.focused`).
 
 The tower is studied **to the bottom**. The flp serves the learner's own **off-cooldown**
 cards and nothing else until they are spent — so every right swipe takes one off the tower,
@@ -1509,9 +1515,11 @@ announced by a card in the stack:
 - **The trigger** (`loopDry`): the session is being studied, its deal is loaded, it has no
   card, and no game break is up. With the switch off, the flp turns it on (`enableLend`,
   which flips `loading` in the same batch so the next render already waits on the new deal)
-  and shows the **`pending`** card — blank card stock, a spinner only if the deal is slow.
-- **`lend`** — the re-deal came back with cards: "You're out of ready cards / From here on
-  we'll show you words you haven't added yet." with a **Got it!** plate in the Learning hue
+  and shows the **`pending`** card. It wears the face the backing card promised (below,
+  `readyOutLook`: `done` in a focused world, else `lend`) but stays static until the deal
+  lands; with no face it is blank card stock, with a spinner only if the deal is slow.
+- **`lend`** — the re-deal came back with cards: "You're out of cards! / We'll show you some
+  new words for now. Tap on the green rectangle on the home screen to add more cards." with a **Got it!** plate in the Learning hue
   (`LEARNING_HUE`). A tap anywhere on the card (the plate included) throws it off; a swipe
   either way flies it off from the release point. It marks nothing and has no undo. Study
   then carries on with lent words. Off-cooldown cards still come first: a card coming off
@@ -1521,6 +1529,16 @@ announced by a card in the stack:
   day!" — title only, no subtext — celebrated by a one-shot confetti burst
   (`src/components/ConfettiBurst.tsx`) that plays as the card turns `done`. It stays put; the
   learner leaves with Back or a tap off the card. A focused world never sees the `lend` card.
+- **The card behind the last card** (`readyOutBacking`, ReadyOutCardLayer `backing`). While
+  the loop holds one card there is no word behind it, so the card that comes next is drawn
+  there: under every slot (z-index 0, first in the DOM), static, no touches, no confetti. Its
+  kind is `readyOutNext`: `lend` unless the switch is already on or the world is focused
+  (`FlpTowerHost.focused`, from the tower's ready counts' `focusOn`), then `done`. It shows
+  behind the dragged front, through the last card's wrong-swipe return, and in the empty
+  frame of the render the loop runs dry in; the top card then lands on it with the same face.
+  The guess is wrong only when the dictionary has nothing left to lend (it said `lend`, the
+  deal says `done`): the top card corrects it. Not during a game break, whose card takes the
+  back position.
 - **While a card is up** the word under it is hidden in every other way too: no narration,
   no word-tools rail, More Info disabled, undo locked (the re-deal clears the snapshot
   anyway). The card is a layer over the word slots at z 4, like the game break's card

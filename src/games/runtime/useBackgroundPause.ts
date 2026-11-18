@@ -41,7 +41,9 @@ import { useEffect, useState } from "react";
  * bfcache restore) and `visibilitychange` → visible clear it again.
  *
  * Docs that depend on this hook: docs/GAMES_FEATURE.md § "Backgrounding pauses the
- * clock", docs/FLP_GAME_BREAKS.md § 6, docs/STUDY_CHALLENGE.md § 5.8.
+ * clock", docs/FLP_GAME_BREAKS.md § 6, docs/STUDY_CHALLENGE.md § 5.8,
+ * docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Read aloud (the Reader's read-aloud stops on
+ * backgrounding — useReaderReadAloud).
  *
  * @param active Only pause while the round is genuinely running. Pass the game's
  *   "playing" condition; leaving it clears the pause.

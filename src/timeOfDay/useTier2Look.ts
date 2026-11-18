@@ -27,7 +27,8 @@ import { claimTier2Chrome, writeTier2Chrome } from "./tier2Chrome";
  *
  * Layer: shared hook (`src/timeOfDay/`). Depends on: useDayClock.ts, dayPhase.ts,
  * tier2Look.ts, tier2Chrome.ts. Depended on by: features/dictionary/DictionaryPage.tsx,
- * features/lessons/LessonsPage.tsx, features/flashcards/VocabCardDetailPage.tsx.
+ * features/lessons/LessonsPage.tsx, features/flashcards/VocabCardDetailPage.tsx,
+ * features/reader/ReaderPage.tsx, features/reader/ReaderDocumentPage.tsx.
  * Docs: docs/SHELF_REDESIGN.md § 7b "Time of day".
  */
 export function useTier2Look(): Tier2Look {

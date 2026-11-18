@@ -36,7 +36,7 @@ export const STUDY_MIX_QUOTAS: readonly BandQuota[] = [
  * (`OnDeckVocabService` → `DEFAULT_LOOP_CONFIG`, also the Mix loop's cooled-tier order),
  * the per-mark refill (`OnDeckVocabService` → `getNextLibraryCardWithFallback`, filtered
  * to a mode's allowed bands) and focus mode's daily snapshot
- * (`FocusModeService` → `selectFocusSet`, docs/FOCUS_MODE.md § 3), which fills its 25 the
+ * (`FocusModeService` → `selectFocusSet`, docs/FOCUS_MODE.md § 3), which fills its 30 the
  * same way the loop fills its 10.
  */
 export const STUDY_MIX_FILL_ORDER: readonly FlashcardCategory[] = ['Target', 'Comfortable', 'Unfamiliar', 'Mastered'];

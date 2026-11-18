@@ -9,9 +9,9 @@ tower" → "The session".
 | Layer | File → symbol | Responsibility |
 |---|---|---|
 | Gesture hook | `src/features/flashcards/FlashcardsLearnPage/useCardDrag.ts` → `useCardDrag`, `classifyRelease` | Tracks a press in refs and document listeners, classifies the lift-off, runs the flip and the locks |
-| Thresholds | `src/features/flashcards/constants.ts` → `CARD_TAP_SLOP`, `CARD_FLICK_MIN_VELOCITY`, `CARD_FLICK_MIN_DISTANCE`, `CARD_FLICK_WINDOW_MS`, `CARD_DISMISS_THRESHOLD_VW`, `CARD_DRAG_SENSITIVITY`, `CARD_FLY_OUT_MS` | The numbers |
-| Loop state | `src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts` → `CardSlot`, `FlyOut`, `handleCardDismiss`, `deepEntry` | Slot rotation, fly-out arming and timing |
-| Render | `src/features/flashcards/FlashcardsLearnPage/FlashCardSection.tsx` → `roleOf`, `flyArmed`, `TOWER_FLY_RIGHT_KEYFRAMES`, `TOWER_TUCK_KEYFRAMES` | The three slots, the fly-out animations |
+| Thresholds | `src/features/flashcards/constants.ts` → `CARD_TAP_SLOP`, `CARD_FLICK_MIN_VELOCITY`, `CARD_FLICK_MIN_DISTANCE`, `CARD_FLICK_WINDOW_MS`, `CARD_DISMISS_THRESHOLD_VW`, `CARD_DRAG_SENSITIVITY`, `CARD_FLY_OUT_MS`, `LAST_CARD_RETURN_MS` | The numbers |
+| Loop state | `src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts` → `CardSlot`, `FlyOut` (`returnsAlone`), `handleCardDismiss`, `deepEntry` | Slot rotation, fly-out arming and timing |
+| Render | `src/features/flashcards/FlashcardsLearnPage/FlashCardSection.tsx` → `roleOf`, `flyArmed`, `TOWER_FLY_RIGHT_KEYFRAMES`, `TOWER_TUCK_KEYFRAMES`, `LAST_CARD_RETURN_KEYFRAMES`, `LAST_CARD_TURN_AT`, `LAST_CARD_LEAVING_KEYFRAMES` / `LAST_CARD_ARRIVING_KEYFRAMES`; `styled.ts` → `LastCardLabel` | The three slots, the fly-out animations, the last card's return |
 | Page | `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx` → the "TTS narration" effects | Narration is not cancelled by a flip |
 
 ## The stack
@@ -29,6 +29,12 @@ The flying slot sits above all three at z-index 3. On a dismiss, `activeFrontSlo
 advances by one: the back card is promoted to the front, the deep card becomes the back
 card, and the dismissed slot flies out and lands as the new deep card.
 
+Each slot's React key carries its slot number (`slot-X`, and `slot-X-front-N` while it is
+the front, N = `shakeNonce`). So a dismiss remounts both the flying slot and the promoted
+one, and each mounts already on its face. Do not key the front by role alone (`front-N`):
+React then hands the old front's component, still rotated 180° from its flip, to the
+promoted card, and the new card visibly flips back to Side 1 as the old one leaves.
+
 At rest, then, two cards sit behind the front. During a fly-out the new front still has
 one card behind it, so a learner who flips or swipes it straight away never sees the empty
 frame through it. With two slots, the only other slot was the one flying away.
@@ -36,6 +42,56 @@ frame through it. With two slots, the only other slot was the one flying away.
 `deepSideOneLanguage` is derived with `sideOneForCard` rather than kept as state: that
 function is a pure rule. While the front card flips, every non-front slot blanks its
 content (`contentHidden`), so neither card behind it leaks its word.
+
+With fewer than three cards the missing roles are empty: an empty slot draws nothing,
+so behind the loop's only card there is no word card. The out-of-ready-cards card that
+comes next is drawn there instead (`readyOutBacking`, DECK_TOWER.md § "Running out of
+ready cards").
+
+## The last card
+
+`useWorkingLoop.ts` → `FlyOut.returnsAlone`, `frontVacated`, `handleCardDismiss`;
+`FlashCardSection.tsx` → `LAST_CARD_RETURN_KEYFRAMES`, `LAST_CARD_TURN_AT`,
+`LAST_CARD_LEAVING_KEYFRAMES`, `LAST_CARD_ARRIVING_KEYFRAMES`, `lastCardLabelFor`, `returnInFlightFor`; `styled.ts` → `LastCardLabel`; `constants.ts` → `LAST_CARD_RETURN_MS`;
+`FlashcardsLearnPage.tsx` → the `cardDragRef` bridge.
+
+An incorrect mark on the loop's only card (`returnsAlone = !isCorrect && loop.length === 1`)
+has nothing to promote: the stack advances onto the same card. With the plain tuck, that
+card was already sitting in the front slot while the old one flew off, so the swipe looked
+like it had done nothing. Instead:
+
+1. The card flies fully off the left from where the finger let go, on the tuck's ease-in.
+2. It holds off-screen. At `LAST_CARD_TURN_AT` (0.4) of the move it swaps from the face it was
+   sent off on to the card's Side 1 (drawn as the "peek" role, the front's reset state)
+   and gains **"Last card!"** across its top band (`LastCardLabel`, ink, bold).
+   The swap is a cut between two layers in the flying slot (leaving, then arriving), driven
+   by `step-end` keyframes on the same clock as the motion. Do not move it to a JS timer.
+   Right after a swipe the main thread is busy (the mark request, narration), a timer fires
+   late, and the card starts sliding back in on its answer face.
+3. It slides back in on top at full size and decelerates into the resting pose.
+
+The whole move takes `LAST_CARD_RETURN_MS` (800). The loop's fly-out timer waits that long
+instead of `CARD_FLY_OUT_MS`. The front slot is hidden and takes no taps for the whole
+move, so the flying copy is the only card on screen; when the fly-out ends the front takes
+over at the same pose. `currentIndex` does not move in a one-card loop, so useCardDrag's
+per-card reset never fires: the loop calls `cardDragRef.resetCard()` once the fly-out is
+armed, and the page's bridge also wipes a writing card's graded attempt.
+
+A **correct** mark on the loop's only card also advances onto the same card, and whether
+it goes for good is not known until the mark's reply: a replacement card, or nothing (the
+loop is empty and the out-of-ready-cards card comes up). Until the reply,
+`useWorkingLoop.ts` → `frontVacated` is set and the front is not drawn
+(`FlashCardSection.tsx` → `hiddenForVacated`), so the card behind it, the
+out-of-ready-cards backing card, shows while the swiped card flies off. A suppressed or
+failed mark puts the same card back. The stack also stays mounted while a fly-out runs
+with an empty loop (`currentEntry || flyOut`), and the flying slot lifts above the
+out-of-ready-cards card (z-index 5) if that card comes up mid-flight, so the card is
+never cut off mid-flight.
+
+The label stays on the front while that card is alone (`nextEntry === null`). It goes with
+the next dismiss, or as soon as a refill puts a card behind it. It is hidden while
+"Tap to flip" holds the same spot in the top band. When a game break is due, the plain tuck
+plays instead, because the break's card comes up on top.
 
 ## Release classification
 

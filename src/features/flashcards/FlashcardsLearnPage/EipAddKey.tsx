@@ -4,7 +4,7 @@ import { COLORS } from "../../../theme/colors";
 import { FONTS } from "../../../theme/fonts";
 import { WEIGHT } from "../../../theme/scale";
 import { keycapPressSx } from "../../../theme/keycapPress";
-import { roundedEdgeFilletDown, roundedEdgeRimLightTop } from "../../../theme/roundedEdge";
+import { roundedEdgeRimLightTop } from "../../../theme/roundedEdge";
 import type { LearningToggleState } from "../../../hooks/useLearningToggle";
 import { useEipColors } from "./useEipPalette";
 import { EIP_ADD_KEY_SIZES, type EipAddKeySize } from "./eipAddKeySizes";
@@ -61,11 +61,12 @@ const EipAddKey: React.FC<{ state: LearningToggleState; size?: EipAddKeySize }> 
     // The outline ring: the app's border token on the light palette, a faint white ring on the dark slate.
     const ring = `inset 0 0 0 1px ${colors.dark ? "rgba(255, 255, 255, 0.12)" : COLORS.border}`;
     const lip = inLibrary ? k.lipAdded : k.lipAdd;
-    // The hairline rounded edge (theme/roundedEdge.ts, straight-lip form): the rim light
-    // under the ring (listed after it, so it shows as the 1px just inside the outline),
-    // the fillet over the lip.
+    // The hairline rounded edge (theme/roundedEdge.ts, straight-lip form) — rim light ONLY:
+    // it sits under the ring (listed after it, so it shows as the 1px just inside the
+    // outline). No fillet: the inset ring separates face from fillet, so the fillet's
+    // face→lip blend showed as a near-white seam under the outline (2026-11-17). The ring
+    // already marks the edge — the outlined-key exception in designGuidelines.md.
     const rim = roundedEdgeRimLightTop(colors.face, 1);
-    const fillet = lip > 0 ? `, ${roundedEdgeFilletDown(colors.face, colors.edge)}` : "";
 
     return (
         <ButtonBase
@@ -101,7 +102,7 @@ const EipAddKey: React.FC<{ state: LearningToggleState; size?: EipAddKeySize }> 
                 // lifted 1px at rest (an added key sits 2px LOW, as if it stayed pressed);
                 // held, it jumps 4px down with the lip gone, and jumps back.
                 ...keycapPressSx({
-                    restShadow: `${ring}, ${rim}${fillet}, 0 ${lip}px 0 ${colors.edge}`,
+                    restShadow: `${ring}, ${rim}, 0 ${lip}px 0 ${colors.edge}`,
                     pressedShadow: `${ring}, ${rim}`,
                     restY: inLibrary ? k.restAddedY : k.restAddY,
                     pressedY: k.sink,

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import NodePage from "../../components/NodePage";
 import { FooterSpacer } from "../../components/MobileFooter";
@@ -7,11 +7,24 @@ import type { Text } from "../../types";
 
 // Extracted components
 import TextSidebar from "./TextSidebar";
+import DeleteDocumentDialog from "./DeleteDocumentDialog";
+import { useReaderListView } from "./useReaderListView";
+import { useReaderCollection } from "./useReaderCollection";
+import { useReaderListSort } from "./useReaderListSort";
+import ReaderCollectionTiles from "./ReaderCollectionTiles";
+import ReaderListToolbar from "./ReaderListToolbar";
+import {
+    filterByCollection,
+    sortTexts,
+    READER_COLLECTION_ORDER,
+    type ReaderCollection,
+} from "./readerListOrder";
 
 import { usePageTitle } from "../../hooks/usePageTitle";
+import { useTier2Look } from "../../timeOfDay/useTier2Look";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { apiDelete, apiGet } from "../../api/http";
-import { NEW_DOCUMENT_PATH } from "./readerPaths";
+import { newDocumentPath } from "./readerPaths";
 import { navigateBackOr } from "../../utils/navigateBack";
 
 // READER DOCUMENT LIST — the `/reader` NODE page (docs/LEAF_NODE_PAGES.md § Reader):
@@ -22,10 +35,22 @@ import { navigateBackOr } from "../../utils/navigateBack";
 // NODE-style drill-in reached via `useSlideNavigate` — a routed cdp-style pair,
 // not in-page state. "New Document" is the same navigation to `/reader/new`, which
 // ReaderDocumentPage opens as a blank draft in edit mode (no create dialog).
-// Rows have no Edit/Delete buttons: swiping a row left uncovers Delete
-// (SwipeToDeleteRow), and editing happens inside the open document.
+// Top to bottom: the Documents / Journal selector (ReaderCollectionTiles), the list
+// toolbar (ReaderListToolbar: New document · sort · grid/list), then the list body.
+// Two list views, switched by the toolbar's view icon (useReaderListView, per device):
+// the GRID (default, ReaderDocumentGrid) — Delete behind each card's ⋯ menu, confirmed
+// by DeleteDocumentDialog — and the LIST, whose rows uncover Delete when swiped left
+// (SwipeToDeleteRow, no confirmation). Editing happens inside the open document.
+// COLLECTIONS: the Documents / Journal toggle tiles (ReaderCollectionTiles) filter the
+// list by texts.kind; New document while Journal is selected opens a journal draft.
+// SORTING: the toolbar's sort icon (ReaderSortMenu) orders the list client-side
+// (readerListOrder.ts → sortTexts). Both choices persist per device.
 function ReaderPage() {
     usePageTitle("Reader");
+    // Tier 2 time-of-day look (docs/SHELF_REDESIGN.md § 7b): sky-tint ground by day, slate
+    // at night, like the Dictionary. Called ONCE here (it claims the CpcdPopup/status-bar
+    // chrome) and passed down to every piece that paints a surface or text.
+    const look = useTier2Look();
     const navigate = useNavigate();
     const slideNavigate = useSlideNavigate();
     const { user, isAuthenticated } = useAuth();
@@ -36,6 +61,34 @@ function ReaderPage() {
 
     // A failed swipe-delete; shown above the list without hiding it.
     const [deleteError, setDeleteError] = useState<string | null>(null);
+
+    // Grid vs list (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § List views).
+    const [listView, setListView] = useReaderListView();
+    // The grid's ⋯ → Delete target, awaiting DeleteDocumentDialog's confirmation.
+    const [pendingDelete, setPendingDelete] = useState<Text | null>(null);
+
+    // The Documents / Journal selection (always one; Documents by default) and the sort order
+    // (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Collections" / § "Sorting").
+    const [collection, setCollection] = useReaderCollection();
+    const [sortKey, setSortKey] = useReaderListSort();
+    // Where the list body slides in from after a collection change; null on first paint.
+    const [slideFrom, setSlideFrom] = useState<"left" | "right" | null>(null);
+
+    /**
+     * Select a collection tile. Tapping the already-selected tile does nothing — there is
+     * no deselected state to fall back to (unlike the Friends tiles).
+     */
+    const handleSelectCollection = useCallback((target: ReaderCollection) => {
+        if (target === collection) return;
+        setSlideFrom(READER_COLLECTION_ORDER[target] > READER_COLLECTION_ORDER[collection] ? "right" : "left");
+        setCollection(target);
+    }, [collection, setCollection]);
+
+    // What the list draws: the selected collection, in the chosen order.
+    const visibleTexts = useMemo(
+        () => sortTexts(filterByCollection(texts, collection), sortKey),
+        [texts, collection, sortKey],
+    );
 
     // Fetch texts from API.
     useEffect(() => {
@@ -68,10 +121,11 @@ function ReaderPage() {
         slideNavigate(`/reader/${text.id}`);
     }, [slideNavigate]);
 
-    // A blank draft; nothing is created server-side until its first Save.
+    // A blank draft; nothing is created server-side until its first Save. With the
+    // Journal tile selected the draft is a journal entry (`?kind=journal`).
     const handleCreateNew = useCallback(() => {
-        slideNavigate(NEW_DOCUMENT_PATH);
-    }, [slideNavigate]);
+        slideNavigate(newDocumentPath(collection === "journal" ? "journal" : "document"));
+    }, [slideNavigate, collection]);
 
     // Swipe-left → Delete. iPhone style: no confirmation, and the row leaves the
     // list at once (optimistic). On failure the document goes back where it was
@@ -97,8 +151,16 @@ function ReaderPage() {
         }
     }, []);
 
-    // A plain scrolling node page on the paper ground (the Friends panel's flat look —
-    // readerStyles.ts): the header scrolls away with the list, and FooterSpacer keeps the
+    // Grid ⋯ → Delete, once DeleteDocumentDialog has deleted it server-side: drop it
+    // from the list (the dialog owns the request and shows its own error on failure).
+    const handleConfirmedDelete = useCallback(() => {
+        if (!pendingDelete) return;
+        const deletedId = pendingDelete.id;
+        setTexts(prev => prev.filter(t => t.id !== deletedId));
+    }, [pendingDelete]);
+
+    // A plain scrolling node page on the time-of-day ground (`look`, readerStyles.ts) in
+    // the Friends panel's flat shapes: the header scrolls away with the list, and FooterSpacer keeps the
     // last row clear of the footer slab. (It used to be a fixed shell whose list
     // scrolled inside a 500px "sidebar" box — a leftover of the desktop layout.)
     return (
@@ -106,18 +168,41 @@ function ReaderPage() {
             title="Reader"
             onBack={() => navigateBackOr(navigate, "/")}
             contentClassName="reader-page-root"
+            surfaceColor={look.ground}
+            headerTitleColor={look.ink}
         >
+            <ReaderCollectionTiles collection={collection} onSelect={handleSelectCollection} />
+            <ReaderListToolbar
+                look={look}
+                journalSelected={collection === "journal"}
+                onCreateNew={handleCreateNew}
+                sortKey={sortKey}
+                onSortChange={setSortKey}
+                view={listView}
+                onViewChange={setListView}
+            />
             <TextSidebar
-                texts={texts}
+                look={look}
+                texts={visibleTexts}
                 loading={loading}
                 error={error}
                 actionError={deleteError}
                 onDismissActionError={() => setDeleteError(null)}
                 onTextSelect={handleTextSelect}
-                onCreateNew={handleCreateNew}
                 onDelete={handleDelete}
+                view={listView}
+                onRequestDelete={setPendingDelete}
+                collection={collection}
+                slideFrom={slideFrom}
             />
             <FooterSpacer />
+            <DeleteDocumentDialog
+                look={look}
+                open={pendingDelete !== null}
+                text={pendingDelete}
+                onClose={() => setPendingDelete(null)}
+                onSuccess={handleConfirmedDelete}
+            />
         </NodePage>
     );
 }

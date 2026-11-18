@@ -84,7 +84,7 @@ export function useFocusLever({
     const focusOn = confirmedOn ?? ready.focusOn;
     // All four bands: the lever's threshold counts what the learner sees as assigned to them.
     const readyTotal = ready.loaded ? bandTotal(ready.counts, TOWER_MODES.mix.bands) : 0;
-    // While focus is on, the counts are narrowed to today's remaining set (≤ FOCUS_DAILY_CARDS, 25), so they
+    // While focus is on, the counts are narrowed to today's remaining set (≤ FOCUS_DAILY_CARDS, 30), so they
     // cannot say whether the full pile still clears the threshold. Hold the lever up until
     // a just-confirmed flip's re-read lands (`confirmedOn` non-null): turning focus off
     // then either leaves it standing — a plain spring back, no sink-and-rise — or, if the

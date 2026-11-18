@@ -186,6 +186,36 @@ use the low-level `items` API, which `ForeignText` passes through untouched.
   when an ancestor applies a CSS `transform: scale()` (e.g. bubble-match shrinks
   long word bubbles).
 
+### Groups (`CPCDRow` → `groups`, `CPCDRowGroup`)
+
+A caller may wrap runs of items in **groups** (passed through `ForeignText` → `groups`, row
+layout + `items` only). Each group renders as an unpositioned inline-block wrapper, which
+does two things:
+
+- **It cannot break.** A wrapped row (`flexWrap="wrap"`) breaks lines only between
+  top-level nodes, so a group keeps a multi-character word (and anything glued to it) on
+  one line.
+- **It is addressable.** It carries the caller's class, data attributes, `sx` and
+  `onClick`, so a word can be highlighted (cells and pinyin band together) or clicked as
+  one unit.
+
+Groups may nest (a word inside a word+punctuation unit), but must not partially overlap.
+Because the wrappers are not positioned, every cell's `offsetLeft` / `offsetTop` stays in
+the row root's coordinate space, so **the solver still runs across group boundaries**. The
+column overlap (`OVERLAP_BY_SIZE`) moves onto the wrapper: the first child inside a group
+takes no negative margin, and the wrapper takes it instead. That way the wrapper's box
+lines up with its cells.
+
+Two item fields go with it:
+- `autoWidth`: the cell is as wide as its text (a Latin word, punctuation), padded by
+  half the overlap on each side so it tucks in like a column. The solver reads its
+  `offsetWidth` as the box width.
+- `reservePinyinBand`: the cell keeps the pinyin band with no pinyin, so a line holding
+  only such cells is still one cpcd line tall.
+
+First user: the Reader's Pinyin view (`src/features/reader/ReaderCpcdView.tsx` →
+`buildParagraphs`): one row per paragraph, one group per gsa word.
+
 ## Tunables (`src/components/cpcdLayout.ts`)
 
 | Constant | Meaning |

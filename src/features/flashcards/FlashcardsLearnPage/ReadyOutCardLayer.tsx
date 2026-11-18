@@ -19,7 +19,7 @@ import { hueTones, plateButtonSx } from "./gameBreak/interimCardPlate";
  *   pending — the session's lend switch has just come on and the re-deal is in flight, so
  *          it is not yet known whether lent words are coming (`lend`) or nothing is
  *          (`done`). A blank card, with a spinner only if the deal is slow.
- *   lend — "You're out of ready cards": the session's lend switch has just come on and
+ *   lend — "You're out of cards!": the session's lend switch has just come on and
  *          the loop under this card is lent words. "Got it!", a tap or a swipe sends it
  *          off and study carries on.
  *   done — "Done for the day!": nothing more to deal (a focused world, which never lends,
@@ -33,8 +33,9 @@ export type ReadyOutKind = "pending" | "lend" | "done";
  *  `done` is title-only by design: the confetti carries the moment, no subtext. */
 const COPY: Record<Exclude<ReadyOutKind, "pending">, { title: string; body?: string }> = {
     lend: {
-        title: "You're out of ready cards",
-        body: "From here on we'll show you words you haven't added yet.",
+        title: "You're out of cards!",
+        // "The green rectangle" is the Deck Tower's sort platform (the acp's way in).
+        body: "We'll show you some new words for now. Tap on the green rectangle on the home screen to add more cards.",
     },
     done: {
         title: "Done for the day!",
@@ -63,6 +64,13 @@ function prefersReducedMotion(): boolean {
  * `done` and `pending`: static. Taps on them do nothing, so the flp's tap-off-the-card
  * Back still works around them (FlashcardsLearnPage → `handleTowerOffCardTap`).
  *
+ * `backing`: the same card drawn UNDER the stack instead of over it, behind the loop's
+ * last card, so the learner sees what comes after it (FlashcardsLearnPage →
+ * `readyOutBacking`). Static, takes no touches, no confetti: it is only a preview, and the
+ * real card (this layer on top) takes over once the loop runs dry.
+ * `look`: what a `pending` card shows — the kind the backing card promised, so the hand-over
+ * from backing to top card does not blank to a spinner. Still static until the deal lands.
+ *
  * Layer: feature component (features/flashcards). Rendered by FlashCardSection; the kind
  * is decided by FlashcardsLearnPage (§ "Running out of ready cards").
  * Docs: docs/DECK_TOWER.md § "Running out of ready cards".
@@ -71,7 +79,13 @@ const ReadyOutCardLayer: React.FC<{
     kind: ReadyOutKind;
     /** The `lend` card has finished flying off. */
     onGone: () => void;
-}> = ({ kind, onGone }) => {
+    /** Drawn under the stack, as the card behind the last card (see above). */
+    backing?: boolean;
+    /** A `pending` card's face; absent = blank, with the slow-deal spinner. */
+    look?: Exclude<ReadyOutKind, "pending">;
+}> = ({ kind, onGone, backing = false, look }) => {
+    // Only a real (top) `lend` card can be sent off.
+    const sendable = kind === "lend" && !backing;
     const layerRef = useRef<HTMLDivElement | null>(null);
     // Set once the card is on its way: a second tap or swipe mid-flight does nothing.
     const [leaving, setLeaving] = useState<null | { dx: number; direction: SwipeDirection } | "thrown">(null);
@@ -89,7 +103,7 @@ const ReadyOutCardLayer: React.FC<{
     const { handlers: swipeHandlers, wasDrag } = useSwipeCommit({
         axisLock: false,
         threshold: () => CARD_DISMISS_THRESHOLD_VW * (layerRef.current?.offsetWidth ?? window.innerWidth),
-        disabled: kind !== "lend" || leaving !== null,
+        disabled: !sendable || leaving !== null,
         paint,
         onCommit: (_id, direction, release) => setLeaving({ dx: release.dx, direction }),
     });
@@ -120,27 +134,30 @@ const ReadyOutCardLayer: React.FC<{
 
     const throwOff = () => {
         // A drag that sprang back ends in a click too.
-        if (kind !== "lend" || leaving !== null || wasDrag()) return;
+        if (!sendable || leaving !== null || wasDrag()) return;
         setLeaving("thrown");
     };
 
-    const copy = kind === "pending" ? null : COPY[kind];
+    const face = kind === "pending" ? look ?? null : kind;
+    const copy = face === null ? null : COPY[face];
     return (
         <Box
             ref={layerRef}
-            className={`flp-ready-out-card flp-ready-out-card--${kind}`}
-            data-swipe-id="ready-out-card"
-            {...(kind === "lend" ? swipeHandlers : {})}
-            onClick={throwOff}
+            className={`flp-ready-out-card flp-ready-out-card--${kind}${backing ? " flp-ready-out-card--backing" : ""}`}
+            data-swipe-id={backing ? undefined : "ready-out-card"}
+            {...(sendable ? swipeHandlers : {})}
+            onClick={backing ? undefined : throwOff}
             sx={{
                 position: "absolute",
                 inset: 0,
-                // Over both word slots and a flying one (z 3): it is the top card.
-                zIndex: 4,
+                // Over the word slots and a flying one (z 3): it is the top card — except the
+                // last card still flying off as this one comes up, which is lifted to 5. As the
+                // backing card, under every slot (they start at 0 and come later in the DOM).
+                zIndex: backing ? 0 : 4,
                 borderRadius: CARD_SURFACE.borderRadius,
                 // Tower card stock: no drop shadow, it lies flush on the deck.
                 boxShadow: "none",
-                pointerEvents: "auto",
+                pointerEvents: backing ? "none" : "auto",
                 touchAction: "none",
             }}
         >
@@ -172,7 +189,7 @@ const ReadyOutCardLayer: React.FC<{
                                 </Typography>
                             )}
                         </Box>
-                        {kind === "lend" && (
+                        {face === "lend" && (
                             // A tap here is a tap on the card (it bubbles to `throwOff`); the
                             // plate is the affordance, the whole card is the target.
                             <ButtonBase
@@ -187,7 +204,7 @@ const ReadyOutCardLayer: React.FC<{
             />
             {/* Mounts when the card turns `done` (pending → done), so the burst plays
                 once as the card lands. Over the card face; taps pass through. */}
-            {kind === "done" && <ConfettiBurst className="flp-ready-out-card__confetti" zIndex={1} />}
+            {kind === "done" && !backing && <ConfettiBurst className="flp-ready-out-card__confetti" zIndex={1} />}
         </Box>
     );
 };

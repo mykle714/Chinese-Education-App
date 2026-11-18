@@ -228,7 +228,7 @@ const friendsService = new FriendsService(
 // Controller instances
 const userProfileController = new UserProfileController(userProfileService);
 const vocabEntryController = new VocabEntryController(vocabEntryService, dictionaryService);
-// Focus mode (docs/FOCUS_MODE.md): a per-world daily cap of 25 cards. Its own DAL; the
+// Focus mode (docs/FOCUS_MODE.md): a per-world daily cap of 30 cards. Its own DAL; the
 // service is shared by its controller and by onDeckVocabController + flashcardRoutes,
 // which narrow every flp/game round to the day's set.
 const focusModeDAL = new FocusModeDAL();

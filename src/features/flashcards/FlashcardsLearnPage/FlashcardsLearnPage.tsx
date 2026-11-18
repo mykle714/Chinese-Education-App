@@ -72,6 +72,12 @@ const TOWER_OFF_CARD_SLOP_PX = 10;
  * when the cards return (docs/HINT_PAWN.md § "Game breaks"). The title phase joins them only
  * once Start is tapped (`playPending`); `skipping` uncovers the cards, so it is not here.
  */
+/**
+ * The word-tools band's height (its 18px top margin + the pills) before it is first measured
+ * — only for a session that opens with the rail hidden (a dry visit's out-of-ready-cards
+ * card). Once the rail has shown, its measured height is used.
+ */
+const WORD_TOOLS_BAND_FALLBACK = 54;
 const PAWN_AWAY_PHASES: ReadonlySet<GameBreakPhase> = new Set(["growing", "playing", "shrinking", "results", "leaving"]);
 
 interface FlashcardsLearnPageProps {
@@ -150,6 +156,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         lastMarkUndoSnapshot,
         activeFrontSlot,
         flyOut,
+        frontVacated,
         currentSideOneLanguage,
         nextSideOneLanguage,
         handleCardDismiss,
@@ -200,9 +207,6 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         handlers,
     } = useCardDrag(isAnimating, handleCardDismiss, currentIndex, TOWER_CARD_FLIP_MS);
 
-    // Keep the bridge ref pointing at the live drag controls every render.
-    cardDragRef.current = { resetCard, restoreFlipped, resetDragPosition };
-
     // Writing flp (`?world=writing`): the same card, drawn with the writing face. The
     // card never follows a drag — a tap (or swipe attempt) on the front submits (or
     // wiggles the card while a cell is still empty), and one on its back sends it off.
@@ -215,6 +219,21 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         flip: () => setIsFlipped(true),
         dismiss: (direction, attempt) => void handleCardDismiss(direction, attempt),
     });
+
+    // Keep the bridge ref pointing at the live drag controls every render. Its `resetCard`
+    // means "this card starts over on Side 1", so on the writing bar it also wipes the
+    // graded attempt (resetAttempt) — needed when the SAME card comes back as the front
+    // without an id change: the last card's incorrect return (useWorkingLoop →
+    // FlyOut.returnsAlone). Every other caller swaps in a new card, whose id change resets
+    // the attempt anyway, so the extra wipe there is a no-op.
+    cardDragRef.current = {
+        resetCard: () => {
+            resetCard();
+            writing.resetAttempt();
+        },
+        restoreFlipped,
+        resetDragPosition,
+    };
 
     // ── Custom card icon layout (edit mode) ───────────────────────────────────
     // All fie editor state + actions live in useCardIconEditor. See docs/CARD_ICON_LAYOUT.md.
@@ -310,7 +329,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // own) is the moment:
     //   - lend switch OFF → turn it on and re-deal (`pending`). `enableLend` flips `loading`
     //     in the same batch, so the next render already waits on the new deal;
-    //   - the re-deal lands with cards → `lend`: "You're out of ready cards", over the
+    //   - the re-deal lands with cards → `lend`: "You're out of cards!", over the
     //     first lent word; swiped or tapped off, study carries on;
     //   - nothing to deal even with the switch on (a focused world never lends; or the
     //     dictionary has nothing left) → `done`: "Done for the day!" (+ confetti), which stays.
@@ -332,6 +351,20 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     }, [readyOut, loading, hasCard]);
     // The `lend` card has flown off: the lent word under it is the top card now.
     const onReadyOutCardGone = useCallback(() => setReadyOut(null), []);
+    // What running dry WILL show, as far as is known before the deal: the lend card, unless
+    // the switch is already on (the loop is lent words; nothing more comes) or the world is
+    // focused (it never lends) — then "Done for the day!". It can still be wrong when the
+    // dictionary has nothing left to lend; the top card then corrects it.
+    const readyOutNext: Exclude<ReadyOutKind, "pending"> = lendMode || tower.focused ? "done" : "lend";
+    // The card BEHIND the loop's last card (ReadyOutCardLayer `backing`): there is no word
+    // behind it, so the learner sees what comes after it — while it is the only card, and
+    // through the render the loop runs dry in, until the top card takes over. Not during a
+    // game break, whose card takes the back position.
+    const readyOutBacking = !parked && !readyOutUp && gameBreak.phase === "cards"
+        && (workingLoop.length === 1 || loopDry) ? readyOutNext : null;
+    // A `pending` card shows what the backing card promised (the switch was off, so the
+    // only question is focus), rather than blanking between the two.
+    const readyOutLook: Exclude<ReadyOutKind, "pending"> = tower.focused ? "done" : "lend";
     // The tower takes the game's cleared cards off as the game goes away.
     const breakGameUp = gameBreak.phase === "growing" || gameBreak.phase === "playing";
     const onTowerGameBreakChange = tower.onGameBreakChange;
@@ -431,7 +464,11 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // above the card rather than the card itself. See cardSlotPadding in styled.ts.
     const cardSlotRef = useRef<HTMLDivElement | null>(null);
     const moreInfoPillRef = useRef<HTMLDivElement | null>(null);
-    const cardSlotPad = useCardSlotPadding(cardSlotRef, contentAreaRef, moreInfoPillRef);
+    // The word-tools rail floats over the top of the card slot (`.mobile-demo-word-tools-band`),
+    // and the slot's top pad clears it — so the card sits in the same place whether the rail
+    // is up or hidden (the out-of-ready-cards card hides it).
+    const wordToolsBandRef = useRef<HTMLDivElement | null>(null);
+    const cardSlotPad = useCardSlotPadding(cardSlotRef, contentAreaRef, moreInfoPillRef, wordToolsBandRef, WORD_TOOLS_BAND_FALLBACK);
 
     // The card frame goes to the tower (its camera aims at it) AND to the hint pawn, which
     // clips its bubble to the space below it (docs/HINT_PAWN.md).
@@ -495,6 +532,16 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // `chineseVisible` would wrongly count the answer face as "English" here.
     const narrateNow = readingMode ? isFlipped : chineseVisible;
     const breakUp = gameBreak.phase !== "cards";
+    // The word-tools rail greys out (like `More Info`) rather than vanishing while the card
+    // under it is not a word: a game break, the out-of-ready-cards card, or the moment the
+    // loop's last card has just been passed (`frontVacated`). With no word on the front it
+    // keeps the last word's buttons, inert — so it is drawn the whole time. The last word is
+    // kept by id: the page's entry is an override-merged object whose identity can change
+    // every render, so a render-time set keyed on identity would loop.
+    const [lastRailEntry, setLastRailEntry] = useState<VocabEntry | null>(displayCurrentEntry ?? null);
+    if (displayCurrentEntry && displayCurrentEntry.id !== lastRailEntry?.id) setLastRailEntry(displayCurrentEntry);
+    const railEntry = displayCurrentEntry ?? lastRailEntry;
+    const railDisabled = breakUp || readyOutUp || frontVacated || !displayCurrentEntry;
     // The hint pawn (docs/HINT_PAWN.md): what it would say about the front card, and the
     // per-device switch (Settings → Display → Study helper). Memoised on the entry so the
     // pawn's bubble presence only reconciles when the card changes.
@@ -652,13 +699,11 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     };
 
     // ── Word tools: flip to the answer first ─────────────────────────────────
-    // Every word-tools button (`Write it`, `Compare`, `Customize`) acts on the ANSWER: the
-    // writing popup and Compare both show the word in full, and the fie edits the answer
-    // face's design. So a press while the question face is up first flips the card, the
+    // Every word-tools button (`Compare`, `Customize`) acts on the ANSWER: Compare shows
+    // the word in full, and the fie edits the answer face's design. So a press while the question face is up first flips the card, the
     // same as tapping it would — the learner sees the answer they are about to act on
     // rather than having it revealed sideways by a popup. Fired from the rail's CAPTURE
-    // phase (WordToolsRail `onToolPress`), so it runs before `Write it`'s own handler,
-    // which lives inside PracticeWritingButton and cannot be wrapped.
+    // phase (WordToolsRail `onToolPress`), so it runs before any pill's own handler.
     const revealAnswer = useEventCallback(() => {
         if (!isFlipped && !isAnimating) setIsFlipped(true);
     });
@@ -962,7 +1007,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                         />
                     </Box>
                 </Slide>
-                {/* WORD TOOLS — `Write it`, `Compare` and `Customize`, on the PAGE above
+                {/* WORD TOOLS — `Compare` and `Customize`, on the PAGE above
                     the card and outside its boundary (`.wtl.top`, artboards 19–25). Not at
                     the bottom of the screen, which belongs to the thumb: the card is swiped
                     there and the info panel is raised from there. Any of them pressed on
@@ -971,25 +1016,51 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     Hidden while the icon editor is open — the fie toolbar overlays exactly
                     this band, and the card is locked anyway.
 
-                    Hidden on the writing flp too: `Write it` is what the card already is,
-                    `Compare` would show the characters before they are written, and the
+                    No `Write it` here (`showWriteIt={false}`, owner 2026-11-17) — the cdp
+                    and Dictionary eip keep theirs.
+
+                    Hidden on the writing flp too: `Compare` would show the characters before they are written, and the
                     writing face is not the word layout `Customize` edits. */}
-                {displayCurrentEntry && !editMode && !writingMode && !readyOutUp && (
-                    <WordToolsRail
-                        className="mobile-demo-word-tools"
-                        entry={displayCurrentEntry}
-                        onCompare={handleCompare}
-                        onCustomize={handleCustomizeCard}
-                        onToolPress={revealAnswer}
-                        sx={{
-                            marginTop: "18px", paddingLeft: "18px", paddingRight: "18px",
-                            // The pills are a fixed-width centred group, wider than the card (towerPlate.ts).
-                            ...TOWER_RAIL_SX,
-                        }}
-                        // The pills are the tower's floor-plate push buttons (towerPlate.ts).
-                        pillSx={towerPlatePillSx}
-                    />
-                )}
+                {/* The rail's band: an overlay across the top of ContentArea, NOT in the flex
+                    flow, so showing or hiding the rail never moves the card. The card slot's
+                    top pad reserves its height instead (useCardSlotPadding `topBandRef`).
+                    Always mounted (empty while the rail is hidden); taps pass through it
+                    except on the rail itself. */}
+                <Box
+                    ref={wordToolsBandRef}
+                    className="mobile-demo-word-tools-band"
+                    sx={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        zIndex: 1,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        pointerEvents: "none",
+                        "& > *": { pointerEvents: "auto" },
+                    }}
+                >
+                    {railEntry && !editMode && !writingMode && (
+                        <WordToolsRail
+                            className="mobile-demo-word-tools"
+                            entry={railEntry}
+                            disabled={railDisabled}
+                            onCompare={handleCompare}
+                            onCustomize={handleCustomizeCard}
+                            onToolPress={revealAnswer}
+                            showWriteIt={false}
+                            sx={{
+                                marginTop: "18px", paddingLeft: "18px", paddingRight: "18px",
+                                // The pills are a fixed-width centred group, wider than the card (towerPlate.ts).
+                                ...TOWER_RAIL_SX,
+                            }}
+                            // The pills are the tower's floor-plate push buttons (towerPlate.ts).
+                            pillSx={towerPlatePillSx}
+                        />
+                    )}
+                </Box>
                 {/* Flashcard fills the rest of the ContentArea. The EIC sheet overlays
                     at the bottom rather than stacking above the flashcard. */}
                 <FlashCardSection
@@ -1010,13 +1081,17 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     onBreakCardSwiped={leaveBreak}
                     activeFrontSlot={activeFrontSlot}
                     flyOut={flyOut}
+                    frontVacated={frontVacated}
                     cardRef={cardRef}
                     dragPosition={dragPosition}
                     isDragging={isDragging}
                     isFlipped={isFlipped}
                     isAnimating={isAnimating}
-                    // The out-of-ready-cards card on top (`pending` draws as a blank card).
+                    // The out-of-ready-cards card on top (`pending` wears `readyOutLook`), and
+                    // the same card behind the loop's last card.
                     readyOutCard={readyOut}
+                    readyOutLook={readyOutLook}
+                    readyOutBacking={readyOutBacking}
                     onReadyOutCardGone={onReadyOutCardGone}
                     showPinyinColor={showPinyinColor}
                     readingMode={readingMode}
@@ -1144,10 +1219,10 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                         ref={moreInfoPillRef}
                         className="mobile-demo-more-info-pill"
                         isFlipped={isFlipped}
-                        isDisabled={editMode || breakUp || readyOutUp}
+                        isDisabled={editMode || railDisabled}
                         plate={tower.plateTones}
                         onClick={() => (isFlipped && !editMode ? afterNextPaint(handleMoreInfoClick) : handleMoreInfoClick())}
-                        aria-disabled={editMode || breakUp || readyOutUp}
+                        aria-disabled={editMode || railDisabled}
                         aria-label="Open extra info"
                     >
                         <Typography sx={{ fontSize: SIZE.body, color: theme.palette.flashcard.onSurface, lineHeight: 1, transform: "translateY(-1px)" }}>↑</Typography>

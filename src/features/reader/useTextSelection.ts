@@ -17,7 +17,7 @@ interface UseTextSelectionReturn {
     focusTextArea: (restoreSelection?: boolean) => void;
     handleTextAreaBlur: React.FocusEventHandler<HTMLInputElement | HTMLTextAreaElement>;
     // NOTHING-SELECTED MODE (see `awaitingFirstSelection` below). True from mount
-    // until the learner's first word selection; never true again for this mount.
+    // until the learner's first word selection, and again after `clearSelection`.
     awaitingFirstSelection: boolean;
     // Call on a real learner gesture in the reading box (key press, pointer down) —
     // it is what lets selection logic run while `awaitingFirstSelection` holds.
@@ -29,6 +29,14 @@ interface UseTextSelectionReturn {
     // Select [start, end) in the reading box as if the learner had placed it there —
     // the Pinyin view's desktop click-on-a-word. Counts as a learner gesture.
     selectRange: (start: number, end: number) => void;
+    // Select the gsa word containing the character at `offset` (ReaderTapOverlay's
+    // text-mode WORD JUMP). Returns that span's start, or null when the offset is in no
+    // word (whitespace / punctuation), in which case nothing changes.
+    selectSpanAtOffset: (offset: number) => number | null;
+    // Back to NOTHING-SELECTED MODE (a long-press on empty space — ReaderTapOverlay):
+    // drop the highlight and the keycap's entry, and park the caret at `caretOffset`
+    // (default: where the old selection began) so the next forward tap steps on from there.
+    clearSelection: (caretOffset?: number) => void;
     // True when `selectedDictionaryCard` came from the English → Chinese lookup (the
     // selection is an English word), so `selectedPersonalCard` is only the translation's
     // card if the document's vocab lookup happened to load it — the page then lets the Add
@@ -71,8 +79,8 @@ export function useTextSelection(
     // dictionary keycap shows the how-to-navigate hint instead of an entry.
     //
     // The mode ends on the first selection the LEARNER makes (a tap / arrow / click
-    // that lands on a word), and it is one-way: nothing in this hook sets it back, so
-    // only remounting the page (leaving the document and coming back) restores it.
+    // that lands on a word). It comes back only through `clearSelection` (a long-press
+    // on empty space — ReaderTapOverlay) or a remount (leaving the document and coming back).
     //
     // Why a separate interaction flag: focusing the box fires `select` on its own
     // (programmatic focus, the blur→refocus loop, leaving edit mode), and auto
@@ -214,6 +222,35 @@ export function useTextSelection(
         handleTextSelectionChange();
     }, [handleTextSelectionChange]);
 
+    // Select the word under a long-press in the text display mode (ReaderTapOverlay →
+    // WORD JUMP). The caller resolves the screen point to a character offset.
+    const selectSpanAtOffset = useCallback((offset: number): number | null => {
+        const span = spanContaining(segmentSpans, offset);
+        if (!span) return null;
+        selectRange(span.start, span.end);
+        return span.start;
+    }, [segmentSpans, selectRange]);
+
+    // Return to NOTHING-SELECTED MODE. The interaction flag is reset too, so the
+    // focus-driven `select` events (blur → refocus loop) stand down again exactly as
+    // they do on a fresh mount; the learner's next key / tap sets it once more
+    // (TextArea → `onUserInteraction`), and the arrow then steps from the parked caret.
+    const clearSelection = useCallback((caretOffset?: number) => {
+        const textarea = inputRef.current;
+        if (!textarea) return;
+        const caret = caretOffset ?? textarea.selectionStart;
+        userHasInteractedRef.current = false;
+        awaitingFirstSelectionRef.current = true;
+        setAwaitingFirstSelection(true);
+        if (document.activeElement !== textarea) textarea.focus({ preventScroll: true });
+        textarea.setSelectionRange(caret, caret);
+        lastSelectionRef.current = { start: caret, end: caret };
+        setSelectionRangeState({ start: caret, end: caret });
+        setSelectedPersonalCard(null);
+        setSelectedDictionaryCard(null);
+        setSelectedByTranslation(false);
+    }, []);
+
     // When the reading box loses focus we re-assert it on the next frame so the
     // box is always focused after the user taps elsewhere (vocab card, settings,
     // displayed text). Two exceptions keep this from fighting legitimate inputs:
@@ -252,6 +289,8 @@ export function useTextSelection(
         noteUserInteraction,
         selectionRange,
         selectRange,
+        selectSpanAtOffset,
+        clearSelection,
         selectedByTranslation,
     };
 }

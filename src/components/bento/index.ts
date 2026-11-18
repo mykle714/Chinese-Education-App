@@ -15,3 +15,4 @@ export {
     type CardShellProps,
     type CardShellPin,
 } from "./CardShell";
+export { toggleTileSx } from "./toggleTileSx";

@@ -95,7 +95,8 @@ Helpers in `documentSegmentation.ts` (binary search over the sorted spans):
     a partial word; whole-word is deliberate.)
   - **prev**: last span ending at/before the selection start.
   - No-op at document edges; calls `scrollSelectionIntoView`
-    (`textSelectionUtils.ts` — now scroll-only, boundary logic removed).
+    (`textSelectionUtils.ts` — textarea geometry only (mirror div): scroll-into-view and
+    `textareaOffsetAtPoint`; boundary logic removed).
 
 Event wiring (one code path for keyboard and touch):
 
@@ -104,7 +105,9 @@ Event wiring (one code path for keyboard and touch):
 - `ReaderTapOverlay.tsx`: forward/back taps dispatch **synthetic
   ArrowRight/ArrowLeft keydown+keyup** into the textarea — the keyup makes
   React's onSelect polyfill fire `handleTextSelectionChange` (card lookup), which
-  is why the overlay does not call `selectRelativeSpan` directly.
+  is why the overlay does not call `selectRelativeSpan` directly. Its long-press
+  (WORD JUMP) selects the span under the finger through `useTextSelection` →
+  `selectSpanAtOffset` (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Display modes).
 - `useTextSelection.ts` `handleAutoWordSelect`: a collapsed caret (native tap /
   restored focus) expands to `spanContaining(spans, caret)`; drag selections are
   never clobbered.

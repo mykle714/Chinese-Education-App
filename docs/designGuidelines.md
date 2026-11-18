@@ -42,6 +42,11 @@ Rules:
   its rim light).
 - A key with an inset outline ring lists the ring FIRST and passes `insideRingPx` (the
   ring's width) to `roundedEdgeRimLightTop`, so the highlight sits just inside the outline.
+- **Outlined-key exception (fillet only):** a straight-lip key with an inset outline ring may
+  drop the fillet and keep just the rim light. The ring sits between the face and the
+  fillet, so the fillet's face→wall blend shows as a pale seam directly under the outline
+  on a 2×/3× screen. Users: the eip Add key (`EipAddKey.tsx`) and the Reader's More Info key
+  (`ReaderMoreInfoKey.tsx`), 2026-11-17.
 - **Exceptions:** an object whose edge is already a bevel (`IsoPlatform`, `IsoSortPlatform`'s
   light rim) and a solid whose top is hidden under another (a card stack's body, a bin's
   under-layers). Clouds are not rectangular.

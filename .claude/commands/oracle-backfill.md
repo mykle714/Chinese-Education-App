@@ -788,8 +788,14 @@ overrides §6's exhaustion rule for an interactive run.
 **A round ends only at one of these three points. Nothing else is an ending:**
 
 1. **The batch converged.** The planner, re-run over *the batch's own word list*,
-   returns **0 prompts across 0 scripts** — and the script last worked reports
-   `Found 0 entries needing …` on a `--stale` re-run. Both, not either.
+   returns **0 prompts across 0 scripts**. That planner line is the proof. If you also
+   want the last script's own `Found N entries needing …` count, run it **only** as
+   `BACKFILL_ORACLE=export … --stale --words=<batch>`. ⛔ Never run a bare or
+   `--dry-run` writer for this check: `run-ppe.sh` loads the real `ANTHROPIC_API_KEY`
+   from `.env`, and `--dry-run` still calls the model. That has billed the real key
+   seven times (2026-11-02 → 2026-11-16, 64–129 calls each). "Always" steps such as
+   long-definitions v16 find the whole `--words=` batch every time, so only the planner
+   line can show they converged.
 2. **A budget cap parked you** (§6a). Write the resume note **before** stopping; the
    batch is in flight and the next tick must continue it, not re-plan around it.
 3. **A §6 guardrail tripped** (backup failure, overwritten reviewed field, an

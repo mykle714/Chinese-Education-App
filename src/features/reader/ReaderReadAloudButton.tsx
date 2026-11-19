@@ -7,8 +7,8 @@ import type { Tier2Look } from "../../timeOfDay/tier2Look";
 
 /**
  * ReaderReadAloudButton — the play/stop pill at the LEFT of the Reader's display strip
- * (ReaderDocumentPage → `.reader-document-display-strip`), opposite the Text ⇄ Pinyin
- * switch. Starts useReaderReadAloud from the caret.
+ * (ReaderDocumentPage → `.reader-document-display-strip`), opposite the Pinyin
+ * pill (ReaderDisplayToggle). Starts useReaderReadAloud from the caret.
  *
  * The Reader's pill recipe (readerStyles → readerPillButtonSx): the neutral surface pill
  * (white by day, slate at night — the page's time-of-day `look`) with "Read" while idle, and the Reader's own blue mid tier (`COLORS.bluM`, the toolbar Save's fill)
@@ -50,8 +50,10 @@ function ReaderReadAloudButton({ look, playing, onStart, onStop, disabled = fals
                 visibility: hidden ? "hidden" : "visible",
             }}
         >
-            <Box component="span" className="reader-read-aloud-button__icon" sx={{ display: "inline-flex", color: playing ? COLORS.onSurface : look.ink }}>
-                <Icon name={playing ? "stop" : "play_arrow"} size={18} />
+            {/* The colour goes on the Icon itself: Icon defaults to COLORS.iconColor (a dark
+                grey) and does not inherit, so a wrapper `color` left it dark on the night slate. */}
+            <Box component="span" className="reader-read-aloud-button__icon" sx={{ display: "inline-flex" }}>
+                <Icon name={playing ? "stop" : "play_arrow"} size={18} color={playing ? COLORS.onSurface : look.ink} />
             </Box>
             {playing ? "Stop" : "Read"}
         </Button>

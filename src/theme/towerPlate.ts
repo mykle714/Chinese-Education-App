@@ -55,13 +55,13 @@ export const PLATE_WALL_PX = 5;
 /**
  * The Deck Tower study session's UI lettering: 975 Maru SC, the rounded face of the
  * app's Chinese text, reached through `FONTS.cjk` (useChineseFont owns which face that
- * is, and its slices cover Latin). Applied to the session's button labels and
- * HeaderActionChip — and ONLY there (every outlined chip, the audio chip included,
- * takes the same face from `outlinedChipSx`), so the header title stays in the UI sans and
- * plates on game surfaces keep `TOWER_PLATE_PRINT`'s. The face ships one weight: anything
- * heavier is browser-synthesised bold.
+ * is, and its slices cover Latin). Applied to the session's button labels and ONLY there:
+ * the header title stays in the UI sans, every outlined chip (the audio chip and
+ * HeaderActionChip included) takes the header title's sans from `outlinedChipSx` since
+ * 2026-11-18, and plates on game surfaces keep `TOWER_PLATE_PRINT`'s. The face ships one
+ * weight: anything heavier is browser-synthesised bold.
  *
- * Used by: FlashcardsLearnPage.tsx, PageHeader.tsx → HeaderActionChip.
+ * Used by: FlashcardsLearnPage.tsx.
  * Documented in: docs/DECK_TOWER.md § "Studying the tower" → "The lettering".
  */
 export const TOWER_STUDY_FONT = FONTS.cjk;

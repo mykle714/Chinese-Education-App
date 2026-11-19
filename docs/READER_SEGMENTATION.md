@@ -79,6 +79,63 @@ Intentional divergences from the server version (not drift):
   no headword.
 - **No `classifierTokens` pass** — classifier boundaries come from the
   example-sentence tagging pass (`partOfSpeechDict`), which documents lack.
+- **Tiebreak alternatives** (extra output; scoring is identical) and **forced spans**
+  (the learner's switches) — see § "Tiebreak alternatives" below.
+
+## Tiebreak alternatives
+
+The gsa can pick the wrong word when two **same-length** words overlap and
+`frequencyScore` decides between them. Example: in 都怪我没治愈我的伤, 没治 (score 3)
+beats 治愈 (null → 0, not yet processed by the backfill), which leaves 愈 stranded.
+The Pinyin view lets the learner fix this in place.
+
+**What counts as a tiebreak loser.** A candidate from the winner's length tier that
+**overlaps** the winner. A same-tier candidate that does *not* overlap is not a loser,
+because the remainder recursion still finds it. For each side of the winner, the
+best-scoring overlapping loser is kept (same score-then-later-position rule as the
+winner), so a chain AB | BC | CD with a BC winner yields **both** AB and CD.
+
+**Data.** `SegmentSpan.alternatives?: SpanRange[]` on the winning span.
+
+**Display (Pinyin mode only).** Only while the selected word is a tiebreak winner, each
+loser is painted with the search-match wash (`readerSearchColors(...).match`, joined
+into one box like a search match). The box covers the **whole** loser, including the
+character it shares with the selected word: with 没治 selected, 治愈 is boxed, and on 治
+the translucent yellow lies over the blue selection. The Text mode draws nothing.
+
+**Switching.** A tap anywhere inside the yellow box (glyph, pinyin band, or the shared
+cell) makes that word the selection. It is the only tap that overrides the Reader's
+left/right zone step. Hit-testing is geometric (`readerAlternatives.ts` → `findAlternativeCellAt`
+checks the bounding box of each `[data-reader-alternative]` cell), because the pinyin is not
+inside its cell's DOM subtree:
+- mobile: `ReaderTapOverlay` → `handlePointerUp` runs the check **before** the zone step
+  and clicks the cell;
+- desktop: `ReaderCpcdView`'s scroll box catches the click in the capture phase, so the
+  word group's own onClick never runs.
+
+Both paths call `ReaderDocumentPage` → `switchToAlternative`. That adds the loser to
+`segmentOverrides`, which reaches `computeSegmentSpans(…, forcedSpans)`. The forced word
+is placed first and the rest of its Han run re-segments around it (没 | 治愈). The shared
+span list then follows the switch in both modes and in navigation.
+
+**Undo.** A forced span carries, as its `alternatives`, the unforced winner(s) that
+listed it. In the example, 没治 is boxed while 治愈 is selected, and tapping it removes
+the override (an alternative that overlaps an existing override means "undo"; a loser
+can never straddle a forced span, because forced spans split the run).
+
+**Lifetime.** Page session only, with no persistence. Overrides are tagged with the
+content they were made against, so an edit or another document drops them. A forced span
+that no longer fits its run (offsets or text changed) is ignored.
+
+Code: `src/features/reader/documentSegmentation.ts` → `segmentRange` (losers),
+`computeSegmentSpans` / `segmentDocument` (forced spans, switch-back);
+`src/features/reader/ReaderDocumentPage.tsx` → `segmentOverrides`, `switchToAlternative`;
+`src/features/reader/readerAlternatives.ts` → `ALTERNATIVE_CELL_ATTR`, `findAlternativeCellAt`;
+`src/features/reader/ReaderCpcdView.tsx` → `paragraphAlternatives`,
+`handleAlternativeClickCapture`, `ReaderCpcdParagraph` (`items` memo);
+`src/features/reader/ReaderTapOverlay.tsx` → `handlePointerUp`;
+`src/components/CPCDRow.tsx` → `CPCDRowItem.attrs`.
+Tests: `src/__tests__/documentSegmentation.test.ts`.
 
 ## Navigation behavior
 
@@ -150,6 +207,8 @@ the read ⇄ edit hand-off effect); `src/features/beginnerKeyboard/eligibility.t
 
 - `src/features/reader/documentSegmentation.ts` — everything above; header notes
   the server cross-reference and the intentional divergences.
+- `src/features/reader/ReaderCpcdView.tsx`, `ReaderTapOverlay.tsx`,
+  `readerAlternatives.ts`, `ReaderDocumentPage.tsx` — tiebreak alternatives (§ "Tiebreak alternatives").
 - `src/features/reader/TextArea.tsx` — reading/edit keyboard suppression and the
   per-mode textarea (§ "Keyboards: reading mode vs edit mode").
 - `src/types.ts` `DictionaryEntry.matchException` — declared for the client

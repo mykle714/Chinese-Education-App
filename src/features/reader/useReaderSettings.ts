@@ -23,7 +23,7 @@ function readDisplayMode(): ReaderDisplayMode {
 // Reader settings. The desktop settings sidebar (ReaderSettings.tsx) was retired
 // with the desktop layout. Two settings live here:
 //   • auto word selection — currently always on (no UI toggles it);
-//   • the display mode — the Text ⇄ Pinyin switch (ReaderDisplayToggle) under the dictionary keycap.
+//   • the display mode — the Pinyin pill (ReaderDisplayToggle) under the dictionary keycap.
 interface UseReaderSettingsReturn {
     autoSelectEnabled: boolean;
     setAutoSelectEnabled: React.Dispatch<React.SetStateAction<boolean>>;

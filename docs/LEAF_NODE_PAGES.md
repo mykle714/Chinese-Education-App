@@ -71,6 +71,11 @@ swaps routes with no slide (the wrapper only hooks the arrow, so footer nav is
 untouched by design). Built on `MobileTabScreen`, so it inherits the scroll-away
 header, floating footer, and edge fade.
 
+**Arrowless node.** `onBack` is optional on `NodePage` (`src/components/NodePage.tsx`):
+omit it and no back arrow is drawn (the footer is the only exit) while the slide-in
+from the right is kept. For a Menu destination that is a lateral peer rather than a
+drill-in. Today: `/reader` (`ReaderPage`).
+
 ## Rule of thumb
 **No footer ⇒ leaf. Has footer ⇒ node.**
 
@@ -530,8 +535,10 @@ The Reader is TWO routed pages, following the same fetch-by-id cdp pattern as
 `VocabCardDetailPage` (`/flashcards/card/:id`):
 
 - **Document list** (`/reader`, `ReaderPage.tsx`) — a NODE page reached from the
-  Menu popover (`NodePage`, LEFT arrow → `navigateBackOr(navigate, "/")`, footer kept, Menu tab lit —
-  same shape as `CommunityPage`). Registered by its `src/routes/routeMeta.ts` row
+  Menu popover (`NodePage`, footer kept, Menu tab lit). It has **no back arrow**: it
+  omits `NodePage`'s `onBack`, so the header is arrowless (`PageHeader`'s "hub" size)
+  and the footer is the way out — a lateral Menu destination, not a drill-in. It still
+  slides in from the right (`usePageSlide`). Registered by its `src/routes/routeMeta.ts` row
   (`chrome: "node"`, `footerTab: "menu"`).
   A plain scrolling `NodePage` (since 2026-11-16; it was a fixed shell whose list
   scrolled inside a 500px "sidebar" box): the header scrolls away with the list and a

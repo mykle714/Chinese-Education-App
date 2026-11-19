@@ -21,7 +21,7 @@ and `src/types.ts`).
 |---|---|
 | `id` | uuid, `uuid_generate_v4()` |
 | `userId` | owner; `ON DELETE CASCADE` |
-| `title` | **derived from the content on create** (see below); renamable later |
+| `title` | typed into the header on create, else **derived from the content** (see below); renamable in edit mode (§ Editing) |
 | `content` | the document body, sanitized on write (`sanitizeDocumentContent`) |
 | `language` | `zh` / `es`; set on create, immutable afterwards |
 | `characterCount` | `content.length`, recomputed on every content update |
@@ -55,7 +55,7 @@ Title derivation reads det through `IDictionaryDAL.findMultipleByWord1`.
 | GET | `/api/texts` | — | the user's documents in their `selectedLanguage`, newest first (`getUserTexts`) |
 | GET | `/api/texts/stats` | — | counts / total characters |
 | GET | `/api/texts/:id` | — | one document |
-| POST | `/api/texts` | `{ content, language?, iconId?, kind? }` | **no title** — the server derives it; `kind` ∈ `TEXT_KINDS` (default `document`) |
+| POST | `/api/texts` | `{ content, language?, iconId?, kind?, title? }` | `title` absent/blank → the server derives it; `kind` ∈ `TEXT_KINDS` (default `document`) |
 | PUT | `/api/texts/:id` | `{ title?, content?, iconId? }` | owner only; `language` is rejected; `iconId: null` clears the icon, an absent `iconId` leaves it; every update stamps `updatedAt` |
 | DELETE | `/api/texts/:id` | — | owner only |
 
@@ -71,7 +71,8 @@ segment inside a Chinese run (`splitHanRuns` → `segmentWithDict` against det, 
 up only for the substrings of the first 64 characters) and a whitespace-delimited
 token elsewhere, so a title never cuts 图书馆 or "library" in half. If the first word
 alone is longer than 20 characters it is hard-cut; an empty body gives `Untitled`.
-The title is derived **once**: later content edits do not retitle the document.
+The title is derived **once**, and only when the draft's header title field was left
+blank: later content edits do not retitle the document.
 
 ### Limits
 
@@ -110,6 +111,8 @@ All under `src/features/reader/`.
 | `ReaderReadAloudButton.tsx` + `useReaderReadAloud.ts` + `readAloudClauses.ts` | the display strip's play button: reads the document aloud from the caret (§ Read aloud) |
 | `useReaderAudioSettings.ts` + `src/components/AudioModeChip.tsx` → `ReaderAudioChip` | the display strip's audio chip: the Reader's own mute / default / media setting (§ Tap-to-hear) |
 | `src/components/VocabDisplayCard.tsx` | the dictionary keycap above the reading box (its only caller is the Reader) |
+| `ReaderSearchKey.tsx` + `ReaderSearchBar.tsx` + `useReaderSearch.ts` + `readerSearch.ts` | find-in-document: the strip's search key, the bar it opens into, its state, and the pure text/pinyin matcher (§ Search) |
+| `ReaderSearchHighlights.tsx` | the Text mode's yellow match highlights: a live mirror over the reading textarea (§ Search) |
 
 ### Look
 
@@ -144,7 +147,8 @@ colours (since 2026-11-17 — the Dictionary's look, SHELF_REDESIGN.md § 7b "Ti
 - **Ground** — the time-of-day ground on both pages, and the app's one footer, the slab, on
   `/reader` (`/reader/:id` is footerless).
 - **Title** — the open document's title is the page header's title (`ReaderDocumentSurface`
-  `title`, ellipsized); "Reader" only while loading / not found.
+  `title`, ellipsized); "Reader" only while loading / not found. In edit mode it becomes a
+  text field (§ Renaming).
 - **Dictionary keycap** (`VocabDisplayCard`, 2026-11-17) — the one raised object on the
   page: a static keycap (white face, `COLORS.border` outline, rounded edge, 4px `COLORS.grey`
   lip — the Tier 2 day keycap's colours). Header: the headword as a CPCD row (`ForeignText`
@@ -294,17 +298,16 @@ Code: `useReaderSettings.ts` → `ReaderDisplayMode`, `displayMode` / `setDispla
 `selectionRange`, `selectRange`, `selectSpanAtOffset`, `clearSelection`; `documentSegmentation.ts` → `buildReaderPronunciationMap`.
 
 A **display strip** sits under the dictionary keycap (inside the keyboard-lift fold): a row
-whose right edge holds `ReaderDisplayToggle`: the Account sheet's goals switch (the
-app-wide themed MUI `Switch`, "on" track recoloured to a ramp Mark tier — here `bluMk`, as
-`AccountPane` → `goalSwitchOnSx` does with `redMk` / `orgMk`) flanked by its labels,
-**Text ◯━ Pinyin** — off = Text, on = Pinyin; the current mode's label is ink, the other
-`textFaint`, and tapping a label picks it. Its left edge holds the audio controls: the read-aloud button (§ Read aloud), then the
+whose right edge holds `ReaderDisplayToggle`: a single **Pinyin** pill with two style
+states — off = Text mode (the neutral `readerPillButtonSx` pill faded to `OFF_OPACITY`
+0.45), on = Pinyin mode (the same pill at full opacity); no hue for "on" (owner's call
+2026-11-18; it replaced a "Text ◯━ Pinyin" MUI switch). Its left edge holds the audio controls: the read-aloud button (§ Read aloud), then the
 tap-to-hear audio chip (§ Tap-to-hear). While editing, all three are `visibility: hidden`
 (the strip keeps its height, so the text box does not jump) — edit mode is always the plain
-field. The switch commits **deferred** (`ReaderDisplayToggle` → `SWITCH_ANIMATION_MS`,
-`pendingMode`): a tap flips the switch and labels at once and hands the mode to the page
-~200ms later, after MUI's 150ms thumb slide, because mounting `ReaderCpcdView` blocks the
-main thread and would otherwise make the thumb jump instead of slide. The choice is stored **per device** (`localStorage` `reader.displayMode`, default
+field. The pill commits **deferred** (`ReaderDisplayToggle` → `pendingMode`): a tap restyles the
+pill at once and hands the mode to the page one frame later (double `requestAnimationFrame`),
+because mounting `ReaderCpcdView` blocks the main thread and would otherwise hold the pill's
+old style until it finished. The choice is stored **per device** (`localStorage` `reader.displayMode`, default
 `text`; owner's call 2026-11-17).
 
 - **Text** — the read-only textarea, highlight = the browser's `::selection`.
@@ -324,6 +327,10 @@ main thread and would otherwise make the thumb jump instead of slide. The choice
   boundaries. Pinyin per word comes from
   `buildReaderPronunciationMap` — the same first-match rule as the keycap's
   `findDictionaryMatch`, so the pinyin under a word agrees with the entry it opens.
+  **Tiebreak alternatives:** while the selected word won a frequencyScore tiebreak
+  against an overlapping word of the same length, the losing word shows in the
+  search-match yellow, and tapping it switches the selection
+  (docs/READER_SEGMENTATION.md § "Tiebreak alternatives"; Pinyin mode only).
 
 **Navigation is identical in both modes — by construction.** A cpcd paragraph cannot be a
 textarea, so the Pinyin mode does NOT have its own navigation: the reading textarea stays
@@ -463,7 +470,9 @@ Code: `useReaderAudioSettings.ts` → `useReaderAudioSettings`; `src/components/
 The display strip's audio chip, next to the Read pill, is the app-wide audio chip's skin
 (same glyphs, labels and cycle order: **mute → default → media**) bound to a **separate
 setting** (owner's call 2026-11-17), because "speak each word I move to" is a different
-behaviour from the flp's card-flip narration.
+behaviour from the flp's card-flip narration. Its ink is the look's primary `look.ink`, the
+Read pill's text ink (`readerStyles.ts` → `readerPillButtonSx`), rather than the secondary
+`ink2` the app's other audio chips use, so the two neighbours letter alike (2026-11-18).
 
 - **default / media** — moving the selection to a new word speaks it, as if the keycap's
   speaker were pressed. An English word speaks its Chinese translation, the keycap's word.
@@ -504,6 +513,90 @@ entry), so the warmed clip is the one played. `TTSService.synthesize` joins a re
 in-flight synthesis of the same clip (`inFlightSyntheses`), so a pre-warm racing a tap pays
 Google once.
 
+### Search
+
+Code: `ReaderSearchKey.tsx`, `ReaderSearchBar.tsx`, `useReaderSearch.ts`,
+`readerSearch.ts` (`findReaderMatches`, `findTextMatches`, `findPinyinMatches`,
+`buildDocumentSyllables`), `ReaderSearchHighlights.tsx`; `ReaderCpcdView.tsx` → "Search
+highlights"; `src/components/CPCDRow.tsx` → `CPCDRowItem.highlight`;
+`textSelectionUtils.ts` → `copyTextareaTypography`; `useTextSelection.ts` →
+`selectRange` (`focus: false`), `recordSelection`, `getRecordedSelection`; `readerStyles.ts` → `readerSearchColors`;
+`ReaderDocumentPage.tsx` → the SEARCH comment, `searchColors`,
+`.reader-document-display-strip` `onMouseDown`.
+Tests: `__tests__/readerSearch.test.ts`.
+
+Find-in-document, like a browser's find.
+
+- **Entry.** A round search key on the display strip, between Read and the audio chip.
+  It opens into a bar that covers the whole strip: `[🔍 field  2/7] [˄] [˅] [✕]`. The
+  bar grows out of the key with a clip-path animation. The strip's other controls stay
+  laid out but hidden underneath, so the row keeps its height. Pressing Edit closes the
+  bar.
+- **Matching** (`readerSearch.ts`). Every match is a range of content offsets.
+  - *Text*: the query is matched literally (case-insensitive for Latin letters) and
+    without overlaps.
+  - *Pinyin* (Pinyin display mode of a Chinese document only; placeholder "Find text or
+    pinyin"): the query is also matched against the reading **drawn** under each
+    character. That reading includes 一/不 sandhi, built by `buildDocumentSyllables` the
+    same way `ReaderCpcdView → buildParagraphs` builds it. Tones are optional: `hao`
+    matches any tone, while a tone mark (`hǎo`) or a digit (`hao3`; `5` = neutral) fixes
+    that syllable's tone. Spaces and apostrophes are ignored; `ü`, `v` and `u:` count as
+    one letter. A match must start at the start of a syllable, but it can end inside
+    one, so typing `h` → `ha` → `hao` keeps finding results. A match never crosses a
+    non-Chinese character. Text and pinyin matches are merged in position order, and
+    where two overlap the earlier one wins.
+- **Current match = the selection** (owner's call 2026-11-18). Typing jumps to the first
+  match at or after the caret (wrapping round to the first match if none). ˄/˅ (or
+  Enter / Shift+Enter) move through the matches and wrap at both ends. Each move
+  **selects** the match with `selectRange(…, { focus: false })`, so the keycap shows that
+  text (a match can be part of a word, e.g. 好 inside 你好) and Read starts from it,
+  while focus stays in the search field and its keyboard stays up. While the reading box
+  is unfocused, an unfocused `selectRange` only **records** the range
+  (`useTextSelection` → `recordSelection`). It never calls the textarea's
+  `setSelectionRange`, because iOS WebKit focuses a textarea on that call, which would
+  pull focus out of the field and unfold the rdb on every step. Readers of the range
+  use `selectionRange` / `getRecordedSelection` (the search anchor) or pass it in
+  (`scrollSelectionIntoView(textarea, range)`). Closing the bar (✕ or Escape) refocuses
+  the reading box, and `focusTextArea(true)` applies the recorded match. It then widens
+  the selection to the gsa word containing the match's start
+  (`ReaderDocumentPage` → `handleCloseSearch` → `selectSpanAtOffset`), because a match can
+  be part of a word or run across several, and only an exact span highlights in the Pinyin
+  view. A match that starts on punctuation keeps its own range. Tap-to-hear stays silent while
+  the field has focus, because otherwise every keystroke would speak.
+- **Highlights** (`readerSearchColors`). Translucent washes of `COLORS.yelMk`, built like
+  the blue word selection (`selectionColors` → `readerSelectionColor`: primary blue at ~19% by day, the brighter `COLORS.bluMk` mark tier at 40% at night)
+  so the two read as one family. A match is ~28–30% and the current match ~55–60%,
+  because yellow is much lighter than the blue. The text keeps its own ink underneath.
+  - *Text mode*: a `<textarea>` cannot style ranges, so `ReaderSearchHighlights` lays a
+    mirror div over it. The mirror copies the textarea's typography and client box, and
+    a `ResizeObserver` plus a scroll listener keep it in sync. All its text is
+    transparent, and each match is a `<mark>` whose wash lies over the textarea's own
+    glyphs. It can't go behind them, because the textarea paints an opaque surface. It
+    ignores pointer events. The current match scrolls into view
+    with `scrollSelectionIntoView`.
+  - *Pinyin mode*: highlights are painted per **cell** (`CPCDRowItem.highlight`: the glyph
+    plus its pinyin band) rather than per word group, because a match can cover part of a
+    word or run across several. Each paragraph item records the content range it draws
+    (`ReaderParagraph.offsets`). The wash is a `::before` behind the glyph. When the
+    neighbouring cell is in the same match (`joinLeft` / `joinRight`), that side is
+    squared off and meets the neighbour's fill at the middle of the cells' overlap. A
+    match over several cells or words (`ni hao`) therefore reads as one box, with no
+    double-painted strip. The current match's first cell is kept in view.
+- **Keyboard.** The field uses the app's default keyboard (the beginner keyboard for zh;
+  its ABC key switches to the OS keyboard). While the search keyboard is up, the lead
+  (title block and keycap/rdb) folds away and the text box ends at the keyboard
+  (§ Keyboard lift). The display strip stays, because it holds the bar. A tap on the
+  reading area while the field has focus first gives focus back to the reading box
+  (`handleTapRegionPointerDown`), so the tap moves on from the current match and the
+  keycap follows. The bar and its highlights stay open. A press anywhere else on the strip
+  (between the bar's keys, or on its padding) keeps focus where it is, through the
+  strip's `onMouseDown` preventDefault (as with the edit toolbar). The keyboard therefore
+  stays up and the rdb doesn't drop back down. The beginner keyboard has a second way to
+  close: it dismisses itself on **any pointerdown** outside its allow-list
+  (`BeginnerKeyboardProvider` → `onPointerDown`). So `.reader-search-bar` is a
+  `data-beginner-keyboard="keep"` region, and its keys, gaps and field never close it.
+  A tap on the strip's bottom padding, outside the bar, still does.
+
 ### List views
 
 Code: `useReaderListView.ts` → `useReaderListView`, `ReaderListView`; `ReaderPage.tsx` →
@@ -533,7 +626,7 @@ An unset or unknown value means the grid.
 - **List** — the `RowList` of `Row`s with swipe-to-delete, described in § Look and
   § Deleting a document.
 
-There is no rename UI in either view (§ Editing).
+Neither view renames; renaming happens in the open document's edit mode (§ Editing).
 
 ### Collections (Documents / Journal)
 
@@ -621,9 +714,28 @@ server-side yet:
 ### Editing
 
 Editing happens only inside the open document: the header's Edit toggles the inline
-editor (content only). List rows have no Edit. The title is set once, on create
-(§ Title derivation), and **there is currently no rename UI** — `PUT /api/texts/:id`
-still accepts `title`, but no client sends it.
+editor. List rows have no Edit.
+
+#### Renaming (the editable header title)
+
+Code: `src/components/PageHeader.tsx` → `editableTitle` / `PageHeaderEditableTitle`,
+`EditableTitleRow`, `.page-header__title-input`; `NodePageHeader.tsx` and
+`ReaderDocumentSurface.tsx` → the `editableTitle` passthrough; `ReaderDocumentPage.tsx` →
+`draftTitle`, `titleToSave`; server: `TextService` → `normalizeTitle`;
+`server/contracts/wire.ts` → `DOCUMENT_TITLE_MAX_LENGTH`.
+
+- While the editor is open, the header title is a **text field** in the title's own type
+  style, with a `look.outline` hairline under it. Tapping anywhere in the title band places
+  the caret; the back arrow stays a separate button (in reading mode the arrow and title
+  are one back-button group, so the field is split out of it). Enter closes the keyboard.
+- The title is part of the edit **draft**, like the icon: seeded from the saved title on
+  Edit (with `""` on a new draft), sent with Save, dropped by Cancel, not on undo/redo.
+- **Blank field**: the placeholder shows the saved title (a new draft's "New Document"),
+  and Save sends no title — a saved document keeps its title, a new draft's is derived
+  from the content (§ Title derivation). An unchanged title is not sent either.
+- The server normalizes a typed title (create or rename): control characters stripped,
+  whitespace runs (newlines included) collapsed to one space, trimmed; blank or longer
+  than `DOCUMENT_TITLE_MAX_LENGTH` (200) is a 400.
 
 Neither the list nor the open document shows the character count or the creation
 date (removed 2026-11-05); `characterCount` and `createdAt` are still on the wire.
@@ -675,8 +787,8 @@ Code: `SwipeToDeleteRow.tsx`; `TextSidebar.tsx` → `openRowId`; `ReaderPage.tsx
 
 #### Keyboard lift
 
-Code: `ReaderDocumentPage.tsx` → the KEYBOARD LIFT comment, `keyboardLifted`,
-`.reader-document-lead`; `src/features/beginnerKeyboard` → `useKeyboardInset`,
+Code: `ReaderDocumentPage.tsx` → the KEYBOARD LIFT comment, `liftKeyboardInset`,
+`keyboardLifted`, `.reader-document-lead`, `.reader-document-strip-fold`; `src/features/beginnerKeyboard` → `useKeyboardInset`,
 `transitionForInset`, `BEGINNER_KEYBOARD_SLIDE_MS`, `BEGINNER_KEYBOARD_EASING`.
 
 While editing with a keyboard up (the handwriting keyboard or the OS keyboard,
@@ -684,11 +796,21 @@ whichever `useKeyboardInset` reports), the title block and the vocab card fold a
 (a `Collapse`), so the text box rises to sit directly under the edit toolbar, and the
 content area adds the keyboard's height to its bottom padding, so the box ends at the
 keyboard's top edge. Both use the keyboard's own slide durations and curves: the box
-goes up as the keyboard rises and comes back down as it leaves. The trigger is the
-inset, not edit mode, so dismissing the keyboard mid-edit brings the header back with
-the editor still open. Reduced motion snaps both.
+goes up as the keyboard rises and comes back down as it leaves. Reduced motion snaps both.
+
+The search field's keyboard (§ Search) lifts the page too (`liftKeyboardInset`). Here the
+lead follows the keyboard, folding when it rises and unfolding when it leaves. The display
+strip has its own `Collapse` (`.reader-document-strip-fold`, closed only in edit mode), so
+the search bar stays above the text box.
+
+In edit mode the fold is held shut for the whole session, keyboard up or not: the lead
+(title block + vocab card / rdb) and the display strip (every control in it is hidden
+while editing) stay folded until Save/Cancel, so dismissing the keyboard mid-edit only
+releases the bottom keyboard clearance — the text box grows down, the rdb does not come
+back. Only search (the strip stays; the lead folds) is keyed purely on the inset.
 
 The edit toolbar never takes focus (`ReaderEditToolbar.tsx` → the root's `onMouseDown`
 `preventDefault`, the beginner keyboard's `keepFocus` guard). Without it, a tap on the
-toolbar (a button or the empty strip) blurred the field, the keyboard dropped, and the
-lead unfolded mid-edit.
+toolbar (a button or the empty strip) blurred the field and the keyboard dropped.
+The edit-mode hold above is the backstop: touch taps can still blur the field on some
+devices, and the lead stays folded regardless.

@@ -12,6 +12,15 @@
  *     its own sentence; a reader document has no headword.
  *   - No `classifierTokens` pass — classifier boundaries come from the
  *     example-sentence tagging pass (partOfSpeechDict), which documents lack.
+ *   - TIEBREAK ALTERNATIVES (client-only output, scoring unchanged): when a length
+ *     tier's winner beat an OVERLAPPING same-length word on frequencyScore, the
+ *     losers are recorded on the winning span (`SegmentSpan.alternatives`) so the
+ *     Pinyin view can offer them (docs/READER_SEGMENTATION.md § "Tiebreak
+ *     alternatives"). The server's est segments have no use for them.
+ *   - FORCED SPANS (`computeSegmentSpans` → `forcedSpans`): the learner's switches
+ *     to an alternative are placed first and the rest of the run re-segments around
+ *     them — the same idea as the server's `prioritySegments`, driven by the learner
+ *     instead of an est headword.
  *
  * Data flow: useVocabularyProcessing already fetches det rows for every
  * 1–4-char substring of the document (POST /api/vocabEntries/byTokens →
@@ -31,10 +40,22 @@ import { scrollSelectionIntoView } from "./textSelectionUtils";
  * Spans are non-overlapping and sorted by `start`; whitespace and punctuation
  * produce no span (they are skipped by navigation).
  */
-export interface SegmentSpan {
+export interface SpanRange {
     start: number;
     end: number;
     text: string;
+}
+
+/**
+ * A gsa word plus, when it won its length tier on a frequencyScore tiebreak, the
+ * same-length words it beat that OVERLAP it (`alternatives`: at most one on each
+ * side — the best-scoring loser per side, so a chain AB|BC|CD yields AB and CD
+ * around a BC winner). A forced span (the learner switched to it) carries the
+ * original winner(s) it displaced instead, so the switch can be undone.
+ * Absent on spans that faced no overlapping competitor.
+ */
+export interface SegmentSpan extends SpanRange {
+    alternatives?: SpanRange[];
 }
 
 /** The single piece of per-word data the gsa scoring reads. */
@@ -117,13 +138,90 @@ export function buildExcludeSet(dictCards: DictionaryEntry[]): Set<string> {
 }
 
 /**
+ * One gsa piece of a Han run, in CHARACTER indices relative to the run (Han chars
+ * are BMP, so a character index is also a UTF-16 offset delta). `alternatives`
+ * are the overlapping same-length losers of the tier this piece won.
+ */
+interface RunPiece {
+    start: number;
+    length: number;
+    alternatives?: Array<{ start: number; length: number }>;
+}
+
+/**
+ * The gsa core over `chars[from, to)`, appending pieces to `out` in order.
+ * Tries substring lengths 4→1; within a length tier every matching substring is
+ * scored by frequencyScore (null = 0) and the best one wins, tiebreaking on later
+ * position (higher startIdx). The winner is extracted and the left/right
+ * remainders recurse. Falls back to single characters when nothing matches.
+ *
+ * Tiebreak alternatives: a same-tier candidate that OVERLAPS the winner is a real
+ * loser — it can no longer be a word once the winner is extracted. (A candidate
+ * that does not overlap is not a loser: the remainder recursion still finds it.)
+ * The best-scoring overlapping loser on each side of the winner is recorded,
+ * using the same score-then-later-position rule as the winner.
+ */
+function segmentRange(
+    chars: string[],
+    from: number,
+    to: number,
+    dictMap: Map<string, ReaderSegmentMeta>,
+    excludeTokens: Set<string> | undefined,
+    out: RunPiece[]
+): void {
+    if (from >= to) return;
+
+    for (let length = Math.min(4, to - from); length >= 1; length--) {
+        const candidates: Array<{ start: number; score: number }> = [];
+
+        for (let startIdx = from; startIdx <= to - length; startIdx++) {
+            const substring = chars.slice(startIdx, startIdx + length).join("");
+            if (!dictMap.has(substring)) continue;
+            // Multi-char matchException tokens are suppressed; single chars never are
+            if (length > 1 && excludeTokens?.has(substring)) continue;
+            candidates.push({ start: startIdx, score: dictMap.get(substring)!.frequencyScore ?? 0 });
+        }
+        if (candidates.length === 0) continue;
+
+        // Higher score wins; equal scores go to the later position.
+        const beats = (a: { start: number; score: number }, b: { start: number; score: number } | null) =>
+            !b || a.score > b.score || (a.score === b.score && a.start > b.start);
+
+        let winner: { start: number; score: number } | null = null;
+        for (const candidate of candidates) if (beats(candidate, winner)) winner = candidate;
+        const best = winner!;
+
+        // Overlapping losers, best one per side of the winner.
+        let leftLoser: { start: number; score: number } | null = null;
+        let rightLoser: { start: number; score: number } | null = null;
+        for (const candidate of candidates) {
+            if (candidate.start === best.start || Math.abs(candidate.start - best.start) >= length) continue;
+            if (candidate.start < best.start) {
+                if (beats(candidate, leftLoser)) leftLoser = candidate;
+            } else if (beats(candidate, rightLoser)) {
+                rightLoser = candidate;
+            }
+        }
+        // Single characters never compete for a boundary (length-1 candidates can't overlap).
+        const alternatives = [leftLoser, rightLoser]
+            .filter((loser): loser is { start: number; score: number } => loser !== null)
+            .map((loser) => ({ start: loser.start, length }));
+
+        segmentRange(chars, from, best.start, dictMap, excludeTokens, out);
+        out.push({ start: best.start, length, ...(alternatives.length > 0 && { alternatives }) });
+        segmentRange(chars, best.start + length, to, dictMap, excludeTokens, out);
+        return;
+    }
+
+    // No dictionary match at any length — per-character fallback
+    for (let i = from; i < to; i++) out.push({ start: i, length: 1 });
+}
+
+/**
  * Best-score segmentation of a Han run using the pre-built dictionary map.
  * Port of server segmentWithDict's core (see file header for the omitted
- * passes): tries substring lengths 4→1; within a length tier every matching
- * substring is scored by frequencyScore (null = 0) and the best one wins,
- * tiebreaking on later position (higher startIdx). The winner is extracted and
- * the left/right remainders recurse. Falls back to single characters when
- * nothing matches at any length.
+ * passes); the algorithm itself is `segmentRange` above. Returns the words only —
+ * `computeSegmentSpans` reads the pieces directly for their tiebreak alternatives.
  */
 export function segmentWithDict(
     str: string,
@@ -131,40 +229,10 @@ export function segmentWithDict(
     excludeTokens?: Set<string>
 ): string[] {
     if (!str) return [];
-
     const chars = [...str];
-
-    for (let length = Math.min(4, chars.length); length >= 1; length--) {
-        let bestIdx = -1;
-        let bestScore = -Infinity;
-
-        for (let startIdx = 0; startIdx <= chars.length - length; startIdx++) {
-            const substring = chars.slice(startIdx, startIdx + length).join("");
-            if (!dictMap.has(substring)) continue;
-            // Multi-char matchException tokens are suppressed; single chars never are
-            if (length > 1 && excludeTokens?.has(substring)) continue;
-
-            const score = dictMap.get(substring)!.frequencyScore ?? 0;
-            if (score > bestScore || (score === bestScore && startIdx > bestIdx)) {
-                bestScore = score;
-                bestIdx = startIdx;
-            }
-        }
-
-        if (bestIdx !== -1) {
-            const winner = chars.slice(bestIdx, bestIdx + length).join("");
-            const left = chars.slice(0, bestIdx).join("");
-            const right = chars.slice(bestIdx + length).join("");
-            return [
-                ...segmentWithDict(left, dictMap, excludeTokens),
-                winner,
-                ...segmentWithDict(right, dictMap, excludeTokens),
-            ];
-        }
-    }
-
-    // No dictionary match at any length — per-character fallback
-    return chars;
+    const pieces: RunPiece[] = [];
+    segmentRange(chars, 0, chars.length, dictMap, excludeTokens, pieces);
+    return pieces.map((piece) => chars.slice(piece.start, piece.start + piece.length).join(""));
 }
 
 // A maximal run of Han ideographs. Unlike the server's FOREIGN_RUN_REGEX
@@ -220,35 +288,92 @@ function pushNonHanSpans(stretch: string, base: number, out: SegmentSpan[]): voi
 
 /**
  * Segment a whole document into ordered, non-overlapping word spans.
- *   - Han runs → gsa (segmentWithDict) against the reader dict map.
+ *   - Han runs → gsa (segmentRange) against the reader dict map.
  *   - Everything else → whole-run Intl.Segmenter word pass.
  * Before the det fetch resolves, dictMap is empty and Han runs degrade to
  * per-character spans; the ReaderPage memo recomputes once entries arrive.
+ *
+ * `forcedSpans` — the learner's switches to a tiebreak alternative (ReaderDocumentPage
+ * → `segmentOverrides`). Each one lying wholly inside a Han run is emitted as its own
+ * span and the run re-segments around it; one that doesn't fit (stale after an edit,
+ * or overlapping an earlier forced span) is ignored. A forced span's `alternatives`
+ * are the unforced winner(s) whose alternative it was, so the switch can be undone.
  */
 export function computeSegmentSpans(
     text: string,
     dictMap: Map<string, ReaderSegmentMeta>,
-    excludeTokens?: Set<string>
+    excludeTokens?: Set<string>,
+    forcedSpans: SpanRange[] = []
+): SegmentSpan[] {
+    const spans = segmentDocument(text, dictMap, excludeTokens, forcedSpans);
+    if (forcedSpans.length === 0) return spans;
+
+    // Switch-back: point each forced span at the unforced winner(s) that listed it.
+    const baseSpans = segmentDocument(text, dictMap, excludeTokens, []);
+    return spans.map((span) => {
+        if (!forcedSpans.some((f) => f.start === span.start && f.end === span.end)) return span;
+        const displaced = baseSpans
+            .filter((base) => base.alternatives?.some((alt) => alt.start === span.start && alt.end === span.end))
+            .map(({ start, end, text: baseText }) => ({ start, end, text: baseText }));
+        return displaced.length > 0 ? { ...span, alternatives: displaced } : span;
+    });
+}
+
+/** `computeSegmentSpans` without the switch-back pass. */
+function segmentDocument(
+    text: string,
+    dictMap: Map<string, ReaderSegmentMeta>,
+    excludeTokens: Set<string> | undefined,
+    forcedSpans: SpanRange[]
 ): SegmentSpan[] {
     const spans: SegmentSpan[] = [];
     if (!text) return spans;
 
+    const forcedSorted = [...forcedSpans].sort((a, b) => a.start - b.start);
+
     let lastIndex = 0;
     for (const match of text.matchAll(HAN_RUN_REGEX)) {
         const runStart = match.index ?? 0;
+        const run = match[0];
+        const chars = [...run];
 
         // Non-Han stretch before this run
         pushNonHanSpans(text.slice(lastIndex, runStart), lastIndex, spans);
 
-        // gsa the Han run, mapping each segment back to absolute offsets.
-        // Han chars are BMP so segment.length is safe as a UTF-16 offset delta.
-        let offset = runStart;
-        for (const segment of segmentWithDict(match[0], dictMap, excludeTokens)) {
-            spans.push({ start: offset, end: offset + segment.length, text: segment });
-            offset += segment.length;
+        // The forced spans inside this run (run-relative), non-overlapping, in order.
+        const forcedHere: Array<{ start: number; length: number }> = [];
+        for (const forced of forcedSorted) {
+            const start = forced.start - runStart;
+            const length = forced.end - forced.start;
+            if (start < 0 || start + length > chars.length) continue;
+            if (run.slice(start, start + length) !== forced.text) continue; // stale
+            const previous = forcedHere[forcedHere.length - 1];
+            if (previous && start < previous.start + previous.length) continue;
+            forcedHere.push({ start, length });
         }
 
-        lastIndex = runStart + match[0].length;
+        // gsa between the forced spans, then map pieces back to absolute offsets.
+        const pieces: RunPiece[] = [];
+        let cursor = 0;
+        for (const forced of forcedHere) {
+            segmentRange(chars, cursor, forced.start, dictMap, excludeTokens, pieces);
+            pieces.push({ start: forced.start, length: forced.length });
+            cursor = forced.start + forced.length;
+        }
+        segmentRange(chars, cursor, chars.length, dictMap, excludeTokens, pieces);
+
+        const toSpan = (start: number, length: number): SpanRange => ({
+            start: runStart + start,
+            end: runStart + start + length,
+            text: chars.slice(start, start + length).join(""),
+        });
+        for (const piece of pieces) {
+            const span: SegmentSpan = toSpan(piece.start, piece.length);
+            if (piece.alternatives) span.alternatives = piece.alternatives.map((alt) => toSpan(alt.start, alt.length));
+            spans.push(span);
+        }
+
+        lastIndex = runStart + run.length;
     }
 
     // Trailing non-Han stretch

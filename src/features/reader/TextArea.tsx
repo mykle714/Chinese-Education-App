@@ -6,6 +6,9 @@ import { SIZE } from "../../theme/scale";
 import type { Text } from "../../types";
 import type { Tier2Look } from "../../timeOfDay/tier2Look";
 import { READER_CARD_RADIUS } from "./readerStyles";
+import ReaderSearchHighlights from "./ReaderSearchHighlights";
+import type { ReaderSearchMatch } from "./readerSearch";
+import type { ReaderSearchColors } from "./readerStyles";
 
 
 interface TextAreaProps {
@@ -43,6 +46,13 @@ interface TextAreaProps {
     // textarea stays mounted, focused and navigable underneath: it is still the one
     // selection model, the view only paints its range. See ReaderCpcdView's header.
     cpcdView?: ReactNode;
+    // The search bar's matches (useReaderSearch), painted over the TEXT mode's reading
+    // box by ReaderSearchHighlights. Ignored in edit mode and in the Pinyin mode (the
+    // cpcd view paints its own).
+    searchMatches?: ReaderSearchMatch[];
+    currentMatchIndex?: number;
+    // Their highlight washes (readerStyles → readerSearchColors).
+    searchColors?: ReaderSearchColors;
 }
 
 function TextArea({
@@ -61,6 +71,9 @@ function TextArea({
     draftContent = '',
     onDraftChange,
     cpcdView,
+    searchMatches,
+    currentMatchIndex = -1,
+    searchColors,
 }: TextAreaProps) {
     // The cpcd view only ever replaces the READING box; edit mode is always the plain field.
     const showCpcd = !editMode && !!cpcdView;
@@ -285,6 +298,17 @@ function TextArea({
             position: 'relative',
         }}>
             {memoizedTextField}
+            {/* Outside the memoised field, so a step through the matches re-renders only
+            this layer. */}
+            {!editMode && !showCpcd && selectedText && searchColors && searchMatches && searchMatches.length > 0 && (
+                <ReaderSearchHighlights
+                    inputRef={inputRef}
+                    content={selectedText.content}
+                    matches={searchMatches}
+                    currentIndex={currentMatchIndex}
+                    colors={searchColors}
+                />
+            )}
             {/* Inset 1px so it sits INSIDE the card's hairline, and rounded to the card's
             curve so scrolled lines clip at the corners like the textarea's do. */}
             {showCpcd && (

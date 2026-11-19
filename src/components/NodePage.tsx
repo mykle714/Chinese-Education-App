@@ -16,7 +16,9 @@ import { useFooterTabOverride } from "./footerTabOverride";
 // Design rules encoded here:
 //   • KEEPS THE FOOTER. Built on MobileTabScreen, so it retains the scroll-away
 //     header, floating-footer pill, and edge fade. Lateral nav stays available.
-//   • LEFT arrow (arrowDirection="left").
+//   • LEFT arrow (arrowDirection="left") — or NO arrow when `onBack` is omitted
+//     (a Menu destination that is a lateral peer, e.g. /reader: the footer is the
+//     way out). It still slides in from the right.
 //   • Motion: slides IN FROM THE RIGHT on enter (translateX 100% → 0). On exit it
 //     slides OUT TO THE RIGHT *only* when the back arrow is used — footer-tab taps
 //     navigate normally with no slide (the "iff the arrow" rule). The wrapper only
@@ -36,7 +38,10 @@ interface NodePageProps {
     title: string;
     // Where the back arrow goes. Invoked IMMEDIATELY (the destination mounts beneath)
     // while a clone of this page slides right on top — see usePageSlide's `exit`.
-    onBack: () => void;
+    // Omit it for a page with NO back arrow (today: /reader); the header then takes
+    // PageHeader's arrowless "hub" size, and `exitCircleTo`/`exitDash`/`backOnFooterTab`
+    // are inert.
+    onBack?: () => void;
     /**
      * Close Back with the circle transition onto this viewport point instead of the slide
      * to the right — for a page opened WITH the circle (useSlideNavigate `circleFrom`),
@@ -132,17 +137,18 @@ const NodePage: React.FC<NodePageProps> = ({
     // normally (no slide) — except `backOnFooterTab`, which plays this same exit.
     // A dash launch dashes back instead (pageDash.ts clones this surface itself).
     const handleBack = () => {
+        if (!onBack) return;
         const surface = surfaceRef.current;
         if (exitDash && surface) runPageDash({ leaving: surface, direction: -1, lineColor: exitDash.lineColor, navigate: onBack });
         else exit(onBack, exitCircleTo);
     };
-    useFooterTabOverride(backOnFooterTab, handleBack);
+    useFooterTabOverride(onBack ? backOnFooterTab : undefined, handleBack);
 
     return (
         <Surface ref={surfaceRef} className="node-page" style={style}>
             <MobileTabScreen
                 title={title}
-                showBack
+                showBack={onBack !== undefined}
                 arrowDirection="left"
                 onBack={handleBack}
                 headerExtraActions={headerExtraActions}

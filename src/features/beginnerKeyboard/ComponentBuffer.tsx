@@ -43,10 +43,11 @@
  * multiset (§ 6d/§ 6h), so these read in submission order purely so the learner
  * can find the one they want to remove.
  */
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Box, Typography } from '@mui/material';
 import { COLORS, FONTS, SIZE, WEIGHT, TRACKING } from '../../theme';
 import { KEYBOARD_COLORS } from './keyboardColors';
-import { whiteKeySx } from './keycapStyle';
+import { KEY_LIP, whiteKeySx } from './keycapStyle';
 
 /** A part chip's face, px (square floor; a wide glyph may grow it). */
 const PART_CHIP_SIZE = 40;
@@ -59,6 +60,13 @@ const PART_CHIP_GAP = 6;
  * controls row uses it too, so the ink keys line up with the chips.
  */
 export const PARTS_COLUMN_PAD = 10;
+/**
+ * Clearance between the last chip row's LIP (the chip block's bottom, which is padded by
+ * KEY_LIP) and the "Tap to clear" hint, px — the
+ * section's own 6px gap (MUI `0.75`). Chips that would come closer than this hide the
+ * hint (see `useHintFits`).
+ */
+const HINT_CLEARANCE = 6;
 /** How many chips one row must hold (owner, 2026-11-15: three parts on one row). */
 const PARTS_PER_ROW = 3;
 
@@ -78,19 +86,63 @@ interface ComponentBufferProps {
   onRemove: (position: number) => void;
 }
 
+/**
+ * Whether the "Tap to clear" hint still has room below the chips (owner, 2026-11-18):
+ * once the chip rows grow down to the hint, the hint is hidden and the chips take its
+ * space, scrolling above the bottom divider if they keep growing.
+ *
+ * WHY THE HINT IS ABSOLUTELY POSITIONED: it overlays the bottom of the parts region
+ * instead of taking a flex slot, so showing or hiding it never changes the space the
+ * chips get. That breaks the feedback loop a flow-layout hint would have (hide it → the
+ * chips fit → show it → they no longer fit → …) and lets its height be measured while
+ * hidden (`visibility: hidden` keeps the box).
+ *
+ * Re-measured on any size change of the region (keyboard resize, canvas re-fit) or of
+ * the chip block (a part added / removed / wrapping onto a new row).
+ *
+ * Docs: docs/BEGINNER_KEYBOARD.md § "Parts strip".
+ */
+function useHintFits(hasParts: boolean) {
+  const regionRef = useRef<HTMLDivElement>(null);
+  const chipsRef = useRef<HTMLDivElement>(null);
+  const hintRef = useRef<HTMLParagraphElement>(null);
+  const [hintFits, setHintFits] = useState(true);
+
+  // Layout effect, so a chip that crowds the hint never paints over it for a frame.
+  useLayoutEffect(() => {
+    const region = regionRef.current;
+    const chips = chipsRef.current;
+    const hint = hintRef.current;
+    if (!hasParts || !region || !chips || !hint) return;
+    const measure = () => {
+      setHintFits(chips.offsetHeight + HINT_CLEARANCE + hint.offsetHeight <= region.clientHeight);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(region);
+    observer.observe(chips);
+    return () => observer.disconnect();
+  }, [hasParts]);
+
+  return { regionRef, chipsRef, hintRef, hintFits };
+}
+
 export default function ComponentBuffer({ buffer, onRemove }: ComponentBufferProps) {
+  const hasParts = buffer.length > 0;
+  const { regionRef, chipsRef, hintRef, hintFits } = useHintFits(hasParts);
+
   return (
     <Box
       className="beginner-keyboard__buffer"
       sx={{
         flex: 1,
         minWidth: 0,
+        minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
         gap: 0.75,
         p: `${PARTS_COLUMN_PAD}px`,
-        overflowY: 'auto',
-        touchAction: 'pan-y',
       }}
     >
       {/* The "PARTS" caption — removed and brought back the same day (2026-11-15,
@@ -114,74 +166,113 @@ export default function ComponentBuffer({ buffer, onRemove }: ComponentBufferPro
         Parts
       </Typography>
 
-      {/* Empty, the strip is just its caption (2026-11-15, owner): the dashed ghost
-          chips that used to mark "parts land here" are gone — the candidate row's
-          worked example (你 = 亻 + 尔) now does the teaching. */}
-      {buffer.length > 0 && (
-        // Rows sit 8px apart (columns 6px) so a wrapped row's lip never touches the
-        // keys below it.
-        <Box className="beginner-keyboard__buffer-chips" sx={{ display: 'flex', flexWrap: 'wrap', columnGap: `${PART_CHIP_GAP}px`, rowGap: 1 }}>
-          {buffer.map((component, position) => (
-            <Box
-              component="button"
-              type="button"
-              // The same component can appear twice (林 → 木 木), so position is
-              // part of the identity — keying on the glyph alone would collapse
-              // the pair and make the wrong chip disappear on removal.
-              key={`${component}-${position}`}
-              className="beginner-keyboard__buffer-chip"
-              onClick={() => onRemove(position)}
-              // A private-use part (U+E000, § 6z-15) reads as nothing, so name it.
-              aria-label={`Remove ${PRIVATE_COMPONENT_NAMES[component] ?? component}`}
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                minWidth: PART_CHIP_SIZE, // tap-target floor, now that the × no longer pads it out
-                height: PART_CHIP_SIZE,
-                px: 1,
-                // A raised white keycap (keycapStyle.ts), the same object as the ā
-                // pad's utility keys; the press is the snap-down, not a tint.
-                ...whiteKeySx(),
-              }}
-            >
-              <Box
-                component="span"
-                className="beginner-keyboard__buffer-glyph"
-                sx={{
-                  fontFamily: FONTS.hanziComponents,
-                  fontSize: SIZE.subtitle,
-                  lineHeight: 1,
-                  color: KEYBOARD_COLORS.ink,
-                }}
-              >
-                {/* § 6z-13: the cut outline where the font glyph is the wrong shape (⺈). */}
-                <ComponentGlyph glyph={component} />
-              </Box>
-            </Box>
-          ))}
-        </Box>
-      )}
-
-      {/* The removal hint, pinned to the section's BOTTOM (mt: auto) and shown only
-          while there are parts to remove. Chips have no × (see header), so this line
-          is what makes tap-to-remove discoverable. The owner chose the short "Tap to
-          clear" (2026-11-15) even though a tap removes ONE part, not all. Same quiet label styling as the caption above. */}
-      {buffer.length > 0 && (
-        <Typography
-          className="beginner-keyboard__buffer-hint"
-          sx={{
-            mt: 'auto',
-            // Centred across the column (owner, 2026-11-15), still pinned to the bottom.
-            textAlign: 'center',
-            fontFamily: FONTS.sans,
-            fontSize: SIZE.caption,
-            color: KEYBOARD_COLORS.faint,
-          }}
+      {/* The parts region: everything between the two rules. Only the chip scroller
+          inside it moves (the section itself is fixed), so the caption and the bottom
+          divider stay put however many parts there are.
+          Empty, the region is blank (2026-11-15, owner): the dashed ghost chips that
+          used to mark "parts land here" are gone — the candidate row's worked example
+          (你 = 亻 + 尔) now does the teaching. */}
+      <Box
+        ref={regionRef}
+        className="beginner-keyboard__buffer-region"
+        sx={{ flex: 1, minHeight: 0, position: 'relative' }}
+      >
+        <Box
+          className="beginner-keyboard__buffer-scroller"
+          sx={{ height: '100%', overflowY: 'auto', touchAction: 'pan-y' }}
         >
-          Tap to clear
-        </Typography>
-      )}
+          {hasParts && (
+            // Rows sit 8px apart (columns 6px) so a wrapped row's lip never touches the
+            // keys below it. The KEY_LIP bottom padding makes room for the LAST row's
+            // lip, which the scroller would otherwise clip once the chips fill it.
+            <Box
+              ref={chipsRef}
+              className="beginner-keyboard__buffer-chips"
+              sx={{ display: 'flex', flexWrap: 'wrap', columnGap: `${PART_CHIP_GAP}px`, rowGap: 1, pb: `${KEY_LIP}px` }}
+            >
+              {buffer.map((component, position) => (
+                <Box
+                  component="button"
+                  type="button"
+                  // The same component can appear twice (林 → 木 木), so position is
+                  // part of the identity — keying on the glyph alone would collapse
+                  // the pair and make the wrong chip disappear on removal.
+                  key={`${component}-${position}`}
+                  className="beginner-keyboard__buffer-chip"
+                  onClick={() => onRemove(position)}
+                  // A private-use part (U+E000, § 6z-15) reads as nothing, so name it.
+                  aria-label={`Remove ${PRIVATE_COMPONENT_NAMES[component] ?? component}`}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    minWidth: PART_CHIP_SIZE, // tap-target floor, now that the × no longer pads it out
+                    height: PART_CHIP_SIZE,
+                    px: 1,
+                    // A raised white keycap (keycapStyle.ts), the same object as the ā
+                    // pad's utility keys; the press is the snap-down, not a tint.
+                    ...whiteKeySx(),
+                  }}
+                >
+                  <Box
+                    component="span"
+                    className="beginner-keyboard__buffer-glyph"
+                    sx={{
+                      fontFamily: FONTS.hanziComponents,
+                      fontSize: SIZE.subtitle,
+                      lineHeight: 1,
+                      color: KEYBOARD_COLORS.ink,
+                    }}
+                  >
+                    {/* § 6z-13: the cut outline where the font glyph is the wrong shape (⺈). */}
+                    <ComponentGlyph glyph={component} />
+                  </Box>
+                </Box>
+              ))}
+            </Box>
+          )}
+        </Box>
+
+        {/* The removal hint, pinned to the region's BOTTOM (just above the divider) and
+            shown only while there are parts to remove AND the chips have not grown down
+            to it (useHintFits — it is absolutely positioned, see there). Chips have no ×
+            (see header), so this line is what makes tap-to-remove discoverable. The
+            owner chose the short "Tap to clear" (2026-11-15) even though a tap removes
+            ONE part, not all. Same quiet label styling as the caption above. */}
+        {hasParts && (
+          <Typography
+            ref={hintRef}
+            className="beginner-keyboard__buffer-hint"
+            aria-hidden={!hintFits}
+            sx={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              // Hidden, not unmounted: the box must stay measurable (useHintFits).
+              visibility: hintFits ? 'visible' : 'hidden',
+              // An overlay, so it must never swallow a tap meant for a chip.
+              pointerEvents: 'none',
+              // Centred across the column (owner, 2026-11-15), still pinned to the bottom.
+              textAlign: 'center',
+              fontFamily: FONTS.sans,
+              fontSize: SIZE.caption,
+              color: KEYBOARD_COLORS.faint,
+            }}
+          >
+            Tap to clear
+          </Typography>
+        )}
+      </Box>
+
+      {/* The bottom divider (owner, 2026-11-18): closes the parts section off from the
+          ink keys, mirroring the rule under the "PARTS" caption — same
+          COLORS.rowBorder hairline, same 6px off its label. Shown even when the strip
+          is empty, so the column is always boxed by two rules. */}
+      <Box
+        className="beginner-keyboard__buffer-divider"
+        sx={{ flexShrink: 0, borderTop: `1px solid ${COLORS.rowBorder}` }}
+      />
     </Box>
   );
 }

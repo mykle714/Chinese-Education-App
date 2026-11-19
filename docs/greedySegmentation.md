@@ -10,11 +10,32 @@ The implementation lives in `server/dal/shared/segmentString.ts` and drives `Dic
 
 ## How the Algorithm Works
 
+> ⚠️ Despite the file name, the implementation is **not** left-to-right FMM. It is a
+> best-score-per-length-tier search; the FMM walk-through below is kept only as the
+> baseline it grew out of.
+
+What `segmentWithDict` actually does (server `server/dal/shared/segmentString.ts`, client
+port `src/features/reader/documentSegmentation.ts` → `segmentRange`):
+
+1. For lengths 4 → 3 → 2 → 1, collect every substring of that length that is in the
+   dictionary (multi-char `matchException` tokens excluded).
+2. In the first length that has any match, the substring with the highest
+   `frequencyScore` wins (null = 0); ties go to the **later** position.
+3. Extract the winner and recurse on the left and right remainders.
+4. No match at any length → single-character fallback.
+
+The server version also runs a `prioritySegments` pass (the est headword) and a
+`classifierTokens` pass first. The Reader's client port has no headword/classifier passes,
+but records **tiebreak alternatives** and accepts **forced spans** — see
+[READER_SEGMENTATION.md](./READER_SEGMENTATION.md) § "Tiebreak alternatives".
+
+### Baseline: Forward Maximum Matching
+
 Given a Chinese string and a dictionary, FMM works as follows:
 
 1. At the current position, try the longest possible substring (up to 4 characters).
 2. Check if that substring is in the dictionary.
-3. If yes — extract it as a token, then recurse on the left and right remainders.
+3. If yes — extract it as a token, then continue after it.
 4. If no — try the next shorter length (3, 2, 1).
 5. If no match at length 1 — emit that single character as an unmatched token (fallback).
 
@@ -77,10 +98,10 @@ Converts an array of `DictionaryEntry` rows into a `Map<word1, { pronunciation, 
 
 ### `segmentWithDict(str, dictMap): string[]`
 
-The core FMM function. Recursively segments `str` using the provided `dictMap`.
+The core segmentation function (best-score per length tier, not strict FMM — see above). Recursively segments `str` using the provided `dictMap`.
 
-- Tries lengths 4 → 3 → 2 → 1 at each position
-- Scans left-to-right at each length tier
+- Tries lengths 4 → 3 → 2 → 1
+- Within a length tier, the highest-`frequencyScore` match wins (ties → later position)
 - On match: splits string at the match site and recursively processes left and right remainders
 - On no match at any length: falls back to individual characters
 

@@ -1,6 +1,6 @@
 import React from "react";
 import { COLORS } from "../theme/colors";
-import { Box, Typography } from "@mui/material";
+import { Box, InputBase, Typography } from "@mui/material";
 import { styled, type SxProps, type Theme } from "@mui/material/styles";
 import { useNavigate } from "react-router-dom";
 import Icon from "./Icon";
@@ -21,6 +21,7 @@ import {
     HUB_HEADER_TITLE_TRACKING,
     OUTLINED_CHIP_ICON_PX,
     outlinedChipSx,
+    PAGE_HEADER_TITLE_FONT,
 } from "./pageHeaderSizing";
 import MinutePointsFireBadge from "../minutePoints/MinutePointsFireBadge";
 import { FONTS, DATA_TYPE } from "../theme/fonts";
@@ -129,7 +130,7 @@ const SIZE_SPEC: Record<PageHeaderSize, SizeSpec> = {
  * leading, but NOT colour (that is `titleColor`, below). Depended on by: PageHeader.
  */
 const pageHeaderTitleTypeSx = (size: PageHeaderSize) => ({
-    fontFamily: FONTS.sans,
+    fontFamily: PAGE_HEADER_TITLE_FONT,
     fontSize: SIZE_SPEC[size].titleSize,
     fontWeight: WEIGHT.semibold,
     letterSpacing: SIZE_SPEC[size].titleTracking,
@@ -181,6 +182,40 @@ const BackGroup = styled(Box)(() => ({
     cursor: "pointer",
 }));
 
+// EDITABLE TITLE ROW — used instead of BackGroup when `editableTitle` is set. The
+// chevron stays a back button on its own, and the title becomes a sibling text
+// field. It can't stay inside BackGroup: that whole group is the back button, so a
+// tap meant to place the caret would leave the page. Same 9px gap as BackGroup, so
+// the title does not shift sideways when the page enters edit mode.
+const EditableTitleRow = styled(Box)(() => ({
+    display: "flex",
+    alignItems: "center",
+    gap: BACK_GROUP_GAP_PX,
+    flex: 1,
+    minWidth: 0,
+}));
+
+/**
+ * The header title as a text field (`PageHeader` `editableTitle`). Drawn in the
+ * title's own type style, so tapping the title shows a caret in the same text rather
+ * than swapping in a form control. A hairline under it marks it as editable.
+ * Today: the Reader document's title in edit mode (features/reader/ReaderDocumentPage.tsx,
+ * docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Editing).
+ */
+export interface PageHeaderEditableTitle {
+    value: string;
+    onChange: (value: string) => void;
+    /** Shown while the field is empty (e.g. the current or default title). */
+    placeholder?: string;
+    maxLength?: number;
+    /** Accessible name of the field. */
+    ariaLabel: string;
+    /** Colour of the hairline under the field (a ground-aware `line` token). */
+    lineColor: string;
+    /** Colour of the placeholder (a ground-aware secondary ink). */
+    placeholderColor: string;
+}
+
 interface PageHeaderProps {
     // Optional: a header with no title draws only its back arrow and right slot. The
     // flp's TowerStudyHeader omits it (2026-11-08) to free the row for its controls.
@@ -229,6 +264,9 @@ interface PageHeaderProps {
     // climbed, and its study header over that sky (white, `ISO.white`;
     // docs/DECK_TOWER.md § Layers, § "Studying the tower").
     titleColor?: string;
+    // Render the title as a text field instead of static text (see
+    // PageHeaderEditableTitle). `title` is ignored while this is set.
+    editableTitle?: PageHeaderEditableTitle;
 }
 
 const PageHeader: React.FC<PageHeaderProps> = ({
@@ -242,6 +280,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
     showFlame = true,
     trailingContent,
     titleColor,
+    editableTitle,
 }) => {
     const navigate = useNavigate();
     const resolvedSize: PageHeaderSize = size ?? (showBack ? (arrowDirection === "left" ? "node" : "leaf") : "hub");
@@ -262,21 +301,78 @@ const PageHeader: React.FC<PageHeaderProps> = ({
         </Typography>
     ) : null;
 
+    const backIcon = (
+        <Icon
+            className="page-header__back-icon"
+            name={arrowDirection === "left" ? BACK_ARROW_ICON : "keyboard_arrow_down"}
+            size={arrowDirection === "left" ? BACK_ARROW_PX : DOWN_CHEVRON_PX}
+            color={titleColor}
+        />
+    );
+
+    // Editable variant: the field fills the row up to the right slot, so tapping
+    // anywhere in the title band places the caret.
+    const editableTitleNode = editableTitle ? (
+        <InputBase
+            className="page-header__title-input"
+            value={editableTitle.value}
+            onChange={(e) => editableTitle.onChange(e.target.value)}
+            placeholder={editableTitle.placeholder}
+            // Enter closes the keyboard: a title is a single line.
+            onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    (e.target as HTMLInputElement).blur();
+                }
+            }}
+            inputProps={{
+                maxLength: editableTitle.maxLength,
+                "aria-label": editableTitle.ariaLabel,
+                enterKeyHint: "done",
+            }}
+            sx={{
+                flex: 1,
+                minWidth: 0,
+                ...pageHeaderTitleTypeSx(resolvedSize),
+                color: titleColor ?? COLORS.onSurface,
+                borderBottom: `1px solid ${editableTitle.lineColor}`,
+                "& .MuiInputBase-input": {
+                    padding: 0,
+                    height: "auto",
+                    textOverflow: "ellipsis",
+                },
+                "& .MuiInputBase-input::placeholder": {
+                    color: editableTitle.placeholderColor,
+                    opacity: 1,
+                },
+            }}
+        />
+    ) : null;
+
     return (
         <Header className="page-header" size={resolvedSize} safeAreaTop={safeAreaTop}>
-            {showBack ? (
+            {editableTitleNode ? (
+                <EditableTitleRow className="page-header__editable-title-row">
+                    {showBack && (
+                        <BackGroup
+                            className="page-header__back"
+                            onClick={onBack ?? (() => navigate(-1))}
+                            role="button"
+                            aria-label="Back"
+                        >
+                            {backIcon}
+                        </BackGroup>
+                    )}
+                    {editableTitleNode}
+                </EditableTitleRow>
+            ) : showBack ? (
                 <BackGroup
                     className="page-header__back"
                     onClick={onBack ?? (() => navigate(-1))}
                     role="button"
                     aria-label="Back"
                 >
-                    <Icon
-                        className="page-header__back-icon"
-                        name={arrowDirection === "left" ? BACK_ARROW_ICON : "keyboard_arrow_down"}
-                        size={arrowDirection === "left" ? BACK_ARROW_PX : DOWN_CHEVRON_PX}
-                        color={titleColor}
-                    />
+                    {backIcon}
                     {titleNode}
                 </BackGroup>
             ) : (

@@ -1,3 +1,4 @@
+import { alpha } from "@mui/material/styles";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { LEADING, SIZE, WEIGHT } from "../../theme/scale";
@@ -100,3 +101,32 @@ export const readerPillButtonSx = (look: Tier2Look, fill?: string) => {
         "&.Mui-disabled": { color: ink, backgroundColor: background, opacity: 0.45 },
     } as const;
 };
+
+/**
+ * The selected word's blue wash, shared by both reading views (Text mode `::selection`,
+ * Pinyin mode word box). Day: the theme's primary blue at ~19%. Night: the primary blue
+ * is too dark to read against the slate reading card, so the night wash switches to the
+ * bright blue MARK tier (COLORS.bluMk), the blue twin of the search's yelMk. Keyed on
+ * the time-of-day look (the card's colour), not the Settings theme.
+ * Read by ReaderDocumentPage → selectionColors.
+ */
+export const readerSelectionColor = (dark: boolean, primaryMain: string): string =>
+    dark ? alpha(COLORS.bluMk, 0.4) : alpha(primaryMain, 0.19);
+
+/**
+ * The search bar's match highlights (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Search"):
+ * translucent washes of the yellow MARK tier (COLORS.yelMk), built like the word
+ * selection's blue wash (readerSelectionColor: primary blue by day, the bluMk mark tier
+ * at night) so the two read as one family. The text keeps its own ink
+ * underneath. Yellow is far lighter than the blue, so it needs a stronger alpha to show
+ * as much. `match` for every hit, `current` (about twice as strong) for the stepped-to one.
+ * Read by ReaderSearchHighlights (Text mode) and ReaderCpcdView (Pinyin mode).
+ */
+export interface ReaderSearchColors {
+    match: string;
+    current: string;
+}
+export const readerSearchColors = (dark: boolean): ReaderSearchColors => ({
+    match: alpha(COLORS.yelMk, dark ? 0.3 : 0.28),
+    current: alpha(COLORS.yelMk, dark ? 0.6 : 0.55),
+});

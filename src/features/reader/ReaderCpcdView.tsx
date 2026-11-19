@@ -1,10 +1,13 @@
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { Box } from "@mui/material";
 import ForeignText, { type CPCDRowGroup, type CPCDRowItem } from "../../components/ForeignText";
 import { cpcdNaturalSize } from "../../components/cpcdLayout";
 import { applyYiBuSandhi } from "../../utils/toneSandhi";
 import type { Language } from "../../types";
-import type { SegmentSpan } from "./documentSegmentation";
+import type { SegmentSpan, SpanRange } from "./documentSegmentation";
+import type { ReaderSearchMatch } from "./readerSearch";
+import type { ReaderSearchColors } from "./readerStyles";
+import { ALTERNATIVE_CELL_ATTR, findAlternativeCellAt } from "./readerAlternatives";
 
 /**
  * READER CPCD VIEW — the Reader's **Pinyin** display mode (useReaderSettings →
@@ -26,9 +29,30 @@ import type { SegmentSpan } from "./documentSegmentation";
  * `selectionRange`) onto the span that starts and ends there, paints that word, and
  * keeps it scrolled into view. Switching modes therefore keeps the reader's place.
  *
+ * ── Search highlights ──────────────────────────────────────────────────────────
+ * The search bar's matches (useReaderSearch) are painted per CELL (CPCDRowItem
+ * `highlight`), not per word group: a match may cover part of a word (好 in 你好) or run
+ * across words, and groups may not partially overlap. Every item records the content
+ * range it draws (`ReaderParagraph.offsets`) so a match's content offsets map onto cells.
+ * Same colours as the Text mode (ReaderSearchHighlights): yelM for a match, yelMk for
+ * the current one, dark ink on both.
+ *
  * Layer: feature presentational component (src/features/reader). Depends on the shared
  * cpcd container (ForeignText `items` + `groups` → CPCDRow), the cpcd size tables
  * (components/cpcdLayout.ts) and the 一/不 sandhi pass (utils/toneSandhi.ts).
+ * ── Tiebreak alternatives ────────────────────────────────────────────────────────
+ * While the selected word won its gsa length tier on a frequencyScore tiebreak against an
+ * OVERLAPPING word (SegmentSpan `alternatives`, documentSegmentation.ts), each losing word
+ * is boxed WHOLE in the search-match yellow — the shared character included, where the
+ * translucent yellow lies over the blue selection (owner's call 2026-11-18: "a box around
+ * 治愈"). A tap anywhere in that box makes that word the selection (`onSwitchToAlternative`
+ * → ReaderDocumentPage `switchToAlternative`); it is the ONLY tap that overrides the
+ * left/right zone step. Hit-testing is geometric (readerAlternatives.ts → `findAlternativeCellAt`), so the glyph,
+ * the pinyin band and the shared cell all count: a desktop click is caught by the scroll
+ * box's click-capture; on mobile ReaderTapOverlay checks it before its zone step. Pinyin
+ * mode only — the Text mode draws no alternatives. docs/READER_SEGMENTATION.md
+ * § "Tiebreak alternatives".
+ *
  * Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Display modes"; docs/READER_SEGMENTATION.md.
  */
 
@@ -73,6 +97,8 @@ type ItemTag =
 
 interface ReaderParagraph {
     items: CPCDRowItem[];
+    // Per item: the content range [start, end) it draws (search highlights map onto these).
+    offsets: Array<{ start: number; end: number }>;
     // Per gsa word in this paragraph: its span index and its item range [start, end).
     words: Array<{ spanIndex: number; start: number; end: number }>;
     // Word + glued punctuation ranges, only where they differ from the word's own range.
@@ -95,6 +121,7 @@ function buildParagraphs(
 ): ReaderParagraph[] {
     const paragraphs: ReaderParagraph[] = [];
     let items: CPCDRowItem[] = [];
+    let offsets: ReaderParagraph["offsets"] = [];
     let tags: ItemTag[] = [];
     let words: ReaderParagraph["words"] = [];
     // The paragraph's per-item sandhi input, aligned 1:1 with `items`.
@@ -103,8 +130,9 @@ function buildParagraphs(
 
     // A pinyin-less, text-width item (punctuation, spaces, Latin words). It keeps the
     // pinyin band so every line is one cpcd line tall (LINE_PX).
-    const pushPlain = (text: string, tag: ItemTag) => {
+    const pushPlain = (text: string, tag: ItemTag, start: number) => {
         items.push({ character: text, autoWidth: true, reservePinyinBand: true });
+        offsets.push({ start, end: start + text.length });
         tags.push(tag);
         sandhiChars.push(SANDHI_BREAK);
         sandhiSyllables.push("");
@@ -125,57 +153,88 @@ function buildParagraphs(
             while (end < items.length && tags[end] === "prev") end++;
             if (start !== word.start || end !== word.end) units.push({ start, end });
         }
-        paragraphs.push({ items, words, units });
+        paragraphs.push({ items, offsets, words, units });
         items = [];
+        offsets = [];
         tags = [];
         words = [];
         sandhiChars = [];
         sandhiSyllables = [];
     };
 
-    const pushGap = (gap: string) => {
+    // `gapStart`: the gap's content offset, so each item records where it sits.
+    const pushGap = (gap: string, gapStart: number) => {
+        let offset = gapStart;
         // Newlines end the paragraph; everything else is a space run or a mark.
         gap.split("\n").forEach((line, lineIndex) => {
-            if (lineIndex > 0) closeParagraph();
+            if (lineIndex > 0) {
+                closeParagraph();
+                offset += 1; // the "\n" itself
+            }
             for (const piece of line.split(/(\s+)/)) {
                 if (!piece) continue;
                 if (/^\s+$/.test(piece)) {
-                    pushPlain(piece, "prev");
+                    pushPlain(piece, "prev", offset);
+                    offset += piece.length;
                     continue;
                 }
                 // One item per mark, so "，“" splits into a closer and an opener.
-                for (const mark of piece) pushPlain(mark, OPENING_MARKS.has(mark) ? "next" : "prev");
+                for (const mark of piece) {
+                    pushPlain(mark, OPENING_MARKS.has(mark) ? "next" : "prev", offset);
+                    offset += mark.length;
+                }
             }
         });
     };
 
     let cursor = 0;
     spans.forEach((span, spanIndex) => {
-        if (span.start > cursor) pushGap(content.slice(cursor, span.start));
+        if (span.start > cursor) pushGap(content.slice(cursor, span.start), cursor);
         const start = items.length;
         if (HAN_REGEX.test(span.text)) {
             // A cpcd word: one fixed-column item per character, zipped with its reading.
             const pronunciation = pronunciations.get(span.text);
             const syllables = pronunciation ? pronunciation.trim().split(/\s+/) : [];
+            let offset = span.start;
             [...span.text].forEach((character, i) => {
                 items.push({ character, pinyin: syllables[i] ?? "", showPinyin: true, useToneColor, reservePinyinBand: true });
+                offsets.push({ start: offset, end: offset + character.length });
+                offset += character.length;
                 tags.push("word");
                 sandhiChars.push(character);
                 sandhiSyllables.push(syllables[i] ?? "");
             });
         } else {
             // A Latin word / digit run: one text-width item, no reading.
-            pushPlain(span.text, "word");
+            pushPlain(span.text, "word", span.start);
         }
         words.push({ spanIndex, start, end: items.length });
         cursor = span.end;
     });
-    if (cursor < content.length) pushGap(content.slice(cursor));
+    if (cursor < content.length) pushGap(content.slice(cursor), cursor);
     closeParagraph();
     return paragraphs;
 }
 
 // ── One paragraph ────────────────────────────────────────────────────────────────
+
+// A search match clipped to one paragraph; `current` = the match ˄/˅ is on.
+interface ParagraphMatch {
+    start: number;
+    end: number;
+    current: boolean;
+}
+// The shared "no matches here" value, so a paragraph without matches keeps its memo.
+const NO_MATCHES: ParagraphMatch[] = [];
+
+// A tiebreak alternative of the selected word, clipped to one paragraph; `index` is its
+// position in the selected span's `alternatives` (the cells' `data-reader-alternative`).
+interface ParagraphAlternative {
+    start: number;
+    end: number;
+    index: number;
+}
+const NO_ALTERNATIVES: ParagraphAlternative[] = [];
 
 interface ReaderCpcdParagraphProps {
     paragraph: ReaderParagraph;
@@ -187,6 +246,14 @@ interface ReaderCpcdParagraphProps {
     onSelectSpan: (spanIndex: number) => void;
     // The characters' ink (ReaderCpcdView `inkColor`).
     inkColor: string;
+    // The search matches overlapping this paragraph (NO_MATCHES when none).
+    matches: ParagraphMatch[];
+    // Receives the current match's FIRST cell, for the keep-in-view scroll.
+    currentMatchCellRef: (node: HTMLDivElement | null) => void;
+    // The selected word's tiebreak alternatives in this paragraph (NO_ALTERNATIVES when none).
+    alternatives: ParagraphAlternative[];
+    // The highlight washes (readerStyles → readerSearchColors), shared with the Text mode.
+    searchColors: ReaderSearchColors;
 }
 
 // Memoised: each cpcd row runs a layout pass of its own on render (CPCDRow →
@@ -198,7 +265,61 @@ const ReaderCpcdParagraph = memo(function ReaderCpcdParagraph({
     language,
     onSelectSpan,
     inkColor,
+    matches,
+    currentMatchCellRef,
+    alternatives,
+    searchColors,
 }: ReaderCpcdParagraphProps) {
+    // The items with search highlights and tiebreak alternatives laid on (the paragraph's
+    // own items when there are neither).
+    const items = useMemo<CPCDRowItem[]>(() => {
+        if (matches.length === 0 && alternatives.length === 0) return paragraph.items;
+        // Whether item `i` draws (part of) match `m`.
+        const inMatch = (i: number, m: ParagraphMatch) => {
+            const range = paragraph.offsets[i];
+            return !!range && range.start < m.end && range.end > m.start;
+        };
+        // Whether item `i` draws (part of) alternative `a` — the cells it shares with the
+        // selected word included, so the yellow reads as one box over the whole word.
+        const inAlternative = (i: number, a: ParagraphAlternative) => {
+            const range = paragraph.offsets[i];
+            return !!range && range.start < a.end && range.end > a.start;
+        };
+        return paragraph.items.map((item, i) => {
+            const alternative = alternatives.find((a) => inAlternative(i, a));
+            const tapTarget = alternative ? { attrs: { [ALTERNATIVE_CELL_ATTR]: alternative.index } } : {};
+            const match = matches.find((m) => inMatch(i, m));
+            if (!match) {
+                if (!alternative) return item;
+                // Same wash and joining as a search match (owner's call 2026-11-18).
+                return {
+                    ...item,
+                    ...tapTarget,
+                    highlight: {
+                        background: searchColors.match,
+                        joinLeft: inAlternative(i - 1, alternative),
+                        joinRight: inAlternative(i + 1, alternative),
+                    },
+                };
+            }
+            const firstOfCurrent = match.current && paragraph.offsets[i].start <= match.start;
+            return {
+                ...item,
+                // A search match paints over an alternative; the cell stays tappable.
+                ...tapTarget,
+                // A match over several cells (a word, a phrase, "ni hao") joins its cells'
+                // fills into one box (CPCDRowItem `highlight` joinLeft / joinRight). The
+                // glyph keeps its own ink under the translucent wash.
+                highlight: {
+                    background: match.current ? searchColors.current : searchColors.match,
+                    joinLeft: inMatch(i - 1, match),
+                    joinRight: inMatch(i + 1, match),
+                },
+                ...(firstOfCurrent && { cellRef: currentMatchCellRef }),
+            };
+        });
+    }, [paragraph, matches, alternatives, currentMatchCellRef, searchColors]);
+
     const groups = useMemo<CPCDRowGroup[]>(() => [
         // Word + glued punctuation: unbreakable, otherwise inert.
         ...paragraph.units.map((unit) => ({ ...unit, className: "reader-cpcd-view__unit" })),
@@ -237,7 +358,7 @@ const ReaderCpcdParagraph = memo(function ReaderCpcdParagraph({
         <ForeignText
             className="reader-cpcd-view__paragraph"
             language={language}
-            items={paragraph.items}
+            items={items}
             groups={groups}
             size={WORD_SIZE}
             flexWrap="wrap"
@@ -263,6 +384,9 @@ interface ReaderCpcdViewProps {
     showPinyinColor: boolean;
     // Select a span in the reading textarea (useTextSelection → selectRange).
     onSelectRange: (start: number, end: number) => void;
+    // Make a tiebreak alternative the selected word (ReaderDocumentPage → switchToAlternative).
+    // Absent → alternatives are not drawn.
+    onSwitchToAlternative?: (alternative: SpanRange) => void;
     // Attached to the scroll box; the page hands the same ref to ReaderTapOverlay, which
     // proxies vertical drags to it in this mode (ReaderDocumentPage → cpcdScrollRef → ReaderTapOverlay `scrollRef`).
     scrollRef: React.RefObject<HTMLDivElement | null>;
@@ -273,6 +397,11 @@ interface ReaderCpcdViewProps {
     // the characters, and the pinyin when tone colouring is off (CPCDRow draws uncoloured
     // pinyin as `inherit`, so it takes the scroll box's colour). Light at night.
     inkColor: string;
+    // The search bar's matches (useReaderSearch) and the current one's index (-1 = none).
+    searchMatches?: ReaderSearchMatch[];
+    currentMatchIndex?: number;
+    // Their highlight washes (readerStyles → readerSearchColors).
+    searchColors: ReaderSearchColors;
 }
 
 function ReaderCpcdView({
@@ -284,9 +413,13 @@ function ReaderCpcdView({
     highlightColor,
     showPinyinColor,
     onSelectRange,
+    onSwitchToAlternative,
     scrollRef,
     isAutoScrollPaused,
     inkColor,
+    searchMatches,
+    currentMatchIndex = -1,
+    searchColors,
 }: ReaderCpcdViewProps) {
     const paragraphs = useMemo(
         () => buildParagraphs(content, segmentSpans, pronunciations, showPinyinColor),
@@ -328,21 +461,97 @@ function ReaderCpcdView({
     // Read through a ref so a new callback identity does not re-run the scroll.
     const isAutoScrollPausedRef = useRef(isAutoScrollPaused);
     isAutoScrollPausedRef.current = isAutoScrollPaused;
-    useEffect(() => {
+    // Nudge the scroll box so `element` sits inside it with SCROLL_MARGIN_PX to spare.
+    const scrollIntoBox = useCallback((element: HTMLElement) => {
         const box = scrollRef.current;
-        if (!box || selectedSpanIndex < 0 || isAutoScrollPausedRef.current?.()) return;
-        const word = box.querySelector<HTMLElement>(`[data-span-index="${selectedSpanIndex}"]`);
-        if (!word) return;
+        if (!box) return;
         const boxRect = box.getBoundingClientRect();
-        const wordRect = word.getBoundingClientRect();
-        const top = wordRect.top - boxRect.top + box.scrollTop;
-        const bottom = top + wordRect.height;
+        const elementRect = element.getBoundingClientRect();
+        const top = elementRect.top - boxRect.top + box.scrollTop;
+        const bottom = top + elementRect.height;
         if (top < box.scrollTop + SCROLL_MARGIN_PX) {
             box.scrollTop = Math.max(0, top - SCROLL_MARGIN_PX);
         } else if (bottom > box.scrollTop + box.clientHeight - SCROLL_MARGIN_PX) {
             box.scrollTop = bottom - box.clientHeight + SCROLL_MARGIN_PX;
         }
-    }, [selectedSpanIndex, scrollRef]);
+    }, [scrollRef]);
+    useEffect(() => {
+        const box = scrollRef.current;
+        if (!box || selectedSpanIndex < 0 || isAutoScrollPausedRef.current?.()) return;
+        const word = box.querySelector<HTMLElement>(`[data-span-index="${selectedSpanIndex}"]`);
+        if (word) scrollIntoBox(word);
+    }, [selectedSpanIndex, scrollRef, scrollIntoBox]);
+
+    // ── Search matches → paragraphs ──
+    // Each paragraph gets only the matches that overlap it (NO_MATCHES otherwise, so the
+    // memoised paragraphs a step does not touch stay put).
+    const paragraphMatches = useMemo(() => {
+        if (!searchMatches || searchMatches.length === 0) return paragraphs.map(() => NO_MATCHES);
+        return paragraphs.map((paragraph) => {
+            const { offsets } = paragraph;
+            if (offsets.length === 0) return NO_MATCHES;
+            const first = offsets[0].start;
+            const last = offsets[offsets.length - 1].end;
+            const hits: ParagraphMatch[] = [];
+            searchMatches.forEach((match, index) => {
+                if (match.start < last && match.end > first) {
+                    hits.push({ start: match.start, end: match.end, current: index === currentMatchIndex });
+                }
+            });
+            return hits.length > 0 ? hits : NO_MATCHES;
+        });
+    }, [paragraphs, searchMatches, currentMatchIndex]);
+
+    // ── Tiebreak alternatives → paragraphs ──
+    // Only the selected word's alternatives are drawn, so at most the selected word's
+    // paragraph gets any; every other paragraph keeps NO_ALTERNATIVES and its memo.
+    const selectedAlternatives = useMemo<SpanRange[]>(
+        () => (onSwitchToAlternative && selectedSpanIndex >= 0 ? segmentSpans[selectedSpanIndex]?.alternatives ?? [] : []),
+        [onSwitchToAlternative, selectedSpanIndex, segmentSpans]
+    );
+    const paragraphAlternatives = useMemo(() => {
+        if (selectedAlternatives.length === 0) return paragraphs.map(() => NO_ALTERNATIVES);
+        return paragraphs.map((paragraph) => {
+            const { offsets } = paragraph;
+            if (offsets.length === 0) return NO_ALTERNATIVES;
+            const first = offsets[0].start;
+            const last = offsets[offsets.length - 1].end;
+            const hits: ParagraphAlternative[] = [];
+            selectedAlternatives.forEach((alt, index) => {
+                if (alt.start < last && alt.end > first) hits.push({ start: alt.start, end: alt.end, index });
+            });
+            return hits.length > 0 ? hits : NO_ALTERNATIVES;
+        });
+    }, [paragraphs, selectedAlternatives]);
+
+    // A click inside a yellow box switches to that alternative. Capture phase, so the word
+    // group's own onClick (which would select the word the cell belongs to) never runs.
+    // ReaderTapOverlay's programmatic `cell.click()` lands here too.
+    const handleAlternativeClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
+        const box = event.currentTarget;
+        const cell = (event.target as HTMLElement).closest<HTMLElement>(`[${ALTERNATIVE_CELL_ATTR}]`)
+            ?? findAlternativeCellAt(box, event.clientX, event.clientY);
+        if (!cell || !onSwitchToAlternative) return;
+        const alternative = selectedAlternatives[Number(cell.getAttribute(ALTERNATIVE_CELL_ATTR))];
+        if (!alternative) return;
+        event.stopPropagation();
+        onSwitchToAlternative(alternative);
+    };
+
+    // The current match's first cell (ParagraphMatch → `cellRef`), kept in view like the
+    // selected word. A match that is a whole word is also the selection, so the effect
+    // above may scroll first; this one lands on the same spot. Runs after the paragraphs
+    // have committed, so the ref holds the new cell.
+    const currentMatchCellRef = useRef<HTMLDivElement | null>(null);
+    const setCurrentMatchCell = useCallback((node: HTMLDivElement | null) => {
+        currentMatchCellRef.current = node;
+    }, []);
+    const currentMatch = currentMatchIndex >= 0 ? searchMatches?.[currentMatchIndex] : undefined;
+    useEffect(() => {
+        if (!currentMatch) return;
+        const cell = currentMatchCellRef.current;
+        if (cell) scrollIntoBox(cell);
+    }, [currentMatch, scrollIntoBox]);
 
     return (
         <Box
@@ -352,6 +561,7 @@ function ReaderCpcdView({
             // on a word would blur it, and useTextSelection's blur handler would refocus
             // it a frame later restoring the OLD range over the one just clicked.
             onMouseDown={(event) => event.preventDefault()}
+            onClickCapture={handleAlternativeClickCapture}
             sx={{
                 position: "absolute",
                 inset: 0,
@@ -380,9 +590,13 @@ function ReaderCpcdView({
                         paragraph={paragraph}
                         selectedSpanIndex={selectedHere ? selectedSpanIndex : -1}
                         highlightColor={highlightColor}
+                        searchColors={searchColors}
                         language={language}
                         onSelectSpan={selectSpan}
                         inkColor={inkColor}
+                        matches={paragraphMatches[index]}
+                        currentMatchCellRef={setCurrentMatchCell}
+                        alternatives={paragraphAlternatives[index]}
                     />
                 );
             })}

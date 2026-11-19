@@ -56,6 +56,19 @@ export interface CPCDRowItem extends CpcdCharItem {
     // made only of such cells (punctuation, Latin) is as tall as a line of characters.
     // Same first user.
     reservePinyinBand?: boolean;
+    // A FIND HIGHLIGHT painted on the whole cell (glyph + pinyin band), behind the text:
+    // `background` fills it (a translucent wash reads best — the glyph keeps its own ink)
+    // and `ink` (optional) recolours the glyph and any uncoloured pinyin. Unlike
+    // `selected` it draws no border. `joinLeft` / `joinRight` say the neighbouring cell
+    // carries the same highlight: that side is squared off and meets the neighbour's fill
+    // exactly at the middle of the two cells' overlap (no double-painted strip), so a run
+    // of cells reads as ONE box. First user: the Reader's search bar in the Pinyin view
+    // (ReaderCpcdView → search matches).
+    highlight?: { background: string; ink?: string; joinLeft?: boolean; joinRight?: boolean };
+    // Extra attributes on the cell, e.g. `{ "data-reader-alternative": 0 }` — the cell-level
+    // twin of CPCDRowGroup `attrs`, for callers that hit-test single cells. First user: the
+    // Reader's tiebreak alternatives (ReaderCpcdView), whose cells cut across word groups.
+    attrs?: Record<string, string | number>;
 }
 
 /**
@@ -427,6 +440,7 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                         item.cellRef?.(node);
                     }}
                     className="char-pinyin-display cpcd-row__char-cell"
+                    {...item.attrs}
                     onMouseEnter={isInteractive ? item.onHoverStart : undefined}
                     // Stop pointerdown from bubbling on interactive cells so that
                     // an ancestor's "tap background → deselect" handler doesn't
@@ -485,8 +499,34 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                         fontFamily: FONTS.cjk,
                         // Per-card Contrast override colors the glyph only (not the
                         // pinyin); falls back to the theme default. docs/CARD_ICON_LAYOUT.md.
-                        color: characterColor ?? "text.primary",
+                        color: item.highlight?.ink ?? characterColor ?? "text.primary",
                         lineHeight: CHAR_LINE_HEIGHT,
+                        // The find highlight (CPCDRowItem `highlight`) as a ::before behind
+                        // the glyph — `isolation` keeps its z-index -1 inside this cell, so
+                        // it never drops behind an ancestor's background. It covers the
+                        // border box; a joined side pulls in by half the column overlap
+                        // (cells overlap by `overlapAbs`), meeting the neighbour's fill edge
+                        // to edge so a multi-cell match is one continuous box.
+                        ...(item.highlight && !item.selected && {
+                            position: "relative",
+                            isolation: "isolate",
+                            "&::before": {
+                                content: '""',
+                                position: "absolute",
+                                zIndex: -1,
+                                top: `${-CELL_BORDER_PX}px`,
+                                bottom: `${-CELL_BORDER_PX}px`,
+                                left: `${item.highlight.joinLeft ? overlapAbs / 2 - CELL_BORDER_PX : -CELL_BORDER_PX}px`,
+                                right: `${item.highlight.joinRight ? overlapAbs / 2 - CELL_BORDER_PX : -CELL_BORDER_PX}px`,
+                                borderRadius: [
+                                    item.highlight.joinLeft ? 0 : 6,
+                                    item.highlight.joinRight ? 0 : 6,
+                                    item.highlight.joinRight ? 0 : 6,
+                                    item.highlight.joinLeft ? 0 : 6,
+                                ].map((r) => `${r}px`).join(" "),
+                                backgroundColor: item.highlight.background,
+                            },
+                        }),
                         // Covers the masked mark too, which stands in for the glyph.
                         "& .char-pinyin-display__character, & .char-pinyin-display__mask": {
                             position: "relative",
@@ -602,7 +642,11 @@ const CPCDRow: React.FC<CPCDRowProps> = ({
                 {items.map((item, i) => {
                     const showPinyin = item.showPinyin !== false && !!item.pinyin;
                     const useToneColor = item.useToneColor ?? true;
-                    const color = useToneColor && item.pinyin ? getToneColor(item.pinyin) : "inherit";
+                    // Uncoloured pinyin inherits the row's ink — except under a find
+                    // highlight, which carries its own (see CPCDRowItem `highlight`).
+                    const color = useToneColor && item.pinyin
+                        ? getToneColor(item.pinyin)
+                        : item.highlight?.ink ?? "inherit";
                     // Add a trailing space between adjacent pinyins so copying the
                     // pinyin row yields "ni hao ma" rather than "nihaoma".
                     const text = (item.pinyin ?? "") + (i < items.length - 1 && item.pinyin ? " " : "");

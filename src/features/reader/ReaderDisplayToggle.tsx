@@ -1,42 +1,33 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, Switch } from "@mui/material";
-import { COLORS } from "../../theme/colors";
-import { FONTS } from "../../theme/fonts";
-import { SIZE, WEIGHT } from "../../theme/scale";
+import { Button } from "@mui/material";
+import { readerPillButtonSx } from "./readerStyles";
 import type { ReaderDisplayMode } from "./useReaderSettings";
 import type { Tier2Look } from "../../timeOfDay/tier2Look";
 
 /**
- * ReaderDisplayToggle — the Text ⇄ Pinyin switch at the right of the Reader's display
- * strip (ReaderDocumentPage → `.reader-document-display-strip`).
+ * ReaderDisplayToggle — the "Pinyin" pill at the right of the Reader's display strip
+ * (ReaderDocumentPage → `.reader-document-display-strip`). One button, always labelled
+ * "Pinyin", with two style states:
  *
- * The Account sheet's GOALS switch (owner's call 2026-11-17): the app-wide MUI `Switch`
- * (its look comes from the `MuiSwitch` theme override in ThemeContext), with only the
- * "on" track recoloured to a ramp Mark tier — the same treatment as
- * pages/account/AccountPane.tsx → `goalSwitchOnSx`. Flanked by its two labels,
- * "Text  ◯━  Pinyin"; the label of the current mode is ink, the other muted — both from the
- * page's time-of-day `look`, so they read on the night slate.
- * Off = Text, on = Pinyin. Tapping either label also picks that mode.
+ *   off (Text mode)   — the NEUTRAL surface pill, FADED (`OFF_OPACITY`).
+ *   on  (Pinyin mode) — the same pill at full strength.
+ *
+ * The Reader's pill recipe (readerStyles → readerPillButtonSx, neutral: white by day,
+ * slate at night), like the Read/Stop pill at the strip's left edge. No hue for "on"
+ * (owner's call 2026-11-18: faded → not faded, not blue). Replaced the Account-sheet-style
+ * "Text ◯━ Pinyin" MUI Switch (owner's call 2026-11-18).
  *
  * Layer: feature presentational component (src/features/reader); state lives in
  * useReaderSettings (`displayMode`, per device).
  * Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Display modes".
  */
 
-// The "on" track colour. Blue: the Reader's own hue (its New document pill and the
-// vocab-processing pill are blue), as a ramp Mark tier like the goal switches' redMk / orgMk.
-const PINYIN_ON_TRACK = COLORS.bluMk;
-
-// DEFERRED COMMIT: how long the switch shows its new position before the mode change
-// reaches the page. Turning Pinyin on mounts the whole ReaderCpcdView (one cpcd per word)
-// synchronously, which blocks the main thread; committed at once, the thumb would jump
-// instead of sliding. MUI's switch slides its thumb and fades its track over
-// `theme.transitions.duration.shortest` (150ms — not overridden by ThemeContext's
-// MuiSwitch block); the extra margin lets the last frame paint before the heavy render.
-const SWITCH_ANIMATION_MS = 200;
+// How faded the pill sits while off (Text mode). The same 0.45 readerPillButtonSx uses for
+// a disabled pill — the pill is still tappable, it just recedes until switched on.
+const OFF_OPACITY = 0.45;
 
 interface ReaderDisplayToggleProps {
-    // The page's time-of-day look (ReaderDocumentPage → useTier2Look) — the labels' ink.
+    // The page's time-of-day look (ReaderDocumentPage → useTier2Look) — the off pill's surface + ink.
     look: Tier2Look;
     value: ReaderDisplayMode;
     onChange: (mode: ReaderDisplayMode) => void;
@@ -46,10 +37,14 @@ interface ReaderDisplayToggleProps {
 }
 
 function ReaderDisplayToggle({ look, value, onChange, className, hidden = false }: ReaderDisplayToggleProps) {
-    // DEFERRED COMMIT: the mode the switch already shows but has not yet handed to the
-    // page (null = none in flight). The switch and labels draw this optimistic value.
+    // DEFERRED COMMIT: the mode the pill already shows but has not yet handed to the page
+    // (null = none in flight). Turning Pinyin on mounts the whole ReaderCpcdView (one cpcd
+    // per word) synchronously, which blocks the main thread; committed in the tap's own
+    // render, the pill would sit unchanged until that work finished. So the pill paints its
+    // new state first, and the mode reaches the page on the frame after (double rAF = after
+    // the next paint).
     const [pendingMode, setPendingMode] = useState<ReaderDisplayMode | null>(null);
-    const commitTimerRef = useRef<number | null>(null);
+    const frameRef = useRef<number | null>(null);
     const shownMode = pendingMode ?? value;
     const pinyinOn = shownMode === "pinyin";
 
@@ -57,66 +52,44 @@ function ReaderDisplayToggle({ look, value, onChange, className, hidden = false 
     const onChangeRef = useRef(onChange);
     onChangeRef.current = onChange;
 
-    // Leaving the page mid-animation drops the pending change (nothing left to switch).
+    // Leaving the page mid-commit drops the pending change (nothing left to switch).
     useEffect(() => () => {
-        if (commitTimerRef.current !== null) window.clearTimeout(commitTimerRef.current);
+        if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
     }, []);
 
-    const pick = (mode: ReaderDisplayMode) => {
-        if (mode === shownMode) return;
-        if (commitTimerRef.current !== null) window.clearTimeout(commitTimerRef.current);
+    const toggle = () => {
+        const mode: ReaderDisplayMode = pinyinOn ? "text" : "pinyin";
+        if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
         setPendingMode(mode);
-        commitTimerRef.current = window.setTimeout(() => {
-            commitTimerRef.current = null;
-            // Same batch: the page's value becomes `mode` as the optimistic one clears,
-            // so the switch never flickers back. A flip straight back to the page's
-            // current value commits a no-op.
-            onChangeRef.current(mode);
-            setPendingMode(null);
-        }, SWITCH_ANIMATION_MS);
+        frameRef.current = window.requestAnimationFrame(() => {
+            frameRef.current = window.requestAnimationFrame(() => {
+                frameRef.current = null;
+                // Same batch: the page's value becomes `mode` as the optimistic one clears,
+                // so the pill never flickers back. A flip straight back to the page's
+                // current value commits a no-op.
+                onChangeRef.current(mode);
+                setPendingMode(null);
+            });
+        });
     };
 
-    const label = (mode: ReaderDisplayMode, text: string) => (
-        <Box
-            component="span"
-            className={`reader-display-toggle__label reader-display-toggle__label--${mode}`}
-            onClick={() => pick(mode)}
-            sx={{
-                fontFamily: FONTS.sans,
-                fontSize: SIZE.caption,
-                fontWeight: WEIGHT.semibold,
-                color: shownMode === mode ? look.ink : look.muted,
-                cursor: "pointer",
-                userSelect: "none",
-            }}
-        >
-            {text}
-        </Box>
-    );
-
     return (
-        <Box
-            className={`reader-display-toggle${className ? ` ${className}` : ""}`}
+        <Button
+            className={`reader-display-toggle${pinyinOn ? " reader-display-toggle--pinyin" : ""}${className ? ` ${className}` : ""}`}
             // Keep focus on the reading box (same as the dictionary keycap): a click here
             // would otherwise blur it and trip useTextSelection's blur → refocus loop.
             onMouseDown={(event) => event.preventDefault()}
+            onClick={toggle}
+            aria-pressed={pinyinOn}
+            aria-label="Show pinyin"
             sx={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 0.5,
+                ...readerPillButtonSx(look),
+                opacity: pinyinOn ? 1 : OFF_OPACITY,
                 visibility: hidden ? "hidden" : "visible",
             }}
         >
-            {label("text", "Text")}
-            <Switch
-                className="reader-display-toggle__switch"
-                checked={pinyinOn}
-                onChange={(event) => pick(event.target.checked ? "pinyin" : "text")}
-                inputProps={{ "aria-label": "Show pinyin" }}
-                sx={{ "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": { backgroundColor: PINYIN_ON_TRACK } }}
-            />
-            {label("pinyin", "Pinyin")}
-        </Box>
+            Pinyin
+        </Button>
     );
 }
 

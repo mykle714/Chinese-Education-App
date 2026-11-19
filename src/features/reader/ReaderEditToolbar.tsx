@@ -38,6 +38,8 @@ const ReaderEditToolbar: React.FC<{
     // Opens the icon picker (ReaderDocumentPage owns the dialog and the draft).
     onPickIcon: () => void;
 }> = ({ look, canUndo, canRedo, onUndo, onRedo, onCancel, onSave, saving, saveDisabled = false, iconId, onPickIcon }) => {
+    // Icon does not inherit `color` (it defaults to COLORS.iconColor), so each <Icon>
+    // below also takes `look.ink2` directly; this `color` covers the ripple only.
     const iconButtonSx = {
         color: look.ink2,
         // See CardEditToolbar.tsx: opts out of the ~300ms double-tap-zoom delay so
@@ -77,7 +79,7 @@ const ReaderEditToolbar: React.FC<{
                 disabled={!canUndo || saving}
                 sx={iconButtonSx}
             >
-                <Icon name="undo" size={20} />
+                <Icon name="undo" size={20} color={look.ink2} />
             </IconButton>
             <IconButton
                 className="reader-edit-toolbar__redo"
@@ -87,7 +89,7 @@ const ReaderEditToolbar: React.FC<{
                 disabled={!canRedo || saving}
                 sx={iconButtonSx}
             >
-                <Icon name="redo" size={20} />
+                <Icon name="redo" size={20} color={look.ink2} />
             </IconButton>
 
             {/* Document icon — outlined (the app's tappable-object rule, CLAUDE.md
@@ -122,7 +124,7 @@ const ReaderEditToolbar: React.FC<{
                         sx={{ width: 22, height: 22, objectFit: "contain", display: "block" }}
                     />
                 ) : (
-                    <Icon name="add_photo_alternate" size={18} className="reader-edit-toolbar__icon-placeholder" />
+                    <Icon name="add_photo_alternate" size={18} color={look.ink2} className="reader-edit-toolbar__icon-placeholder" />
                 )}
             </IconButton>
 

@@ -2,6 +2,7 @@ import { type ReactNode } from "react";
 import { Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import NodePageHeader from "../../components/NodePageHeader";
+import type { PageHeaderEditableTitle } from "../../components/PageHeader";
 import { usePageSlide } from "../../hooks/usePageSlide";
 import type { Tier2Look } from "../../timeOfDay/tier2Look";
 
@@ -59,6 +60,9 @@ interface ReaderDocumentSurfaceProps {
     // Header right slot: the Edit/Delete icon buttons
     // (docHeaderRightContent in ReaderDocumentPage).
     rightContent?: ReactNode;
+    // Set while the document editor is open: the header title becomes a text field
+    // (draftTitle in ReaderDocumentPage). Undefined = the static `title`.
+    editableTitle?: PageHeaderEditableTitle;
     children: ReactNode;
 }
 
@@ -67,6 +71,7 @@ const ReaderDocumentSurface: React.FC<ReaderDocumentSurfaceProps> = ({
     title,
     onBack,
     rightContent,
+    editableTitle,
     children,
 }) => {
     const { surfaceRef, style, exit } = usePageSlide({ axis: "x" });
@@ -81,7 +86,7 @@ const ReaderDocumentSurface: React.FC<ReaderDocumentSurfaceProps> = ({
             className="reader-document-surface"
             style={{ ...style, backgroundColor: look.ground }}
         >
-            <NodePageHeader title={title} onBack={handleBack} rightContent={rightContent} titleColor={look.ink} />
+            <NodePageHeader title={title} onBack={handleBack} rightContent={rightContent} titleColor={look.ink} editableTitle={editableTitle} />
             <Body className="reader-document-surface__body">{children}</Body>
         </Surface>
     );

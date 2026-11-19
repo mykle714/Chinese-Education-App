@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
 import NodePage from "../../components/NodePage";
 import { FooterSpacer } from "../../components/MobileFooter";
 import { useAuth } from "../../AuthContext";
@@ -25,11 +24,10 @@ import { useTier2Look } from "../../timeOfDay/useTier2Look";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { apiDelete, apiGet } from "../../api/http";
 import { newDocumentPath } from "./readerPaths";
-import { navigateBackOr } from "../../utils/navigateBack";
 
 // READER DOCUMENT LIST — the `/reader` NODE page (docs/LEAF_NODE_PAGES.md § Reader):
-// keeps the footer slab (Menu tab stays active), LEFT back
-// arrow → the previous page (else `/`, navigateBackOr), slides in from the right.
+// keeps the footer slab (Menu tab stays active), NO back arrow (the footer is the
+// way out — a lateral Menu destination, not a drill-in), slides in from the right.
 // A scrolling page: the list body is TextSidebar. Opening a document is a
 // real navigation to `/reader/:id` (ReaderDocumentPage.tsx), a footerless
 // NODE-style drill-in reached via `useSlideNavigate` — a routed cdp-style pair,
@@ -51,7 +49,6 @@ function ReaderPage() {
     // at night, like the Dictionary. Called ONCE here (it claims the CpcdPopup/status-bar
     // chrome) and passed down to every piece that paints a surface or text.
     const look = useTier2Look();
-    const navigate = useNavigate();
     const slideNavigate = useSlideNavigate();
     const { user, isAuthenticated } = useAuth();
 
@@ -166,7 +163,6 @@ function ReaderPage() {
     return (
         <NodePage
             title="Reader"
-            onBack={() => navigateBackOr(navigate, "/")}
             contentClassName="reader-page-root"
             surfaceColor={look.ground}
             headerTitleColor={look.ink}

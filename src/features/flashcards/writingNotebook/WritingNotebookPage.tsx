@@ -66,7 +66,7 @@ import { LEADING } from "../../../theme/scale";
  * one height. Two deliberate differences keep it from reading as a button:
  *   - RECTANGULAR corners (`NOTEBOOK_COUNT_RADIUS_PX`), not the chip's pill ends — the
  *     square also echoes the notebook's cells;
- *   - the count is MONO with tabular figures (a number, not a label), at the chip's type
+ *   - the count is `DATA_TYPE` (the sans with tabular figures — a number, not a label), at the chip's type
  *     size so it lines up with "Change".
  * Ink2 (`COLORS.iconColor`, the header icons' ink); the orange stays the flame's.
  * Doc: docs/WRITING_NOTEBOOK.md § "Sheet" (Counter bullet).

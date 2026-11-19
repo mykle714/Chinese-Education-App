@@ -25,8 +25,8 @@ export class TextController {
         return;
       }
 
-      // No title in the request: TextService derives it from the content.
-      const { content, language, iconId, kind } = req.body;
+      // `title` is optional: absent or blank, TextService derives it from the content.
+      const { content, language, iconId, kind, title } = req.body;
 
       // Content can be empty string for new documents, but must be present
       if (content === undefined || content === null) {
@@ -43,7 +43,9 @@ export class TextController {
         // Optional icons8 id (texts."iconId"); shape-checked in TextService.
         iconId,
         // Optional Reader collection (texts.kind, migration 194); validated in TextService.
-        kind
+        kind,
+        // Optional typed title (the draft's header field); normalized in TextService.
+        title
       };
 
       const newText = await this.textService.createText(userId, textData);

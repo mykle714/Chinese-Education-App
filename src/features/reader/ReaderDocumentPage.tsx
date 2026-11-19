@@ -8,7 +8,7 @@ import { useAuth } from "../../AuthContext";
 import { API_BASE_URL } from "../../constants";
 import { apiPost, apiPut, ApiError } from "../../api/http";
 import { NEW_DOCUMENT_ID } from "./readerPaths";
-import type { TextKind } from "../../../server/contracts/wire";
+import { DOCUMENT_TITLE_MAX_LENGTH, type TextKind } from "../../../server/contracts/wire";
 import VocabDisplayCard from "../../components/VocabDisplayCard";
 import { useVocabularyUpdate } from "../../contexts/VocabularyUpdateContext";
 import { processDocumentForTokens } from "../../utils/tokenUtils";
@@ -27,10 +27,15 @@ import TextArea from "./TextArea";
 import ReaderEditToolbar from "./ReaderEditToolbar";
 import DeleteDocumentDialog from "./DeleteDocumentDialog";
 import IconPickerDialog from "../../components/IconPickerDialog";
-import { readerMutedTextSx } from "./readerStyles";
+import { readerMutedTextSx, readerSearchColors, readerSelectionColor } from "./readerStyles";
 import ReaderCpcdView from "./ReaderCpcdView";
 import ReaderDisplayToggle from "./ReaderDisplayToggle";
 import ReaderReadAloudButton from "./ReaderReadAloudButton";
+import ReaderSearchKey from "./ReaderSearchKey";
+import ReaderSearchBar from "./ReaderSearchBar";
+import { useReaderSearch } from "./useReaderSearch";
+import type { ReaderSearchMatch } from "./readerSearch";
+import { scrollSelectionIntoView } from "./textSelectionUtils";
 import { ReaderAudioChip } from "../../components/AudioModeChip";
 import { useReaderAudioSettings } from "./useReaderAudioSettings";
 import { useReaderAudioPreload } from "./useReaderAudioPreload";
@@ -40,7 +45,7 @@ import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings
 
 import { useVocabularyProcessing } from "../../hooks/useVocabularyProcessing";
 import { useReaderContentEditor } from "./useReaderContentEditor";
-import { buildReaderDictMap, buildExcludeSet, buildReaderPronunciationMap, computeSegmentSpans } from "./documentSegmentation";
+import { buildReaderDictMap, buildExcludeSet, buildReaderPronunciationMap, computeSegmentSpans, type SpanRange } from "./documentSegmentation";
 import { useTextSelection } from "./useTextSelection";
 import { useEnglishTranslations } from "./useEnglishTranslations";
 import { useReaderSettings } from "./useReaderSettings";
@@ -65,6 +70,8 @@ const EDIT_TOOLBAR_ANIM_MS = 300;
 // header controls, px (they otherwise spread evenly from the face's top edge to the divider).
 const KEYCAP_ACTIONS_GAP_PX = 6;
 const EDIT_TOOLBAR_ANIM_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
+// The shared "no tiebreak switches" value, so the span memo keeps its identity.
+const NO_SEGMENT_OVERRIDES: SpanRange[] = [];
 
 // READER OPEN-DOCUMENT PAGE — routed at `/reader/:id`, a footerless NODE-style
 // drill-in from the `/reader` list (docs/LEAF_NODE_PAGES.md § Reader). Fetches its
@@ -107,8 +114,10 @@ function ReaderDocumentPage() {
     // bottom so the box ends at the keyboard's top edge instead of behind it. Both
     // ride the keyboard's own slide curve, so the box goes up WITH the keyboard and
     // comes back down with it (the provider zeroes the inset as the exit starts).
-    // Keyed on the inset, not just on edit mode: dismissing the keyboard mid-edit
-    // brings the header back while the editor stays open.
+    // The fold itself is ALSO held shut for the whole of edit mode (owner's call
+    // 2026-11-18): dismissing the keyboard mid-edit — or a toolbar tap that blurs the
+    // field on touch — must not bring the rdb back down while the editor is open.
+    // The bottom keyboard clearance still follows the inset.
     const keyboardInset = useKeyboardInset();
     const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
 
@@ -127,6 +136,13 @@ function ReaderDocumentPage() {
     // Save and simply dropped by Cancel. Not on the undo/redo stack — that history is the
     // text's typing bursts (useReaderContentEditor); re-picking is the icon's undo.
     const [draftIconId, setDraftIconId] = useState<string | null>(null);
+    // DOCUMENT TITLE (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Editing). Also part of the
+    // edit draft: while the editor is open the header title is a text field bound to
+    // this (ReaderDocumentSurface `editableTitle`). Seeded with the saved title on Edit,
+    // and with "" on a new draft — whose placeholder then shows "New Document" and whose
+    // title the server derives from the content unless the learner types one. Sent with
+    // Save only when it is non-blank and changed (titleToSave); Cancel drops it.
+    const [draftTitle, setDraftTitle] = useState("");
     const [iconPickerOpen, setIconPickerOpen] = useState(false);
 
     const vocabularyProcessing = useVocabularyProcessing();
@@ -150,6 +166,7 @@ function ReaderDocumentPage() {
             setText(blankDraft(user?.selectedLanguage, draftKind));
             contentEditor.enterEditMode('');
             setDraftIconId(null);
+            setDraftTitle("");
             setLoading(false);
             return;
         }
@@ -183,6 +200,17 @@ function ReaderDocumentPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id, user?.id]);
 
+    // TIEBREAK SWITCHES (docs/READER_SEGMENTATION.md § "Tiebreak alternatives"): the
+    // alternatives the learner switched to in the Pinyin view, forced into the gsa below.
+    // Page-session only, and tagged with the content they were made against so an edit
+    // (or another document) drops them rather than forcing stale offsets.
+    const [segmentOverrides, setSegmentOverrides] = useState<{ content: string; ranges: SpanRange[] }>(
+        { content: "", ranges: [] }
+    );
+    const activeOverrides = text?.content && segmentOverrides.content === text.content
+        ? segmentOverrides.ranges
+        : NO_SEGMENT_OVERRIDES;
+
     // GSA word spans for tap/arrow navigation (docs/READER_SEGMENTATION.md).
     const segmentSpans = useMemo(() => {
         if (!text?.content) return [];
@@ -191,8 +219,8 @@ function ReaderDocumentPage() {
             vocabularyProcessing.loadedPersonalCards
         );
         const excludeSet = buildExcludeSet(vocabularyProcessing.loadedDictionaryCards);
-        return computeSegmentSpans(text.content, dictMap, excludeSet);
-    }, [text?.content, vocabularyProcessing.loadedDictionaryCards, vocabularyProcessing.loadedPersonalCards]);
+        return computeSegmentSpans(text.content, dictMap, excludeSet, activeOverrides);
+    }, [text?.content, vocabularyProcessing.loadedDictionaryCards, vocabularyProcessing.loadedPersonalCards, activeOverrides]);
 
     // Pinyin display mode (ReaderCpcdView): the pinyin under each word, and the device's
     // "Color pinyin by tone" preference (Settings → Display) for its tint.
@@ -228,11 +256,14 @@ function ReaderDocumentPage() {
         textSelection.handleTextSelectionChange(event);
     }, [textSelection]);
 
-    // Selection tint: a touch stronger at night so it reads on the slate reading card.
-    // Keyed on the time-of-day look (the card's colour), not the Settings theme.
+    // Selection tint: primary blue by day, the brighter bluMk mark tier at night so it
+    // reads on the slate reading card (readerStyles → readerSelectionColor).
     const selectionColors = useMemo(() => ({
-        backgroundColor: theme.palette.primary.main + (look.dark ? '40' : '30'), // 25% / ~19% opacity
+        backgroundColor: readerSelectionColor(look.dark, theme.palette.primary.main),
     }), [look.dark, theme.palette.primary.main]);
+    // The search bar's match washes — yellow built like the blue selection above
+    // (readerStyles → readerSearchColors); handed to both reading views.
+    const searchColors = useMemo(() => readerSearchColors(look.dark), [look.dark]);
 
     // Vocabulary update listeners: keep loadedPersonalCards in sync with entries
     // added/edited/removed elsewhere in the app while this document is open.
@@ -338,6 +369,90 @@ function ReaderDocumentPage() {
     // It also switches the tap overlay to scroll the cpcd box and swallow long-presses.
     const showCpcd = readerSettings.displayMode === 'pinyin' && !contentEditor.editMode;
 
+    // SEARCH (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Search"): the strip's search key
+    // opens ReaderSearchBar over the whole strip. Matches are yellow in either display
+    // mode (ReaderSearchHighlights / ReaderCpcdView); in the Pinyin mode of a Chinese
+    // document the query is also matched against the pinyin (readerSearch.ts).
+    // The CURRENT match is also SELECTED (owner's call 2026-11-18) — the keycap shows it
+    // and Read starts from it — without taking focus from the search field, so its
+    // keyboard stays up while stepping; closing the bar refocuses the reading box on it.
+    const searchInputRef = useRef<HTMLInputElement | null>(null);
+    const searchKeyRef = useRef<HTMLButtonElement | null>(null);
+    const displayStripRowRef = useRef<HTMLDivElement | null>(null);
+    // The search key's box in the strip row when the bar opened — where its grow starts.
+    const [searchOrigin, setSearchOrigin] = useState<{ left: number; right: number } | null>(null);
+    const { selectRange, getRecordedSelection, inputRef: readingBoxRef } = textSelection;
+
+    // Tap on a tiebreak alternative (ReaderCpcdView's yellow cells) → make it the word.
+    // Two cases, told apart by whether the alternative overlaps a switch already made:
+    //   - it does → it is the original winner shown on a forced span: undo that switch;
+    //   - it doesn't → it lost a tiebreak: force it (forced spans split the run, so a
+    //     loser can never straddle an existing switch).
+    // Then select it. selectRange never auto-expands, so selecting against the spans of
+    // this render is safe; the cpcd highlight finds the span on the next render.
+    const switchToAlternative = useCallback((alternative: SpanRange) => {
+        const content = text?.content;
+        if (!content) return;
+        setSegmentOverrides((previous) => {
+            const ranges = previous.content === content ? previous.ranges : [];
+            const overlapping = ranges.filter((r) => r.start < alternative.end && alternative.start < r.end);
+            const next = overlapping.length > 0
+                ? ranges.filter((r) => !overlapping.includes(r))
+                : [...ranges, { start: alternative.start, end: alternative.end, text: alternative.text }];
+            return { content, ranges: next };
+        });
+        selectRange(alternative.start, alternative.end);
+    }, [text?.content, selectRange]);
+    const showCpcdRef = useRef(showCpcd);
+    showCpcdRef.current = showCpcd;
+    const handleCurrentMatch = useCallback((match: ReaderSearchMatch) => {
+        selectRange(match.start, match.end, { focus: false });
+        // The Text mode's textarea does not scroll to a programmatic selection by itself;
+        // the Pinyin view keeps its current match in view on its own.
+        const textarea = readingBoxRef.current;
+        if (textarea && !showCpcdRef.current) scrollSelectionIntoView(textarea, match);
+    }, [selectRange, readingBoxRef]);
+    // The recorded selection, not the textarea's `selectionStart`: while the search field
+    // has focus a step only RECORDS the match (selectRange `focus: false`).
+    const getSearchAnchor = useCallback(() => getRecordedSelection().start, [getRecordedSelection]);
+    const search = useReaderSearch({
+        content: text?.content ?? '',
+        spans: segmentSpans,
+        pronunciations,
+        matchPinyin: showCpcd && text?.language === 'zh',
+        getAnchorOffset: getSearchAnchor,
+        onCurrentMatch: handleCurrentMatch,
+    });
+    const { openSearch: openSearchState, closeSearch: closeSearchState } = search;
+    const handleOpenSearch = useCallback(() => {
+        const key = searchKeyRef.current?.getBoundingClientRect();
+        const row = displayStripRowRef.current?.getBoundingClientRect();
+        setSearchOrigin(key && row ? { left: key.left - row.left, right: row.right - key.right } : null);
+        openSearchState();
+    }, [openSearchState]);
+    const { selectSpanAtOffset } = textSelection;
+    const handleCloseSearch = useCallback(() => {
+        // Read before closing: the recorded range is the current match (or wherever a tap
+        // stepped to while the bar was up).
+        const { start, end } = getRecordedSelection();
+        closeSearchState();
+        // Back to the reading box (focusTextArea restores the recorded range)...
+        focusTextArea(true);
+        // ...then select the WORD the reader was on (owner's call 2026-11-18). A match may
+        // be part of a word (好 in 你好, "zhi" in 没治) or span several, and a range that is
+        // not exactly one gsa span highlights nothing in the Pinyin view. A match starting
+        // on punctuation / whitespace (in no word) keeps its own range; a collapsed caret
+        // (no match was ever selected) is left alone.
+        if (end > start) selectSpanAtOffset(start);
+    }, [getRecordedSelection, closeSearchState, focusTextArea, selectSpanAtOffset]);
+    // A tap on the reading area while the search field has focus: give the reading box
+    // its focus back first (dropping the search keyboard), so the tap steps / jumps from
+    // the current match and the keycap follows — the textarea only reports selection
+    // changes while focused. The bar and its highlights stay up.
+    const handleTapRegionPointerDown = useCallback(() => {
+        if (searchInputRef.current && document.activeElement === searchInputRef.current) focusTextArea(true);
+    }, [focusTextArea]);
+
     // READ ALOUD (useReaderReadAloud): the display strip's play button reads from the caret,
     // one clause per clip, moving the word selection along with the audio. While it plays,
     // any tap, click or key press stops it AND still does its own job (the hook's window
@@ -392,13 +507,16 @@ function ReaderDocumentPage() {
     // that changing an audio mode never makes a sound (useTTS → wasAutoplayOnRef).
     // Stands down while the read-aloud steps the selection (it is already speaking) and in
     // edit mode. The latest values are read through a ref so they need not be deps.
+    // Also silent while the search field has focus: typing a query re-selects the first
+    // match on every keystroke, and each one would speak.
+    const searchFieldFocused = () => !!searchInputRef.current && document.activeElement === searchInputRef.current;
     const tapToHearRef = useRef({ autoplay: readerAudio.autoplay, readAloudPlaying: readAloud.playing, editMode: contentEditor.editMode, speak: wordActions.autoSpeakSelected });
     tapToHearRef.current = { autoplay: readerAudio.autoplay, readAloudPlaying: readAloud.playing, editMode: contentEditor.editMode, speak: wordActions.autoSpeakSelected };
     const { start: selectionStart, end: selectionEnd } = textSelection.selectionRange;
     useEffect(() => {
         if (selectionStart === selectionEnd) return;
         const { autoplay, readAloudPlaying, editMode, speak } = tapToHearRef.current;
-        if (!autoplay || readAloudPlaying || editMode) return;
+        if (!autoplay || readAloudPlaying || editMode || searchFieldFocused()) return;
         speak();
     }, [selectionStart, selectionEnd]);
     // PRELOADING for tap-to-hear (useReaderAudioPreload): the server synthesizes the
@@ -508,14 +626,27 @@ function ReaderDocumentPage() {
 
     // Edit is a toggle: pressing it opens the inline content editor (auto-select
     // off, plain editable textarea, drop-down ReaderEditToolbar) seeded with the
-    // current content. Only the content is editable; the title is set once, on
-    // create (server/utils/documentTitle.ts), and there is currently no rename UI.
+    // current content, and turns the header title into a text field (draftTitle).
     const handleEdit = useCallback(() => {
         if (!text) return;
         setEditSaveError(null);
+        // The editor replaces the reading box; the search bar would have nothing to search.
+        closeSearchState();
         contentEditor.enterEditMode(text.content);
         setDraftIconId(text.iconId ?? null);
-    }, [text, contentEditor]);
+        setDraftTitle(text.title);
+    }, [text, contentEditor, closeSearchState]);
+
+    // The title to send with Save, or undefined to send none. A blank field never
+    // reaches the server (it rejects an empty title): on a new draft that means "derive
+    // it from the content", on a saved document "keep the current title". An unchanged
+    // title is not sent either, so a content-only edit stays a content-only PUT.
+    const titleToSave = useMemo(() => {
+        const trimmed = draftTitle.trim();
+        if (!trimmed) return undefined;
+        if (!isNewDraft && trimmed === text?.title) return undefined;
+        return trimmed;
+    }, [draftTitle, isNewDraft, text?.title]);
 
     // Cancelling a never-saved draft leaves the page: there is no reading view of
     // an empty, nonexistent document to fall back to.
@@ -529,7 +660,7 @@ function ReaderDocumentPage() {
     }, [contentEditor, isNewDraft, navigate]);
 
     // First Save of a draft = create. The server derives the title from the
-    // content; the URL is then replaced (not pushed) so Back returns to the list,
+    // content unless one was typed into the header; the URL is then replaced (not pushed) so Back returns to the list,
     // not to an empty draft.
     const saveNewDraft = useCallback(async () => {
         const created = await apiPost<Text>('/api/texts', {
@@ -537,13 +668,14 @@ function ReaderDocumentPage() {
             language: user?.selectedLanguage || 'zh',
             iconId: draftIconId,
             kind: draftKind,
+            title: titleToSave,
         });
         await vocabularyProcessing.processDocumentVocabulary(created);
         setText(created);
         contentEditor.exitEditMode();
         justCreatedIdRef.current = created.id;
         navigate(`/reader/${created.id}`, { replace: true });
-    }, [contentEditor, user?.selectedLanguage, draftIconId, draftKind, vocabularyProcessing, navigate]);
+    }, [contentEditor, user?.selectedLanguage, draftIconId, draftKind, titleToSave, vocabularyProcessing, navigate]);
 
     const handleSaveEdit = useCallback(async () => {
         if (!text) return;
@@ -557,7 +689,8 @@ function ReaderDocumentPage() {
             }
             // `iconId: null` is sent on purpose when the icon was removed — the server
             // treats null as "clear" and only an absent field as "leave as is".
-            const updated = await apiPut<Text>(`/api/texts/${text.id}`, { content: contentEditor.draft, iconId: draftIconId });
+            // `title` is omitted (undefined drops out of the JSON) unless it changed.
+            const updated = await apiPut<Text>(`/api/texts/${text.id}`, { content: contentEditor.draft, iconId: draftIconId, title: titleToSave });
             await vocabularyProcessing.processDocumentVocabularyIncremental(text, updated);
             setText(updated);
             contentEditor.exitEditMode();
@@ -570,7 +703,7 @@ function ReaderDocumentPage() {
             setSavingEdit(false);
         }
         // No `token` dep: apiPut/apiPost read the header at call time (CLAUDE.md ⛔ rule).
-    }, [text, isNewDraft, saveNewDraft, contentEditor, draftIconId, vocabularyProcessing]);
+    }, [text, isNewDraft, saveNewDraft, contentEditor, draftIconId, titleToSave, vocabularyProcessing]);
 
     const handleDelete = useCallback(() => {
         setDeleteDialogOpen(true);
@@ -580,11 +713,13 @@ function ReaderDocumentPage() {
         navigate("/reader");
     }, [navigate]);
 
-    // See KEYBOARD LIFT above. Reading mode suppresses both keyboards, so the inset
-    // is only ever non-zero here while editing; the editMode gate just makes that
-    // explicit.
-    const editKeyboardInset = contentEditor.editMode ? keyboardInset : 0;
-    const keyboardLifted = editKeyboardInset > 0;
+    // See KEYBOARD LIFT above. The reading box suppresses both keyboards, so a keyboard
+    // is up only for the editor or for the search field; the gate makes that explicit.
+    // Searching lifts the same way (owner's call 2026-11-18): the title block and keycap
+    // fold away and the text box ends at the keyboard — but the display strip, which
+    // holds the search bar, stays (see the strip's own Collapse below).
+    const liftKeyboardInset = contentEditor.editMode || search.open ? keyboardInset : 0;
+    const keyboardLifted = liftKeyboardInset > 0;
     // The fold is a Collapse whose `in` is "NOT lifted", so its EXIT is the
     // keyboard arriving and its ENTER the keyboard leaving — hence the swap.
     const liftTimeout = prefersReducedMotion
@@ -633,6 +768,18 @@ function ReaderDocumentPage() {
             // 22px heading above the dictionary card, under a header that said "Reader").
             // "Reader" only while there is no document yet (loading / not found).
             title={text?.title ?? "Reader"}
+            // In edit mode the title is a text field instead (draftTitle). The placeholder
+            // is the saved title (a new draft's "New Document"), so clearing the field shows
+            // what Save will keep.
+            editableTitle={contentEditor.editMode && text ? {
+                value: draftTitle,
+                onChange: setDraftTitle,
+                placeholder: text.title,
+                maxLength: DOCUMENT_TITLE_MAX_LENGTH,
+                ariaLabel: "Document title",
+                lineColor: look.outline,
+                placeholderColor: look.muted,
+            } : undefined}
             onBack={handleBack}
             rightContent={docHeaderRightContent}
         >
@@ -677,14 +824,17 @@ function ReaderDocumentPage() {
                     // Keyboard clearance (KEYBOARD LIFT): the base gutter (the `p`
                     // above: 16px / 24px) plus the keyboard's height, travelling on
                     // its slide curve.
-                    paddingBottom: { xs: `${16 + editKeyboardInset}px`, sm: `${24 + editKeyboardInset}px` },
-                    transition: transitionForInset(editKeyboardInset),
+                    paddingBottom: { xs: `${16 + liftKeyboardInset}px`, sm: `${24 + liftKeyboardInset}px` },
+                    transition: transitionForInset(liftKeyboardInset),
                 }}>
-                    {/* Folds away while a keyboard is up in edit mode, lifting the
-                    text box to the top of the page (KEYBOARD LIFT). */}
+                    {/* Folds away for the whole of edit mode — keyboard up or not
+                    (owner's call 2026-11-18: a toolbar tap that blurs the field and drops
+                    the keyboard must not bring the rdb back down mid-edit) — and while the
+                    search keyboard is up, lifting the text box to the top of the page
+                    (KEYBOARD LIFT). */}
                     <Collapse
                         className="reader-document-lead"
-                        in={!keyboardLifted}
+                        in={!keyboardLifted && !contentEditor.editMode}
                         timeout={liftTimeout}
                         easing={liftEasing}
                         sx={{ flexShrink: 0 }}
@@ -705,54 +855,111 @@ function ReaderDocumentPage() {
                                 renderHeaderActions={renderKeycapActions}
                             />
                         </Box>
+                    </Collapse>
 
+                    {/* The strip folds with the keycap for the whole of edit mode (every
+                    control in it is hidden while editing, so unfolded it would only leave
+                    an empty gap above the text box). The search bar lives in it, so it
+                    stays put above the text box while the search keyboard is up. */}
+                    <Collapse
+                        className="reader-document-strip-fold"
+                        in={!contentEditor.editMode}
+                        timeout={liftTimeout}
+                        easing={liftEasing}
+                        sx={{ flexShrink: 0 }}
+                    >
                         {/* The display strip: a row under the keycap — the read-aloud play
-                        button (ReaderReadAloudButton) and the tap-to-hear audio chip
-                        (ReaderAudioChip) at its left edge, the Text ⇄ Pinyin
-                        switch (ReaderDisplayToggle) at its right. Both are hidden — not
-                        removed — while editing, which is always the plain field, so the text
-                        box doesn't jump. */}
+                        button (ReaderReadAloudButton), the search key (ReaderSearchKey) and
+                        the tap-to-hear audio chip (ReaderAudioChip) at its left edge, the
+                        Pinyin pill (ReaderDisplayToggle) at its right. All are
+                        hidden — not removed — while editing (always the plain field) and
+                        while the search bar lies over the row, so nothing jumps. */}
                         <Box
                             className="reader-document-display-strip"
-                            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1 }}
+                            // A press anywhere on the strip that isn't a text field keeps
+                            // focus where it is — the open search field's keyboard stays up
+                            // (so the rdb stays folded: KEYBOARD LIFT) when the press lands
+                            // between the bar's keys or on the strip's padding; with the bar
+                            // closed, the reading box keeps its focus. Same rule as the edit
+                            // toolbar (ReaderEditToolbar → onMouseDown).
+                            onMouseDown={(event) => {
+                                const target = event.target as HTMLElement;
+                                if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') event.preventDefault();
+                            }}
+                            sx={{ pb: 1 }}
                         >
-                            {/* The audio controls, grouped at the left: Read, then the
-                            tap-to-hear chip. */}
+                            {/* The row itself: positioned so the open search bar lies over
+                            exactly it (not the strip's bottom padding). */}
                             <Box
-                                className="reader-document-display-strip__audio"
-                                sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+                                ref={displayStripRowRef}
+                                className="reader-document-display-strip__row"
+                                sx={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
                             >
-                                <ReaderReadAloudButton
-                                    look={look}
-                                    playing={readAloud.playing}
-                                    onStart={readAloud.start}
-                                    onStop={readAloud.stop}
-                                    disabled={segmentSpans.length === 0}
-                                    hidden={contentEditor.editMode}
-                                />
-                                {/* preventDefault on mousedown keeps focus on the reading
-                                box (as the Read pill and the switch do), so a desktop click
-                                doesn't trip the blur → refocus loop. */}
+                                {/* The left group: Read, the search key, then the tap-to-hear
+                                chip (owner's call 2026-11-18: search between Read and the chip). */}
                                 <Box
-                                    className="reader-document-audio-chip-wrapper"
-                                    onMouseDown={(event) => event.preventDefault()}
-                                    sx={{ display: 'flex', visibility: contentEditor.editMode ? 'hidden' : 'visible' }}
+                                    className="reader-document-display-strip__audio"
+                                    sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
                                 >
-                                    <ReaderAudioChip
-                                        className="reader-document-audio-chip"
-                                        ink={look.ink2}
-                                        mode={readerAudio.mode}
-                                        onCycle={readerAudio.cycleMode}
+                                    <ReaderReadAloudButton
+                                        look={look}
+                                        playing={readAloud.playing}
+                                        onStart={readAloud.start}
+                                        onStop={readAloud.stop}
+                                        disabled={segmentSpans.length === 0}
+                                        hidden={contentEditor.editMode || search.open}
                                     />
+                                    <ReaderSearchKey
+                                        look={look}
+                                        className="reader-document-search-key"
+                                        buttonRef={searchKeyRef}
+                                        icon="search"
+                                        label="Find in document"
+                                        onClick={handleOpenSearch}
+                                        disabled={!text.content}
+                                        hidden={contentEditor.editMode || search.open}
+                                    />
+                                    {/* preventDefault on mousedown keeps focus on the reading
+                                    box (as the Read pill and the switch do), so a desktop click
+                                    doesn't trip the blur → refocus loop. */}
+                                    <Box
+                                        className="reader-document-audio-chip-wrapper"
+                                        onMouseDown={(event) => event.preventDefault()}
+                                        sx={{ display: 'flex', visibility: contentEditor.editMode || search.open ? 'hidden' : 'visible' }}
+                                    >
+                                        <ReaderAudioChip
+                                            className="reader-document-audio-chip"
+                                            // `look.ink`, the Read pill's text ink (readerPillButtonSx), not the
+                                            // secondary `ink2` other chips use: the two sit side by side and
+                                            // letter alike (owner's call 2026-11-18).
+                                            ink={look.ink}
+                                            mode={readerAudio.mode}
+                                            onCycle={readerAudio.cycleMode}
+                                        />
+                                    </Box>
                                 </Box>
+                                <ReaderDisplayToggle
+                                    look={look}
+                                    className="reader-document-display-mode-toggle"
+                                    value={readerSettings.displayMode}
+                                    onChange={readerSettings.setDisplayMode}
+                                    hidden={contentEditor.editMode || search.open}
+                                />
+                                {search.open && !contentEditor.editMode && (
+                                    <ReaderSearchBar
+                                        look={look}
+                                        query={search.query}
+                                        onQueryChange={search.setQuery}
+                                        matchCount={search.matches.length}
+                                        currentIndex={search.currentIndex}
+                                        onStep={search.step}
+                                        onClose={handleCloseSearch}
+                                        placeholder={showCpcd && text.language === 'zh' ? "Find text or pinyin" : "Find in text"}
+                                        origin={searchOrigin}
+                                        inputRef={searchInputRef}
+                                    />
+                                )}
                             </Box>
-                            <ReaderDisplayToggle
-                                look={look}
-                                className="reader-document-display-mode-toggle"
-                                value={readerSettings.displayMode}
-                                onChange={readerSettings.setDisplayMode}
-                                hidden={contentEditor.editMode}
-                            />
                         </Box>
                     </Collapse>
 
@@ -772,6 +979,9 @@ function ReaderDocumentPage() {
                             editMode={contentEditor.editMode}
                             draftContent={contentEditor.draft}
                             onDraftChange={contentEditor.handleDraftChange}
+                            searchMatches={search.open ? search.matches : undefined}
+                            currentMatchIndex={search.currentIndex}
+                            searchColors={searchColors}
                             cpcdView={showCpcd ? (
                                 <ReaderCpcdView
                                     content={text.content}
@@ -782,9 +992,13 @@ function ReaderDocumentPage() {
                                     highlightColor={selectionColors.backgroundColor}
                                     showPinyinColor={showPinyinColor}
                                     onSelectRange={textSelection.selectRange}
+                                    onSwitchToAlternative={switchToAlternative}
                                     scrollRef={cpcdScrollRef}
                                     isAutoScrollPaused={readAloud.isFollowPaused}
                                     inkColor={look.ink}
+                                    searchMatches={search.open ? search.matches : undefined}
+                                    currentMatchIndex={search.currentIndex}
+                                    searchColors={searchColors}
                                 />
                             ) : undefined}
                         />
@@ -796,12 +1010,13 @@ function ReaderDocumentPage() {
                         {!contentEditor.editMode && (
                             <Box
                                 className="reader-page-tap-region"
+                                onPointerDownCapture={handleTapRegionPointerDown}
                                 sx={{
                                     position: 'absolute',
                                     top: 0,
                                     left: { xs: -16, sm: -24 },
                                     right: { xs: -16, sm: -24 },
-                                    bottom: { xs: -(16 + editKeyboardInset), sm: -(24 + editKeyboardInset) },
+                                    bottom: { xs: -(16 + liftKeyboardInset), sm: -(24 + liftKeyboardInset) },
                                     // Only a positioning frame: the overlay inside re-enables
                                     // pointers. On desktop the overlay renders nothing, and the
                                     // frame must not swallow clicks meant for the textarea.
@@ -871,7 +1086,8 @@ function ReaderDocumentPage() {
 
 /**
  * The in-memory stand-in for `/reader/new` until its first Save. Only the fields
- * the page renders matter (TextHeader: the title); the id is the
+ * the page renders matter (the header title, which is also the title field's
+ * placeholder while editing); the id is the
  * NEW_DOCUMENT_ID sentinel the page checks for.
  */
 function blankDraft(language: Text['language'] | undefined, kind: TextKind): Text {

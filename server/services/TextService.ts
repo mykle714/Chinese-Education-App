@@ -3,7 +3,7 @@ import { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
 import { Text, TextCreateData, TextUpdateData } from '../types/index.js';
 import { ValidationError, NotFoundError } from '../types/dal.js';
 import type { ITextDAL } from '../dal/interfaces/ITextDAL.js';
-import { TEXT_KINDS } from '../contracts/wire.js';
+import { DOCUMENT_TITLE_MAX_LENGTH, TEXT_KINDS } from '../contracts/wire.js';
 import { sanitizeDocumentContent } from '../utils/sanitizeContent.js';
 import { deriveDocumentTitle, documentTitleSource } from '../utils/documentTitle.js';
 import {
@@ -35,9 +35,10 @@ export class TextService {
   ) {}
 
   /**
-   * Create a new user document. There is no title input: the Reader creates a
-   * document on the first Save of a blank draft, and the title is derived from the
-   * content (deriveTitle). Renaming afterwards goes through updateText.
+   * Create a new user document. The Reader creates a document on the first Save of a
+   * blank draft. Its title is the one typed into the draft's header field when there is
+   * one (`textData.title`, normalizeTitle), otherwise derived from the content
+   * (deriveTitle). Renaming afterwards goes through updateText.
    */
   async createText(userId: string, textData: Omit<TextCreateData, 'userId'>): Promise<Text> {
     // Business validation
@@ -70,8 +71,12 @@ export class TextService {
 
     // Defense-in-depth: neutralize control chars / HTML in the stored body.
     const safeContent = sanitizeDocumentContent(textData.content);
-    // Derived from the sanitized body, so the title can't carry what the body can't.
-    const title = await this.deriveTitle(safeContent, language);
+    // A typed title is normalized like a rename; a blank or absent one is derived from
+    // the sanitized body, so the title can't carry what the body can't.
+    const typedTitle = typeof textData.title === 'string' && textData.title.trim().length > 0
+      ? this.normalizeTitle(textData.title)
+      : undefined;
+    const title = typedTitle ?? await this.deriveTitle(safeContent, language);
 
     // id and createdAt are filled by Postgres defaults (uuid_generate_v4, now()).
     const created = await this.textDAL.insertUserText({
@@ -127,7 +132,8 @@ export class TextService {
 
     // Language is immutable after creation - cannot be updated (validateUpdateData).
     const updated = await this.textDAL.updateFields(textId, {
-      title: updateData.title?.trim(),
+      // Normalized (control chars stripped, whitespace collapsed) like a typed create title.
+      title: updateData.title !== undefined ? this.normalizeTitle(updateData.title) : undefined,
       // Defense-in-depth: neutralize control chars / HTML before storing.
       content: updateData.content !== undefined ? sanitizeDocumentContent(updateData.content) : undefined,
       // Counted on the RAW content, as createText does. `!== undefined` (not truthiness),
@@ -311,18 +317,35 @@ export class TextService {
   }
 
   /**
+   * A learner-typed document title, made safe to store: control characters stripped
+   * (sanitizeDocumentContent) and every run of whitespace, newlines included, collapsed
+   * to one space — a title is a single line in the header and on the list cards.
+   * Throws ValidationError when the input is not a string, is blank, or exceeds
+   * DOCUMENT_TITLE_MAX_LENGTH. Used by createText (a typed draft title) and updateText
+   * (a rename from the Reader's editable header title, features/reader/ReaderDocumentPage.tsx).
+   * Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Editing.
+   */
+  private normalizeTitle(raw: unknown): string {
+    if (typeof raw !== 'string') {
+      throw new ValidationError('Title must be text');
+    }
+    const title = sanitizeDocumentContent(raw).replace(/\s+/g, ' ').trim();
+    if (title.length === 0) {
+      throw new ValidationError('Title cannot be empty');
+    }
+    if (title.length > DOCUMENT_TITLE_MAX_LENGTH) {
+      throw new ValidationError(`Title is too long (maximum ${DOCUMENT_TITLE_MAX_LENGTH} characters)`);
+    }
+    return title;
+  }
+
+  /**
    * Validate text data for updates
    */
   private validateUpdateData(data: TextUpdateData): void {
-    if (data.title !== undefined) {
-      if (!data.title || data.title.trim().length === 0) {
-        throw new ValidationError('Title cannot be empty');
-      }
-      
-      if (data.title.trim().length > 200) {
-        throw new ValidationError('Title is too long (maximum 200 characters)');
-      }
-    }
+    // Throws on a non-string, blank or over-long title; the result is discarded here
+    // and recomputed when the update is stored.
+    if (data.title !== undefined) this.normalizeTitle(data.title);
     
     if (data.content !== undefined && data.content.length > 50000) {
       throw new ValidationError('Content is too long (maximum 50,000 characters)');

@@ -1439,8 +1439,8 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
   family: size, weight, case and tracking stay as each control defines them. The face ships
   one weight, so semibold and bold labels are browser-synthesised. The pills get it through
   `FlashcardsLearnPage` → `towerPlatePillSx`. acp and game plates keep their own faces. The header title stays in `FONTS.sans` and the
-  minute-points count in `DATA_TYPE` (sans, tabular figures). The audio chip is 975 Maru too, but through the shared
-  outlined skin (`outlinedChipSx`) rather than a tower-only override (below).
+  minute-points count in `DATA_TYPE` (sans, tabular figures). The audio chip is NOT 975 Maru: since 2026-11-18 the
+  shared outlined skin (`outlinedChipSx`) letters it in the header title's sans (below).
 - **The audio chip.** The study header's narration chip (`TowerStudyHeader` →
   `AudioModeChip`) is NOT a plate: it is the app-wide outlined audio chip with white `ink`
   (`HeaderCycleChip` `tone="bare"` — no fill), so its glyph and label are plain white in every audio
@@ -1448,7 +1448,8 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
   `outlinedChipSx` in `src/components/pageHeaderSizing.ts`) bundles the pair into one button — white rather than
   `COLORS.border`, which is a paper hairline and goes muddy on the sky. Type 12 px and
   glyph 15 px (`OUTLINED_CHIP_TEXT_PX` / `OUTLINED_CHIP_ICON_PX`), the label in
-  975 Maru SC (`FONTS.cjk`) at its only weight, 400, pinned in `outlinedChipSx`; the label is centred in a box sized to
+  the page header title's face (Instrument Sans, `pageHeaderSizing.ts` → `PAGE_HEADER_TITLE_FONT`) at semibold 600,
+  pinned in `outlinedChipSx` (975 Maru SC until 2026-11-18); the label is centred in a box sized to
   the longest label in its real face (`fitLabels` — its `sx` resizes the label, so
   the default `ch` width would be wrong). It was a grey floor plate until 2026-10-26, stripped
   because a filled chip drew the eye off the card. Every audio chip in the app has used this skin since 2026-11-04, each in its own ground's ink (docs/AUDIO_PLAYBACK.md § The chip).

@@ -3,6 +3,7 @@ import { Box, useMediaQuery, useTheme } from "@mui/material";
 import { keyframes } from "@mui/material/styles";
 import { COLORS } from "../../theme/colors";
 import { textareaOffsetAtPoint } from "./textSelectionUtils";
+import { findAlternativeCellAt } from "./readerAlternatives";
 
 /** The two tap zones: `left` = back (the left third), `right` = forward. */
 export type TapZoneSide = "left" | "right";
@@ -317,6 +318,18 @@ function ReaderTapOverlay({ inputRef, scrollRef, wordSource, onSelectSpanAtOffse
 
         e.preventDefault();
         e.stopPropagation();
+
+        // TIEBREAK ALTERNATIVE (Pinyin mode): a tap anywhere inside a yellow box (glyph,
+        // pinyin band, or the cell it shares with the selected word) switches the selection
+        // to that word — the ONE tap that overrides the left/right zone step. Clicking the
+        // cell runs ReaderCpcdView's click-capture, the same path a desktop click takes.
+        // Exact box bounds only, so a forward tap beside the selection is not swallowed.
+        const box = wordSource === "pinyin" ? scrollRef?.current : null;
+        const alternativeCell = box ? findAlternativeCellAt(box, e.clientX, e.clientY) : null;
+        if (alternativeCell) {
+            alternativeCell.click();
+            return;
+        }
 
         // Reuse the existing keyboard navigation: dispatch the same Arrow
         // keydown the textarea's onKeyDown handler already processes. That

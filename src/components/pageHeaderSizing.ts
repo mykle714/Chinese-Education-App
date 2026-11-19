@@ -37,6 +37,14 @@ export const HUB_HEADER_PAD_X_PX = 22;
 export const HUB_HEADER_TITLE_PX = 28;
 export const HUB_HEADER_TITLE_TRACKING = "-0.025em";
 
+/**
+ * The page header title's face — Instrument Sans (`FONTS.sans`), the UI sans. Shared so the
+ * outlined chips in the header's right slot (`outlinedChipSx`) letter in the same face as
+ * the title beside them and the two cannot drift.
+ * Read by: `PageHeader` (`pageHeaderTitleTypeSx`), `outlinedChipSx`.
+ */
+export const PAGE_HEADER_TITLE_FONT = FONTS.sans;
+
 /** The gap between the back arrow and the title it is grouped with, px. */
 export const BACK_GROUP_GAP_PX = 9;
 
@@ -68,13 +76,14 @@ export const OUTLINED_CHIP_TEXT_PX = 12;
  */
 export const outlinedChipSx = (ink: string) =>
     ({
-        // 975 Maru SC — the app's Chinese face (`FONTS.cjk` → `--cjk-font`, set by
-        // useChineseFont; its slices cover Latin), the same lettering as the Deck Tower's
-        // study buttons (towerPlate.ts → TOWER_STUDY_FONT). Pinned at 400, the face's ONLY
-        // cut, so nothing renders browser-synthesised bold: the acp's header layer sets
-        // bold on everything under it (TOWER_TYPE_SX via `wrapHeader`).
-        fontFamily: FONTS.cjk,
-        fontWeight: WEIGHT.regular,
+        // The page header title's face (Instrument Sans, `PAGE_HEADER_TITLE_FONT`) since
+        // 2026-11-18 — 975 Maru SC (`FONTS.cjk`) before. Semibold 600, the title's weight
+        // and the Reader's pill buttons' (readerStyles.ts → readerPillButtonSx), so the
+        // Reader's audio chip and its Read pill letter alike. Pinned here so the acp's
+        // header layer (TOWER_TYPE_SX via `wrapHeader`, which sets bold on everything under
+        // it) cannot push it to bold.
+        fontFamily: PAGE_HEADER_TITLE_FONT,
+        fontWeight: WEIGHT.semibold,
         border: `1px solid ${ink}`,
         borderRadius: "999px",
         padding: `${OUTLINED_CHIP_PAD_Y_PX}px 10px`,

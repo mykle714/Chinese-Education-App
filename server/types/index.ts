@@ -394,6 +394,8 @@ export interface TextCreateData {
   iconId?: string | null;
   /** Reader collection (texts.kind, migration 194); omitted = 'document'. */
   kind?: TextKind;
+  /** Title typed into the draft's header field; omitted/blank = derived from the content (TextService.createText). */
+  title?: string;
 }
 
 export interface TextUpdateData {

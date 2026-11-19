@@ -3329,7 +3329,17 @@ removed the same day; the candidate row's worked example teaches instead, § 6p)
 the strip holds parts, a quiet caption-size line, **"Tap to clear"** (it removes the one part tapped, not all)
 (`.beginner-keyboard__buffer-hint`, `KEYBOARD_COLORS.faint`), sits centred and pinned to
 the bottom of the section — the chips carry no ×, so this is what makes tap-to-remove
-discoverable. Code: `ComponentBuffer.tsx`.
+discoverable.
+**Bottom divider + hint overflow (2026-11-18):** a second 1px `COLORS.rowBorder` rule
+(`.beginner-keyboard__buffer-divider`) closes the section off from the ink keys, always
+shown (empty or not), so the column is boxed by two rules; the hint sits just above it.
+Between the rules only the chip scroller (`.beginner-keyboard__buffer-scroller`) moves —
+caption and divider stay fixed. Once the chip rows grow to within `HINT_CLEARANCE` (6px)
+of the hint, the hint hides and the chips take its space, then scroll above the divider.
+The hint is absolutely positioned over the region's bottom (hidden by `visibility`, not
+unmounted), so toggling it never changes the chips' space — no show/hide feedback loop —
+and it stays measurable. The chip block carries `KEY_LIP` bottom padding so the scroller
+never clips the last row's lip. Code: `ComponentBuffer.tsx` → `useHintFits`.
 
 **Canvas corners (2026-11-15):** 20px radius (was 16px — MUI `borderRadius: 2`). Code: `BeginnerKeyboard.tsx` → `.beginner-keyboard__canvas`.
 

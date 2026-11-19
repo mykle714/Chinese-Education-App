@@ -6,6 +6,8 @@
  * - `scrollSelectionIntoView` — nudge scrollTop so the selection is visible.
  * - `textareaOffsetAtPoint` — the character under a screen point (ReaderTapOverlay's
  *   text-mode WORD JUMP: "Tap and hold on a word to jump to it").
+ * - `copyTextareaTypography` — the style copy itself, shared with the LIVE mirror that
+ *   paints search matches over the textarea (ReaderSearchHighlights).
  *
  * Word boundary detection and word navigation live in ./documentSegmentation.ts (gsa
  * spans — docs/READER_SEGMENTATION.md).
@@ -21,14 +23,20 @@ const MIRROR_STYLE_PROPS: Array<keyof CSSStyleDeclaration> = [
     'lineHeight', 'textTransform', 'wordSpacing', 'tabSize', 'textIndent', 'wordBreak',
 ];
 
+/** Copy the textarea's box + typography (MIRROR_STYLE_PROPS) from its computed `style`
+ *  onto `target`. Also used by the live search highlight layer (ReaderSearchHighlights). */
+export function copyTextareaTypography(style: CSSStyleDeclaration, target: HTMLElement): void {
+    for (const p of MIRROR_STYLE_PROPS) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (target.style as any)[p] = (style as any)[p];
+    }
+}
+
 /** A detached div styled like the textarea whose computed `style` is given (the caller
  *  positions + appends it). */
 function buildTextareaMirror(style: CSSStyleDeclaration): HTMLDivElement {
     const mirror = document.createElement('div');
-    for (const p of MIRROR_STYLE_PROPS) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (mirror.style as any)[p] = (style as any)[p];
-    }
+    copyTextareaTypography(style, mirror);
     mirror.style.position = 'absolute';
     mirror.style.whiteSpace = 'pre-wrap';
     mirror.style.overflowWrap = 'break-word';
@@ -43,9 +51,17 @@ function buildTextareaMirror(style: CSSStyleDeclaration): HTMLDivElement {
  * that real keyboard navigation gets, so we measure the selection's vertical
  * offset with a mirror div and nudge scrollTop only when the selection is
  * outside the visible band.
+ *
+ * `range` measures that range instead of the textarea's own selection — for a
+ * selection recorded while the textarea is unfocused (useTextSelection → selectRange
+ * `focus: false`, the search bar's current match), whose DOM selection is not moved.
  */
-export const scrollSelectionIntoView = (textarea: HTMLTextAreaElement): void => {
-    const { selectionStart, selectionEnd } = textarea;
+export const scrollSelectionIntoView = (
+    textarea: HTMLTextAreaElement,
+    range?: { start: number; end: number },
+): void => {
+    const selectionStart = range?.start ?? textarea.selectionStart;
+    const selectionEnd = range?.end ?? textarea.selectionEnd;
     const style = window.getComputedStyle(textarea);
 
     const mirror = buildTextareaMirror(style);

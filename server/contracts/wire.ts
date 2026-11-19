@@ -1972,6 +1972,14 @@ export interface TextBase {
 export const TEXT_KINDS = ['document', 'journal'] as const;
 export type TextKind = (typeof TEXT_KINDS)[number];
 
+/**
+ * Longest title a Reader document may be given (characters, after trimming). Enforced by
+ * TextService (create + update validation) and mirrored as the `maxLength` of the Reader's
+ * editable header title (features/reader/ReaderDocumentPage.tsx → draftTitle). A DERIVED
+ * title is much shorter (server/utils/documentTitle.ts → DOCUMENT_TITLE_MAX_CHARS).
+ */
+export const DOCUMENT_TITLE_MAX_LENGTH = 200;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Community (docs/COMMUNITY_PAGE.md)
 // ─────────────────────────────────────────────────────────────────────────────

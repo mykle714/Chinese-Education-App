@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { findExactMatch, findDictionaryMatch, getSelectedText } from "./textSelection";
+import { findExactMatch, findDictionaryMatch } from "./textSelection";
 import { spanContaining, type SegmentSpan } from "./documentSegmentation";
 import type { VocabEntry, DictionaryEntry } from "../../types";
 
@@ -27,8 +27,16 @@ interface UseTextSelectionReturn {
     // from this, since its textarea is invisible. Collapsed (start === end) = no word.
     selectionRange: { start: number; end: number };
     // Select [start, end) in the reading box as if the learner had placed it there —
-    // the Pinyin view's desktop click-on-a-word. Counts as a learner gesture.
-    selectRange: (start: number, end: number) => void;
+    // the Pinyin view's desktop click-on-a-word, the search bar's current match. Counts
+    // as a learner gesture. `focus: false` leaves focus where it is (the search field
+    // keeps it, and its keyboard stays up); the range is still recorded and the keycap
+    // still looks it up, and the next refocus restores it. While unfocused the
+    // textarea's DOM selection is NOT moved (iOS would focus it): read the range from
+    // `selectionRange` / `getRecordedSelection`, not from `selectionStart`.
+    selectRange: (start: number, end: number, options?: { focus?: boolean }) => void;
+    // The recorded range right now (lastSelectionRef), for callbacks that must not wait
+    // for the `selectionRange` state to re-render.
+    getRecordedSelection: () => { start: number; end: number };
     // Select the gsa word containing the character at `offset` (ReaderTapOverlay's
     // text-mode WORD JUMP). Returns that span's start, or null when the offset is in no
     // word (whitespace / punctuation), in which case nothing changes.
@@ -109,21 +117,22 @@ export function useTextSelection(
     }, []);
 
     // Handle text selection changes for vocabulary card lookup
-    const handleTextSelectionChange = useCallback(() => {
+    // Record [start, end) as the reading box's selection and look up its cards — the
+    // shared tail of handleTextSelectionChange (range read off the textarea) and an
+    // unfocused selectRange (range given; the textarea's own selection is left alone).
+    const recordSelection = useCallback((start: number, end: number) => {
         const textarea = inputRef.current;
         if (!textarea) return;
         if (isPassiveWhileAwaiting()) return;
 
-        // Persist the live caret/selection so focus restoration returns the user
-        // to their place (this fires after handleAutoWordSelect, so it captures
+        // Persist the caret/selection so focus restoration returns the user to their
+        // place (on the live path this fires after handleAutoWordSelect, so it captures
         // the auto-selected word range when auto-select is enabled).
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
         lastSelectionRef.current = { start, end };
         setSelectionRangeState(prev => (prev.start === start && prev.end === end ? prev : { start, end }));
 
-        // Get the currently selected text
-        const selectedTextContent = getSelectedText(textarea);
+        // The selected text
+        const selectedTextContent = start === end ? '' : textarea.value.substring(start, end);
 
         // Find matching cards in both personal and dictionary
         let matchingPersonalCard = findExactMatch(selectedTextContent, loadedPersonalCards);
@@ -153,6 +162,12 @@ export function useTextSelection(
             setAwaitingFirstSelection(false);
         }
     }, [loadedPersonalCards, loadedDictionaryCards, isPassiveWhileAwaiting, translateEnglish]);
+
+    const handleTextSelectionChange = useCallback(() => {
+        const textarea = inputRef.current;
+        if (!textarea) return;
+        recordSelection(textarea.selectionStart, textarea.selectionEnd);
+    }, [recordSelection]);
 
     // Auto word selection: expand a tapped/placed caret to the gsa word span
     // containing it (docs/READER_SEGMENTATION.md). Replaces the old pairwise
@@ -210,17 +225,29 @@ export function useTextSelection(
         handleTextSelectionChange();
     }, [handleAutoWordSelect, handleTextSelectionChange]);
 
-    // Programmatic selection on the learner's behalf (Pinyin view, desktop click). The
-    // range is already a whole gsa span, so auto word-select has nothing to expand;
-    // only the card lookup + bookkeeping run.
-    const selectRange = useCallback((start: number, end: number) => {
+    // Programmatic selection on the learner's behalf (Pinyin view, desktop click; the
+    // search bar's current match). The range is never collapsed, so auto word-select has
+    // nothing to expand; only the card lookup + bookkeeping run. A search match may be
+    // part of a word (好 inside 你好) — the keycap then looks up exactly that text.
+    const selectRange = useCallback((start: number, end: number, options?: { focus?: boolean }) => {
         const textarea = inputRef.current;
         if (!textarea) return;
         userHasInteractedRef.current = true;
+        const focus = options?.focus ?? true;
+        if (!focus && document.activeElement !== textarea) {
+            // ⚠️ Don't touch the textarea's own selection while it is unfocused: iOS WebKit
+            // FOCUSES a textarea on setSelectionRange, which would pull focus out of the
+            // search field and drop its keyboard (unfolding the rdb) on every ˄/˅ step.
+            // Record the range only; focusTextArea(true) applies it on the next refocus.
+            recordSelection(start, end);
+            return;
+        }
         if (document.activeElement !== textarea) textarea.focus({ preventScroll: true });
         textarea.setSelectionRange(start, end);
         handleTextSelectionChange();
-    }, [handleTextSelectionChange]);
+    }, [handleTextSelectionChange, recordSelection]);
+
+    const getRecordedSelection = useCallback(() => lastSelectionRef.current, []);
 
     // Select the word under a long-press in the text display mode (ReaderTapOverlay →
     // WORD JUMP). The caller resolves the screen point to a character offset.
@@ -289,6 +316,7 @@ export function useTextSelection(
         noteUserInteraction,
         selectionRange,
         selectRange,
+        getRecordedSelection,
         selectSpanAtOffset,
         clearSelection,
         selectedByTranslation,

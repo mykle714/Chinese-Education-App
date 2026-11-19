@@ -1,5 +1,5 @@
 import React from "react";
-import PageHeader from "./PageHeader";
+import PageHeader, { type PageHeaderEditableTitle } from "./PageHeader";
 
 // Node-page header — a thin specialization of the base `PageHeader` (see the
 // composition hierarchy in docs/LEAF_NODE_PAGES.md). Forces the lateral LEFT
@@ -18,10 +18,15 @@ interface NodePageHeaderProps {
      * features/reader/ReaderDocumentSurface.tsx). Undefined = PageHeader's default ink.
      */
     titleColor?: string;
+    /**
+     * Title as a text field, forwarded to PageHeader's `editableTitle` — the Reader
+     * document's title while its editor is open (ReaderDocumentSurface).
+     */
+    editableTitle?: PageHeaderEditableTitle;
 }
 
-const NodePageHeader: React.FC<NodePageHeaderProps> = ({ title, onBack, rightContent, titleColor }) => (
-    <PageHeader title={title} showBack arrowDirection="left" onBack={onBack} rightContent={rightContent} titleColor={titleColor} />
+const NodePageHeader: React.FC<NodePageHeaderProps> = ({ title, onBack, rightContent, titleColor, editableTitle }) => (
+    <PageHeader title={title} showBack arrowDirection="left" onBack={onBack} rightContent={rightContent} titleColor={titleColor} editableTitle={editableTitle} />
 );
 
 export default NodePageHeader;

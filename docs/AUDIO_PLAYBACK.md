@@ -98,18 +98,23 @@ persisted contracts and do not move:
 and label in `ink`, bundled by a thin 1px pill outline in that same ink
 (`pageHeaderSizing.ts` → `outlinedChipSx`, also the skin of `PageHeader` → `HeaderActionChip`),
 12 px type / 15 px glyph (`OUTLINED_CHIP_TEXT_PX` / `OUTLINED_CHIP_ICON_PX`), the label in
-975 Maru SC (`FONTS.cjk`, the app's Chinese face, whose slices cover Latin) at regular 400 —
-the face's only cut, pinned so a bold ancestor (the acp header layer) cannot make the browser
-synthesise bold. With no fill to light
+the page header title's face — Instrument Sans (`pageHeaderSizing.ts` → `PAGE_HEADER_TITLE_FONT`,
+which `PageHeader`'s title also reads) — at semibold 600, the title's weight and the Reader's pill
+buttons' (`readerStyles.ts` → `readerPillButtonSx`), pinned so a bold ancestor (the acp header
+layer) cannot push it to bold. With no fill to light
 up, the label alone carries the state. `ink` is the only per-surface choice: it defaults to
 `COLORS.iconColor` (--ink2, the header's icon ink) on paper; the Deck Tower study header passes
 white for the sky (docs/DECK_TOWER.md § Studying the tower → "The audio chip") and the acp
-its ground look's `ink` (docs/SORT_CARDS_REQUIREMENTS.md). On a game's accent ground,
+its ground look's `ink` (docs/SORT_CARDS_REQUIREMENTS.md), and the Reader document page its
+time-of-day look's primary `ink` to match the Read pill beside it
+(docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Tap-to-hear). On a game's accent ground,
 `gameSurfaceSx` skips the bare chip in its filled-toggle rules (`:not(.page-header__toggle--bare)`)
 and re-inks its glyph, label and outline to full ink, like the header's other icons.
 History: until 2026-11-04 every surface but the tower and the acp drew a filled chip in the
 mono face — grey when muted, mid blue (`COLORS.bluM`, `tone="blu"`) when audible. Instrument
-Sans was tried for the label on 2026-11-04 and reverted to 975 Maru the same day.
+Sans was tried for the label on 2026-11-04 and reverted to 975 Maru the same day; on 2026-11-18
+the whole outlined family (audio chip, `HeaderActionChip`, Superposition's hint button) moved to
+the header title's face for good, by owner decision.
 *Code:* `src/components/AudioModeChip.tsx` (`ink`, `sx`),
 `src/components/PageHeader.tsx` → `HeaderCycleChip` (`tone="bare"`, `fitLabels`, `iconPx`),
 `src/components/pageHeaderSizing.ts` → `outlinedChipSx`,

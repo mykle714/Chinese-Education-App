@@ -28,7 +28,8 @@ import { useTTSSettings, type AudioMode } from "../hooks/useTTSSettings";
  *
  * ONE skin everywhere (since 2026-11-04): the bare glyph + label in `ink`, bundled by a
  * thin pill outline in that same ink (pageHeaderSizing.ts → `outlinedChipSx`, shared with
- * HeaderActionChip), the label in 975 Maru SC (`FONTS.cjk`) at its one regular weight. It floats as plain text
+ * HeaderActionChip), the label in the page header title's face (Instrument Sans,
+ * `PAGE_HEADER_TITLE_FONT`) at semibold 600 — 975 Maru SC at 400 until 2026-11-18. It floats as plain text
  * rather than drawing the eye as a filled chip. Before 2026-11-04 only the Deck Tower and
  * the acp used this skin and every other surface had a filled blue mono chip; the label
  * now carries the state on every surface (there is no fill to light up when audio is on).

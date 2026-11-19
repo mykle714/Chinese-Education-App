@@ -13,7 +13,16 @@ specific to this app:
 
 **Status: DESIGN / DRAFT (2026-11-18). Nothing is built.** No tables, routes, flags or client
 code exist yet. Every new table and column below is a **proposal awaiting the user's
-approval** (see § 12, Question log).
+approval** (see § 13, Question log).
+
+**Decisions so far (owner, 2026-11-19):**
+- **Spec first, build nothing yet.** Goal of phase 1 is to *see the feature working*.
+- **UX is a placeholder.** Lay features out so they are naturally reachable; the owner will
+  tune the look later. Do not spend design effort on polish.
+- **Transcripts are saved and kept forever** for now. A TTL may come later (§ 11).
+- **The learner's voice is never stored.** Only text is kept.
+- **End-of-session card: yes.** Generic layout for now (§ 9.2).
+- **Review is also for practice**, not read-only (§ 9.3).
 
 **Depends on / references (existing code):**
 - `server/services/anthropicClient.ts` → `getAnthropicClient` (the shared client; § 6.4 proposes a separate key)
@@ -23,7 +32,7 @@ approval** (see § 12, Question log).
 - `server/routes/vocabEntryRoutes.ts` → `/api/vocabEntries/addToLibrary` and the service behind it (§ 7.2)
 - `server/routes/onDeckRoutes.ts` → `/api/onDeck/flpReadyCounts`, `OnDeckVocabService` (§ 7.1)
 - `server/routes/dictionaryRoutes.ts` → `/api/dictionary/segment` (gsa; § 4.3)
-- `server/contracts/featureFlags.ts` → `FEATURE_FLAGS` (§ 9)
+- `server/contracts/featureFlags.ts` → `FEATURE_FLAGS` (§ 10)
 - `dictionary_ai_usage` daily cap pattern (`server/dal/implementations/DictionaryDAL.ts`; § 6.5)
 
 ---
@@ -40,7 +49,7 @@ internal implementation and should not claim to. These are the behaviours to mat
 | **Barge-in**: talk over it and it stops speaking immediately | Client stops playback the moment VAD fires; server cancels the Claude stream and the TTS queue (§ 4.4) |
 | Live captions of both sides | Rolling transcript under the orb. Chinese lines render as cpcd so they can be tapped (§ 8) |
 | A choice of named voices | Reuses the existing per-language Voice picker (AUDIO_PLAYBACK.md § 6), plus a voice-mode speaking rate |
-| The voice conversation is saved as a normal text conversation you can scroll back through later | Each session is saved as a transcript (§ 10) and can be reopened read-only |
+| The voice conversation is saved as a normal text conversation you can scroll back through later | Each session is saved as a transcript (§ 11), reopened from a session list, and doubles as practice material (§ 9) |
 | Short, conversational replies: no markdown and no lists read aloud | A system-prompt rule plus a server-side markdown stripper before TTS (§ 6.2) |
 | Tools can run mid-conversation, with a brief spoken "let me check" | Flashcard tools (§ 7). A short filler line is spoken only when a tool takes more than ~700 ms |
 
@@ -298,6 +307,7 @@ call existing **services** directly, not the HTTP routes. Each is a strict JSON 
 | `add_card` | Adds a det word to the learner's cards | the service behind `/api/vocabEntries/addToLibrary` | **Requires an explicit spoken yes in the same or previous turn.** Emits `cardEvent` |
 | `mark_card` | Records a drill result | `FlashcardMarkService.applyMark` | See § 7.3. Very conservative |
 | `get_card_progress` | utcm band + recent marks for one word | vet read | "How am I doing with 超市?" |
+| `note_recast` | Records `{ learnerSaid, better, newWords[] }` whenever the tutor recasts a line | nothing: writes to the session's turn record | **Silent**: never mentioned aloud. Gives the transcript highlights and the end-of-session card structured data without a second Claude call (§ 9) |
 
 ### 7.1 Modes
 
@@ -306,6 +316,7 @@ call existing **services** directly, not the HTTP routes. Each is a strict JSON 
 | `freeTalk` | Menu popover row (Q2) | Open conversation, constrained to the learner's level. Card offers as in § 5.4 |
 | `drill` | Deck Tower (Q2) | Assistant pulls `get_due_cards` and runs a spoken drill: "How do you say *supermarket*?" (production) or reads the word and asks for its meaning (recognition) |
 | `aboutWord` | eip / deip "Talk about this word" button | Starts with `focusWord`. Explain, give example sentences, have the learner make a sentence of their own |
+| `revisit` | "Practice again" on a saved session or its end card (§ 9.3) | Seeded with that session's recasts and new words. The tutor steers the conversation so the learner has to use them again |
 
 ### 7.2 Adding cards
 
@@ -336,7 +347,9 @@ turns that produced a non-empty transcript. **Q11.**
 
 ---
 
-## 8. Client UX
+## 8. Client UX (placeholder: the owner will tune it)
+
+The goal is that every feature is one obvious tap away, not that it looks finished.
 
 - **`VoiceSessionSheet`**: a full-height sheet raised over the current page. The orb sits in
   the centre, with the transcript below it, and a bottom bar holding **End**, **Mute mic** and
@@ -361,31 +374,76 @@ turns that produced a non-empty transcript. **Q11.**
 
 ---
 
-## 9. Feature flag and rollout
+## 9. Transcript, review and practice
+
+The cascade produces text at every step, so the transcript is a by-product rather than extra
+work. Phase 1 surfaces it in three places.
+
+**Depends on:** `voice_turns` (§ 11), the `note_recast` tool (§ 7), the gsa
+(`/api/dictionary/segment`), `CPCDRow`, the deip popup, `TTSService`.
+
+### 9.1 Live captions (during the session)
+As in § 8: both sides scroll under the orb as cpcd rows, and any word is tappable.
+
+### 9.2 End-of-session card (generic for now)
+Shown when the learner taps **End**. Built from data the session already holds. **No extra
+Claude call.**
+
+| Block | Source |
+|---|---|
+| Duration, number of turns | `voice_sessions` timing |
+| Words added to cards | `cardEvent`s of kind `added` |
+| "Better ways to say it" (up to 5) | `note_recast` records: learner's line ↔ the better version |
+| Card words you used | the per-turn card matching of § 4.3 (`known` / `learning` hits) |
+| Buttons: **Review transcript** · **Practice again** · **Done** | § 9.3 |
+
+### 9.3 Saved transcripts: review *and* practice
+Reached from a session list (placement is a UX call, Q2). Each saved session opens as a
+scrollable conversation:
+
+- **Read:** cpcd lines, tap any word → deip → add to cards. Recasts appear as the learner's
+  version next to the better version. Words the STT was unsure of are underlined, so a
+  mishearing is not mistaken for a learner error.
+- **Listen:** tap an assistant line or a "better" version to hear it again. The audio is
+  synthesized fresh by the existing TTS. **No learner audio exists to replay** (decision).
+- **Re-say a line** (practice): a mic button on any assistant line or recast. This is a short
+  capture that goes through **speech-to-text only** (no Claude, so it is fast and cheap). The
+  result is compared to the target at character level and shown as a match/miss highlight.
+  Same caveat as § 5.2: this checks the words, not the tones.
+- **Practice again:** starts a new voice session in `revisit` mode (§ 7.1), seeded with this
+  session's recasts and new words.
+
+---
+
+## 10. Feature flag and rollout
 
 - New flag `voiceAssistant` in `FEATURE_FLAGS`, **OFF** by default. Per FEATURE_FLAGS.md, gate
   **every** entry point: the WS route mount in `server/server.ts`, the Menu row, the Deck Tower
   drill entry, and the eip "Talk about this word" button. A flip needs both containers rebuilt.
-- Phase 1: zh only (Spanish is paused). `freeTalk` + `aboutWord`, `add_card`, no `mark_card`.
+- Phase 1 ("see it working"): zh only (Spanish is paused). `freeTalk` + `aboutWord` + `revisit`, `add_card` + `note_recast`, saved transcripts with review and re-say practice, and the generic end-of-session card. No `mark_card`.
 - Phase 2: `drill` mode + `mark_card`, minute points, an optional pronunciation-assessment vendor.
 - Register the sheet in [ACTIVE_DUTY_PAGES.md](./ACTIVE_DUTY_PAGES.md) once it has an entry point.
 
 ---
 
-## 10. Data (PROPOSED — needs approval, Q1)
+## 11. Data (PROPOSED — needs approval, Q1)
 
 | Table | Columns (proposed) | Why |
 |---|---|---|
-| `voice_sessions` | `id`, `userId`, `language`, `mode`, `focusWord`, `startedAt`, `endedAt`, `userSeconds`, `assistantSeconds`, `turnCount` | Session list, usage dashboard, cap accounting |
-| `voice_turns` | `id`, `sessionId`, `turnIndex`, `role` (`user`/`assistant`), `text`, `sttConfidence`, `interrupted`, `createdAt` | The saved transcript (§ 1) that can be reopened read-only |
+| `voice_sessions` | `id`, `userId`, `language`, `mode`, `focusWord`, `seededFromSessionId` (for `revisit`), `startedAt`, `endedAt`, `userSeconds`, `assistantSeconds`, `turnCount` | Session list, end card, usage dashboard, cap accounting |
+| `voice_turns` | `id`, `sessionId`, `turnIndex`, `role` (`user`/`assistant`), `text`, `lowConfidenceWords` (jsonb), `recast` (jsonb, from `note_recast`), `interrupted`, `createdAt` | The saved transcript (§ 9) |
 | `voice_ai_usage` | `userId`, `usageDate`, `seconds` | Daily cap, mirroring `dictionary_ai_usage` |
 
-**No audio is stored.** Transcripts are stored. A per-session "don't save this conversation"
-switch is an option (Q13).
+**Retention (decided):** no audio is ever stored. Transcripts are kept **forever** for now.
+A TTL may be added later. If so, a nightly delete on `voice_sessions.endedAt` (with cascade to
+`voice_turns`) is enough; nothing else references these rows.
+
+**No word-match columns are stored.** The `known`/`learning` tinting is recomputed against the
+learner's *current* cards when a transcript opens, so it never goes stale.
 
 ---
 
-## 11. Risks and known limits
+## 12. Risks and known limits
 
 | Risk | Mitigation |
 |---|---|
@@ -399,9 +457,9 @@ switch is an option (Q13).
 
 ---
 
-## 12. Question log (open — answer before building)
+## 13. Question log (open — answer before building)
 
-1. **Tables:** approve `voice_sessions`, `voice_turns`, `voice_ai_usage` and their columns (§ 10)? Or keep transcripts client-side only?
+1. **Tables:** approve `voice_sessions`, `voice_turns`, `voice_ai_usage` and their columns (§ 11)? (Server-side storage is implied by the 2026-11-19 decision to keep transcripts.)
 2. **Entry points:** Menu popover row, a Deck Tower platform, the eip button, all three, or something else? Does voice get its own footer tab, the way Claude puts voice next to the input?
 3. **Transport:** add `ws` to the server (the first WebSocket in the stack), or use a managed realtime relay? The doc assumes raw `ws` on the existing Express server.
 4. **Platform:** web (`getUserMedia`) only, or also the native shell? `docs/REACT_NATIVE_MIGRATION.md` exists, so if an RN move is coming, mic capture should be written against that.
@@ -412,6 +470,8 @@ switch is an option (Q13).
 9. **Daily cap:** how many voice minutes per user per day? Is it the same for every user?
 10. **Voice marks:** full-weight typed marks (Production/Recognition), reduced weight, or only after confirmation?
 11. **Minute points:** should voice time earn them, and with what anti-farming rule?
-12. **Orb colours:** which framework tokens? (They must avoid the utcm ramp and the Hydra charcoal/gold.)
-13. **Privacy:** store transcripts by default with an opt-out, store nothing by default, or auto-delete after N days?
+12. ~~**Orb colours**~~ — **deferred to the owner's UX pass.** Placeholder: any framework tokens that avoid the utcm ramp and the Hydra charcoal/gold.
+13. ~~**Privacy / retention**~~ — **answered 2026-11-19:** no learner audio; transcripts kept forever; TTL possibly later.
 14. **Persona:** one tutor voice/character, or let the learner pick (mirroring Claude's named voices)?
+15. **Re-say attempts (§ 9.3):** store them (to show improvement over time), or keep them display-only? Display-only needs no table.
+16. **Re-say matching:** exact characters only, or also accept a homophone with the same pinyin (STT often picks a different character for the same sound)?

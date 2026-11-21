@@ -38,7 +38,7 @@ ALTER TABLE users
     ADD COLUMN IF NOT EXISTS "isAuthor" BOOLEAN NOT NULL DEFAULT false;
 
 COMMENT ON COLUMN users."isAuthor" IS
-    'Whether this user may write Adventures (cyoa) stories in the in-app editor. Granted by hand; no UI grants it. The app's one authoring grant: it succeeds isTemplateAuthor (migration 115, the Night Market / Immersive World grant), which migration 185 dropped. Default false. Migration 196, docs/CYOA_FEATURE.md § 6.1.';
+    'Whether this user may write Adventures (cyoa) stories in the in-app editor. Granted by hand; no UI grants it. The app''s one authoring grant: it succeeds isTemplateAuthor (migration 115, the Night Market / Immersive World grant), which migration 185 dropped. Default false. Migration 196, docs/CYOA_FEATURE.md § 6.1.';
 
 -- ── stories ─────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS stories (

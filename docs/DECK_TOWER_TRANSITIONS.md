@@ -24,13 +24,12 @@ Parent: [DECK_TOWER.md](./DECK_TOWER.md). The drawing primitives are in
 
 | Layer | File → symbol | Role |
 |---|---|---|
-| Page | `src/features/deckTower/DeckTowerPage.tsx` → `DeckTowerPage` | Reads the counts, runs one `useDeckSwap` per world (`swaps`), wires the plate to `onPlateTap`, measures the on-screen world's `fallDistance` and `splatFloor` in the scene memo, and hands the platform what that world's swap says each frame |
+| Page | `src/features/deckTower/DeckTowerPage.tsx` → `DeckTowerPage` | Reads the counts, runs one `useDeckSwap` per world (`swaps`), wires the plate to `onPlateTap`, measures the on-screen world's `fallDistance` in the scene memo, and hands the platform what that world's swap says each frame |
 | Page view | `src/features/deckTower/DeckTowerPlatform.tsx` → `DeckTowerPlatform` | Draws the platform from that: the plate face, the hinge angle, the falling old tower and pawn (`fallSx`), and the pawns' depth slots (`pawnDepthRanks`) |
-| Page logic | `src/features/deckTower/useDeckSwap.ts` → `useDeckSwap`, `swapView`, `PLATE_SETTLE_MS` | Owns which deck is up and the clock of a running swap. It draws nothing. It returns a `DeckSwapView` (pure `swapView(plan, now)`) |
+| Page logic | `src/features/deckTower/useDeckSwap.ts` → `useDeckSwap`, `swapView`, `plateSettleMs` | Owns which deck is up and the clock of a running swap. It draws nothing. It returns a `DeckSwapView` (pure `swapView(plan, now)`) |
 | Page logic | `src/features/deckTower/deckTransitions.ts` → `DeckTransition`, `TRAP_DOOR`, `DECK_TRANSITIONS`, `pickDeckTransition` | Pure timelines that clear the old tower |
-| Page view | `src/features/deckTower/CardSplat.tsx` → `CardSplat`, `SPLAT_MAX_MS` | The optional card splat at the bottom edge, driven by the swap clock |
 | Page constants | `src/features/deckTower/towerDecks.ts` → `TOWER_DECKS`, `TowerDeckId`, `otherTowerDeck` | The two decks' title, plate label, plate colour (`band`), the same in every world |
-| Framework | `src/features/deckTower/iso/pawnEntrances.ts` → `PawnEntrance`, `FALL_FROM_SKY`, `PAWN_ENTRANCES`, `pickPawnEntrance`, `entranceStartFor` | Pure timelines of how a pawn arrives |
+| Framework | `src/features/deckTower/iso/pawnEntrances.ts` → `PawnEntrance`, `fallFromSky`, `PAWN_ENTRANCES`, `pickPawnEntrance`, `entranceStartFor` | Pure timelines of how a pawn arrives |
 | Framework | `iso/usePawnMotion.ts` (`entrance` mode, `floorDrop`), `iso/IsoPawn.tsx` (`entrance`, `floorDrop` props) | Plays an entrance, then hands the pawn to its idle wander; drops the old pawn through the trap door on its own and pops its "!" |
 | Framework | `iso/IsoPlatform.tsx` (`hingeAngle`, `decals`), `iso/geometry.ts` → `Hinge`, `hingePoint`, `hingedOutline`, `hingedPrism`, `hingedPlaneTransform` | The trap door |
 | Page logic | `src/features/deckTower/usePlatePress.ts` → `usePlatePress` | The plate's push-button press: held flush, fires on release, pops back up with the new face |
@@ -62,7 +61,7 @@ not the deck ([DECK_TOWER.md](./DECK_TOWER.md) § "Worlds").
 `useDeckSwap` runs one swap on one clock, in ms since the tap:
 
 ```
-0 ── PLATE_SETTLE_MS ──▶ t = 0 ─────────── clearedMs ─────────── readyMs ──────── durationMs
+0 ── plateSettleMs() ─▶ t = 0 ─────────── clearedMs ─────────── readyMs ──────── durationMs
  plate + title cut     transition starts:  old tower + pawn     new pawn LANDS;   follow-through
  to the new deck;      door drops, old     are gone; the scene  new tower starts  ends; the swap
  plate pops back up    tower falls, its    refits to the new    sky-dropping      settles
@@ -70,7 +69,6 @@ not the deck ([DECK_TOWER.md](./DECK_TOWER.md) § "Worlds").
                                             new pawn mounts,
                                             hidden until its
                                             entrance starts
-                                      (optional impactMs — the trap door's = clearedMs: the card splat)
 ```
 
 - **Two beats.** Every transition plan names `clearedMs` and `readyMs`, and the rest of
@@ -103,16 +101,14 @@ not the deck ([DECK_TOWER.md](./DECK_TOWER.md) § "Worlds").
 ### Several worlds
 
 Every world ([DECK_TOWER.md](./DECK_TOWER.md) § "Worlds") has its OWN `useDeckSwap`
-(`DeckTowerPage` → `swaps`): its own deck, plate, transition pick, pawn keys and splat
-roll. Swapping one never touches the others. Only the world on screen is drawn, so only
+(`DeckTowerPage` → `swaps`): its own deck, plate, transition pick and pawn keys. Swapping one never touches the others. Only the world on screen is drawn, so only
 its plate can be tapped.
 
 - **No pan mid-swap.** The world swipe and the edge arrows are off while the on-screen
   world's swap runs, and the plate is off while the camera pans — so a fall is always
   measured for, and played in, the scene on screen.
-- **Fall distance** (`scene.fallDistance`) and **the splat** (`scene.splatFloor`) are the
-  on-screen world's: its tower's top to the screen's bottom edge, and its tower's screen-x
-  span, in that world's band.
+- **Fall distance** (`scene.fallDistance`) is the on-screen world's: its tower's top to the
+  screen's bottom edge, in that world's band.
 - **The new tower** sky-drops in on every world, the same way (§ "The new tower's sky
   drop").
 
@@ -160,14 +156,14 @@ the outgoing pawn (until `clearedMs`) plus the incoming one (from t = 0).
   world units (`IsoPawn` `floorDrop` = `dropPx / proj.unit`). With nothing to stand on, the
   pawn's feet run in free flight (`usePawnMotion.ts` → FLOOR DROP): a pawn the plate has just
   LAUNCHED (the release that started this swap: it peaks about its own height up ~209 ms
-  later, and `PLATE_SETTLE_MS` is never shorter than that) is already coming back down when
+  later, and `plateSettleMs()` is never shorter than that) is already coming back down when
   the door opens — ~1.4 units up at today's timings. Its height then blends over
-  `FALL_BLEND_MS` (350 ms) from its own free fall (pawn gravity, 110) into where it would be
+  `FALL_BLEND_MS` (350 ms) from its own free fall (the pawn's gravity, which is the sky fall's — not necessarily the door's) into where it would be
   standing on the falling door (`lift − floorDrop`; NOT measured from where its fall began,
   or it would trail the door by its launch height and still be on screen when unmounted). So
   it falls out of the air instead of being yanked down with the door, merges into the door's
   curve with no reversal, and is off-screen by `clearedMs`, even for the shortest (12-unit,
-  ~0.41 s) fall. A pawn standing on the floor does the same from rest. A pawn mid edge hop falls from wherever the hop's arc had it.
+  ~0.47 s at gravity 110) fall. A pawn standing on the floor does the same from rest. A pawn mid edge hop falls from wherever the hop's arc had it.
 - **Alarm.** Its white "!" bubble pops the moment its own fall starts (not at t = 0 — a
   launched pawn notices on the way down). That is the startle's bubble alone, with no lean or
   leap (emote `leanSign: 0`). It keeps walking in mid-air, legs still.
@@ -210,11 +206,13 @@ other deck in a single frame — no flip, fade or colour blend (`useDeckSwap` �
 `titleDeck` becomes the new deck the instant the swap starts). The page title cuts over in
 the same frame.
 
-The plate then has `PLATE_SETTLE_MS` (300 ms) — during which it pops back up — before the
+The plate then has `plateSettleMs()` (300 ms) — during which it pops back up — before the
 transition starts, so the new label reads as settled before the door drops out from under it.
-It is `max(PLATE_POP_SETTLE_MS, PLATE_LAUNCH_APEX_MS)`: never shorter than a launched pawn's
-time to apex (`usePawnMotion.ts` → `PLATE_LAUNCH_APEX_MS`, ~209 ms), so the door never opens
-under a pawn still on its way up. At today's pawn gravity the 300 ms settle is the longer.
+It is `max(PLATE_POP_SETTLE_MS, plateLaunchApexMs())`: never shorter than a launched pawn's
+time to apex (`usePawnMotion.ts` → `plateLaunchApexMs`, ~209 ms at gravity 110), so the door
+never opens under a pawn still on its way up. Above ~59 u/s² of pawn gravity (the sky fall's) the 300 ms settle
+is the longer. Both are functions of the live gravity ([GRAVITY_LAB.md](./GRAVITY_LAB.md)); each
+swap reads the settle once at its tap and keeps it (`SwapPlan.startMs`).
 
 - **Always a floor decal.** The plate never leaves the floor, so it is drawn among the
   platform's floor decals throughout and swings with the trap door.
@@ -235,9 +233,7 @@ under a pawn still on its way up. At today's pawn gravity the 300 ms settle is t
 - **Context.** `ctx` is a `DeckTransitionContext`. It holds `fallDistance`: the world
   units the old towers must drop for the highest one's top, or its platform's back corner
   when the tower is short, to pass below the scroller's bottom edge (+ `FALL_CLEARANCE`).
-- **Plan.** It returns a `DeckTransitionPlan`: `{ clearedMs, readyMs, durationMs, impactMs?, frame(t) }`.
-  `impactMs`, when set, is the moment the fallen tower hits a floor below the screen; the
-  page plays the card splat from then (see § "The card splat").
+- **Plan.** It returns a `DeckTransitionPlan`: `{ clearedMs, readyMs, durationMs, frame(t) }`.
 - **Frames.** `frame(t)` returns a `DeckTransitionFrame`. Every field rests at its
   "nothing happening" value. Today the fields are `hingeAngle` (→ `IsoPlatform`) and
   `outgoingDrop` (world units the old tower and pawn have fallen; the page translates them
@@ -258,14 +254,17 @@ slam.
 |---|---|---|
 | Drop | `TRAP_DROP_MS` 340, `TRAP_OPEN_ANGLE` 86° | `θ = open·u²`, an ease-in as gravity takes it |
 | Bounce | `TRAP_BOUNCE_MS` 300, `TRAP_BOUNCE_ANGLE` 10° | It hits its stop and rebounds once (`open − 10°·sin πu`) |
-| Fall | `TRAP_FALL_DELAY_MS` 50, `TRAP_GRAVITY` 140 u/s², `TRAP_FALL_MAX_MS` 1400 | The contents start a beat after the door, so the gap visibly opens under them. Gravity is raised just enough that a tall tower clears within 1.4 s. `clearedMs = delay + fall` |
+| Fall | `TRAP_FALL_DELAY_MS` 50, the `trapDoor` fall type (`src/theme/gravity.ts` → `fallParams("trapDoor")`: gravity 110 u/s², start speed 0, jerk 0) | The contents start a beat after the door, so the gap visibly opens under them. **Uncapped**: a tall tower simply takes longer, and the door holds open for it. `clearedMs = delay + fall` |
 | Hold | `TRAP_HOLD_MS` 220 | The empty door hangs open after `max(clearedMs, drop + bounce)` |
 | Close | `TRAP_CLOSE_MS` 560 | `θ = open·cos(πu/2)`: slow start, fast finish, so it slams. It ends at `readyMs` |
 | Rebound | `TRAP_REBOUND_MS` 220, `TRAP_REBOUND_ANGLE` 3° | It bounces off the frame. `durationMs = readyMs + rebound` |
 
-Sample durations from t = 0: a short tower (fall 12 u) is ready at about 1.4 s, a
-60-unit fall at about 1.8 s, and a 240-unit tower at about 2.2 s. Add `PLATE_SETTLE_MS`
-(300 ms) for time since the tap.
+Sample durations from t = 0 at gravity 110: a short tower (fall 12 u) is ready at about
+1.4 s (the door's own drop + bounce + hold + close bounds it), a 60-unit fall at about 1.9 s,
+and a 240-unit tower at about 2.9 s. Add `plateSettleMs()` (300 ms) for time since the tap.
+Until 2026-11-20 the fall had its own 140 u/s², raised for tall towers so every fall cleared
+within 1.4 s; folding it into a shared gravity removed the cap (owner's call — a tall
+deck's swap is slower, by design).
 
 **How the door is drawn** (`IsoPlatform` with `hingeAngle`):
 
@@ -292,42 +291,12 @@ Sample durations from t = 0: a short tower (fall 12 u) is ready at about 1.4 s, 
 - **Clipping.** Hanging at 86°, the door reaches below the scene's bottom edge, so the
   scroller clips its lower part at the footer bar.
 
-**The fall** (`DeckTowerPlatform` → `fallSx`; the CSS rule is in `DeckTowerPage`): the stack and the outgoing pawn sit in keyed
+**The fall** (`DeckTowerPlatform` → `fallSx`; the CSS rule is `DeckTowerPlatform` → `PLATFORM_SINK_CSS`): the stack and the outgoing pawn sit in keyed
 `<g>` wrappers that take `translate(0, drop·UNIT)` and the class
 `deck-tower-page__falling`. That class fades their floor shadows out over 120 ms, because
 the floor has gone from under them. The CSS targets the shadow paths' own classes, because
 the pawn's shadow group has its opacity written inline every frame. The fall is a straight
 drop: nothing tips or slides off the tilting door.
-
-**The splat roll.** Each plan rolls `TRAP_SPLAT_CHANCE` (0.2). On a hit it sets
-`impactMs = clearedMs`: the splat comes only after the last card has dropped out of sight.
-
-### The card splat
-
-`CardSplat.tsx`, page view. When the plan has `impactMs`, `DeckSwapView.splat` is
-`{ id, elapsedMs, cards, deck }` from then on (`id` = the swap's start time, used as the
-React key). `cards` and `deck` are the FALLEN tower's: the page hands its standing card
-count to `toggle` at the tap (`DeckSwapStart.cards`), because by `clearedMs` it has moved
-on to the new deck. The page draws the on-screen world's `CardSplat` over the whole scene, after the platform.
-It has no timer of its own: it is a function of `elapsedMs` from the swap clock.
-
-- **The burst** is rolled once on mount (`rollBurst`): one flying card per
-  `CARDS_PER_FLYER` (20) cards that were on the tower, clamped to 5–14. No cards on the
-  tower means no burst. The count and band come from the swap view (the fallen deck).
-- **The cards** are flat screen-space silhouettes: card stock (`ISO.card.top`, outlined
-  `ISO.cardSeam`) with the fallen deck's head band. They spin in the picture plane, and
-  flip end over end by squashing one axis; the back shows `ISO.card.left`. Each is
-  `FLYER_SCALE_MIN`–`MAX` (0.32–0.48) of a card's footprint, since the floor they bounce
-  off is further down.
-- **The motion.** The cards leave from across the tower's screen-x span
-  (`scene.splatFloor`), starting half a card below the edge so they emerge rather than
-  pop in. Departures are spread over `SPLAT_SPREAD_MS` (220 ms), most of them early. Each
-  rises 3.5–9 units under `SPLAT_GRAVITY` (170 u/s²) and sprays mostly outward (one in
-  five crosses over).
-- **Timing guarantee.** Every card is back below the edge within `SPLAT_MAX_MS` (950 ms).
-  That fits inside the shortest stretch between a trap door's impact (`clearedMs`) and the swap's end
-  (hold + close + rebound = 1000 ms), so the splat never outlives the swap clock that
-  drives it.
 
 ## Pawn entrances
 
@@ -349,16 +318,21 @@ starts in the `entrance` mode from its first render.
 - **Startles are dropped** mid-entrance.
 - **Reduced motion:** nothing plays and the pawn simply stands there.
 
-**Adding one:** write a `PawnEntrance` and list it in `PAWN_ENTRANCES`.
+**Adding one:** write a `PawnEntrance` builder and list it in `PAWN_ENTRANCES`. The registry
+holds builders, not values: an entrance captures the sky fall's physics when built, so it is built per
+pick (`pickPawnEntrance`).
 
-### Fall from the sky (`FALL_FROM_SKY`)
+### Fall from the sky (`fallFromSky`)
 
-The pawn drops from `SKY_FALL_HEIGHT` (55 units, off the top of a phone screen over the
-platform) under `SKY_FALL_GRAVITY` (60 u/s² — its own, gentler than the pawn's 110
-`PAWN_GRAVITY`, which read as too fast from this height). That gives `landMs` ≈ 1354 ms and
-~81 u/s at impact. `landMs` must stay under the shortest trap-door `readyMs` (1420 ms, an
-empty tower), or the entrance would be scheduled to start before the swap does.
-`FALL_FROM_SKY` is `fallFromHeight(SKY_FALL_HEIGHT)` (`landMs` = √(2h / g)). `fallFromHeight` is exported: the flp's hint pawn drops onto its platform from the top of the screen with `fallFromHeight(h)`, `h` measured per arrival from the window (`HintPawn.tsx` → `hintPawnDrop`, [HINT_PAWN.md](./HINT_PAWN.md) § Arrival). It is not in `PAWN_ENTRANCES`, so the tower never picks it.
+The pawn drops from `SKY_FALL_HEIGHT` (45 units, just off the top of a phone screen over the
+platform) under the `skyFall` fall type (`src/theme/gravity.ts` → `fallParams("skyFall")`: 110 u/s², start speed 0, jerk 0 by default).
+That gives `landMs` ≈ 905 ms and ~100 u/s at impact. (Until 2026-11-20 it fell 55 units under
+its own gentler 60 u/s², `landMs` ≈ 1354 ms. The height was lowered to 45 so the pawn spawns
+closer to the screen edge; the margin per phone is in [GRAVITY_LAB.md](./GRAVITY_LAB.md) § 6.)
+`landMs` must stay under the shortest trap-door `readyMs` (1420 ms, an empty tower), or the
+entrance would be scheduled to start before the swap does — true for any gravity above
+~45 u/s² (no start speed or jerk), and checked live by /gravity-lab ([GRAVITY_LAB.md](./GRAVITY_LAB.md)).
+`fallFromSky()` is `fallFromHeight(SKY_FALL_HEIGHT)` (`landMs` = √(2h / g)). `fallFromHeight` is exported: the flp's hint pawn drops onto its platform from the top of the screen with `fallFromHeight(h)`, `h` measured per arrival from the window (`HintPawn.tsx` → `hintPawnDrop`, [HINT_PAWN.md](./HINT_PAWN.md) § Arrival). It is not in `PAWN_ENTRANCES`, so the tower never picks it.
 
 - **In the air** it is stretched (0.92 × 1.1).
 - **Shadow.** Its shadow is a faint dot while it is high, and grows to full size and tone

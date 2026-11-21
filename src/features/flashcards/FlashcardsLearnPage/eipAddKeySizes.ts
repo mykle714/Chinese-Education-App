@@ -9,7 +9,7 @@
  * Added! key's rest drop + lip, both equal `sink`, so held it bottoms out exactly where
  * the lip ended.
  *
- * Depended on by: EipAddKey.tsx, src/features/reader/ReaderMoreInfoKey.tsx (same lip,
+ * Depended on by: EipAddKey.tsx, src/reading/ReaderMoreInfoKey.tsx (same lip,
  * press, type and compact width, so the pair reads as one set), src/components/
  * VocabDisplayCard.tsx's caller (ReaderDocumentPage, the stacked gap).
  * Docs: docs/EIP_SHEET_GESTURES.md § Add key.

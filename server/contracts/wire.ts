@@ -1980,6 +1980,27 @@ export type TextKind = (typeof TEXT_KINDS)[number];
  */
 export const DOCUMENT_TITLE_MAX_LENGTH = 200;
 
+/**
+ * SENTENCE EXPLAIN (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Sentence Explain"): the longest
+ * highlighted sentence the Reader may ask the AI to explain, in characters after trimming.
+ * Enforced by SentenceExplanationController (400 above it) and mirrored by the rdb's sentence
+ * face (reading/ReaderSentenceFace.tsx), which shows a notice instead of the Explain
+ * key for a longer run — usually a paragraph with no sentence punctuation.
+ */
+export const EXPLAIN_SENTENCE_MAX_LENGTH = 300;
+
+/**
+ * POST /api/texts/explainSentence — the AI explanation of one highlighted sentence, tailored
+ * to the caller (SentenceExplanationService.explainSentence). `explanationParts` is the same
+ * longDefinition-style split LongDefinitionDisplay renders (embedded Chinese → inline cpcd +
+ * popups), computed at read time. Both null when the feature is unavailable (no API key) or
+ * the model produced nothing usable.
+ */
+export interface SentenceExplanationResult {
+  explanation: string | null;
+  explanationParts: LongDefinitionPart[] | null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Community (docs/COMMUNITY_PAGE.md)
 // ─────────────────────────────────────────────────────────────────────────────

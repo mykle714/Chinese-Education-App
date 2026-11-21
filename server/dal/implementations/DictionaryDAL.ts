@@ -185,13 +185,18 @@ function prefixGlossMatch(param: string): string {
 
 /**
  * SQL for one sense normalized for an EQUALITY test against an English term: parentheticals
- * stripped, lowercased, trimmed, and a leading grammatical marker ("to ", "the ", …) removed.
+ * stripped, lowercased, trimmed, trailing punctuation removed (`GLOSS_TRAILING_PUNCT_SQL`),
+ * and a leading grammatical marker ("to ", "the ", …) removed. The term side gets the same
+ * treatment in JS (`normalizeEnglishTerm`).
  * Shared by the search ladder (`anyNormalizedSense`) and the Reader's batch English lookup
  * (`findCompleteEnglishMatches`) so "this sense IS the term" means the same thing in both.
  */
 function normalizedSenseSql(senseExpr: string): string {
   return `regexp_replace(
-                      btrim(lower(regexp_replace(${senseExpr}, '\\s*\\([^)]*\\)', '', 'g'))),
+                      regexp_replace(
+                        btrim(lower(regexp_replace(${senseExpr}, '\\s*\\([^)]*\\)', '', 'g'))),
+                        '${GLOSS_TRAILING_PUNCT_SQL}', ''
+                      ),
                       '${GLOSS_LEADING_MARKER_SQL}', ''
                     )`;
 }
@@ -222,6 +227,27 @@ function anyNormalizedSense(test: string): string {
 const GLOSS_LEADING_MARKERS = ['to', 'the', 'an', 'a'] as const;
 const GLOSS_LEADING_MARKER_SQL = `^(${GLOSS_LEADING_MARKERS.join('|')})\\s+`;
 const GLOSS_LEADING_MARKER_JS = new RegExp(`^(?:${GLOSS_LEADING_MARKERS.join('|')})\\s+`);
+
+/**
+ * Trailing punctuation ignored when testing a gloss for a COMPLETE English match.
+ *
+ * CC-CEDICT marks interrogatives with a question mark: 哪里 / 哪儿 are *"where?"*, 什么 is
+ * *"what?"*, 为什么 *"why?"*. Testing raw equality dropped every one of them, so the Reader's
+ * keycap fell through to whatever unenriched row happened to carry the bare word — "where" →
+ * 焉 yān, "what" → 神马, "why" → 为毛 (found 2026-11-21). A trailing ellipsis goes too
+ * ("how could ...?" → "how could"). Stripped from BOTH sides, like the leading markers.
+ */
+const GLOSS_TRAILING_PUNCT_SQL = `\\s*[?!.…]+$`;
+const GLOSS_TRAILING_PUNCT_JS = /\s*[?!.…]+$/;
+
+/**
+ * The term side of the complete-English test: trimmed, trailing punctuation and a leading
+ * grammatical marker removed — the JS mirror of `normalizedSenseSql`. Case is left to the
+ * caller (both callers already lowercase).
+ */
+function normalizeEnglishTerm(term: string): string {
+  return term.trim().replace(GLOSS_TRAILING_PUNCT_JS, '').replace(GLOSS_LEADING_MARKER_JS, '');
+}
 
 /**
  * How many rows `english-first` takes from EACH bucket before falling back to plain bucket
@@ -582,7 +608,8 @@ export class DictionaryDAL implements IDictionaryDAL {
    * The Reader's English → Chinese lookup (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "English
    * words"): for each English term, the ONE det row that has a sense which IS that term — the
    * search ladder's "complete English" test (`normalizedSenseSql`, both sides stripped of a
-   * leading "to"/"the"/"a"/"an") — or no row at all. Partial matches ("to eat till full" for
+   * leading "to"/"the"/"a"/"an" and of trailing punctuation, so 哪里 "where?" IS "where") —
+   * or no row at all. Partial matches ("to eat till full" for
    * "eat") never count: the keycap shows a translation, not a search result.
    *
    * Best row per term, in order: most common ("frequencyScore" DESC, unenriched rows last),
@@ -605,7 +632,7 @@ export class DictionaryDAL implements IDictionaryDAL {
   ): Promise<Array<{ term: string; senseOrdinal: number; entry: DictionaryEntry }>> {
     const normalizedTerms = Array.from(new Set(
       terms
-        .map(term => term.trim().toLowerCase().replace(GLOSS_LEADING_MARKER_JS, ''))
+        .map(term => normalizeEnglishTerm(term.toLowerCase()))
         .filter(term => term.length > 0)
     ));
     if (normalizedTerms.length === 0) return [];
@@ -903,7 +930,9 @@ export class DictionaryDAL implements IDictionaryDAL {
       // leading grammatical marker, EQUALS the term given the same treatment. Testing every
       // sense rather than just the first is what makes 我 ["I","me","my"] a complete match for
       // "me" instead of merely a partial one — it IS the word, in its second sense.
-      const normalizedTerm = searchTerm.trim().replace(GLOSS_LEADING_MARKER_JS, '');
+      // A term that is nothing but punctuation ("?") would normalize to "" and equal every
+      // punctuation-only sense; keep it literal instead.
+      const normalizedTerm = normalizeEnglishTerm(searchTerm) || searchTerm.trim();
       const completeEnglishExpr = completeGlossMatch(nextRankParam(normalizedTerm));
       // English starts-with: a sense that LEADS with the term as a whole word ("long life").
       const escapedNormalizedTerm = normalizedTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

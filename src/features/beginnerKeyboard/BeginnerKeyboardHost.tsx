@@ -158,6 +158,35 @@ let observedOsHeight: number | null = null;
  */
 const OS_HEIGHT_SETTLE_MS = 500;
 
+/**
+ * Blur `field` now and refocus it on the next frame — the dance that makes a browser
+ * re-read `inputMode` — with the caret/selection put back exactly where it was. A
+ * programmatic `focus()` is not guaranteed to keep a text field's selection (iOS can
+ * drop it to the start or the end), and the caret is where the keyboard inserts.
+ * Returns a cancel for the pending refocus (an unmount mid-dance).
+ */
+function refocusKeepingCaret(field: EditableField): () => void {
+  let saved: { start: number; end: number; direction: 'forward' | 'backward' | 'none' } | null = null;
+  try {
+    if (field.selectionStart !== null && field.selectionEnd !== null) {
+      saved = { start: field.selectionStart, end: field.selectionEnd, direction: field.selectionDirection ?? 'none' };
+    }
+  } catch {
+    // Some input types refuse the selection APIs; there is no caret to carry.
+  }
+  field.blur();
+  const frame = requestAnimationFrame(() => {
+    field.focus({ preventScroll: true });
+    if (!saved) return;
+    try {
+      field.setSelectionRange(saved.start, saved.end, saved.direction);
+    } catch {
+      // As above: the field still has focus, only the caret position is lost.
+    }
+  });
+  return () => cancelAnimationFrame(frame);
+}
+
 export default function BeginnerKeyboardHost({
   field,
   open,
@@ -293,10 +322,21 @@ export default function BeginnerKeyboardHost({
     field.inputMode = 'none';
     // Blur-then-refocus makes the browser re-read inputMode and drop a keyboard
     // that is already on screen; setting the property alone does not.
-    field.blur();
-    const frame = requestAnimationFrame(() => field.focus({ preventScroll: true }));
+    // ⚠️ DEFERRED ONE FRAME, AND THE CARET IS CARRIED ACROSS (2026-11-21). This effect
+    // is the provider's response to the `focusin` of the learner's TAP, and that
+    // focus fires inside the tap's default action — BEFORE the browser has moved the
+    // caret to the tapped spot. Blurring right here cut that placement off, and the
+    // refocus brought back the field's old caret (its start or end): every first tap
+    // into a field put the caret somewhere other than where the learner tapped. One
+    // frame later the tap has landed, so `refocusKeepingCaret` snapshots the real
+    // caret and restores it after the refocus.
+    let cancelRefocus: (() => void) | null = null;
+    const start = requestAnimationFrame(() => {
+      cancelRefocus = refocusKeepingCaret(field);
+    });
     return () => {
-      cancelAnimationFrame(frame);
+      cancelAnimationFrame(start);
+      cancelRefocus?.();
       field.inputMode = '';
     };
   }, [suppressOs, field]);
@@ -304,8 +344,7 @@ export default function BeginnerKeyboardHost({
   const switchToOsKeyboard = useCallback(() => {
     onSourceChange('os');
     field.inputMode = '';
-    field.blur();
-    requestAnimationFrame(() => field.focus({ preventScroll: true }));
+    refocusKeepingCaret(field);
   }, [field, onSourceChange]);
 
   // Coming back the other way needs no dance of its own: the effect above owns

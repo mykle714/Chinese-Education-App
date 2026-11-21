@@ -38,6 +38,7 @@ import {
     MINI_CARD_DIMENSIONS,
     MINI_CARD_RADIUS,
     miniCardDefinitionBottom,
+    miniCardDefinitionFontSize,
     miniCardWordFit,
     type MiniCardSize,
     type MiniCardWordFit,
@@ -157,7 +158,10 @@ export function layoutMiniCardSvg(input: MiniCardSvgInput, measure: TextMeasurer
     // The apostrophe span pins no stretch (CPCDRow → `.cpcd-row__pinyin-sep`).
     const separatorFont: FontSpec = { ...pinyinFont, stretch: undefined };
     const plainFont: FontSpec = { family: FONTS.cjk, sizePx: fontPx(content.plainFontSize), weight: WEIGHT.bold };
-    const definitionFont: FontSpec = { family: FONTS.cjk, sizePx: fontPx(content.definitionFontSize), weight: WEIGHT.regular };
+    // One step smaller when a gloss word overflows the body — MiniCard's same decision
+    // (miniCardFace.ts → miniCardDefinitionFontSize).
+    const definitionFontSize = miniCardDefinitionFontSize(input.definition, size, measure.advance);
+    const definitionFont: FontSpec = { family: FONTS.cjk, sizePx: fontPx(definitionFontSize), weight: WEIGHT.regular };
 
     const word = isLatinScriptLang(input.language)
         ? { glyphs: [], pinyins: [], separators: [], plainLines: layoutPlainWord(input.entryKey, plainFont, content, bodyWidth, measure) }

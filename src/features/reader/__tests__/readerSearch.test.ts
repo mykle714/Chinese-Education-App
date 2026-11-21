@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SegmentSpan } from "../documentSegmentation";
+import type { SegmentSpan } from "../../../reading/documentSegmentation";
 import { buildDocumentSyllables, findPinyinMatches, findReaderMatches, findTextMatches } from "../readerSearch";
 
 // Covers src/features/reader/readerSearch.ts (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Search").

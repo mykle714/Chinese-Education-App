@@ -48,6 +48,8 @@ export const MINUTE_POINTS_ELIGIBLE_PAGES = [
   '/flashcards/card',
   '/dictionary',
   '/reader',
+  // Adventures earns like the Reader (docs/CYOA_FEATURE.md § 8).
+  '/adventures',
   '/discover/sort',
   '/games/bubble-match',
   '/games/word-search',

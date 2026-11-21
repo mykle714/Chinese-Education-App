@@ -213,6 +213,12 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
   bulkCreateWithTransaction(entries: VocabEntryCreateData[], transaction: ITransaction): Promise<VocabEntry[]>;
 
   // Advanced queries
+  /**
+   * The user's SORTED vet rows (lent cards excluded — `vetSortedClause`) for these entryKeys
+   * in one language, with det columns and `typedMarkHistory`. Callers: the Reader's sentence
+   * Explain reads each word's mastery from it (SentenceExplanationService).
+   */
+  bulkFindByKeys(userId: string, entryKeys: string[], language: string): Promise<VocabEntry[]>;
   findDuplicateKeys(userId: string, entryKeys: string[], language: string): Promise<VocabEntry[]>;
   findEntriesCreatedAfter(userId: string, date: Date, language: string): Promise<VocabEntry[]>;
   findRelatedBySharedCharacters(

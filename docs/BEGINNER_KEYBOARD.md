@@ -2006,6 +2006,14 @@ keyboard **immediately** — no prompt (see § 7a). It sets `inputMode="none"`, 
 both are on screen at once. The field keeps focus throughout (every control
 prevents `mousedown` default), because insertion happens at the caret.
 
+**The tapped caret survives the dance** (2026-11-21). `focusin` fires inside the tap's
+default action, before the browser has moved the caret to the tapped spot, so the blur
+is deferred one frame (the tap has landed by then). The caret/selection is then
+snapshotted, the field blurred, refocused on the next frame, and the selection restored
+(`BeginnerKeyboardHost.tsx` → `refocusKeepingCaret`; also used by `switchToOsKeyboard`).
+Before this, the first tap into a field put the caret at the field's old position (its
+start or end) rather than where the learner tapped.
+
 `inputMode` is restored on unmount and when `ABC` hands the field back (that key
 lives in the switch bar since 2026-09-21 — § 6z-2). A
 field left at `"none"` can never raise a keyboard again — a leak that presents as
@@ -3579,6 +3587,24 @@ declined in favour of accuracy.
   `server/__tests__/outlineMedians.test.ts` → "gives every guide stroke a piece even when
   two pieces sit nearest the same one"
 
+## 6z-15. BUILT 2026-11-21 — reading which keyboard is up
+
+A page can ask which keyboard is on screen: `useActiveKeyboardSource()` returns `'ours'`
+(写), `'pinyin'` (ā), `'os'` (abc) or `null`. The provider publishes the **effective**
+source (field lock → field default → session choice, § 6z-3a/b) and only while `open`. It does
+not use `field`, which outlives `open` by one exit transition. `null` = no keyboard up, a
+non-zh account (provider disabled), or no provider in the tree. It cannot see a field that opts
+out (`data-beginner-keyboard="off"`), where the OS keyboard comes up unannounced.
+
+First consumer: the cyoa editors, where abc typing does not count as minute-points activity
+(docs/CYOA_FEATURE.md § 8).
+
+### Code
+
+- `src/features/beginnerKeyboard/activeSourceContext.ts` → `ActiveKeyboardSourceContext`,
+  `useActiveKeyboardSource`
+- `src/features/beginnerKeyboard/BeginnerKeyboardProvider.tsx` → publishes it beside the inset context
+
 ## 7. Outstanding before we can build
 
 **Nothing is blocking as of 2026-09-07.** What remains is one build task and a set
@@ -3742,7 +3768,8 @@ Two consequences to design around, both flagged now rather than discovered later
 1. **Swapping is a re-focus dance.** Toggling `inputmode` on a focused input does
    not reliably dismiss an already-open keyboard on iOS — it usually needs a
    blur/refocus, which risks losing the caret position. The caret offset must be
-   captured and restored explicitly.
+   captured and restored explicitly — done by `refocusKeepingCaret` since 2026-11-21
+   (§ above, "The tapped caret survives the dance").
 2. **`visualViewport` is the only measurement available**, and it reports nothing
    until the keyboard has actually opened. There will be a frame or two where the
    bar is mispositioned. Budget for it; do not treat it as a bug.

@@ -8,7 +8,7 @@
  * start. A caller that wants the pawn to land on a beat (the Deck Tower's trap door
  * slamming shut) starts it `landMs` before that beat; see `entranceStartFor`.
  *
- * To add one: write a `PawnEntrance` and list it in `PAWN_ENTRANCES`. `pickPawnEntrance`
+ * To add one: write a `PawnEntrance` builder and list it in `PAWN_ENTRANCES`. `pickPawnEntrance`
  * draws one at random.
  *
  * Depended on by: usePawnMotion.ts (plays the frames), IsoPawn.tsx (`entrance` prop),
@@ -17,6 +17,8 @@
  * start to land just after it (DeckTowerPage → `leverArgs`,
  * usePopUpMotion.ts `skyEntrance`, IsoLever.tsx `air`; docs/FOCUS_MODE.md § 5).
  */
+
+import { fallDistanceAt, fallMs, fallParams } from "../../../theme/gravity";
 
 /** The pawn's pose at one instant of an entrance. Lengths in world units. */
 export interface PawnEntranceFrame {
@@ -44,26 +46,28 @@ const easeOutSq = (u: number) => (1 - u) * (1 - u);
 
 // ── Fall from the sky ──────────────────────────────────────────────────────────
 
-/** Where the fall starts: high enough to be off the top of a phone screen over the platform. */
-const SKY_FALL_HEIGHT = 55;
 /**
- * The pawn's cartoon gravity, world units / s². (A pawn is ~2 units tall, so real gravity
- * would crawl.) Used by the pawn's feet physics in usePawnMotion (the plate's press, launch
- * and bounces, and its fall through the trap door). The sky-fall entrance uses its own
- * SKY_FALL_GRAVITY.
+ * Where the fall starts, world units over the floor: just off the top of a phone screen over
+ * the platform. Lowered from 55 to 45 on 2026-11-20 (owner) so the pawn spawns closer to the
+ * screen edge. Measured across popular phones in td's layout, the tightest case — a Pixel 9,
+ * the pawn landing at the platform's front corner — had 12.4 units (~215 px) of margin at 55,
+ * so 45 leaves ~2.4 units (~40 px); an iPhone 14/15/16 landing at the floor's centre keeps
+ * ~11 units. A taller-aspect screen than those would show the spawn (docs/GRAVITY_LAB.md § 6).
  */
-export const PAWN_GRAVITY = 110;
-/**
- * The sky fall's own, gentler pull: at PAWN_GRAVITY a 55-unit drop hit the floor at
- * 110 u/s and read as too fast. Still an accelerating fall, just a floatier one (~81 u/s
- * at impact, landMs ≈ 1354 ms). Kept apart from PAWN_GRAVITY so the plate press / launch
- * / trap-door physics are untouched.
+export const SKY_FALL_HEIGHT = 45;
+/*
+ * Physics: the `skyFall` fall type (src/theme/gravity.ts → `fallParams("skyFall")`: its own
+ * gravity, start speed and jerk, tunable on /gravity-lab). Its gravity is also the pawn's own
+ * (`pawnGravity`, usePawnMotion). History: its own 60 u/s² until 2026-11-20, then the shared
+ * 110 (a 55-unit drop landed in ~1000 ms rather than ~1354 ms — accepted by the owner). From
+ * today's 45 units, at 110 / 0 / 0, it lands in ~905 ms.
  *
  * Ceiling: landMs must stay under the shortest trap-door `readyMs` (deckTransitions.ts →
  * TRAP_DOOR: drop + bounce + hold + close = 1420 ms), or the incoming pawn's entrance
- * would be scheduled to start before its swap does and it would pop in mid-fall.
+ * would be scheduled to start before its swap does and it would pop in mid-fall. From
+ * SKY_FALL_HEIGHT (45) that holds for any skyFall gravity above ~45 u/s² with no start speed or jerk;
+ * /gravity-lab flags one below it.
  */
-const SKY_FALL_GRAVITY = 60;
 /** The landing squash, then back to its normal shape. Harder than a startle's landing: it fell a long way. */
 const SKY_FALL_SQUASH_MS = 260;
 const SKY_FALL_SQUASH = 0.3;
@@ -74,13 +78,16 @@ const SKY_FALL_SQUASH = 0.3;
 const SKY_FALL_SHADOW_REACH = 12;
 
 /**
- * A fall from `height` world units over the floor, under the pawn's own gravity: stretched
+ * A fall from `height` world units over the floor, under the `skyFall` physics: stretched
  * along the fall, the shadow growing in over the last SKY_FALL_SHADOW_REACH units, a hard
- * squash on landing. FALL_FROM_SKY is this from SKY_FALL_HEIGHT; the flp's hint pawn
+ * squash on landing. `fallFromSky` is this from SKY_FALL_HEIGHT; the flp's hint pawn
  * drops from the top of the screen onto its platform, the height measured per arrival (HintPawn.tsx → hintPawnDrop).
  */
 export function fallFromHeight(height: number, id = "fall-from-height"): PawnEntrance {
-    const landMs = Math.sqrt((2 * Math.max(0, height)) / SKY_FALL_GRAVITY) * 1000;
+    // Read once per entrance, so one fall is self-consistent even if the lab moves a slider mid-fall.
+    // The pawn sky fall's own gravity, start speed and jerk (src/theme/gravity.ts → `fallParams("skyFall")`).
+    const fall = fallParams("skyFall");
+    const landMs = fallMs(Math.max(0, height), fall);
     return {
         id,
         landMs,
@@ -88,7 +95,7 @@ export function fallFromHeight(height: number, id = "fall-from-height"): PawnEnt
         frame: (t) => {
             if (t < landMs) {
                 const s = t / 1000;
-                const hop = Math.max(0, height - 0.5 * SKY_FALL_GRAVITY * s * s);
+                const hop = Math.max(0, height - fallDistanceAt(s, fall));
                 const air = Math.min(1, hop / SKY_FALL_SHADOW_REACH);
                 // Stretched along the fall.
                 return { hop, sx: 0.92, sy: 1.1, shadowScale: 1 - 0.8 * air, shadowOpacity: 1 - air };
@@ -100,15 +107,22 @@ export function fallFromHeight(height: number, id = "fall-from-height"): PawnEnt
     };
 }
 
-export const FALL_FROM_SKY: PawnEntrance = fallFromHeight(SKY_FALL_HEIGHT, "fall-from-sky");
+/**
+ * The Deck Tower's sky fall. A function, not a constant: an entrance captures the gravity
+ * when it is BUILT, so it is built per pick (a module constant would freeze the gravity in
+ * force at import and ignore /gravity-lab).
+ */
+export function fallFromSky(): PawnEntrance {
+    return fallFromHeight(SKY_FALL_HEIGHT, "fall-from-sky");
+}
 
 // ── Registry ───────────────────────────────────────────────────────────────────
 
-/** Every entrance a scene may pick from. */
-export const PAWN_ENTRANCES: readonly PawnEntrance[] = [FALL_FROM_SKY];
+/** Every entrance a scene may pick from, as builders (see `fallFromSky` for why not values). */
+export const PAWN_ENTRANCES: readonly (() => PawnEntrance)[] = [fallFromSky];
 
 export function pickPawnEntrance(): PawnEntrance {
-    return PAWN_ENTRANCES[Math.floor(Math.random() * PAWN_ENTRANCES.length)];
+    return PAWN_ENTRANCES[Math.floor(Math.random() * PAWN_ENTRANCES.length)]();
 }
 
 /** When to start `entrance` (same clock as `landAt`) so the pawn lands at `landAt`. */

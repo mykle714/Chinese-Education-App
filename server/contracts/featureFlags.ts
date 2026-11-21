@@ -153,6 +153,18 @@ export const FEATURE_FLAGS = {
    * ⚠️ CURRENTLY OFF.
    */
   standaloneGames: false,
+
+  /**
+   * Adventures (cyoa) — branching stories read in the Reader's engine, with an editor
+   * for author accounts (docs/CYOA_FEATURE.md). Gates `/api/stories/*`
+   * (server/routes/storyRoutes.ts), the `/adventures` routes and the Menu popover row.
+   * No second server entry point: every story read and write goes through that one router.
+   *
+   * ON since 2026-11-20 (owner's call) while the learner page is still being finished:
+   * the passage is plain text until the reading engine moves (docs/CYOA_FEATURE.md § 9).
+   * Requires migration 196 on the target database.
+   */
+  cyoa: true,
 } as const;
 
 /** The name of any feature flag above. */

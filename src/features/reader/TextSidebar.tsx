@@ -6,7 +6,7 @@ import SwipeToDeleteRow from "./SwipeToDeleteRow";
 import ReaderDocumentGrid from "./ReaderDocumentGrid";
 import type { ReaderListView } from "./useReaderListView";
 import type { Text } from "../../types";
-import { readerMessageSx, readerMutedTextSx } from "./readerStyles";
+import { readerMessageSx, readerMutedTextSx } from "../../reading/readerStyles";
 import type { Tier2Look } from "../../timeOfDay/tier2Look";
 import { iconImageUrl } from "../../cardIcons/cardIconLayout";
 import { formatJournalDate, isJournal, readerDocumentGlyph, readerDocumentHue, type ReaderCollection } from "./readerListOrder";

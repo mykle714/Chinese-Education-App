@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { layoutMiniCardSvg, type TextMeasurer } from "../components/miniCardSvgLayout";
 import { solvePinyinShift, pinyinSeparators, buildCharItems, PINYIN_MIN_GAP_PX } from "../components/cpcdLayout";
+import { miniCardDefinitionFontSize } from "../components/miniCardFace";
+import { SIZE } from "../theme/scale";
 
 /**
  * MiniCardSvg's hand layout (src/components/miniCardSvgLayout.ts) and the cpcd pinyin
@@ -150,5 +152,47 @@ describe("layoutMiniCardSvg", () => {
         const l = layoutMiniCardSvg({ ...base, entryKey: "本", pronunciation: "běn", definition: "classifier for books" }, measure);
         const runs = l.definitionLines.flatMap((line) => line.runs);
         expect(runs[0]).toEqual({ text: "classifier", italic: true });
+    });
+});
+
+/**
+ * The long-word step-down (miniCardFace.ts → miniCardDefinitionFontSize). With the 0.5em
+ * measurer a glyph is 7px at 14px, 6px at 12px, 5.5px at 11px. Regular body 76px: 10 letters
+ * fit at 14px, 12 at 12px, 13 at 11px. Compact body 66px: 11 fit at 12px, 12 at 11px.
+ */
+describe("miniCardDefinitionFontSize", () => {
+    const advance = measure.advance;
+
+    it("keeps the face's normal size when every word fits", () => {
+        expect(miniCardDefinitionFontSize("a very long gloss", "regular", advance)).toBe(SIZE.body);
+        expect(miniCardDefinitionFontSize("abcdefghij", "regular", advance)).toBe(SIZE.body);
+    });
+
+    it("drops the regular face one step when one word overflows", () => {
+        expect(miniCardDefinitionFontSize("fully independent", "regular", advance)).toBe(SIZE.caption);
+    });
+
+    it("takes the regular face's second step when the first is not enough", () => {
+        expect(miniCardDefinitionFontSize("abcdefghijkl", "regular", advance)).toBe(SIZE.caption);
+        expect(miniCardDefinitionFontSize("abcdefghijklm", "regular", advance)).toBe(SIZE.micro);
+    });
+
+    it("stops at the last step when nothing fits", () => {
+        expect(miniCardDefinitionFontSize("abcdefghijklmnopqrstu", "regular", advance)).toBe(SIZE.micro);
+        expect(miniCardDefinitionFontSize("abcdefghijklmnopqrstu", "compact", advance)).toBe(SIZE.micro);
+    });
+
+    it("drops the compact face from caption to micro", () => {
+        expect(miniCardDefinitionFontSize("abcdefghijk", "compact", advance)).toBe(SIZE.caption);
+        expect(miniCardDefinitionFontSize("abcdefghijkl", "compact", advance)).toBe(SIZE.micro);
+    });
+
+    it("treats a hyphen as a break point", () => {
+        expect(miniCardDefinitionFontSize("short-lived-ish", "regular", advance)).toBe(SIZE.body);
+    });
+
+    it("lays the SVG gloss out at the stepped-down size", () => {
+        const l = layoutMiniCardSvg({ language: "zh", entryKey: "独", pronunciation: "dú", definition: "independent", iconId: null }, measure);
+        expect(l.definitionFont.sizePx).toBe(12);
     });
 });

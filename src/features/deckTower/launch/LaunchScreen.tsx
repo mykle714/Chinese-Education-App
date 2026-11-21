@@ -1,11 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { Box } from "@mui/material";
-import { IsoPlatform, IsoScene, makeProjector, type WorldRect } from "../iso";
-import { HEAD_CENTRE, HEAD_RADIUS, REST_POSE, pawnFigure } from "../iso/pawnFigure";
+import { IsoPlatform, IsoScene, type WorldRect } from "../iso";
+import { HEAD_CENTRE, REST_POSE, pawnFigure } from "../iso/pawnFigure";
 import { useIsoPalette, useIsoProjector } from "../iso/sceneContext";
 import { prefersReducedMotion } from "../iso/skyTraffic";
 import type { LaunchLook } from "./launchLook";
 import { CIRCLE_MOTION, circleCoverRadius, type ScreenPoint } from "../../../utils/pageTransition";
+import { fallEasing, fallMs, fallParams } from "../../../theme/gravity";
+import { FEET_AT_SCREEN_Y, LAUNCH_PROJ, PAWN_HEAD_TOP_PX, launchFall } from "./launchDrop";
 
 /**
  * LaunchScreen — the full-screen cover the app opens behind on every cold start, before auth
@@ -42,8 +44,8 @@ import { CIRCLE_MOTION, circleCoverRadius, type ScreenPoint } from "../../../uti
  *
  * All the animations are pinned (`startTime`) to one `performance.now()` time, the document
  * timeline's clock, so the recoil starts on the frame of touchdown whatever the main thread
- * is doing. The fall is exact gravity: a t² curve is the cubic bezier (1/3, 0, 2/3, 1/3)
- * (`GRAVITY_EASE`).
+ * is doing. The fall is exact gravity: the world's fall as a CSS easing
+ * (src/theme/gravity.ts → `fallEasing`; y = x² from rest, reshaped by start speed and jerk).
  *
  * ── Timing contract ──────────────────────────────────────────────────────────
  *   - It always plays ONE full drop and recoil (`played`), so it never flickers in and out. The
@@ -78,9 +80,8 @@ import { CIRCLE_MOTION, circleCoverRadius, type ScreenPoint } from "../../../uti
 
 // ── Scene ────────────────────────────────────────────────────────────────────
 
-/** Screen px per world unit. */
-const UNIT = 30;
-const PROJ = makeProjector(UNIT);
+/** Screen px per world unit — launchDrop.ts → LAUNCH_PROJ (shared with /gravity-lab's timings). */
+const PROJ = LAUNCH_PROJ;
 /** The mini platform: a small rounded slab, about 180 px across. Its floor is z = 0. */
 const PLATFORM: WorldRect = { x: 0, y: 0, w: 3, d: 3, r: 0.45 };
 const PLATFORM_THICKNESS = 0.9;
@@ -88,10 +89,6 @@ const PLATFORM_THICKNESS = 0.9;
 const PAWN_FEET = { x: PLATFORM.w / 2, y: PLATFORM.d / 2, z: 0 };
 /** px of the recoil's deepest dip, kept clear under the slab so it is never cropped. */
 const RECOIL_DIP_PX = 10;
-/** Screen px from the pawn's feet up to the top of its head, standing at rest (pawnFigure.ts). */
-const PAWN_HEAD_TOP_PX = HEAD_CENTRE * PROJ.heightUnit + HEAD_RADIUS * PROJ.facingScaleAt(0, 0, 0);
-/** Where the pawn's feet (the floor's centre) sit, as a share of the screen's height from the top. */
-const FEET_AT_SCREEN_Y = 0.8;
 
 /** The scene's px box, from the slab's projected corners and the pawn's head (as in HintPawn). */
 const SCENE_BOX = (() => {
@@ -117,19 +114,12 @@ const SCENE_BOX = (() => {
 
 /** A beat of plain colour before the pawn starts to fall. */
 const FALL_DELAY_MS = 250;
-/**
- * The fall's pull, in world units/s²: the same as the td sky fall's (pawnEntrances.ts →
- * SKY_FALL_GRAVITY), a slightly floaty drop. Turned into px/s² with the projector's height unit.
+/*
+ * The fall's pull, start speed and jerk: the `launchScreen` fall type's own
+ * (src/theme/gravity.ts → `fallParams("launchScreen")`, tunable on /gravity-lab; it had a
+ * floatier 60 u/s² until 2026-11-20). All are world units; `planDrop` works in world
+ * units and converts the distance with the projector's height unit.
  */
-const GRAVITY_UNITS = 60;
-const GRAVITY_PX = GRAVITY_UNITS * PROJ.heightUnit;
-/** Clear space between the top of the cover and the pawn's head when the fall starts. */
-const FALL_START_MARGIN_PX = 16;
-/**
- * Exact gravity as a CSS easing: distance ∝ t², and y = x² is the cubic bezier with control
- * points (1/3, 0) and (2/3, 1/3). Starts from rest and accelerates all the way down.
- */
-const GRAVITY_EASE = "cubic-bezier(0.3333, 0, 0.6667, 0.3333)";
 /** The pawn's shape while falling (stretched along the fall), as in pawnEntrances.ts → `fallFromHeight`. */
 const STRETCH = "scale(0.92, 1.1)";
 /** The landing squash: hits its flattest SQUASH_IN_MS after touchdown, back to rest by SQUASH_MS. */
@@ -165,6 +155,8 @@ interface LaunchDrop {
     startAt: number;
     fallPx: number;
     landMs: number;
+    /** The fall's CSS easing, planned with `landMs` so the two agree. */
+    easing: string;
 }
 
 /**
@@ -173,8 +165,10 @@ interface LaunchDrop {
  * to the feet's resting place, FEET_AT_SCREEN_Y down. Time from rest under gravity: √(2d/g).
  */
 function planDrop(coverHeight: number, startAt: number): LaunchDrop {
-    const fallPx = coverHeight * FEET_AT_SCREEN_Y + PAWN_HEAD_TOP_PX + FALL_START_MARGIN_PX;
-    return { startAt, fallPx, landMs: Math.sqrt((2 * fallPx) / GRAVITY_PX) * 1000 };
+    // The drop's geometry (launchDrop.ts); timed in world units by the launchScreen fall type, read once.
+    const { px: fallPx, units } = launchFall(coverHeight);
+    const fall = fallParams("launchScreen");
+    return { startAt, fallPx, landMs: fallMs(units, fall), easing: fallEasing(units, fall) };
 }
 
 /** CIRCLE_MOTION's grow curve, cubic-bezier(0.5, 0, 0.3, 1), approximated as an ease-in-out cubic. */
@@ -332,13 +326,13 @@ export default function LaunchScreen({ look, ready, onOpen, onDone }: LaunchScre
         const fall = pawnFallRef.current;
         const shape = pawnShapeRef.current;
         if (!drop || !platform || !ride || !fall || !shape) return;
-        const { startAt, fallPx, landMs } = drop;
+        const { startAt, fallPx, landMs, easing } = drop;
         const landAt = startAt + landMs;
         const shapeMs = landMs + SQUASH_MS;
         const anims = [
             // The fall: from above the top edge to the floor, under gravity. `fill: both`
             // holds it above the edge (off the cover) until it starts.
-            playAt(fall, [{ transform: `translateY(${-fallPx}px)`, easing: GRAVITY_EASE }, { transform: "translateY(0)" }], landMs, startAt),
+            playAt(fall, [{ transform: `translateY(${-fallPx}px)`, easing }, { transform: "translateY(0)" }], landMs, startAt),
             // Stretched all the way down, squashed flat on touchdown, then back to rest.
             playAt(
                 shape,

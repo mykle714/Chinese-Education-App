@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { entranceStartFor, pickPawnEntrance, PLATE_LAUNCH_APEX_MS, prefersReducedMotion, type PawnEntrance, type PawnEntranceCue } from "./iso";
+import { entranceStartFor, pickPawnEntrance, plateLaunchApexMs, prefersReducedMotion, type PawnEntrance, type PawnEntranceCue } from "./iso";
 import { pickDeckTransition, type DeckTransitionContext, type DeckTransitionPlan } from "./deckTransitions";
 import { otherTowerDeck, type TowerDeckId } from "./towerDecks";
 
@@ -14,15 +14,13 @@ import { otherTowerDeck, type TowerDeckId } from "./towerDecks";
  * Each platform on the page (towerPlatforms.ts) runs its OWN instance: its plate, deck
  * and swap are independent of the others'. One swap, on one clock (ms since the tap):
  *
- *   0 ── PLATE_SETTLE_MS ──▶ t = 0 ──────── clearedMs ──── readyMs ──── durationMs
+ *   0 ── plateSettleMs() ─▶ t = 0 ──────── clearedMs ──── readyMs ──── durationMs
  *   plate + title       door drops, old     old tower      new pawn LANDS,  rebound
  *   switch to the new   tower + pawn fall;  gone: scene    the page sky-    ends:
  *   deck at once; the   old pawn pops "!";  refits to the  drops the new    settled
  *   plate pops back up  new pawn mounted,   new deck       tower (DeckTowerPage)
  *                       hidden until its
  *                       entrance starts
- *                                    (optional impactMs — the trap door's is clearedMs: the tower
- *                                     hits a floor below the screen and cards splatter up)
  *
  * The transition (deckTransitions.ts) and the new pawn's entrance (iso/pawnEntrances.ts)
  * are each picked at random from their registries per swap. The entrance is scheduled
@@ -37,15 +35,18 @@ import { otherTowerDeck, type TowerDeckId } from "./towerDecks";
  * A beat between the tap and the door dropping: the plate has already snapped to the new
  * deck's face (a hard cut, no animation) and pops back up (usePlatePress) in this beat.
  * Never shorter than a pawn standing on the plate takes to reach the top of the launch
- * that pop gives it (usePawnMotion → PLATE_LAUNCH_APEX_MS, ~209 ms), so the floor drops
- * out from under the pawn only once it has peaked, and it falls from the air
- * (docs/DECK_TOWER_TRANSITIONS.md § "Pawns during a swap"). At today's pawn gravity the
- * plate's own 300 ms settle is the longer of the two.
+ * that pop gives it (usePawnMotion → `plateLaunchApexMs`, ~209 ms at gravity 110), so the
+ * floor drops out from under the pawn only once it has peaked, and it falls from the air
+ * (docs/DECK_TOWER_TRANSITIONS.md § "Pawns during a swap"). The plate's own 300 ms settle is
+ * the longer of the two unless the pawn's gravity (the sky fall's) drops below ~59 u/s²
+ * (src/theme/gravity.ts → `pawnGravity`).
+ * A function, because the gravity can be changed live by /gravity-lab; each swap reads it
+ * once at its tap and keeps it (`SwapPlan.startMs`).
  */
-const PLATE_POP_SETTLE_MS = 300;
-export const PLATE_SETTLE_MS = Math.max(PLATE_POP_SETTLE_MS, PLATE_LAUNCH_APEX_MS);
-/** Ms from the tap to transition t = 0. */
-const TRANSITION_START_MS = PLATE_SETTLE_MS;
+export const PLATE_POP_SETTLE_MS = 300;
+export function plateSettleMs(): number {
+    return Math.max(PLATE_POP_SETTLE_MS, plateLaunchApexMs());
+}
 
 export interface SwapPawn {
     /** React key; a new pawn per swap, so its entrance plays on mount. */
@@ -75,13 +76,6 @@ export interface DeckSwapView {
     towerOnStage: boolean;
     /** Every pawn to draw: the current one, or mid-swap the outgoing and the incoming. */
     pawns: SwapPawn[];
-    /**
-     * The fallen tower has hit the floor below the screen (only when the transition
-     * rolled a splat): `id` is per swap (a React key), `elapsedMs` is time since impact.
-     * It carries the fallen tower's card count and deck, because by the trap door's impact
-     * (clearedMs) the page has already moved on to the new deck.
-     */
-    splat: { id: number; elapsedMs: number; cards: number; deck: TowerDeckId } | null;
     /** A swap is running; taps are ignored. */
     busy: boolean;
 }
@@ -90,18 +84,17 @@ export interface DeckSwapView {
 export interface DeckSwapStart extends DeckTransitionContext {
     /** The build-up's progress at the tap: the old tower falls as it stands. */
     progress: number;
-    /** Cards standing on the tower at the tap (what a splat scatters). */
-    cards: number;
 }
 
 interface SwapPlan {
     from: TowerDeckId;
     to: TowerDeckId;
     startedAt: number;
+    /** Ms from the tap to transition t = 0 (`plateSettleMs()` at the tap). */
+    startMs: number;
     transition: DeckTransitionPlan;
     entrance: PawnEntrance;
     frozenProgress: number;
-    frozenCards: number;
     outgoingPawnKey: number;
     incomingPawnKey: number;
 }
@@ -109,8 +102,8 @@ interface SwapPlan {
 /** The scene at `now` during `plan`. Pure. */
 function swapView(plan: SwapPlan, now: number): DeckSwapView {
     const e = now - plan.startedAt;
-    const t = e - TRANSITION_START_MS;
-    const { clearedMs, readyMs, impactMs } = plan.transition;
+    const t = e - plan.startMs;
+    const { clearedMs, readyMs } = plan.transition;
     const frame = t >= 0 ? plan.transition.frame(t) : { hingeAngle: 0, outgoingDrop: 0 };
     const cleared = t >= clearedMs;
 
@@ -125,7 +118,7 @@ function swapView(plan: SwapPlan, now: number): DeckSwapView {
             outgoing: false,
             entrance: {
                 animation: plan.entrance,
-                startAt: entranceStartFor(plan.entrance, plan.startedAt + TRANSITION_START_MS + readyMs),
+                startAt: entranceStartFor(plan.entrance, plan.startedAt + plan.startMs + readyMs),
             },
         });
     }
@@ -137,7 +130,6 @@ function swapView(plan: SwapPlan, now: number): DeckSwapView {
         outgoing: cleared ? null : { drop: frame.outgoingDrop, frozenProgress: plan.frozenProgress },
         towerOnStage: !cleared || t >= readyMs,
         pawns,
-        splat: impactMs !== undefined && t >= impactMs ? { id: plan.startedAt, elapsedMs: t - impactMs, cards: plan.frozenCards, deck: plan.from } : null,
         busy: true,
     };
 }
@@ -165,10 +157,10 @@ export function useDeckSwap(initial: TowerDeckId = "learn-now"): DeckSwapView & 
             from: s.deck,
             to,
             startedAt,
+            startMs: plateSettleMs(),
             transition: pickDeckTransition().plan(start),
             entrance: pickPawnEntrance(),
             frozenProgress: start.progress,
-            frozenCards: start.cards,
             outgoingPawnKey: s.pawnKey,
             incomingPawnKey: s.pawnKey + 1,
         });
@@ -178,7 +170,7 @@ export function useDeckSwap(initial: TowerDeckId = "learn-now"): DeckSwapView & 
     // transition's end.
     useEffect(() => {
         if (!plan) return;
-        const endAt = plan.startedAt + TRANSITION_START_MS + plan.transition.durationMs;
+        const endAt = plan.startedAt + plan.startMs + plan.transition.durationMs;
         let frame = 0;
         const tick = (t: number) => {
             if (t >= endAt) {
@@ -203,7 +195,6 @@ export function useDeckSwap(initial: TowerDeckId = "learn-now"): DeckSwapView & 
               outgoing: null,
               towerOnStage: true,
               pawns: [{ key: pawnKey, outgoing: false }],
-              splat: null,
               busy: false,
           };
     return { ...view, toggle };

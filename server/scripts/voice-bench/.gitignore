@@ -1,0 +1,4 @@
+# Learner voice recordings stay local (the voice feature never stores learner audio either).
+clips/
+# Benchmark output: audio files and reports, regenerated on every run.
+results/

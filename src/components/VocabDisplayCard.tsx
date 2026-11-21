@@ -30,6 +30,11 @@ interface VocabDisplayCardProps {
     // `stacked`: false → laid side by side, true → stacked under a long headword, where
     // the page should draw smaller versions. See ACTION LAYOUT below.
     renderHeaderActions?: (stacked: boolean) => ReactNode;
+    // Set → the face shows this node in the padded, scrolling content box INSTEAD of the
+    // entry, the empty face and the idle hint (the Reader's SENTENCE MODE: ReaderSentenceFace,
+    // the Explain key + its answer). The card's shape, height and chrome are unchanged.
+    // Memoise it: the memo below compares it by identity.
+    customFace?: ReactNode;
 }
 
 // Fixed so the reading box below does not jump as the highlighted word changes; a long
@@ -97,9 +102,12 @@ const SPEAKER_TOP_OFFSET = Math.round(44 / 2 + 3 - SPEAKER_BUTTON_SIZE / 2);
  *   - **Empty** — a highlighted word with no entry shows the caller's `emptyFace` centred
  *     in the face (the Reader passes a small resting pawn, ReaderKeycapPawn); it used to be a
  *     "No dictionary entry found." line.
+ *   - **Custom** — a caller-built face (`customFace`) replaces all of the above in the padded
+ *     content box: the Reader's SENTENCE MODE puts its sentence face (ReaderSentenceFace —
+ *     the Explain key and the AI explanation) here.
  *   - **Idle** — before the learner's first selection (the Reader's NOTHING-SELECTED
  *     MODE, useTextSelection) the face shows `idleHint` over its whole area — the page's how-to-navigate demo
- *     (src/features/reader/ReaderTapHint.tsx), which replaced a 5 s app notification. Once a word
+ *     (src/reading/ReaderTapHint.tsx), which replaced a 5 s app notification. Once a word
  *     is selected the page stops passing it and it never returns for that visit.
  *
  * The card never changes shape between words; only its contents do. (Before 2026-11-16 it
@@ -110,7 +118,9 @@ const SPEAKER_TOP_OFFSET = Math.round(44 / 2 + 3 - SPEAKER_BUTTON_SIZE / 2);
  * Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Look.
  * Layer: shared component (renders only).
  */
-const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ dictionaryEntry, idleHint, emptyFace, onSpeak, isSpeaking, renderHeaderActions }) => {
+const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ dictionaryEntry, idleHint: idleHintProp, emptyFace, onSpeak, isSpeaking, renderHeaderActions, customFace }) => {
+    // A custom face outranks the idle hint (the caller should not pass both).
+    const idleHint = customFace ? null : idleHintProp;
     // Read-only use of the flp's preferences: only the tone-colour toggle is consulted.
     const { settings } = useFlashcardLearnSettings();
     const showPinyinColor = settings.showPinyinColor;
@@ -128,7 +138,7 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ dictiona
     const actionsRef = useRef<HTMLDivElement>(null);
     const sideBySideWidthRef = useRef(0);
     const [stacked, setStacked] = useState(false);
-    const hasActions = !!renderHeaderActions && !!dictionaryEntry && !idleHint;
+    const hasActions = !!renderHeaderActions && !!dictionaryEntry && !idleHint && !customFace;
     useLayoutEffect(() => {
         const row = headerRowRef.current;
         const headword = headwordRef.current;
@@ -191,7 +201,7 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ dictiona
                 // beside a 2-character headword (owner's call 2026-11-17).
                 sx={{ flexGrow: 1, minHeight: 0, overflowY: 'auto', px: 1.5, pt: `${FACE_PADDING_TOP_PX}px`, pb: 0.5 }}
             >
-                {idleHint ? null : dictionaryEntry ? (
+                {customFace ? customFace : idleHint ? null : dictionaryEntry ? (
                     <>
                         {/* The header row: the headword (char + pinyin columns, as in the eip
                             header) with the speaker just right of it; the page's action
@@ -289,7 +299,7 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ dictiona
             {/* No entry: the caller's empty face (the Reader's pawn), centred in the WHOLE
                 face, not the padded content box. It replaced a "No dictionary entry found."
                 line (owner's call 2026-11-17). */}
-            {!idleHint && !dictionaryEntry && emptyFace && (
+            {!customFace && !idleHint && !dictionaryEntry && emptyFace && (
                 <Box
                     className="vocab-display-card__empty-face"
                     sx={{
@@ -322,6 +332,7 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ dictiona
 }, (prevProps, nextProps) => {
     if (prevProps.idleHint !== nextProps.idleHint) return false;
     if (prevProps.emptyFace !== nextProps.emptyFace) return false;
+    if (prevProps.customFace !== nextProps.customFace) return false;
     // The controls: the page memoises `onSpeak` and `renderHeaderActions` (useCallback on
     // the learning state and the lookup), so identity is a fair change signal.
     if (prevProps.isSpeaking !== nextProps.isSpeaking ||

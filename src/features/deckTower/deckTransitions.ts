@@ -15,13 +15,12 @@
  *              entrance is started early to match, pawnEntrances.ts → entranceStartFor)
  *              and the new tower starts growing.
  *
- * A plan may also name an optional `impactMs`: the falling tower has hit a floor below the
- * screen, and the page splatters cards up from the bottom edge (CardSplat.tsx).
- *
  * To add a transition: write a `DeckTransition`, list it in `DECK_TRANSITIONS`. If it
  * needs the scene to do something new (fade, slide sideways, …), add the field to
  * `DeckTransitionFrame` with a resting default and teach DeckTowerPage to draw it.
  */
+
+import { fallDistanceAt, fallMs as fallMsOf, fallParams } from "../../theme/gravity";
 
 /** What a plan may depend on, measured by the page when the swap starts. */
 export interface DeckTransitionContext {
@@ -45,12 +44,6 @@ export interface DeckTransitionPlan {
     readyMs: number;
     /** ms to the end of the transition (≥ readyMs: its follow-through, e.g. a door's rebound). */
     durationMs: number;
-    /**
-     * When set, the fallen tower hits a floor below the screen at this ms and the page
-     * plays a card splat at the bottom edge. The trap door uses clearedMs: the splat comes
-     * only once the last card has fallen out of sight.
-     */
-    impactMs?: number;
     frame: (t: number) => DeckTransitionFrame;
 }
 
@@ -78,13 +71,13 @@ const TRAP_BOUNCE_MS = 300;
 const TRAP_BOUNCE_ANGLE = deg(10);
 /** The contents start falling a beat after the door, so the gap visibly opens under them. */
 const TRAP_FALL_DELAY_MS = 50;
-/** Cartoon gravity for the falling tower, world units / s². */
-const TRAP_GRAVITY = 140;
-/**
- * The longest a fall may take. A tall tower (several hundred cards is ~200 world units)
- * would take seconds at TRAP_GRAVITY, so gravity is raised just enough to clear it in this.
+/*
+ * The tower falls under the `trapDoor` fall type's own gravity, start speed and jerk
+ * (src/theme/gravity.ts → `fallParams("trapDoor")`), read once per plan. UNCAPPED since 2026-11-20 (owner's call): a tall tower simply takes
+ * longer to clear — several hundred cards (~200 world units) is ~1.9 s at 110 — and the swap
+ * waits for it (`closeAt` is after `clearedMs`). Until then gravity was raised for tall towers
+ * so every fall fit in 1400 ms.
  */
-const TRAP_FALL_MAX_MS = 1400;
 /** The empty door hangs open this long after the tower is gone, before swinging back. */
 const TRAP_HOLD_MS = 220;
 /** The swing back up: starts slow, ends fast — a slam rather than a soft close. */
@@ -92,24 +85,20 @@ const TRAP_CLOSE_MS = 560;
 /** The slam's rebound off the frame. */
 const TRAP_REBOUND_MS = 220;
 const TRAP_REBOUND_ANGLE = deg(3);
-/** The odds a trap-door swap ends with the tower splattering on the floor below the screen. */
-const TRAP_SPLAT_CHANCE = 0.2;
 
 export const TRAP_DOOR: DeckTransition = {
     id: "trap-door",
     plan: ({ fallDistance }) => {
         const distance = Math.max(0, fallDistance);
-        const maxS = TRAP_FALL_MAX_MS / 1000;
-        const g = Math.max(TRAP_GRAVITY, (2 * distance) / (maxS * maxS));
-        const fallMs = Math.sqrt((2 * distance) / g) * 1000;
+        // Read once per plan: the frames below must agree with clearedMs. Gravity, start speed
+        // and jerk — the trap door's own (src/theme/gravity.ts → `fallParams("trapDoor")`).
+        const fall = fallParams("trapDoor");
+        const fallMs = fallMsOf(distance, fall);
         const clearedMs = TRAP_FALL_DELAY_MS + fallMs;
         const openedMs = TRAP_DROP_MS + TRAP_BOUNCE_MS;
         const closeAt = Math.max(clearedMs, openedMs) + TRAP_HOLD_MS;
         const readyMs = closeAt + TRAP_CLOSE_MS;
         const durationMs = readyMs + TRAP_REBOUND_MS;
-        // The splat, when rolled: as the last card drops out of sight, it lands below.
-        const impactMs = Math.random() < TRAP_SPLAT_CHANCE ? clearedMs : undefined;
-
         const hingeAngle = (t: number): number => {
             if (t < TRAP_DROP_MS) return TRAP_OPEN_ANGLE * (t / TRAP_DROP_MS) ** 2;
             if (t < openedMs) return TRAP_OPEN_ANGLE - TRAP_BOUNCE_ANGLE * Math.sin(Math.PI * ((t - TRAP_DROP_MS) / TRAP_BOUNCE_MS));
@@ -119,9 +108,9 @@ export const TRAP_DOOR: DeckTransition = {
         };
         const outgoingDrop = (t: number): number => {
             const s = Math.max(0, Math.min(t, clearedMs) - TRAP_FALL_DELAY_MS) / 1000;
-            return 0.5 * g * s * s;
+            return fallDistanceAt(s, fall);
         };
-        return { clearedMs, readyMs, durationMs, impactMs, frame: (t) => ({ hingeAngle: hingeAngle(t), outgoingDrop: outgoingDrop(t) }) };
+        return { clearedMs, readyMs, durationMs, frame: (t) => ({ hingeAngle: hingeAngle(t), outgoingDrop: outgoingDrop(t) }) };
     },
 };
 

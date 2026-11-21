@@ -1,6 +1,6 @@
 import { Button } from "@mui/material";
 import Icon from "../../components/Icon";
-import { readerPillButtonSx } from "./readerStyles";
+import { readerPillButtonSx } from "../../reading/readerStyles";
 import type { Tier2Look } from "../../timeOfDay/tier2Look";
 
 /**

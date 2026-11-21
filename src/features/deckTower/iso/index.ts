@@ -53,7 +53,8 @@ export { default as IsoPawnStill } from "./IsoPawnStill";
 export {
     backToFront,
     depthRankAmong,
-    PLATE_LAUNCH_APEX_MS,
+    plateLaunchApexMs,
+    POKE_JUMP_HEIGHT,
     type PawnRoam,
     type PawnEntranceCue,
     type PawnStretchCue,
@@ -63,7 +64,8 @@ export {
 export { LASTING_IDLES, type PawnIdleCue, type PawnIdleKind } from "./pawnIdles";
 export {
     PAWN_ENTRANCES,
-    FALL_FROM_SKY,
+    fallFromSky,
+    SKY_FALL_HEIGHT,
     fallFromHeight,
     pickPawnEntrance,
     entranceStartFor,
@@ -112,4 +114,4 @@ export {
 export { useIsoPalette, useIsoWash } from "./sceneContext";
 export { BOB_HEIGHT, BOB_PERIOD_MS, frozenBobOffsetPx } from "./levitation";
 export { cardStackMetrics, CARD_THICKNESS, type CardStackMetrics } from "./cardStackMetrics";
-export { planCardCollapse, cardsShowingAt, fallMsFor, shadowLandTiming, type CardCollapsePlan, type CollapseRun, type GhostChunk } from "./cardCollapse";
+export { planCardCollapse, cardsShowingAt, shadowLandTiming, type CardCollapsePlan, type CollapseRun, type GhostChunk } from "./cardCollapse";

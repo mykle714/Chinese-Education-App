@@ -2,7 +2,7 @@ import { Box, Button } from "@mui/material";
 import { HeaderIconButton } from "../../components/PageHeader";
 import { COLORS } from "../../theme/colors";
 import ReaderSortMenu from "./ReaderSortMenu";
-import { readerPillButtonSx } from "./readerStyles";
+import { readerPillButtonSx } from "../../reading/readerStyles";
 import type { Tier2Look } from "../../timeOfDay/tier2Look";
 import type { ReaderListView } from "./useReaderListView";
 import type { ReaderSortKey } from "./readerListOrder";

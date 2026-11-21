@@ -1,4 +1,5 @@
-import { fallMsFor, planCardCollapse, type CardCollapsePlan } from "./iso";
+import { planCardCollapse, type CardCollapsePlan } from "./iso";
+import { fallEasing, fallMs, fallParams } from "../../theme/gravity";
 
 /**
  * towerResizes.ts — the library of animations that change a standing tower's height in
@@ -25,8 +26,6 @@ import { fallMsFor, planCardCollapse, type CardCollapsePlan } from "./iso";
  * `SKY_DROP`'s plan and `IMPACT_MS`, drawn its own way for the study camera).
  */
 
-/** Cartoon gravity for a sky drop's falling tower, world units / s² (the pawn's sky fall uses 110). */
-const SKY_DROP_GRAVITY = 130;
 /** A sky drop's landing follow-through: the platform's sink and the smoke both finish inside it. */
 export const IMPACT_MS = 760;
 
@@ -60,6 +59,8 @@ export interface TowerDrop {
     /** World units the dropping tower starts above its landing. */
     lift: number;
     fallMs: number;
+    /** The fall as a CSS easing (src/theme/gravity.ts → `fallEasing`), planned with `fallMs` so the two agree. */
+    fallEase: string;
 }
 
 /** One planned resize. `kind` names the animation, and is what the player and the renderer switch on. */
@@ -108,12 +109,14 @@ export const SKY_DROP: TowerGrow = {
     usesCamera: true,
     plan: ({ fromCards, toCards, skyAbove, cameraMs }) => {
         const lift = Math.max(0, skyAbove);
+        // Time and curve from the same fall parameters (src/theme/gravity.ts), so the two agree.
+        const fall = fallParams("skyDrop");
         return {
             kind: "sky-drop",
             fromCards,
             toCards,
             cameraMs: Math.max(0, cameraMs),
-            drop: { baseCards: fromCards, cards: toCards - fromCards, lift, fallMs: fallMsFor(lift, SKY_DROP_GRAVITY) },
+            drop: { baseCards: fromCards, cards: toCards - fromCards, lift, fallMs: fallMs(lift, fall), fallEase: fallEasing(lift, fall) },
         };
     },
 };

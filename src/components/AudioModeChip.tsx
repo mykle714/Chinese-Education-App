@@ -40,7 +40,8 @@ import { useTTSSettings, type AudioMode } from "../hooks/useTTSSettings";
  * like the header's other icons.
  *
  * Also exports `ReaderAudioChip`: the same skin bound to the Reader's OWN tap-to-hear
- * setting (useReaderAudioSettings) — the one surface whose chip is not this setting.
+ * setting (useReaderAudioSettings) — the reading pages (the Reader document page, the cyoa
+ * story page), whose chip is not this setting.
  *
  * Used by: TowerStudyHeader (the flp), AddCardsPage (acp), BubbleMatchHeader
  * (Bubble Match + Hydra Bubbles), MatchSpeedHeader, WordSearchHeader, BucketDropStage, and
@@ -163,7 +164,7 @@ const AudioModeChip: React.FC<AudioModeChipSkinProps> = (props) => {
 
 /**
  * The Reader document page's audio chip — the SAME skin, labels and cycle order, bound to
- * the Reader's own tap-to-hear setting (src/features/reader/useReaderAudioSettings.ts), a
+ * the Reader's own tap-to-hear setting (src/reading/useReaderAudioSettings.ts), a
  * separate value from the app-wide one. Props-driven rather than self-reading because that
  * setting has one owner (the page, which also runs the tap-to-hear effect off it).
  * Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Tap-to-hear".

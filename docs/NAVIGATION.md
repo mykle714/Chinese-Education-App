@@ -76,8 +76,9 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    a list of rows, one per secondary destination; tapping a row goes to that page.
 
    - **Rows** (`src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations`,
-     returning `{ main, gated }`): **Reader**, **Arena** and **Community** (Arena and Community
-     only while their flags are on). Arena (`/arena`, `ArenaPage` —
+     returning `{ main, gated }`): **Reader**, **Adventures**, **Arena** and **Community**
+     (Adventures, Arena and Community only while their flags are on; Adventures is
+     `/adventures` — [CYOA_FEATURE.md](./CYOA_FEATURE.md) § 7, flag `cyoa`, ON). Arena (`/arena`, `ArenaPage` —
      [ARENA_FEATURE.md](./ARENA_FEATURE.md)) was a footer tab 2026-11-04 → 2026-11-10 and is a
      Node drill-in again (`chrome: "node"`, `footerTab: "menu"`, back → history else `/`). Every row navigates to
      its `route`. There is **no Friends row**: the `/friends` page was deleted 2026-11-06,

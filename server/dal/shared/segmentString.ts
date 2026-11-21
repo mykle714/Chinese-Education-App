@@ -190,7 +190,7 @@ export function buildExcludeSet(dictEntries: DictionaryEntry[]): Set<string> {
  * Falls back to individual characters when no dictionary match exists at any length.
  *
  * ⚠️ CLIENT PORT: the Reader runs a client-side port of this core
- * (src/features/reader/documentSegmentation.ts, docs/READER_SEGMENTATION.md —
+ * (src/reading/documentSegmentation.ts, docs/READER_SEGMENTATION.md —
  * without the priority/classifier passes). If you change the scoring or
  * tie-break rules here, mirror them there.
  *

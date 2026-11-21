@@ -37,6 +37,10 @@ Referenced code: `src/routes/routeMeta.ts` → `ROUTE_META`, `FLAGGED_OFF_PATHS`
 | `/flashcards/writing/notebook` | `WritingNotebookPage` | td writing world → notebook stack (`DeckTowerPage` → `NOTEBOOK_PATH`) | 2026-11-10 |
 | `/reader` | `ReaderPage` | Menu popover → **Reader** | 2026-11-10 |
 | `/reader/:id` | `ReaderDocumentPage` | Reader → a document (`ReaderPage` → `slideNavigate`) | 2026-11-10 |
+| `/adventures` | `AdventuresPage` | Menu popover → **Adventures** (`cyoa` flag, ON) | 2026-11-20 |
+| `/adventures/:id` | `StoryPlayPage` | Adventures → a story card (`AdventuresPage` → `slideNavigate(storyPlayPath(id))`) | 2026-11-20 |
+| `/adventures/:id/edit` | `StoryEditorPage` | authors only: Adventures → **New story**, or an own draft card (`AdventuresPage` → `slideNavigate(storyEditPath(id))`); or a story's header Edit icon (`StoryPlayPage`) | 2026-11-20 |
+| `/adventures/:id/edit/:passageId` | `PassageEditorPage` | story editor → a passage row, or **New passage** (`StoryEditorPage` → `slideNavigate(passageEditPath(...))`) | 2026-11-20 |
 | `/arena` | `ArenaPage` | Menu popover → **Arena** (flag `arena`, on) | 2026-11-10 |
 | `/tester-dashboard` | `TesterDashboardPage` (tdp) | Menu popover → gated **Tester Dashboard** row (testers / admins only) | 2026-11-10 |
 | `/login` | `LoginPage` (+ steps in `src/pages/login/`) | not tapped to: every signed-out launch and every ended session lands here (`ProtectedRoute`, the interceptor, `logout`, `deleteAccount`); td avatar → AccountSheet → Log out | 2026-11-14 |
@@ -74,3 +78,4 @@ Pages with a route but no way to reach them from td. Record the user's decision 
 | Route | Page | Finding | Decision |
 |---|---|---|---|
 | `/font-lab` | `FontLabPage` | Dev-only type lab, reachable only by typing the URL (by design, per its `ROUTE_META` note). | keep (dev tool), until told otherwise |
+| `/gravity-lab` | `GravityLabPage` | Dev-only gravity lab (docs/GRAVITY_LAB.md), reachable only by typing the URL (by design, per its `ROUTE_META` note). | keep (dev tool), until told otherwise |

@@ -1,4 +1,4 @@
-import { forwardRef, type ReactNode } from "react";
+import { forwardRef, useMemo, type ReactNode } from "react";
 import { Box, Typography, useTheme, type BoxProps } from "@mui/material";
 import ForeignText from "./ForeignText";
 import GlossText from "./GlossText";
@@ -10,6 +10,8 @@ import { COLORS } from "../theme/colors";
 import { SIZE, WEIGHT } from "../theme/scale";
 import { SHADOW } from "../theme/shadows";
 import { FONTS } from "../theme/fonts";
+import { measureAdvance } from "../utils/canvasText";
+import { useFontLoadEpoch } from "../hooks/useFontLoadEpoch";
 import {
     DEFINITION_DESCENDER_ROOM,
     DEFINITION_LINE_HEIGHT,
@@ -17,6 +19,7 @@ import {
     MINI_CARD_BAR_STRIP,
     MINI_CARD_CONTENT_LAYOUT,
     miniCardDefinitionBottom,
+    miniCardDefinitionFontSize,
     miniCardFaceSx,
     miniCardWordFit,
     type MiniCardSize,
@@ -223,6 +226,16 @@ const MiniCard = forwardRef<HTMLDivElement, MiniCardProps>(function MiniCard(
     // line a balanced wrap that takes the icon's place (miniCardWordFit, miniCardFace.ts — shared with
     // MiniCardSvg so the two faces agree).
     const wordFit = miniCardWordFit(entryKey, language, size);
+    // A gloss holding a word too wide for the body (no break point → clipped) drops one
+    // type-scale step (miniCardDefinitionFontSize, miniCardFace.ts — shared with MiniCardSvg).
+    // Measured on canvas; re-measured once web fonts land, since the fallback face's widths
+    // would decide against the wrong glyphs on first paint.
+    const fontEpoch = useFontLoadEpoch();
+    const definitionFontSize = useMemo(
+        () => miniCardDefinitionFontSize(definition, size, measureAdvance),
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- fontEpoch re-measures with the loaded font
+        [definition, size, fontEpoch],
+    );
     return (
         <Box
             ref={ref}
@@ -302,7 +315,7 @@ const MiniCard = forwardRef<HTMLDivElement, MiniCardProps>(function MiniCard(
                     paddingBottom: `${DEFINITION_DESCENDER_ROOM}px`,
                     left: layout.sideInset,
                     right: layout.sideInset,
-                    fontSize: layout.definitionFontSize,
+                    fontSize: definitionFontSize,
                     // Typography pins the theme's sans; restate the card's face.
                     fontFamily: FONTS.cjk,
                     color: definitionColor ?? COLORS.textSecondary,

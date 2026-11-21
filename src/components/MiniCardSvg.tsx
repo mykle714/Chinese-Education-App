@@ -56,7 +56,11 @@ function fontProps(font: FontSpec): Pick<React.SVGProps<SVGTextElement>, "fontSi
         fontSize: font.sizePx,
         fontWeight: font.weight,
         fontStyle: font.italic ? "italic" : undefined,
-        style: { fontFamily: font.family, ...(font.stretch && { fontStretch: font.stretch }) },
+        // fontSynthesis: FONTS.cjk (975 Maru SC) has one weight and src/index.css disables
+        // synthesis app-wide, so the bold glyphs would draw regular — the HTML MiniCard face
+        // re-enables it (miniCardFace.ts → miniCardFaceSx) and this twin must match. Safe for
+        // the layout: glyphs are placed one per cell, centred, not measured as a run.
+        style: { fontFamily: font.family, fontSynthesis: "weight", ...(font.stretch && { fontStretch: font.stretch }) },
     };
 }
 

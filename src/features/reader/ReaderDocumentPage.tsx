@@ -10,44 +10,37 @@ import { apiPost, apiPut, ApiError } from "../../api/http";
 import { NEW_DOCUMENT_ID } from "./readerPaths";
 import { DOCUMENT_TITLE_MAX_LENGTH, type TextKind } from "../../../server/contracts/wire";
 import VocabDisplayCard from "../../components/VocabDisplayCard";
-import { useVocabularyUpdate } from "../../contexts/VocabularyUpdateContext";
-import { processDocumentForTokens } from "../../utils/tokenUtils";
-import type { VocabEntry, Text, Language } from "../../types";
-import EipSheet from "../flashcards/FlashcardsLearnPage/EipSheet";
-import EipAddKey from "../flashcards/FlashcardsLearnPage/EipAddKey";
-import ReaderMoreInfoKey from "./ReaderMoreInfoKey";
-import ReaderTapHint from "./ReaderTapHint";
-import ReaderKeycapPawn from "./ReaderKeycapPawn";
-import ReaderTapOverlay, { type TapZoneFlash, type TapZoneSide } from "./ReaderTapOverlay";
-import { EIP_ADD_KEY_SIZES } from "../flashcards/FlashcardsLearnPage/eipAddKeySizes";
-import { useReaderWordActions } from "./useReaderWordActions";
+import type { Text, Language } from "../../types";
+import ReadingEipHost from "../../reading/ReadingEipHost";
+import ReadingTapRegion from "../../reading/ReadingTapRegion";
+import { useReadingText } from "../../reading/useReadingText";
+import { useReadingKeycap } from "../../reading/useReadingKeycap";
+import { useReadingVocabSync } from "../../reading/useReadingVocabSync";
 
 import TextHeader from "./TextHeader";
-import TextArea from "./TextArea";
+import TextArea from "../../reading/TextArea";
 import ReaderEditToolbar from "./ReaderEditToolbar";
 import DeleteDocumentDialog from "./DeleteDocumentDialog";
 import IconPickerDialog from "../../components/IconPickerDialog";
-import { readerMutedTextSx, readerSearchColors, readerSelectionColor } from "./readerStyles";
-import ReaderCpcdView from "./ReaderCpcdView";
-import ReaderDisplayToggle from "./ReaderDisplayToggle";
-import ReaderReadAloudButton from "./ReaderReadAloudButton";
+import { readerMutedTextSx, readerSearchColors, readerSelectionColor } from "../../reading/readerStyles";
+import ReaderCpcdView from "../../reading/ReaderCpcdView";
+import ReaderDisplayToggle from "../../reading/ReaderDisplayToggle";
+import ReaderReadAloudButton from "../../reading/ReaderReadAloudButton";
 import ReaderSearchKey from "./ReaderSearchKey";
 import ReaderSearchBar from "./ReaderSearchBar";
 import { useReaderSearch } from "./useReaderSearch";
 import type { ReaderSearchMatch } from "./readerSearch";
-import { scrollSelectionIntoView } from "./textSelectionUtils";
+import { scrollSelectionIntoView } from "../../reading/textSelectionUtils";
 import { ReaderAudioChip } from "../../components/AudioModeChip";
-import { useReaderAudioSettings } from "./useReaderAudioSettings";
-import { useReaderAudioPreload } from "./useReaderAudioPreload";
-import { findDictionaryMatch } from "./textSelection";
-import { useReaderReadAloud } from "./useReaderReadAloud";
+import { useReaderAudioSettings } from "../../reading/useReaderAudioSettings";
+import { useReaderReadAloud } from "../../reading/useReaderReadAloud";
+import { useSegmentOverrides } from "../../reading/useSegmentOverrides";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 
 import { useVocabularyProcessing } from "../../hooks/useVocabularyProcessing";
 import { useReaderContentEditor } from "./useReaderContentEditor";
-import { buildReaderDictMap, buildExcludeSet, buildReaderPronunciationMap, computeSegmentSpans, type SpanRange } from "./documentSegmentation";
-import { useTextSelection } from "./useTextSelection";
-import { useEnglishTranslations } from "./useEnglishTranslations";
+import { buildReaderPronunciationMap, type SpanRange } from "../../reading/documentSegmentation";
+import { useEnglishTranslations } from "../../reading/useEnglishTranslations";
 import { useReaderSettings } from "./useReaderSettings";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useTier2Look } from "../../timeOfDay/useTier2Look";
@@ -65,13 +58,7 @@ import {
 // across the flashcards/reader feature boundary (docs/PROJECT structure).
 
 const EDIT_TOOLBAR_ANIM_MS = 300;
-
-// The minimum visible space above, between and below the dictionary keycap's two STACKED
-// header controls, px (they otherwise spread evenly from the face's top edge to the divider).
-const KEYCAP_ACTIONS_GAP_PX = 6;
 const EDIT_TOOLBAR_ANIM_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
-// The shared "no tiebreak switches" value, so the span memo keeps its identity.
-const NO_SEGMENT_OVERRIDES: SpanRange[] = [];
 
 // READER OPEN-DOCUMENT PAGE — routed at `/reader/:id`, a footerless NODE-style
 // drill-in from the `/reader` list (docs/LEAF_NODE_PAGES.md § Reader). Fetches its
@@ -104,7 +91,6 @@ function ReaderDocumentPage() {
     // so the fetch effect below, which re-runs on the id change, knows the page
     // already holds this document (and its processed vocab) and skips a reload.
     const justCreatedIdRef = useRef<string | null>(null);
-    const vocabularyUpdate = useVocabularyUpdate();
     useLockBodyScroll();
 
     // KEYBOARD LIFT (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Editing). While editing
@@ -200,27 +186,9 @@ function ReaderDocumentPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id, user?.id]);
 
-    // TIEBREAK SWITCHES (docs/READER_SEGMENTATION.md § "Tiebreak alternatives"): the
-    // alternatives the learner switched to in the Pinyin view, forced into the gsa below.
-    // Page-session only, and tagged with the content they were made against so an edit
-    // (or another document) drops them rather than forcing stale offsets.
-    const [segmentOverrides, setSegmentOverrides] = useState<{ content: string; ranges: SpanRange[] }>(
-        { content: "", ranges: [] }
-    );
-    const activeOverrides = text?.content && segmentOverrides.content === text.content
-        ? segmentOverrides.ranges
-        : NO_SEGMENT_OVERRIDES;
-
-    // GSA word spans for tap/arrow navigation (docs/READER_SEGMENTATION.md).
-    const segmentSpans = useMemo(() => {
-        if (!text?.content) return [];
-        const dictMap = buildReaderDictMap(
-            vocabularyProcessing.loadedDictionaryCards,
-            vocabularyProcessing.loadedPersonalCards
-        );
-        const excludeSet = buildExcludeSet(vocabularyProcessing.loadedDictionaryCards);
-        return computeSegmentSpans(text.content, dictMap, excludeSet, activeOverrides);
-    }, [text?.content, vocabularyProcessing.loadedDictionaryCards, vocabularyProcessing.loadedPersonalCards, activeOverrides]);
+    // TIEBREAK SWITCHES (src/reading/useSegmentOverrides): the alternatives the learner
+    // switched to in the Pinyin view, forced into the gsa below.
+    const { overrides: activeOverrides, switchToAlternative: applyAlternative } = useSegmentOverrides(text?.content);
 
     // Pinyin display mode (ReaderCpcdView): the pinyin under each word, and the device's
     // "Color pinyin by tone" preference (Settings → Display) for its tint.
@@ -236,13 +204,16 @@ function ReaderDocumentPage() {
     // highlighted English word exactly as for a Chinese one.
     const englishTranslations = useEnglishTranslations(text?.content, text?.language);
 
-    const textSelection = useTextSelection(
-        vocabularyProcessing.loadedPersonalCards,
-        vocabularyProcessing.loadedDictionaryCards,
-        readerSettings.autoSelectEnabled,
-        segmentSpans,
-        englishTranslations.translate
-    );
+    // The document read with the engine (src/reading/useReadingText): its gsa word spans
+    // (docs/READER_SEGMENTATION.md, with the tiebreak switches forced in) and its selection.
+    const { spans: segmentSpans, selection: textSelection } = useReadingText({
+        content: text?.content ?? '',
+        dictionaryCards: vocabularyProcessing.loadedDictionaryCards,
+        personalCards: vocabularyProcessing.loadedPersonalCards,
+        translateEnglish: englishTranslations.translate,
+        overrides: activeOverrides,
+        autoSelectEnabled: readerSettings.autoSelectEnabled,
+    });
 
     const handleTextChangeWithActivity = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
         textSelection.handleTextChange(event);
@@ -267,61 +238,7 @@ function ReaderDocumentPage() {
 
     // Vocabulary update listeners: keep loadedPersonalCards in sync with entries
     // added/edited/removed elsewhere in the app while this document is open.
-    useEffect(() => {
-        if (!text) return;
-        const documentTokens = processDocumentForTokens(text.content);
-        const isEntryRelevantToDocument = (entry: VocabEntry): boolean => documentTokens.includes(entry.entryKey);
-
-        const unsubscribeAdd = vocabularyUpdate.onVocabAdd((entry: VocabEntry) => {
-            if (isEntryRelevantToDocument(entry)) {
-                vocabularyProcessing.setLoadedPersonalCards(prev => {
-                    if (prev.some(existing => existing.id === entry.id)) return prev;
-                    return [...prev, entry];
-                });
-            }
-        });
-
-        const unsubscribeUpdate = vocabularyUpdate.onVocabUpdate((entry: VocabEntry) => {
-            vocabularyProcessing.setLoadedPersonalCards(prev => {
-                const index = prev.findIndex(existing => existing.id === entry.id);
-                if (index === -1) {
-                    if (isEntryRelevantToDocument(entry)) return [...prev, entry];
-                    return prev;
-                }
-                const updated = [...prev];
-                updated[index] = entry;
-                if (textSelection.selectedPersonalCard && textSelection.selectedPersonalCard.id === entry.id) {
-                    textSelection.setSelectedPersonalCard(entry);
-                }
-                return updated;
-            });
-        });
-
-        const unsubscribeRemove = vocabularyUpdate.onVocabRemove((entryId: number) => {
-            vocabularyProcessing.setLoadedPersonalCards(prev => prev.filter(entry => entry.id !== entryId));
-            if (textSelection.selectedPersonalCard && textSelection.selectedPersonalCard.id === entryId) {
-                textSelection.setSelectedPersonalCard(null);
-            }
-        });
-
-        const unsubscribeBulkAdd = vocabularyUpdate.onVocabBulkAdd((entries: VocabEntry[]) => {
-            const relevantEntries = entries.filter(isEntryRelevantToDocument);
-            if (relevantEntries.length > 0) {
-                vocabularyProcessing.setLoadedPersonalCards(prev => {
-                    const existingIds = new Set(prev.map(entry => entry.id));
-                    const newEntries = relevantEntries.filter(entry => !existingIds.has(entry.id));
-                    return [...prev, ...newEntries];
-                });
-            }
-        });
-
-        return () => {
-            unsubscribeAdd();
-            unsubscribeUpdate();
-            unsubscribeRemove();
-            unsubscribeBulkAdd();
-        };
-    }, [text, vocabularyUpdate, textSelection.selectedPersonalCard, vocabularyProcessing, textSelection]);
+    useReadingVocabSync(text?.content ?? null, vocabularyProcessing.setLoadedPersonalCards, [textSelection]);
 
     // Focus the reading box once the document loads, caret parked at the top. No word
     // is highlighted: the page opens in useTextSelection's NOTHING-SELECTED MODE, and
@@ -336,35 +253,9 @@ function ReaderDocumentPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [text?.id]);
 
-    // The tap-to-navigate hint lives IN the dictionary keycap while nothing is selected
-    // (NOTHING-SELECTED MODE, useTextSelection) — it replaced the 5 s `reader-tap-hint`
-    // app notification (2026-11-17), so it stays up exactly as long as it is useful.
-    const showNavigationHint = textSelection.awaitingFirstSelection;
-    // The hint's face (ReaderTapHint: the tap-divide demo). Built once so VocabDisplayCard's
-    // memo comparison (`idleHint` by identity) does not see a new element every render.
-    // Tapping the demo flashes the matching REAL zone over the reading box
-    // (ReaderTapOverlay → ZONE FLASH); the bumped id replays it on a repeat tap.
-    // Cleared once it has played (`clearTapZoneFlash`): the overlay unmounts in edit mode,
-    // and a request still set when it remounts on Cancel/Save would flash again.
-    const [tapZoneFlash, setTapZoneFlash] = useState<TapZoneFlash | null>(null);
-    const flashTapZone = useCallback((side: TapZoneSide) => {
-        setTapZoneFlash((prev) => ({ side, id: (prev?.id ?? 0) + 1 }));
-    }, []);
-    const clearTapZoneFlash = useCallback(() => setTapZoneFlash(null), []);
-    // The finger demo plays only the FIRST time the hint shows on this page. A long-press
-    // on empty space brings the hint back (ReaderTapOverlay → `onClearSelection`), and
-    // there it appears at rest (owner's call 2026-11-17).
-    const [tapDemoPlayed, setTapDemoPlayed] = useState(false);
-    useEffect(() => {
-        if (!showNavigationHint) setTapDemoPlayed(true);
-    }, [showNavigationHint]);
-    const navigationHint = useMemo(
-        () => <ReaderTapHint onZoneTap={flashTapZone} playDemo={!tapDemoPlayed} />,
-        [flashTapZone, tapDemoPlayed]
-    );
-    // The keycap's face for a highlighted word with no entry: a small resting pawn. Built
-    // once — VocabDisplayCard's memo compares it by identity.
-    const keycapEmptyFace = useMemo(() => <ReaderKeycapPawn />, []);
+    // SENTENCE MODE (useTextSelection → selectedSentence): the highlighted sentence, which
+    // both reading views paint; the keycap's sentence face is useReadingKeycap's.
+    const selectedSentence = textSelection.selectedSentence;
     // The Pinyin display mode's cpcd view replaces the reading box (reading mode only).
     // It also switches the tap overlay to scroll the cpcd box and swallow long-presses.
     const showCpcd = readerSettings.displayMode === 'pinyin' && !contentEditor.editMode;
@@ -383,26 +274,12 @@ function ReaderDocumentPage() {
     const [searchOrigin, setSearchOrigin] = useState<{ left: number; right: number } | null>(null);
     const { selectRange, getRecordedSelection, inputRef: readingBoxRef } = textSelection;
 
-    // Tap on a tiebreak alternative (ReaderCpcdView's yellow cells) → make it the word.
-    // Two cases, told apart by whether the alternative overlaps a switch already made:
-    //   - it does → it is the original winner shown on a forced span: undo that switch;
-    //   - it doesn't → it lost a tiebreak: force it (forced spans split the run, so a
-    //     loser can never straddle an existing switch).
-    // Then select it. selectRange never auto-expands, so selecting against the spans of
-    // this render is safe; the cpcd highlight finds the span on the next render.
-    const switchToAlternative = useCallback((alternative: SpanRange) => {
-        const content = text?.content;
-        if (!content) return;
-        setSegmentOverrides((previous) => {
-            const ranges = previous.content === content ? previous.ranges : [];
-            const overlapping = ranges.filter((r) => r.start < alternative.end && alternative.start < r.end);
-            const next = overlapping.length > 0
-                ? ranges.filter((r) => !overlapping.includes(r))
-                : [...ranges, { start: alternative.start, end: alternative.end, text: alternative.text }];
-            return { content, ranges: next };
-        });
-        selectRange(alternative.start, alternative.end);
-    }, [text?.content, selectRange]);
+    // Tap on a tiebreak alternative (ReaderCpcdView's yellow cells) → make it the word
+    // (useSegmentOverrides → switchToAlternative), then select it.
+    const switchToAlternative = useCallback(
+        (alternative: SpanRange) => applyAlternative(alternative, selectRange),
+        [applyAlternative, selectRange]
+    );
     const showCpcdRef = useRef(showCpcd);
     showCpcdRef.current = showCpcd;
     const handleCurrentMatch = useCallback((match: ReaderSearchMatch) => {
@@ -468,132 +345,31 @@ function ReaderDocumentPage() {
         textareaVisible: !showCpcd,
     });
 
-    // The keycap's word actions (useReaderWordActions): speaker, More Info → eip, Add key.
-    // The Add key's seed: the document's vocab lookup (useVocabularyProcessing → byTokens)
-    // returns exactly the learner's Learning cards among its words, so a selected word with
-    // a matching personal card is "Added!" and one without is "Add" — known with no fetch.
-    // Undefined until that lookup has finished (useLearningToggle then waits for its own).
-    const selectedDict = textSelection.selectedDictionaryCard;
-    // An English word's translation is usually not among the document's loaded cards, so
-    // a miss there proves nothing: its seed comes from the English lookup itself, which
-    // reads each translation's Learning status with the matches (useEnglishTranslations →
-    // translationInLearning).
-    const selectedInLibrary = !selectedDict
-        ? undefined
-        : textSelection.selectedByTranslation && !textSelection.selectedPersonalCard
-            ? englishTranslations.translationInLearning(selectedDict.word1)
-            : vocabularyProcessing.processingVocab
-                ? undefined
-                : textSelection.selectedPersonalCard?.entryKey === selectedDict.word1;
-    const wordActions = useReaderWordActions(
-        selectedDict,
-        (text?.language ?? user?.selectedLanguage ?? 'zh') as Language,
-        selectedInLibrary,
-        // The read-aloud selects a new word ~4×/s; the Add key's per-word status fetch
-        // stands down until it stops (the key reappears on the word it stopped on).
-        readAloud.playing,
+    // THE DICTIONARY KEYCAP (src/reading/useReadingKeycap): its faces (tap demo, pawn,
+    // Sentence Explain), its keys (speaker, Add, More Info → the eip), TAP-TO-HEAR and its
+    // preloading (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Tap-to-hear"), driven by the
+    // display strip's audio chip (useReaderAudioSettings). Tap-to-hear stands down while the
+    // read-aloud steps the selection (it is already speaking), in edit mode, and while the
+    // search field has focus (typing a query re-selects the first match on every keystroke,
+    // and each one would speak).
+    const searchFieldFocused = useCallback(
+        () => !!searchInputRef.current && document.activeElement === searchInputRef.current,
+        []
     );
-    const { openMoreInfo, learning: keycapLearning } = wordActions;
-
-    // TAP-TO-HEAR (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Tap-to-hear"): with the strip's
-    // audio chip on default or media, moving the selection to a NEW word speaks it, as if
-    // the keycap's speaker were pressed (an English word speaks its Chinese translation —
-    // the keycap's word). Mute plays nothing.
-    //
-    // Keyed on the selection RANGE only, so it fires on a move and never on a re-render:
-    // the blur → refocus loop and leaving the eip restore the same range (no change), and a
-    // document opens with nothing selected, so the first sound is the learner's first tap.
-    // Toggling the chip itself speaks nothing (it is not in the deps) — the app-wide rule
-    // that changing an audio mode never makes a sound (useTTS → wasAutoplayOnRef).
-    // Stands down while the read-aloud steps the selection (it is already speaking) and in
-    // edit mode. The latest values are read through a ref so they need not be deps.
-    // Also silent while the search field has focus: typing a query re-selects the first
-    // match on every keystroke, and each one would speak.
-    const searchFieldFocused = () => !!searchInputRef.current && document.activeElement === searchInputRef.current;
-    const tapToHearRef = useRef({ autoplay: readerAudio.autoplay, readAloudPlaying: readAloud.playing, editMode: contentEditor.editMode, speak: wordActions.autoSpeakSelected });
-    tapToHearRef.current = { autoplay: readerAudio.autoplay, readAloudPlaying: readAloud.playing, editMode: contentEditor.editMode, speak: wordActions.autoSpeakSelected };
-    const { start: selectionStart, end: selectionEnd } = textSelection.selectionRange;
-    useEffect(() => {
-        if (selectionStart === selectionEnd) return;
-        const { autoplay, readAloudPlaying, editMode, speak } = tapToHearRef.current;
-        if (!autoplay || readAloudPlaying || editMode || searchFieldFocused()) return;
-        speak();
-    }, [selectionStart, selectionEnd]);
-    // PRELOADING for tap-to-hear (useReaderAudioPreload): the server synthesizes the
-    // document's words on open, and each move fetches the next few words into the browser.
-    // A span resolves to the keycap's word exactly as useTextSelection does: its det row,
-    // else (an English word) the Chinese entry it translates to.
-    const { loadedDictionaryCards } = vocabularyProcessing;
-    const translateEnglish = englishTranslations.translate;
-    const resolveKeycapEntry = useCallback(
-        (spanText: string) => findDictionaryMatch(spanText, loadedDictionaryCards) ?? translateEnglish(spanText),
-        [loadedDictionaryCards, translateEnglish],
-    );
-    useReaderAudioPreload({
-        enabled: readerAudio.autoplay && !contentEditor.editMode,
-        language: text?.language,
-        spans: segmentSpans,
-        resolveEntry: resolveKeycapEntry,
-        selectionStart,
+    const keycap = useReadingKeycap({
+        text: { spans: segmentSpans, selection: textSelection },
+        content: text?.content ?? '',
+        language: (text?.language ?? user?.selectedLanguage ?? 'zh') as Language,
+        dictionaryCards: vocabularyProcessing.loadedDictionaryCards,
+        vocabLoading: vocabularyProcessing.processingVocab,
+        translateEnglish: englishTranslations.translate,
+        translationInLearning: englishTranslations.translationInLearning,
+        autoplay: readerAudio.autoplay,
         readAloudPlaying: readAloud.playing,
-        prefetch: wordActions.tts.prefetch,
+        editing: contentEditor.editMode,
+        isQuiet: searchFieldFocused,
     });
-    // Muting stops a tapped word mid-clip, edge-triggered so a speaker press while muted
-    // is not cut off (useTTS does the same for the app-wide chip).
-    const wasReaderAutoplayRef = useRef(readerAudio.autoplay);
-    const cancelSpeech = wordActions.tts.cancel;
-    useEffect(() => {
-        if (wasReaderAutoplayRef.current && !readerAudio.autoplay) cancelSpeech();
-        wasReaderAutoplayRef.current = readerAudio.autoplay;
-    }, [readerAudio.autoplay, cancelSpeech]);
-    // The keycap's right-edge controls: the eip's Add ⇄ Added! key and the More Info keycap
-    // (the flp's, arrowless) — side by side with More Info rightmost, or both in their compact size when the keycap
-    // stacks them under a long headword (VocabDisplayCard → ACTION LAYOUT). A word already
-    // in Learning shows "Added!", and a tap removes it (the full toggle, not the flp's
-    // add-only key); EipAddKey renders nothing for an undiscoverable word or while its
-    // status loads. Memoised: VocabDisplayCard's memo compares it by identity.
-    const renderKeycapActions = useCallback((stacked: boolean) => {
-        const size = stacked ? 'compact' : 'regular';
-        const moreInfo = <ReaderMoreInfoKey size={size} onClick={() => { void openMoreInfo(); }} />;
-        const addKey = <EipAddKey state={keycapLearning} size={size} />;
-        // Side by side: Add, then More Info at the far right (owner's call 2026-11-17).
-        if (!stacked) return <>{addKey}{moreInfo}</>;
-        // Stacked: More Info on top, over Add, spread EVENLY over the column VocabDisplayCard
-        // gives them (face top edge → divider): equal space above, between and below. Three
-        // equal flex spacers do the spreading, each with a KEYCAP_ACTIONS_GAP_PX floor; not
-        // `space-evenly` + `gap`, which adds the gap to the middle space only.
-        // Each key's margin box is set to its DRAWN extent: lifted `restAddY` (−1px) above
-        // its box, and its lip hanging lip + restAddY (4 − 1 = 3px) below it
-        // (EIP_ADD_KEY_SIZES.compact), so the spaces are even to the eye, not to the boxes.
-        const compact = EIP_ADD_KEY_SIZES.compact;
-        const addKeyDrawn = keycapLearning.available && keycapLearning.inLibrary !== undefined;
-        const spacer = (key: string) => (
-            <Box key={key} className="reader-keycap__actions-stack-spacer" sx={{ flex: '1 1 0', minHeight: `${KEYCAP_ACTIONS_GAP_PX}px` }} />
-        );
-        return (
-            <Box
-                className="reader-keycap__actions-stack"
-                sx={{
-                    flex: 1,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'flex-end',
-                    '& > :not(.reader-keycap__actions-stack-spacer)': {
-                        mt: `${-compact.restAddY}px`,
-                        mb: `${compact.lipAdd + compact.restAddY}px`,
-                    },
-                }}
-            >
-                {spacer('above')}
-                {moreInfo}
-                {/* EipAddKey draws nothing for an undiscoverable word or while its status
-                    loads; drop its spacer too so More Info stays centred alone. */}
-                {addKeyDrawn && spacer('between')}
-                {addKeyDrawn && addKey}
-                {spacer('below')}
-            </Box>
-        );
-    }, [openMoreInfo, keycapLearning]);
+    const { wordActions, tapZoneFlash, clearTapZoneFlash } = keycap;
 
     // The reading box re-takes focus whenever it is blurred (useTextSelection) — except
     // while the eip is open, whose controls (tabs, search field, buttons) need focus. The
@@ -846,14 +622,7 @@ function ReaderDocumentPage() {
                         />
 
                         <Box className="reader-page-mobile-vocab-card-wrapper">
-                            <VocabDisplayCard
-                                dictionaryEntry={textSelection.selectedDictionaryCard}
-                                idleHint={showNavigationHint ? navigationHint : null}
-                                emptyFace={keycapEmptyFace}
-                                onSpeak={wordActions.speakSelected}
-                                isSpeaking={wordActions.isSpeaking}
-                                renderHeaderActions={renderKeycapActions}
-                            />
+                            <VocabDisplayCard {...keycap.cardProps} />
                         </Box>
                     </Collapse>
 
@@ -982,6 +751,8 @@ function ReaderDocumentPage() {
                             searchMatches={search.open ? search.matches : undefined}
                             currentMatchIndex={search.currentIndex}
                             searchColors={searchColors}
+                            selectedSentence={selectedSentence}
+                            onSelectSentenceAtOffset={textSelection.selectSentenceAtOffset}
                             cpcdView={showCpcd ? (
                                 <ReaderCpcdView
                                     content={text.content}
@@ -999,6 +770,8 @@ function ReaderDocumentPage() {
                                     searchMatches={search.open ? search.matches : undefined}
                                     currentMatchIndex={search.currentIndex}
                                     searchColors={searchColors}
+                                    selectedSentence={selectedSentence}
+                                    onSelectSentenceAtOffset={textSelection.selectSentenceAtOffset}
                                 />
                             ) : undefined}
                         />
@@ -1008,54 +781,29 @@ function ReaderDocumentPage() {
                         over the content box's side and bottom gutters to the screen's edges.
                         Reading mode only: edit mode is a plain editable field. */}
                         {!contentEditor.editMode && (
-                            <Box
+                            <ReadingTapRegion
                                 className="reader-page-tap-region"
                                 onPointerDownCapture={handleTapRegionPointerDown}
-                                sx={{
-                                    position: 'absolute',
-                                    top: 0,
-                                    left: { xs: -16, sm: -24 },
-                                    right: { xs: -16, sm: -24 },
-                                    bottom: { xs: -(16 + liftKeyboardInset), sm: -(24 + liftKeyboardInset) },
-                                    // Only a positioning frame: the overlay inside re-enables
-                                    // pointers. On desktop the overlay renders nothing, and the
-                                    // frame must not swallow clicks meant for the textarea.
-                                    pointerEvents: 'none',
-                                }}
-                            >
-                                <ReaderTapOverlay
-                                    inputRef={textSelection.inputRef}
-                                    scrollRef={showCpcd ? cpcdScrollRef : undefined}
-                                    wordSource={showCpcd ? "pinyin" : "text"}
-                                    onSelectSpanAtOffset={textSelection.selectSpanAtOffset}
-                                    onClearSelection={textSelection.clearSelection}
-                                    flash={tapZoneFlash}
-                                    onFlashEnd={clearTapZoneFlash}
-                                    night={look.dark}
-                                />
-                            </Box>
+                                left={{ xs: -16, sm: -24 }}
+                                right={{ xs: -16, sm: -24 }}
+                                bottom={{ xs: -(16 + liftKeyboardInset), sm: -(24 + liftKeyboardInset) }}
+                                inputRef={textSelection.inputRef}
+                                scrollRef={showCpcd ? cpcdScrollRef : undefined}
+                                wordSource={showCpcd ? "pinyin" : "text"}
+                                onSelectSpanAtOffset={textSelection.selectSpanAtOffset}
+                                onClearSelection={textSelection.clearSelection}
+                                onSelectSentence={textSelection.selectSentenceAtSelection}
+                                flash={tapZoneFlash}
+                                onFlashEnd={clearTapZoneFlash}
+                                night={look.dark}
+                            />
                         )}
                     </Box>
                 </Box>
             )}
 
-            {/* The keycap's More Info → the word's eip, the Dictionary page's configuration
-                (Synonyms + Related, the word-tools rail, the Learning key). Portals its own
-                scrim + sheet (SheetPanel). */}
-            <EipSheet
-                eip={wordActions.eip}
-                open={wordActions.eipOpen}
-                onClose={wordActions.closeEip}
-                onSpeak={wordActions.tts.speak}
-                onSpeakSentence={wordActions.tts.speakSentence}
-                speakingKey={wordActions.tts.speakingKey}
-                showSynonymsRelated
-                showWordTools
-                showLearning
-                // The keycap's own Learning toggle: while the eip shows the selected word
-                // its Add key IS the keycap's, so a tap updates both (useReaderWordActions).
-                sharedLearning={wordActions.sharedLearning}
-            />
+            {/* The keycap's More Info → the word's eip (src/reading/ReadingEipHost). */}
+            <ReadingEipHost wordActions={wordActions} />
 
             <DeleteDocumentDialog
                 look={look}

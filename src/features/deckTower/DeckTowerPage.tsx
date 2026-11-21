@@ -42,7 +42,6 @@ import { DailyBankingOptOut, DailyBankingProvider } from "../../minutePoints/dai
 import BankingEmbers from "../../minutePoints/dailyBanking/BankingEmbers";
 import TapToStartHint from "./TapToStartHint";
 import { TOWER_DECKS, otherTowerDeck, type TowerDeckId } from "./towerDecks";
-import CardSplat from "./CardSplat";
 import { SkyTrafficCloudShadows, SkyTrafficLayer, SkyTrafficSource } from "./SkyTraffic";
 import { useSkyTrafficStore } from "./skyTrafficStore";
 import DeckTowerPlatform, { type PlateFace } from "./DeckTowerPlatform";
@@ -52,7 +51,7 @@ import { useTowerResize } from "./useTowerResize";
 import { pickTowerGrow, pickTowerShrink } from "./towerResizes";
 import { TOWER_MODES, bandTotal } from "./towerModes";
 import { useWorldPan, type PanCarry } from "./useWorldPan";
-import { CARD_D, CARD_W, FLOOR_Z, PLATFORM_THICKNESS, TOWER_LAYOUT } from "./towerPlatforms";
+import { FLOOR_Z, PLATFORM_THICKNESS, TOWER_LAYOUT } from "./towerPlatforms";
 import { TOWER_WORLDS, WORLD_ORDER, type TowerWorldId } from "./towerWorlds";
 import { useTowerStudy } from "./useTowerStudy";
 import { litWorld } from "./timeOfDay";
@@ -436,9 +435,6 @@ function fitScene(proj: Projector, towerCount: number, skyCards: number) {
         // from FOG_ABOVE_SLAB over the slab's back corner down to the scene's bottom edge.
         fogCover: { minX: centreX - halfWidth, maxX: centreX + halfWidth, minY: slab.minY - UNIT * FOG_ABOVE_SLAB, maxY } as FogCover,
         fallDistance,
-        // Where a transition's card splat bursts from (CardSplat): the scene's bottom
-        // edge, across the tower's screen-x span.
-        splatFloor: { y: maxY, minX: tower.minX, maxX: tower.maxX },
         // The raw frame, and the tower axis' viewBox y at world z — for a tower grow's
         // camera move and drop (`startResize`).
         minX: centreX - halfWidth,
@@ -1136,7 +1132,7 @@ const DeckTowerPage: React.FC = () => {
         keepClimbFor.current = null;
         const el = scrollerRef.current;
         if (el) el.scrollTo({ top: platformScrollTop(el), behavior: "smooth" });
-        swap.toggle({ fallDistance: scene.fallDistance, progress: progress[worldId], cards: cardsOnTower });
+        swap.toggle({ fallDistance: scene.fallDistance, progress: progress[worldId] });
     };
 
     // ── The focus lever (docs/FOCUS_MODE.md § 5) ─────────────────────────────────
@@ -1432,7 +1428,6 @@ const DeckTowerPage: React.FC = () => {
         band: TOWER_DECKS[deck].band,
         wallSteps: TOWER_DECKS[deck].plateWallSteps,
     });
-    const splat = swap.splat;
 
     // ── The study's fades, all on the dive's eased position `e` (0 = tower view) ─────
     const e = study.e;
@@ -1683,23 +1678,6 @@ const DeckTowerPage: React.FC = () => {
                             flexDirection: "column",
                         }}
                     >
-                        {/* Falling things lose their floor shadows (the floor is gone from under
-                            them). Targets the shadow paths' own classes: the pawn's shadow GROUP
-                            has its opacity written inline every frame, which a class can't beat. */}
-                        <style>{`
-                            .deck-tower-page__falling .iso-card-stack__shadow,
-                            .deck-tower-page__falling .iso-paper-stack__shadow,
-                            .deck-tower-page__falling .iso-sort-platform__shadow,
-                            .deck-tower-page__falling .iso-pawn__shadow,
-                            .deck-tower-page__falling .iso-pawn__decal-anchor,
-                            .deck-tower-page__falling .iso-hatch__shadow { opacity: 0; transition: opacity 120ms ease-out; }
-                            /* A falling floor fixture (the lever) leaves its
-                               hatch behind: the lift top, hole and flaps belong to the swung-away
-                               floor, so only the fixture itself drops. */
-                            .deck-tower-page__falling .iso-hatch__lift-top,
-                            .deck-tower-page__falling .iso-hatch__hole,
-                            .deck-tower-page__falling .iso-hatch__flap { display: none; }
-                        `}</style>
                         {/* Schedules the clouds and wind the scene's two sky layers draw; renders nothing. */}
                         <SkyTrafficSource
                             store={skyTraffic}
@@ -1870,21 +1848,6 @@ const DeckTowerPage: React.FC = () => {
                                 snowFall={study.active || auroraUp ? undefined : snowFall}
                                 snow={platformSnow}
                             />
-                            {/* Over everything: the old tower hitting the floor below the screen. */}
-                            {splat && (
-                                <CardSplat
-                                    key={`splat-${worldId}-${splat.id}`}
-                                    elapsedMs={splat.elapsedMs}
-                                    floorY={scene.splatFloor.y}
-                                    minX={scene.splatFloor.minX}
-                                    maxX={scene.splatFloor.maxX}
-                                    unit={UNIT}
-                                    cards={splat.cards}
-                                    bandColor={TOWER_DECKS[splat.deck].band}
-                                    cardW={CARD_W}
-                                    cardD={CARD_D}
-                                />
-                            )}
                         </IsoScene>
                         {/* The band under the footer slab (see the scroller's note). */}
                         <Box ref={footerSpacerRef} className="deck-tower-page__footer-spacer" sx={{ height: SLAB_FOOTER_TOTAL_HEIGHT, flexShrink: 0 }} />

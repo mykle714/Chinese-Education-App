@@ -311,7 +311,8 @@ A **sort pack** is a small group of vocabulary cards shown together:
       the smaller box and the type steps down one notch on the existing scales (cpcd
       `compact` 16px/9px, es plain text 12px, definition `SIZE.caption`), so no new font
       sizes are introduced (the one exception is a 4+ character word, which the compact
-      face sets at cpcd `xxs` — CARD_LIBRARY.md § "Long words on the mini card"). Both faces set every glyph (word, pinyin, dd) in 975 Maru SC
+      face sets at cpcd `xxs` — CARD_LIBRARY.md § "Long words on the mini card"; and a gloss holding a word too wide for the body steps down to `SIZE.micro` (the regular face steps through `SIZE.caption` first) —
+      CARD_LIBRARY.md § "Long words in the definition"). Both faces set every glyph (word, pinyin, dd) in 975 Maru SC
       (`FONTS.cjk`), which `MiniCard` owns: docs/CJK_TYPEFACE_LAB.md § "The dd follows
       the face too". It is the **only** exception to "every mini card is 92×132";
       no other surface uses it.

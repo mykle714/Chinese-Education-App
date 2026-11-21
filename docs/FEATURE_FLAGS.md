@@ -14,6 +14,7 @@ One registry file switches whole features, and individual games, on and off:
 | `writingNotebook` | The Writing Notebook page and its entry, the paper stack on the Deck Tower's writing world ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)) | ON |
 | `superpositionStoredGroups` | A data path, not a feature: Superposition reads the AI-authored tile groups stored on det instead of computing them ([SUPERPOSITION_GAME.md](./SUPERPOSITION_GAME.md) § Stored groups) | ON (since 2026-11-03) |
 | `standaloneGames` | The five routed games' own pages (`/games/bubble-match`, `/word-search`, `/match-speed`, `/hydra-bubbles`, `/bucket-drop`). Client-only; their flp breaks are not gated ([GAMES_FEATURE.md](./GAMES_FEATURE.md)) | **OFF** (since 2026-11-06) |
+| `cyoa` | Adventures — branching stories + the author editor ([CYOA_FEATURE.md](./CYOA_FEATURE.md)). Learner pages partly built (plain-text passages, no editor yet) | ON (since 2026-11-20; needs migration 196) |
 | `GAME_FLAGS['<gameId>']` | One switch per game, eight of them ([GAMES_FEATURE.md](./GAMES_FEATURE.md)); `writing-grid` also gates the server's `/api/writingGrid/*` router (`server/server.ts`) | all ON |
 
 **`studyChallenge`, `community` and `standaloneGames` are the only things currently switched off.** Every other
@@ -161,6 +162,19 @@ the flp break candidates, so it would remove Match Speed's and Word Search's bre
 **Side effect while off:** Bubble Match, Hydra Bubbles and Bucket Drop have no break in the
 rotation, so they are unreachable (code kept). Switching it on needs no edit beyond the
 boolean, but the pages come back with no launcher.
+
+### 2i. `cyoa` — ON
+
+Adventures ([CYOA_FEATURE.md](./CYOA_FEATURE.md)). Migration 196, the `/api/stories/*` stack
+and a first cut of the learner pages exist; the learner page's reading engine (§ 4) and the
+editor do not. Switched ON 2026-11-20 by the owner's call ahead of completion, so the Menu
+shows **Adventures** with plain-text passages. **A deploy with the flag on must ship
+migration 196 first**, or every `/api/stories` call 500s on the missing tables.
+
+| Layer | Site |
+|---|---|
+| Server | `server/server.ts` → `if (isFeatureEnabled('cyoa')) app.use(storyRoutes)`. **No second entry point**: every story read and write is in `server/routes/storyRoutes.ts`. users."isAuthor" is read only by `StoryDAL.isAuthor` (not by `UserDAL.findById`), so nothing outside the router touches the new schema |
+| Client | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` drops `/adventures` and `/adventures/:id`; `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` hides the **Adventures** row. No other entry point: nothing else links to `/adventures`, and `src/api/stories.ts` is called only from `src/features/cyoa/` |
 
 ---
 

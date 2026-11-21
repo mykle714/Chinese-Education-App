@@ -26,6 +26,12 @@ import { OnDeckVocabController } from '../controllers/OnDeckVocabController.js';
 import { UserMinutePointsController } from '../controllers/UserMinutePointsController.js';
 import { DictionaryController } from '../controllers/DictionaryController.js';
 import { TextController } from '../controllers/TextController.js';
+import { StoryDAL } from './implementations/StoryDAL.js';
+import { StoryService } from '../services/StoryService.js';
+import { StoryController } from '../controllers/StoryController.js';
+import { SentenceExplanationDAL } from './implementations/SentenceExplanationDAL.js';
+import { SentenceExplanationService } from '../services/SentenceExplanationService.js';
+import { SentenceExplanationController } from '../controllers/SentenceExplanationController.js';
 import { ValidationController } from '../controllers/ValidationController.js';
 import { StarterPacksController } from '../controllers/StarterPacksController.js';
 import { GameAssetDAL } from './implementations/GameAssetDAL.js';
@@ -242,6 +248,16 @@ const onDeckVocabController = new OnDeckVocabController(
 const userMinutePointsController = new UserMinutePointsController(userMinutePointsService);
 const dictionaryController = new DictionaryController(dictionaryService, userDAL, vocabEntryDAL, lazyEnrichmentService);
 const textController = new TextController(textService);
+// Adventures (cyoa, migration 196, docs/CYOA_FEATURE.md): dictionaryDAL feeds the
+// publish-time difficulty compute (server gsa over the story's text).
+const storyDAL = new StoryDAL();
+const storyService = new StoryService(storyDAL, dictionaryDAL);
+const storyController = new StoryController(storyService);
+// The Reader's sentence Explain (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Sentence Explain").
+// Constructed after starterPacksService: it borrows estimateLevel for the prompt's learner level.
+const sentenceExplanationDAL = new SentenceExplanationDAL();
+const sentenceExplanationService = new SentenceExplanationService(sentenceExplanationDAL, dictionaryDAL, vocabEntryDAL, starterPacksService);
+const sentenceExplanationController = new SentenceExplanationController(sentenceExplanationService);
 const validationController = new ValidationController(validationService);
 const starterPacksController = new StarterPacksController(starterPacksService, provisionalCardService, cardAudioService);
 const gamesController = new GamesController(gameAssetService, gameProgressService);
@@ -325,6 +341,10 @@ export {
   userMinutePointsController,
   dictionaryController,
   textController,
+  storyDAL,
+  storyService,
+  storyController,
+  sentenceExplanationController,
   validationController,
   starterPacksController,
   gameAssetDAL,

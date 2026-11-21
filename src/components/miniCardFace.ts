@@ -32,8 +32,9 @@
  */
 import { COLORS } from "../theme/colors";
 import { SHADOW } from "../theme/shadows";
-import { SIZE } from "../theme/scale";
-import { COLUMN_WIDTH, OVERLAP_BY_SIZE, type CPCDSize } from "./cpcdLayout";
+import { FONTS } from "../theme/fonts";
+import { SIZE, WEIGHT } from "../theme/scale";
+import { COLUMN_WIDTH, OVERLAP_BY_SIZE, fontPx, type CPCDSize } from "./cpcdLayout";
 import { isLatinScriptLang } from "./ForeignText";
 
 /** The tile's footprint. Every mini card is exactly this, on every surface. */
@@ -114,6 +115,14 @@ export const miniCardFaceSx = ({ background, hoverLift = false, animationDelayMs
     transition: "box-shadow 0.2s ease-in-out",
     position: "relative" as const,
     overflow: "hidden" as const,
+    // Let the browser SYNTHESISE the bold headword. The card's face is FONTS.cjk (975 Maru
+    // SC), which ships ONE weight, and src/index.css turns `font-synthesis` off app-wide —
+    // so without this, MiniCard's `bold` word silently rendered at regular weight. It only
+    // looked bold on td's cards page, by inheritance from the tower stage's TOWER_TYPE_SX
+    // (deckTower/towerType.ts); acp, the sort offer and challenge cards drew it thin
+    // (user report 2026-11-20). Set on the face itself so every mini card matches the
+    // cards page wherever it is mounted. MiniCardSvg (its SVG twin) sets the same.
+    fontSynthesis: "weight" as const,
     // CSS containment: the browser skips layout/paint for cards scrolled out of view
     // (a real account's library holds hundreds). They stay in the DOM and tappable, and
     // `containIntrinsicSize` reserves the footprint so scroll height stays stable.
@@ -148,11 +157,56 @@ export const MINI_CARD_CONTENT_LAYOUT: Record<MiniCardSize, {
     cpcdCompact: boolean;
     plainFontSize: string;
     definitionFontSize: string;
+    /** Smaller type-scale steps below `definitionFontSize`, tried in order for a gloss
+     *  holding a word too wide for the body — see `miniCardDefinitionFontSize`. */
+    definitionStepDownSizes: readonly string[];
     definitionMinHeight: number;
 }> = {
-    regular: { sideInset: 8, iconTop: 14, iconSize: 26, keyTop: 46, cpcdCompact: false, plainFontSize: "14px", definitionFontSize: SIZE.body, definitionMinHeight: 24 },
-    compact: { sideInset: 6, iconTop: 11, iconSize: 22, keyTop: 38, cpcdCompact: true, plainFontSize: "12px", definitionFontSize: SIZE.caption, definitionMinHeight: 20 },
+    regular: { sideInset: 8, iconTop: 14, iconSize: 26, keyTop: 46, cpcdCompact: false, plainFontSize: "14px", definitionFontSize: SIZE.body, definitionStepDownSizes: [SIZE.caption, SIZE.micro], definitionMinHeight: 24 },
+    compact: { sideInset: 6, iconTop: 11, iconSize: 22, keyTop: 38, cpcdCompact: true, plainFontSize: "12px", definitionFontSize: SIZE.caption, definitionStepDownSizes: [SIZE.micro], definitionMinHeight: 20 },
 };
+
+// ── Long words in the definition ─────────────────────────────────────────────────────
+// The gloss wraps only at spaces and hyphens, so a single word wider than the body
+// (76px regular / 66px compact) has nowhere to break and is clipped by the line clamp's
+// `overflow: hidden`. In 975 Maru SC "independent" is 81px at 14px, and ~5.4% of
+// discoverable default dds held such a word (2026-11-20 measurement). The rule (user decision
+// 2026-11-20): when ANY word overflows at the face's normal size, the WHOLE gloss steps
+// down the type scale (`definitionStepDownSizes`) to the first size at which every word
+// fits. Regular: body → caption → micro (two steps, ~0.5% still clip at micro). Compact:
+// caption → micro only — below micro there is no token, and a word that still overflows
+// at the last step stays clipped rather than going to an off-scale size; shortening such
+// glosses at write time is the follow-up. Read by MiniCard and miniCardSvgLayout so both faces pick the same size.
+// Documented in docs/CARD_LIBRARY.md § "Long words in the definition".
+
+/** Text width in px for a family token + px size — canvasText's `measureAdvance` shape,
+ *  injected so this file stays free of DOM access (and tests can pass a fixed measurer). */
+export type DefinitionWordMeasurer = (text: string, font: { family: string; sizePx: number; weight: number }) => number;
+
+/** Words that cannot break inside: split at whitespace, and after a hyphen (miniCardSvgLayout's
+ *  `tokenize` break rule). */
+function unbreakableWords(definition: string): string[] {
+    return definition.split(/\s+/).flatMap((w) => w.split(/(?<=-)/)).filter(Boolean);
+}
+
+/**
+ * The definition's font size token for this gloss on this face: the face's normal size if
+ * every word fits the body, else the first of `definitionStepDownSizes` at which every word
+ * fits, else the last (smallest) step. Measured in the definition's own face (FONTS.cjk,
+ * regular weight).
+ */
+export function miniCardDefinitionFontSize(definition: string, size: MiniCardSize, measure: DefinitionWordMeasurer): string {
+    const layout = MINI_CARD_CONTENT_LAYOUT[size];
+    const bodyWidth = MINI_CARD_DIMENSIONS[size].width - 2 * layout.sideInset;
+    const words = unbreakableWords(definition);
+    // +0.01: the same rounding slack miniCardSvgLayout's wrap uses.
+    const fits = (token: string) => {
+        const font = { family: FONTS.cjk, weight: WEIGHT.regular, sizePx: fontPx(token) };
+        return words.every((w) => measure(w, font) <= bodyWidth + 0.01);
+    };
+    const candidates = [layout.definitionFontSize, ...layout.definitionStepDownSizes];
+    return candidates.find(fits) ?? candidates[candidates.length - 1];
+}
 
 /**
  * The mastery window strip's geometry (MiniCard → MasteryStrip, whose comment carries the

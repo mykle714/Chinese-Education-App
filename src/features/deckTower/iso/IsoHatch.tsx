@@ -31,7 +31,7 @@ import { useIsoProjector } from "./sceneContext";
  * `children(standZ)` draws the fixture standing at world z `standZ` (the lift's top).
  *
  * `air` poses a STANDING fixture in mid-entrance (a pawn entrance's frame, pawnEntrances.ts —
- * the Deck Tower drops it from the sky on FALL_FROM_SKY): its body is lifted `hop` units
+ * the Deck Tower drops it from the sky on the pawn's sky fall, `fallFromSky`): its body is lifted `hop` units
  * and squashed / stretched about its feet, and its shadow (`shadowFootprint`, cast on the
  * floor) stays under the landing spot, scaled and faded by the frame like the pawn's. The
  * hatch is not drawn at all meanwhile (its floor may still be moving under it), so it lands

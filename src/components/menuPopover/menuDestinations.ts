@@ -58,6 +58,10 @@ export function useMenuDestinations(): MenuDestinations {
         // No Games row: the Games hub was deleted 2026-11-06 and the routed games' pages
         // are off (`standaloneGames` flag). Games are played as flp breaks in the Deck Tower.
         routeDest("reader", "/reader", "Reader", "article", "pur"),
+        // Adventures (docs/CYOA_FEATURE.md § 7) — next to Reader, its sibling reading feature.
+        ...(isFeatureEnabled("cyoa")
+            ? [routeDest("adventures", "/adventures", "Adventures", "auto_stories", "grn")]
+            : []),
         // `yel` is the hue Arena wore as a bento tile before it became a footer tab
         // (2026-11-04) — one feature, one hue. `emoji_events` is the icon it wore as a tab.
         ...(isFeatureEnabled("arena")

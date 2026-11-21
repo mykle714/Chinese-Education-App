@@ -28,8 +28,8 @@ import { useIsoPalette, useIsoProjector } from "./sceneContext";
  *
  * The whole animation is CSS, timed by the plan: a ghost fades (and lifts a hair) after
  * its own delay; every run is drawn where it will LAND and starts translated up by its
- * drop, falls on a t² curve (cubic-bezier(1/3, 0, 2/3, 1/3) is exactly y = x²: free fall
- * from rest) and hops as it lands. So a 600-card tower never re-renders while it
+ * drop, falls on its run's own `fallEase` (src/theme/gravity.ts → `fallEasing`: exactly the
+ * world's fall — y = x² from rest, reshaped by start speed and jerk) and hops as it lands. So a 600-card tower never re-renders while it
  * collapses — only the top card's `figure` changes, and the pieces are memoised apart
  * from it. Remounting restarts the animation; key it per plan.
  */
@@ -48,8 +48,6 @@ interface IsoCardRunsProps {
 const GHOST_LIFT = 0.25;
 /** A ghost's wireframe: its stroke opacity while it stands. */
 const WIRE_OPACITY = 0.6;
-/** y = x²: a fall from rest. */
-const FREE_FALL = "cubic-bezier(0.333, 0, 0.667, 0.333)";
 
 const RUNS_CSS = `
 @keyframes iso-card-runs-ghost { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(calc(-1 * var(--ghost-lift))); } }
@@ -139,7 +137,7 @@ const IsoCardRuns: React.FC<IsoCardRunsProps> = ({ rect, surface, plan, label, b
                           "--drop": `${(r.dropCards * t * proj.heightUnit).toFixed(2)}px`,
                           "--hop": `${(LAND_HOP * proj.heightUnit).toFixed(2)}px`,
                           animation:
-                              `iso-card-runs-fall ${r.fallMs.toFixed(0)}ms ${FREE_FALL} ${plan.fallStartMs.toFixed(0)}ms both, ` +
+                              `iso-card-runs-fall ${r.fallMs.toFixed(0)}ms ${r.fallEase} ${plan.fallStartMs.toFixed(0)}ms both, ` +
                               `iso-card-runs-hop ${LAND_HOP_MS}ms ease-out ${(plan.fallStartMs + r.fallMs).toFixed(0)}ms`,
                       } as React.CSSProperties)
                     : undefined,

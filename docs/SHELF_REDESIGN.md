@@ -3463,7 +3463,7 @@ callers (the decks panel, since deleted, and `DeckBuckets` → Account) are conv
 > long-press behaviour. Its header states it is *"purely presentational"* — the prop
 > surface is `label` / `count` / `icon` / `mainColor` / `accentColor` / `onClick` /
 > `animationDelay`. The app's only long-press lives in
-> `src/features/reader/ReaderTapOverlay.tsx` and is unrelated. So this is a
+> `src/reading/ReaderTapOverlay.tsx` and is unrelated. So this is a
 > presentation-for-presentation swap, not a behaviour port.
 
 **Carry forward into `Spine` (A3) — the one genuinely good idea in `DeckTile`:**

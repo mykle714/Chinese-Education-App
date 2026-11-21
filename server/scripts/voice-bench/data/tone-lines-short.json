@@ -1,0 +1,15 @@
+{
+  "_comment": "Round 3 tone check (docs/VOICE_ASSISTANT.md Q20): the 10 most telling lines from tone-lines.json (8 that had errors in round 2, plus 得 děi and one mixed line). 'pinyin' is the expected reading shown to the listener. 'hint' is one syllable per Han character, fed to Google's <phoneme> hints via TTSService → buildPinyinSsml (the same path the flashcards use). 一/不 carry their spoken tones; third tones are written as citation tones.",
+  "lines": [
+    { "id": "r01", "kind": "repeat", "text": "\"Deadline\" 可以说\"截止日期\"，比如：这个项目的截止日期是星期五。", "pinyin": "\"Deadline\" kěyǐ shuō \"jiézhǐ rìqī\", bǐrú: zhège xiàngmù de jiézhǐ rìqī shì xīngqīwǔ.", "hint": "kě yǐ shuō jié zhǐ rì qī bǐ rú zhè ge xiàng mù de jié zhǐ rì qī shì xīng qī wǔ" },
+    { "id": "r02", "kind": "repeat", "text": "不好意思，我得走了。", "pinyin": "bù hǎoyìsi, wǒ děi zǒu le.", "hint": "bù hǎo yì si wǒ děi zǒu le" },
+    { "id": "z01", "kind": "zh", "text": "这个项目的截止日期是星期五。", "pinyin": "zhège xiàngmù de jiézhǐ rìqī shì xīngqīwǔ.", "hint": "zhè ge xiàng mù de jié zhǐ rì qī shì xīng qī wǔ" },
+    { "id": "z03", "kind": "zh", "text": "我觉得这家饭馆的菜特别好吃。", "pinyin": "wǒ juéde zhè jiā fànguǎn de cài tèbié hǎochī.", "hint": "wǒ jué de zhè jiā fàn guǎn de cài tè bié hǎo chī" },
+    { "id": "z05", "kind": "zh", "text": "下雨天我喜欢在家看书。", "pinyin": "xiàyǔ tiān wǒ xǐhuan zài jiā kàn shū.", "hint": "xià yǔ tiān wǒ xǐ huan zài jiā kàn shū" },
+    { "id": "z12", "kind": "zh", "text": "请你再说一遍，好吗？", "pinyin": "qǐng nǐ zài shuō yí biàn, hǎo ma?", "hint": "qǐng nǐ zài shuō yí biàn hǎo ma" },
+    { "id": "z13", "kind": "zh", "text": "这个周末天气预报说会下雪。", "pinyin": "zhège zhōumò tiānqì yùbào shuō huì xià xuě.", "hint": "zhè ge zhōu mò tiān qì yù bào shuō huì xià xuě" },
+    { "id": "z14", "kind": "zh", "text": "我们公司明年要搬到上海。", "pinyin": "wǒmen gōngsī míngnián yào bān dào Shànghǎi.", "hint": "wǒ men gōng sī míng nián yào bān dào shàng hǎi" },
+    { "id": "z15", "kind": "zh", "text": "你可以用\"因为……所以……\"造一个句子吗？", "pinyin": "nǐ kěyǐ yòng \"yīnwèi… suǒyǐ…\" zào yí gè jùzi ma?", "hint": "nǐ kě yǐ yòng yīn wèi suǒ yǐ zào yí gè jù zi ma" },
+    { "id": "m01", "kind": "mixed", "text": "\"Meeting\" 就是\"会议\"，比如：我下午有一个会议。", "pinyin": "\"Meeting\" jiù shì \"huìyì\", bǐrú: wǒ xiàwǔ yǒu yí gè huìyì.", "hint": "jiù shì huì yì bǐ rú wǒ xià wǔ yǒu yí gè huì yì" }
+  ]
+}

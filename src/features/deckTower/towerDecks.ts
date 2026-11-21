@@ -18,7 +18,7 @@ export interface TowerDeck {
     /** Printed on the floor plate. */
     label: string;
     /**
-     * The floor plate's fill (and the CardSplat flyers' strip), the same in every world: the
+     * The floor plate's fill, the same in every world: the
      * deck's collection hue at its `mid` tier (the pale `surface` tier washes out on the sky).
      * Mastered stays the core bar's blue even in the reading / writing worlds, so the deck
      * reads as one thing wherever the learner is.

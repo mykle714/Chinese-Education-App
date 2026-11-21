@@ -1,7 +1,7 @@
 import { Box, Button, CircularProgress, IconButton } from "@mui/material";
 import Icon from "../../components/Icon";
 import { COLORS } from "../../theme/colors";
-import { readerPillButtonSx } from "./readerStyles";
+import { readerPillButtonSx } from "../../reading/readerStyles";
 import { iconImageUrl } from "../../cardIcons/cardIconLayout";
 import type { Tier2Look } from "../../timeOfDay/tier2Look";
 

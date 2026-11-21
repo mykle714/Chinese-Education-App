@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { SegmentSpan } from "./documentSegmentation";
+import type { SegmentSpan } from "../../reading/documentSegmentation";
 import { buildDocumentSyllables, findReaderMatches, type ReaderSearchMatch } from "./readerSearch";
 
 /**

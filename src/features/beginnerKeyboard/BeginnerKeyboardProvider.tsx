@@ -81,6 +81,7 @@ import {
   type EditableField,
 } from './eligibility';
 import { BeginnerKeyboardInsetContext, INSET_CSS_VARIABLE } from './insetContext';
+import { ActiveKeyboardSourceContext } from './activeSourceContext';
 import { useKeyboardViewport } from './useKeyboardViewport';
 import {
   KEYBOARD_INSET_CSS_VARIABLE,
@@ -350,7 +351,10 @@ export default function BeginnerKeyboardProvider({ children }: { children: React
 
   return (
     <BeginnerKeyboardInsetContext.Provider value={inset}>
-      {children}
+      {/* § 6z-15: the keyboard on screen, or null — `open` (not `field`) is "is it up". */}
+      <ActiveKeyboardSourceContext.Provider value={open ? effectiveSource : null}>
+        {children}
+      </ActiveKeyboardSourceContext.Provider>
       {field && (
         <BeginnerKeyboardHost
           key={fieldKey(field)}

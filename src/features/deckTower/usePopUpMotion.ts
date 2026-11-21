@@ -11,7 +11,7 @@ import { prefersReducedMotion, type PawnEntranceCue, type PawnEntranceFrame } fr
  *                          its lift, which stops flush with the floor.
  *                          OR, with a `skyEntrance` cue at that moment (a deck swap
  *                          arriving at Learning), it FALLS FROM THE SKY on the pawn's own
- *                          entrance timeline (pawnEntrances.ts → `FALL_FROM_SKY`), its
+ *                          entrance timeline (pawnEntrances.ts → `fallFromSky`), its
  *                          start shifted so it lands a staggered beat after the pawn
  *                          (DeckTowerPage → `fixtureArgs`). It falls already standing (sink 0,
  *                          hatch 1 — the hatch hidden under its flush lift), so once it has

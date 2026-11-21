@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeSegmentSpans, segmentWithDict } from '../features/reader/documentSegmentation';
+import { computeSegmentSpans, segmentWithDict } from '../reading/documentSegmentation';
 
 // Covers the Reader gsa's tiebreak alternatives + forced spans
 // (docs/READER_SEGMENTATION.md § "Tiebreak alternatives").

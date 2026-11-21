@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken } from '../authMiddleware.js';
-import { textController } from '../dal/setup.js';
+import { textController, sentenceExplanationController } from '../dal/setup.js';
 import { handle } from './asyncHandler.js';
 
 /**
@@ -16,6 +16,11 @@ router.get('/api/texts', authenticateToken, handle(textController.getAllTexts, t
 
 // Get text statistics for authenticated user
 router.get('/api/texts/stats', authenticateToken, handle(textController.getUserTextStats, textController));
+
+// SENTENCE EXPLAIN: the AI explanation of one highlighted Reader sentence, tailored to the
+// caller (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Sentence Explain"). POST, so it can never
+// collide with GET /api/texts/:id; spends the shared daily AI budget on a cache miss.
+router.post('/api/texts/explainSentence', authenticateToken, handle(sentenceExplanationController.explain, sentenceExplanationController));
 
 // Get a specific text by ID
 router.get('/api/texts/:id', authenticateToken, handle(textController.getTextById, textController));

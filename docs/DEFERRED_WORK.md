@@ -206,6 +206,7 @@ need to decide. A 502/503 for an upstream failure would make the distinction che
 | **Trigger** | The whole-app AWS migration. There is **no plan doc for it yet** — when one is written, link this item from it. Do NOT start on a TTS bill; the free tier makes that argument empty |
 | **The one real risk — the pinyin hint** | `buildPinyinSsml` emits `<phoneme alphabet="pinyin" ph="zhong1">`, Google's spelling. Polly uses a different alphabet identifier for Mandarin (believed `x-amazon-pinyin` — **verify against current Polly docs, this was not confirmed**). That tag is not decoration: it is what makes 重点 read *zhòng diǎn* rather than the stale *chóng diǎn* in the `pronunciation` column. Budget the porting effort here, not in auth or caching, and re-test polyphones specifically |
 | **What ports for free** | The whole cache layer is provider-agnostic already. `synthesize()` reads the disk cache before any provider call, and the key is `sha256(provider:voice:text:pinyin)` — so **`provider` and `voice` are already in the key**, and a Polly cutover re-synthesizes into new slots without colliding with the ~674 Google MP3s. No cache wipe, no migration, and a rollback to `TTS_PROVIDER=google` still finds every old file. `TTSService` is constructor-injected from `dal/setup.ts`, so nothing above it changes; the client (`CloudTTSProvider`) never learns which provider answered |
+| **The voice tutor depends on Google too (added 2026-11-18)** | The voice assistant uses Google for speech-to-text as well (VOICE_ASSISTANT.md § 5.1), and its tutor speaks with Google **Chirp3-HD** (§ 5.3), chosen because it read every tone right in a listening test where every ElevenLabs voice failed. Chirp3-HD takes no pinyin hints, so its accuracy is the model's own. A Polly move must either keep Google for the tutor or show that a Polly neural voice passes the same test (`server/scripts/voice-bench/data/tone-lines-short.json`) |
 | **References** | `server/services/TTSService.ts` → `callGoogle`, `voiceForLang`, `voiceTag`, `cacheKey`, `buildPinyinSsml`; `server/.env` (`TTS_PROVIDER`, `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_TTS_VOICE_*`); `server/dal/setup.ts`. Related: item 12 (the fallback metric — build it BEFORE this migration, so a provider swap has something to prove it worked) |
 
 ### 14. MUI numeric elevations are the last shadows outside the design's system
@@ -774,9 +775,66 @@ Doc: [DICTIONARY_AI_FALLBACK_SEARCH.md](./DICTIONARY_AI_FALLBACK_SEARCH.md).
 | **Why deferred** | All Spanish work is paused until further notice (CLAUDE.md § Multi-Language Support) |
 | **Cost of leaving it** | English words in a Spanish document keep the keycap's empty face (the pawn) |
 | **Trigger** | Spanish work resumes |
-| **References** | `src/features/reader/useEnglishTranslations.ts`; `server/services/DictionaryService.ts` → `findEnglishTranslations` |
+| **References** | `src/reading/useEnglishTranslations.ts`; `server/services/DictionaryService.ts` → `findEnglishTranslations` |
+
+### 56. More tutor voices for the voice assistant
+
+| | |
+|---|---|
+| **What** | Let the learner choose from more of Google's ~30 Mandarin Chirp3-HD voices for the voice tutor, beyond the two it launches with (`cmn-CN-Chirp3-HD-Achird`, male, and `cmn-CN-Chirp3-HD-Achernar`, female). Before any voice is offered, run it through the tone check (`server/scripts/voice-bench/tts-bench.ts --lines tone-lines-short.json`, adding it to `VARIANTS`) and have the owner listen, because a voice that misreads tones teaches the wrong pronunciation |
+| **Why deferred** | Decided 2026-11-18: launch with the two voices that passed the tone check; more choice is not needed to see the feature working |
+| **Cost of leaving it** | Learners get a choice of two voices only |
+| **Trigger** | The voice assistant ships and learners ask for other voices, or the persona work (VOICE_ASSISTANT.md Q14) wants a different voice character |
+| **References** | [VOICE_ASSISTANT.md](./VOICE_ASSISTANT.md) § 5.3, Q14; `server/scripts/voice-bench/` |
+
+### 57. The rdb's sentence face shows nothing but the Explain key
+
+| | |
+|---|---|
+| **What** | While a sentence is highlighted (SENTENCE MODE), the keycap's face (`ReaderSentenceFace`) holds only the Explain key until it is tapped. Give it content of its own — e.g. the sentence as cpcd, a translation, its word list — designed with the owner |
+| **Why deferred** | Owner's call 2026-11-20: ship Explain with just the key first; the face's content comes later |
+| **Cost of leaving it** | A mostly empty card while a sentence is selected |
+| **Trigger** | The owner designs the sentence face |
+| **References** | [USER_DOCUMENT_FEATURE_SUMMARY.md](./USER_DOCUMENT_FEATURE_SUMMARY.md) § "Sentence Explain"; `src/reading/ReaderSentenceFace.tsx` |
+
+### 58. Sentence Explain: Spanish, the refusal fallback, and stale per-user answers
+
+| | |
+|---|---|
+| **What** | Three known gaps in the Reader's sentence Explain: (a) **Spanish** — `SentenceExplanationService.explainSentence` returns the empty result for `es` and the face withholds the key; the prompt and grounding are zh-specific. (b) **Server-side refusal fallback** — the installed `@anthropic-ai/sdk` (0.77) predates the `fallbacks` parameter, so an Opus 5.5 refusal just yields "No explanation is available" (counted against the budget, not cached) instead of re-running on a fallback model; upgrading the SDK and adding `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) would close it. (c) **Staleness** — answers are cached per user with no expiry, so a cached explanation keeps describing the learner's mastery as it was when generated |
+| **Why deferred** | (a) Spanish is paused (CLAUDE.md); (b) an SDK upgrade is its own change; (c) owner's call 2026-11-20: no expiry for now |
+| **Cost of leaving it** | (a) No Explain in Spanish documents; (b) a rare refusal shows an empty notice and spends a budget call; (c) explanations may over-explain grammar a learner has since mastered |
+| **Trigger** | (a) Spanish resumes; (b) the next SDK upgrade; (c) learners notice, or a staleness rule is wanted (`createdAt` is stored for it) |
+| **References** | [USER_DOCUMENT_FEATURE_SUMMARY.md](./USER_DOCUMENT_FEATURE_SUMMARY.md) § "Sentence Explain"; `server/services/SentenceExplanationService.ts`; `database/migrations/195-create-sentence-explanation-cache.sql` |
+
+### 59. Add the Adventures story tables to `/data-ppe-to-dev`
+
+| | |
+|---|---|
+| **What** | Add `stories`, `story_passages` and `story_choices` (migration 196) to the `/data-ppe-to-dev` pull list, in FK order (stories → passages → choices; `stories."startPassageId"` is circular, so load with the FK deferred or set it in a second pass). `story_progress` and `story_endings_found` are per-user and must NOT be pulled; a pull that replaces passages will cascade-delete dev's progress rows, which is acceptable on dev |
+| **Why deferred** | Nothing to pull yet: the story migrations (196–199) are not on PPE, so no story exists there. The editor is built (2026-11-20/21), so this becomes live once they deploy. Also add `story_passages_seen` (migration 198) to the per-user tables that must NOT be pulled |
+| **Cost of leaving it** | Once authors write on PPE, a dev box has no stories to test the learner page against |
+| **Trigger** | The editor ships, or the first story is authored on PPE |
+| **References** | [CYOA_FEATURE.md](./CYOA_FEATURE.md) § 6.2 "Data sync"; `database/migrations/196-create-stories.sql`; the `data-ppe-to-dev` skill |
+
+### 61. Move the eip and the keycap pawn out of features, under the shared reading engine
+
+| | |
+|---|---|
+| **What** | The shared reading engine (`src/reading/`, CYOA_FEATURE.md § 4) imports from two features: `src/features/flashcards/FlashcardsLearnPage/` (`EipSheet`, `EipAddKey`, `useEipTabs`, `eipAddKeySizes`, `useEipPalette`) in `useReadingKeycap.tsx`, `ReadingEipHost.tsx`, `useReaderWordActions.ts`, `ReaderMoreInfoKey.tsx`, `ReaderSentenceFace.tsx`; and `src/features/deckTower/iso/` in `ReaderKeycapPawn.tsx`. Shared code must not import features (docs/FRONTEND_LAYERING.md § Dependency direction). Move the eip kit to a shared home (e.g. `src/eip/`, it already serves the flp, the Dictionary, the Reader and Adventures) and the pawn figure + iso scene pieces it needs to `src/components/` or a shared iso folder |
+| **Why deferred** | The eip kit is large and imported across the flp, Dictionary and card pages; moving it is its own refactor. The engine move (2026-11-21) carried the Reader's existing cross-feature imports over unchanged rather than widen that pass |
+| **Cost of leaving it** | The dependency direction is broken in a shared folder, so the layering rule cannot be checked mechanically, and an flp-only change to the eip can break Adventures without touching it |
+| **Trigger** | The next change to the eip kit's file layout, or any lint rule that enforces the dependency direction |
+| **References** | [CYOA_FEATURE.md](./CYOA_FEATURE.md) § 4.2; [FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md); `src/reading/` |
 
 ## Recently closed
+
+### 60. Remove the cyoa copies of the Reader's style fragments (closed 2026-11-21 — DONE)
+
+The engine moved to `src/reading/`; `src/features/cyoa/cyoaStyles.ts` now re-exports
+`readerMutedTextSx` / `readerMessageSx` / `readerPillButtonSx` from
+`src/reading/readerStyles.ts` under its `cyoa…` names. (Those three still repeat
+`friendStyles.ts`'s recipes, as they did before.)
 
 ### 27. Quick Mark has no entry point (closed 2026-11-14 — code DELETED)
 

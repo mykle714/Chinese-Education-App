@@ -1,4 +1,5 @@
 import { CARD_THICKNESS } from "./cardStackMetrics";
+import { fallEasing, fallMs, fallParams } from "../../../theme/gravity";
 
 /**
  * cardCollapse.ts — the plan for a card stack that loses some of its cards and settles
@@ -33,8 +34,6 @@ export const GHOST_WIRE_FADE_MS = 220;
 const GHOST_HOLD_MS = 160;
 /** A ghost chunk is at most this many consecutive cards, so a long gap still empties piece by piece. */
 const GHOST_CHUNK_MAX = 3;
-/** Cartoon gravity for the settling runs, in world units / s² (the pawn's sky fall uses 110). */
-export const COLLAPSE_GRAVITY = 140;
 /** The landing hop: its height in world units and its length in ms. */
 export const LAND_HOP = 0.08;
 export const LAND_HOP_MS = 160;
@@ -48,6 +47,8 @@ export interface CollapseRun {
     dropCards: number;
     /** Ms its fall takes (0 for a run that does not move). */
     fallMs: number;
+    /** Its fall as a CSS easing (src/theme/gravity.ts → `fallEasing`: y = x² from rest, reshaped by start speed and jerk). */
+    fallEase: string;
     /** It holds the top card (the lid). */
     hasLid: boolean;
 }
@@ -88,11 +89,6 @@ export function shadowLandTiming(landAtMs: number): { delayMs: number; durationM
     return { delayMs: Math.max(0, landAtMs), durationMs: SHADOW_LAND_MS };
 }
 
-/** Ms to fall `cards` card thicknesses from rest under COLLAPSE_GRAVITY. */
-export function fallMsFor(distance: number, gravity = COLLAPSE_GRAVITY): number {
-    return distance <= 0 ? 0 : Math.sqrt((2 * distance) / gravity) * 1000;
-}
-
 export function planCardCollapse(cards: number, ghostCount: number, random: () => number = Math.random): CardCollapsePlan {
     const n = Math.max(0, Math.floor(cards));
     const k = Math.min(n, Math.max(0, Math.floor(ghostCount)));
@@ -105,6 +101,8 @@ export function planCardCollapse(cards: number, ghostCount: number, random: () =
     }
     const ghost = new Array<boolean>(n).fill(false);
     for (let i = 0; i < k; i++) ghost[pool[i]] = true;
+    // Every run falls under the same gravity, start speed and jerk (src/theme/gravity.ts → `fallParams("collapse")`), read once per plan.
+    const fall = fallParams("collapse");
 
     const runs: CollapseRun[] = [];
     const ghosts: GhostChunk[] = [];
@@ -124,7 +122,7 @@ export function planCardCollapse(cards: number, ghostCount: number, random: () =
             gone += j - i;
         } else {
             while (j < n && !ghost[j]) j++;
-            runs.push({ from: i, count: j - i, dropCards: gone, fallMs: fallMsFor(gone * CARD_THICKNESS), hasLid: j === n });
+            runs.push({ from: i, count: j - i, dropCards: gone, fallMs: fallMs(gone * CARD_THICKNESS, fall), fallEase: fallEasing(gone * CARD_THICKNESS, fall), hasLid: j === n });
         }
         i = j;
     }

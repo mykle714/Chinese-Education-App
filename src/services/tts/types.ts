@@ -52,7 +52,7 @@ export interface TTSRequest {
      *
      * For a caller that paces something against the audio while it plays: the Reader's
      * read-aloud moves its word highlight through a clause over exactly this duration
-     * (src/features/reader/useReaderReadAloud.ts; docs/AUDIO_PLAYBACK.md § 3c).
+     * (src/reading/useReaderReadAloud.ts; docs/AUDIO_PLAYBACK.md § 3c).
      */
     onStart?: (durationMs: number | null) => void;
     /**

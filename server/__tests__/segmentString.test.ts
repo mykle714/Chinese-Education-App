@@ -18,7 +18,7 @@ import type { DictionaryEntry } from '../types/index.js';
  * Reader, long-definition runs and the flashcard breakdown, and it had no test
  * coverage at all.
  *
- * NOTE: `src/features/reader/documentSegmentation.ts` is a CLIENT PORT of
+ * NOTE: `src/reading/documentSegmentation.ts` is a CLIENT PORT of
  * `segmentWithDict` (docs/READER_SEGMENTATION.md). The scoring and tie-break rules
  * asserted here are the ones that port must mirror.
  *

@@ -34,12 +34,12 @@ All test users are created automatically via database initialization scripts in 
 
 ### 4. Reader Vocabulary Test User ⭐ NEW
 - **Email**: `reader-vocab-test@example.com`
-- **Password**: `password` — verified against the bcrypt hash seeded by
-  `database/init/03-reader-vocab-test-user.sql`. This doc previously claimed
-  `TestPassword123!`, which does **not** match that hash; logging in with it gets a
-  legitimate 400 `Invalid email or password` from
-  `server/services/UserService.ts`. The other three test users really are
-  `testing123`.
+- **Password**: `TestPassword123!` — verified by a live `POST /api/auth/login` on dev
+  (2026-11-21); `password` and `testing123` are refused. (An earlier note here claimed the
+  opposite, from the hash in `database/init/03-reader-vocab-test-user.sql`; the dev
+  database no longer matches that file.)
+- **Author account** (`users."isAuthor"` = true): owns the dev cyoa story used for editor
+  testing.
 - **Vocabulary Entries**: 135 words from reader texts
 - **Content**: All vocabulary from the three reader documents:
   - **咖啡店的早晨** (Coffee Shop Morning) - 47 words

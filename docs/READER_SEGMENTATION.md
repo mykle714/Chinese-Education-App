@@ -17,7 +17,7 @@ Parent doc: [USER_DOCUMENT_FEATURE_SUMMARY.md](./USER_DOCUMENT_FEATURE_SUMMARY.m
 
 | Layer | Piece |
 |---|---|
-| Client util (pure) | `src/features/reader/documentSegmentation.ts` — gsa port, span computation, navigation |
+| Client util (pure) | `src/reading/documentSegmentation.ts` — gsa port, span computation, navigation |
 | Client feature | `ReaderDocumentPage.tsx` (span memo) → `TextArea.tsx` (arrow keys) / `useTextSelection.ts` (auto select) / `ReaderTapOverlay.tsx` (tap gestures) / `ReaderCpcdView.tsx` (Pinyin display mode: renders the same spans as cpcd words and highlights the textarea's selected span — see USER_DOCUMENT_FEATURE_SUMMARY.md § Display modes) |
 | Server (canonical algorithm) | `server/dal/shared/segmentString.ts` — `segmentWithDict` et al. (est enrichment) |
 | Server (data source) | `POST /api/vocabEntries/byTokens` (`VocabEntryController.getEntriesByTokens`) |
@@ -113,7 +113,7 @@ inside its cell's DOM subtree:
 - desktop: `ReaderCpcdView`'s scroll box catches the click in the capture phase, so the
   word group's own onClick never runs.
 
-Both paths call `ReaderDocumentPage` → `switchToAlternative`. That adds the loser to
+Both paths call `src/reading/useSegmentOverrides.ts` → `switchToAlternative` (through the page: `ReaderDocumentPage`, or the cyoa `StoryPlayPage` for a passage). That adds the loser to
 `segmentOverrides`, which reaches `computeSegmentSpans(…, forcedSpans)`. The forced word
 is placed first and the rest of its Han run re-segments around it (没 | 治愈). The shared
 span list then follows the switch in both modes and in navigation.
@@ -127,13 +127,13 @@ can never straddle a forced span, because forced spans split the run).
 content they were made against, so an edit or another document drops them. A forced span
 that no longer fits its run (offsets or text changed) is ignored.
 
-Code: `src/features/reader/documentSegmentation.ts` → `segmentRange` (losers),
+Code: `src/reading/documentSegmentation.ts` → `segmentRange` (losers),
 `computeSegmentSpans` / `segmentDocument` (forced spans, switch-back);
-`src/features/reader/ReaderDocumentPage.tsx` → `segmentOverrides`, `switchToAlternative`;
-`src/features/reader/readerAlternatives.ts` → `ALTERNATIVE_CELL_ATTR`, `findAlternativeCellAt`;
-`src/features/reader/ReaderCpcdView.tsx` → `paragraphAlternatives`,
+`src/reading/useSegmentOverrides.ts` → `useSegmentOverrides`; `src/features/reader/ReaderDocumentPage.tsx` → `switchToAlternative`;
+`src/reading/readerAlternatives.ts` → `ALTERNATIVE_CELL_ATTR`, `findAlternativeCellAt`;
+`src/reading/ReaderCpcdView.tsx` → `paragraphAlternatives`,
 `handleAlternativeClickCapture`, `ReaderCpcdParagraph` (`items` memo);
-`src/features/reader/ReaderTapOverlay.tsx` → `handlePointerUp`;
+`src/reading/ReaderTapOverlay.tsx` → `handlePointerUp`;
 `src/components/CPCDRow.tsx` → `CPCDRowItem.attrs`.
 Tests: `src/__tests__/documentSegmentation.test.ts`.
 
@@ -198,18 +198,18 @@ incoming edit element with them restored. That focus also matters for the keyboa
 a tap on an already-focused field fires no `focusin`, so without it nothing would
 open until the learner tapped away and back.
 
-Code: `src/features/reader/TextArea.tsx` → `TextArea` (`inputProps`, the `key`,
+Code: `src/reading/TextArea.tsx` → `TextArea` (`inputProps`, the `key`,
 the read ⇄ edit hand-off effect); `src/features/beginnerKeyboard/eligibility.ts` →
 `OPT_OUT_ATTRIBUTE`; `src/features/beginnerKeyboard/BeginnerKeyboardHost.tsx`
 (the `inputMode` cleanup).
 
 ## Code / doc dependencies
 
-- `src/features/reader/documentSegmentation.ts` — everything above; header notes
+- `src/reading/documentSegmentation.ts` — everything above; header notes
   the server cross-reference and the intentional divergences.
-- `src/features/reader/ReaderCpcdView.tsx`, `ReaderTapOverlay.tsx`,
+- `src/reading/ReaderCpcdView.tsx`, `ReaderTapOverlay.tsx`,
   `readerAlternatives.ts`, `ReaderDocumentPage.tsx` — tiebreak alternatives (§ "Tiebreak alternatives").
-- `src/features/reader/TextArea.tsx` — reading/edit keyboard suppression and the
+- `src/reading/TextArea.tsx` — reading/edit keyboard suppression and the
   per-mode textarea (§ "Keyboards: reading mode vs edit mode").
 - `src/types.ts` `DictionaryEntry.matchException` — declared for the client
   because the gsa exclude set reads it (the API always sent it).

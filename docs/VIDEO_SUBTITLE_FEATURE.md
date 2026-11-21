@@ -337,7 +337,7 @@ in this codebase** and must reuse it rather than reimplement it:
 
 - **Segmentation** — the same greedy segmentation algorithm (gsa) the Reader and est
   use, so a cue segments identically to the same sentence typed into the Reader.
-  See `src/features/reader/documentSegmentation.ts` and the est read path.
+  See `src/reading/documentSegmentation.ts` and the est read path.
 - **Per-segment metadata** — pos / sense / number / tense tagging, keyed by gsa
   segment string, exactly as described in
   [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) § two-phase tagging. The alignment

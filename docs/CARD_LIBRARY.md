@@ -85,6 +85,15 @@ optional mastery strip. Wrappers pass plain display values plus `children` overl
 (corner badges, action buttons). The **mastery strip is opt-in** (`masteryBar`; only
 `MiniVocabCard` passes it); omitting it gives the strip's height back to the definition.
 
+**The headword is bold everywhere — synthesised.** The card is set in `FONTS.cjk` (975 Maru
+SC), which ships a single weight, and `src/index.css` sets `font-synthesis: none` on `:root`.
+So `miniCardFaceSx` sets `fontSynthesis: "weight"` on the face itself, and `MiniCardSvg` →
+`fontProps` does the same on each SVG `<text>`. Without it, `ForeignText bold` renders
+regular. Before this rule, the word was bold only on td's cards page, which picked it up from
+the tower stage's `TOWER_TYPE_SX` (`src/features/deckTower/towerType.ts`). acp's dock, the bin
+decks, the sort offer and challenge cards drew it thin. The face carries the setting so that a
+card never depends on its host page.
+
 ### Long words on the mini card
 
 `miniCardFace.ts` → `miniCardWordFit` (`MINI_CARD_SMALL_WORD_MIN_CHARS`), read by both
@@ -111,6 +120,37 @@ headword keeps ForeignText's plain-text path).
   definition — rare, accepted.
 - Long pinyin at `xxs` (8px on a 15px pitch) relies on the shared collision solver
   (CPCD_PINYIN_SHIFT.md) and may spread slightly past the glyphs.
+
+### Long words in the definition
+
+`miniCardFace.ts` → `miniCardDefinitionFontSize` (and the `definitionStepDownSizes` field of
+`MINI_CARD_CONTENT_LAYOUT`), read by `MiniCard` (measured with `canvasText.ts` →
+`measureAdvance`, re-measured on `useFontLoadEpoch`) and by `miniCardSvgLayout.ts` →
+`layoutMiniCardSvg` (through its injected `TextMeasurer`), so both faces pick the same size.
+
+The dd wraps only at spaces and after hyphens, so one word wider than the body (76px
+regular, 66px compact) has no break point and is clipped by the line clamp's
+`overflow: hidden`. When **any** word of the gloss overflows at the face's normal size, the
+**whole** gloss steps down the type scale to the first size at which every word fits:
+
+| Face | Normal | Step-down sizes, in order | Body |
+|---|---|---|---|
+| regular 92×132 | `SIZE.body` (14px) | `SIZE.caption` (12px) → `SIZE.micro` (11px) | 76px |
+| compact 78×112 | `SIZE.caption` (12px) | `SIZE.micro` (11px) | 66px |
+
+- **Type-scale tokens only** (user decisions 2026-11-20: one step at first, then a second step
+  for the regular face). `SIZE.micro` is the smallest token, so the compact face has one step.
+  A word still too wide at the last step stays clipped rather than going to an off-scale size.
+  Shortening such glosses at write time (the short-gloss steps in DEFINITION_MAPPING.md § 3)
+  is the intended follow-up.
+- **Scale, 2026-11-20, 975 Maru SC, discoverable zh default dds (a moving subset):** the
+  regular face steps down on ~5.4% of cards (narrowest trigger: *commission*, 76px; *independent*
+  is 81px); ~1.3% need the second step to 11px, and ~0.5% (132) still clip there
+  (*telecommunications*, *professionalization*, *methamphetamine*). The compact face steps
+  down on ~4.8% and ~2.2% still clip at 11px.
+- The break rule (space, or a hyphen followed by a non-space) is `miniCardSvgLayout.ts` →
+  `tokenize`'s. Chrome also breaks after `/`, which neither twin models, so a slashed gloss
+  (`and/or`) may step down when the HTML face would not have clipped it.
 
 **Its SVG twin.** `MiniCardSvg` (`src/components/MiniCardSvg.tsx`) draws the same face —
 tile, ring, icon, cpcd word, two-line gloss — as native SVG, for the acp's iso deck tops

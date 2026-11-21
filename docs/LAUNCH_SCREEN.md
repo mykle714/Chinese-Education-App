@@ -137,10 +137,13 @@ drove an `IsoPawn` entrance from a per-frame JS loop and stalled mid-fall (owner
   recoils at the touchdown (`startAt + landMs`). The dip lands on the frame of impact
   whatever the main thread is doing.
 - **The fall** (`planDrop`): from the head `FALL_START_MARGIN_PX` above the cover's top edge
-  down to the feet's resting place, in the cover's measured box. Exact gravity:
-  `landMs = √(2d/g)` with `GRAVITY_UNITS` (60 world units/s², the td sky fall's
-  `SKY_FALL_GRAVITY`), and the easing `GRAVITY_EASE`, `cubic-bezier(1/3, 0, 2/3, 1/3)`,
-  which is exactly y = x² (from rest, accelerating all the way). `fill: both` holds the pawn
+  down to the feet's resting place, in the cover's measured box (`launch/launchDrop.ts` →
+  `launchFall`, which /gravity-lab's timings read too). Exact gravity: the distance is
+  converted to world units with the projector's height unit and timed under the
+  `launchScreen` fall type's own parameters (`src/theme/gravity.ts` → `fallParams("launchScreen")`,
+  110 / 0 / 0 by default; it had a floatier 60 until 2026-11-20 — [GRAVITY_LAB.md](./GRAVITY_LAB.md)): `landMs` from `fallMs` and the
+  easing from `fallEasing` (`LaunchDrop.easing`) — `cubic-bezier(1/3, 0, 2/3, 1/3)`, exactly
+  y = x², while start speed and jerk are 0, reshaped by them otherwise. `fill: both` holds the pawn
   above the edge (clipped by the cover's `overflow: hidden`) until it starts.
 - **Scheduled once the cover has painted**, two frames after mount, then `FALL_DELAY_MS`
   (250 ms) of plain colour. A clock started at render was already deep into the fall by the

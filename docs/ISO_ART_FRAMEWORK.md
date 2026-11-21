@@ -58,13 +58,13 @@ The exemption covers iso scenes only; it is not a precedent for UI chrome.
 | Behaviour | `usePawnMotion.ts` → `usePawnMotion`, `depthRankAmong`, `pointInFrontOfRect`, `backToFront`, `PawnEntranceCue`, `PawnTapReaction`, `PawnActiveIdle` | The pawn's entrance, wander and startle, its idles and tap reactions, and depth-sorting a moving object among obstacles |
 | Behaviour | `pawnIdles.ts` → `PawnIdleKind`, `PawnIdleCue`, `LASTING_IDLES`, `idlePose`, `flinchPose`, `SNEEZE_SNAP_MS`, `KNIT_CLICK_MS` | The idle animations' and the tap flinch's pose curves, pure (§ IsoPawn → "Idles and the flinch") |
 | Math | `pawnFigure.ts` → `pawnFigure`, `pawnVest`, `circleHullPath`, `HEAD_CENTRE` (also read by the flp hint pawn's bubble tail) | The pawn's body as a projected 3D capsule + sphere (§ IsoPawn → "View"); bent along a curved spine by `arch` (§ IsoPawn → "Back stretch"); the optional night vest (§ IsoPawn → "Vest") |
-| Behaviour | `pawnEntrances.ts` → `PawnEntrance`, `FALL_FROM_SKY`, `PAWN_ENTRANCES`, `pickPawnEntrance`, `entranceStartFor` | How a pawn arrives, as pure pose timelines timed by their landing ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md) § Pawn entrances) |
+| Behaviour | `pawnEntrances.ts` → `PawnEntrance`, `fallFromSky`, `PAWN_ENTRANCES`, `pickPawnEntrance`, `entranceStartFor` | How a pawn arrives, as pure pose timelines timed by their landing ([DECK_TOWER_TRANSITIONS.md](./DECK_TOWER_TRANSITIONS.md) § Pawn entrances) |
 | Behaviour | `skyTraffic.ts` → `planSidePath`, `useSkyTraffic`, `createAltitudeWander`, `useAltitudeWander`, `SkyRegion`, `SkySide`, `prefersReducedMotion` | What clouds and wind share: the path along a tower's side, the wait → cross → wait slot scheduler, and the wandering spawn altitude (§ Sky traffic) |
 | Behaviour | `useCloudDrifts.ts` → `useCloudDrifts`, `CloudDrift`, `CloudSky`, `sortCloudsBackToFront` | Schedules the clouds drifting past the tower: shapes, speed, timing, mid-sky openers |
 | Behaviour | `fogClouds.ts` → `planFogClouds`, `FogCloud`, `FogUnit`, `FogBridge`, `FogCover`, `FOG_LEVELS` | Shapes the fog clouds (staggered, bridged units) and plans their lanes across a screen box (§ IsoFog) |
 | Behaviour | `useWindGusts.ts` → `useWindGusts`, `WindGust`, `WindStrand`, `WindPt`, `WindSky` | Schedules the wind gusts: strand shapes, curl, timing, on-screen placement |
 | Object | `IsoPlatform.tsx`, `IsoCard.tsx`, `IsoCardStack.tsx`, `IsoCardImprint.tsx`, `IsoFloorPrint.tsx`, `IsoPaperStack.tsx`, `IsoSortPlatform.tsx`, `IsoCardRuns.tsx`, `IsoFloorLabel.tsx`, `IsoHatch.tsx`, `IsoLever.tsx`, `IsoSmokePuff.tsx`, `IsoPawn.tsx` (+ its `PawnIdleProps.tsx`), `IsoCloud.tsx`, `IsoCloudShadow.tsx`, `IsoBalloon.tsx`, `IsoWind.tsx`, `IsoFog.tsx`, `IsoRain.tsx`, `IsoSnow.tsx`, `IsoSnowCap.tsx`, `IsoSnowFloor.tsx` (+ `snowTrail.ts`), `IsoLightningBolt.tsx`, `IsoBurnMark.tsx` | The things a scene is made of (one component each, below) |
-| Behaviour | `cardCollapse.ts` → `planCardCollapse`, `cardsShowingAt`, `fallMsFor`, `shadowLandTiming`, `CardCollapsePlan` | The pure plan for a stack losing cards and settling (§ IsoCardRuns) |
+| Behaviour | `cardCollapse.ts` → `planCardCollapse`, `cardsShowingAt`, `shadowLandTiming`, `CardCollapsePlan` | The pure plan for a stack losing cards and settling (§ IsoCardRuns) |
 | Rules | `light.ts` → `IsoSurface`, `shadowFootprint`, `shadowSpread`, `shadowTone`, `cloudShadowFootprint` | The light and the shadow rule |
 | Rules | `palette.ts` → `ISO` (incl. `yarn`), `shadeHex`, `mixHex`, `Material` | Colours (`mixHex` blends two colours continuously, e.g. the Deck Tower sky → space) |
 | Rules | `levitation.ts` → `BOB_HEIGHT`, `BOB_PERIOD_MS`, `frozenBobOffsetPx` | The bob, and reading back where a paused one stopped |
@@ -234,7 +234,7 @@ from what it falls on.
   by `CENTRED_SHADOW_GROW` (= `shadowSpread().x` ≈ 0.21) on every side about its centre
   (`light.ts` → `centredShadowFootprint`). It exists for a lone figure centred in a UI
   surface, where a down-right shadow reads as off-centre. Its one user is the Reader's
-  keycap pawn (`src/features/reader/ReaderKeycapPawn.tsx`). Anything inside a lit iso scene
+  keycap pawn (`src/reading/ReaderKeycapPawn.tsx`). Anything inside a lit iso scene
   keeps the lit shadow.
 - **Tone comes from the receiver.** Shadows on the sky, the floor and a floor plate read as the
   same strength of shade. There are no per-receiver shadow colours in the palette.
@@ -608,7 +608,7 @@ at `plan.durationMs`. Key it per plan: remounting restarts it.
   `GHOST_CHUNK_MAX` (3) consecutive cards; each chunk starts fading at a random time in the
   first `GHOST_SPREAD_MS` (900 ms) and takes `GHOST_FADE_MS` (420). The kept cards form
   RUNS. After a `GHOST_HOLD_MS` (160) beat with the gaps open, every run falls at once,
-  each by the ghosts beneath it, under `COLLAPSE_GRAVITY` (140 units/s²); a run with more
+  each by the ghosts beneath it, under the `collapse` fall type's own gravity, start speed and jerk (`src/theme/gravity.ts` → `fallParams("collapse")`: 110 / 0 / 0 by default; timed by `fallMs`); a run with more
   gaps under it lands later, so the landings ripple up. Each gives a `LAND_HOP` (0.08 units,
   `LAND_HOP_MS` 160) hop as it lands. The top card (the lid with the print) is never a
   ghost while any card is kept; it rides down on the top run.
@@ -632,8 +632,9 @@ at `plan.durationMs`. Key it per plan: remounting restarts it.
   wireframes go in the order the chunks were picked. `fallStartMs` waits for the last one
   (plus the `GHOST_HOLD_MS` beat).
 - **All CSS.** Ghost fade (with a `GHOST_LIFT` 0.25-unit rise), the fall (each run drawn
-  where it lands, starting translated up by its drop on `cubic-bezier(1/3, 0, 2/3, 1/3)`,
-  which is exactly y = x², free fall from rest) and the hop are CSS animations timed by
+  where it lands, starting translated up by its drop on its own `CollapseRun.fallEase` —
+  `src/theme/gravity.ts` → `fallEasing`, exactly the world's fall: `cubic-bezier(1/3, 0, 2/3, 1/3)`
+  = y = x² from rest, reshaped by start speed and jerk) and the hop are CSS animations timed by
   the plan, so a several-hundred-card stack never re-renders while it collapses. Only the
   top card's `figure` changes: the caller counts it down with `cardsShowingAt(plan, ms)`
   (a chunk stops counting halfway through its fade).
@@ -718,7 +719,7 @@ poses a standing fixture mid-entrance: the body is lifted `hop` units and scaled
 about its feet, and its shadow (`shadowFootprint`) stays under the landing spot, scaled by
 `shadowScale` and faded by `shadowOpacity`. No part of the hatch (hole, flaps, lift top) is
 drawn while `air` is set, because the floor under it may still be moving; the Deck Tower drops
-its fixtures in on `FALL_FROM_SKY` ([FOCUS_MODE.md](./FOCUS_MODE.md) § 5). Below-floor parts
+its fixtures in on the sky fall (`fallFromSky`) ([FOCUS_MODE.md](./FOCUS_MODE.md) § 5). Below-floor parts
 are hidden by clips: the lift always, and the fixture while `sink > 0`, by the hole's opening
 swept up the screen (`hatchGeometry.ts` → `openingSweepPath`); the flaps by the opening itself (a hanging near flap is hidden under the
 floor's front edge). Standing, the fixture is unclipped, so one that overhangs the hole's
@@ -878,22 +879,22 @@ height exactly, so a pawn on a pressed plate sinks with it and rides its spring 
   a hop cut short by a startle (the startle effect hands the lift over mid-glide) — eases the
   lift over `STEP_MS` instead.
 - **Feet physics.** On top of `lift` (the surface, carrying the shadow) the feet have their own
-  height and vertical speed (`feetZ`, `feetV`) under `GRAVITY` — the pawn's own cartoon
-  gravity, 110 u/s² (`pawnEntrances.ts` → `PAWN_GRAVITY`; the sky-fall entrance uses a gentler
-  60, `SKY_FALL_GRAVITY`, and the scene's falling towers use 130–140) — so the pawn reacts to its step
+  height and vertical speed (`feetZ`, `feetV`) under `GRAVITY` — the pawn's gravity,
+  which is the sky fall's (`src/theme/gravity.ts` → `pawnGravity`, 110 u/s² by default, read every
+  frame — [GRAVITY_LAB.md](./GRAVITY_LAB.md)) — so the pawn reacts to its step
   moving under it (the Deck Tower plate being pressed and released, docs/DECK_TOWER_TRANSITIONS.md
   § "The plate button"):
   - **Pressed** — the plate's ease-out sink drops away faster than gravity can follow at
     first, so the pawn FALLS onto it (~67 ms for the full 0.25-unit press) instead of
     snapping down with it, landing in a small bounce.
   - **Released** — a step that sank under the feet (`launchArmed`) and then rises into them
-    launches them at `PLATE_LAUNCH_SPEED` (derived from `PLATE_LAUNCH_APEX` = 2.4 units, the
+    launches them at `plateLaunchSpeed(g)` (derived from `PLATE_LAUNCH_APEX` = 2.4 units, the
     pawn's own full height): they ride the plate up (no gravity while it is still pushing
     faster than that — in practice they leave it at once, the launch being ~23 u/s), peak
-    `PLATE_LAUNCH_APEX_MS` (~209 ms) after the release, and — when the floor is still there —
+    `plateLaunchApexMs()` (~209 ms at 110) after the release, and — when the floor is still there —
     land in shrinking bounces (`BOUNCE_RESTITUTION`: ~0.5 then ~0.1 units, settling under
     `BOUNCE_MIN_SPEED`). The Deck Tower's swap holds its trap door at least
-    `PLATE_LAUNCH_APEX_MS`, so in practice the floor drops away while the pawn is coming back
+    `plateLaunchApexMs()`, so in practice the floor drops away while the pawn is coming back
     down (**Floor drop** below). On a quick tap the plate rises while the pawn is still
     falling; the launch fires when they meet.
   - Each impact squashes (`IMPACT_SQUASH_PER_SPEED`, capped at `IMPACT_SQUASH_MAX`, over

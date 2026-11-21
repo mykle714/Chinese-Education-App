@@ -157,6 +157,31 @@ const PAGE_ROUTES: RouteMeta[] = [
     note: "Writing Notebook (docs/WRITING_NOTEBOOK.md) — an endless handwriting sheet launched from the notebook stack on the Deck Tower's writing world. A leaf: footerless, slides up, Back returns to the tower's writing world.",
   },
 
+  // Adventures (docs/CYOA_FEATURE.md § 7) — the same pair shape as the Reader: a Menu
+  // node list that keeps the footer, and a FOOTERLESS node reader. Behind the `cyoa` flag.
+  { path: "/adventures", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
+  {
+    path: "/adventures/:id",
+    access: "any",
+    shell: "frame",
+    chrome: "node",
+    note: "Footerless like /reader/:id — the passage, the choice stack and their edge tabs need the whole height (docs/CYOA_FEATURE.md § 3.1).",
+  },
+  {
+    path: "/adventures/:id/edit",
+    access: "any",
+    shell: "frame",
+    chrome: "node",
+    note: "The author's story editor (docs/CYOA_FEATURE.md § 5). Open to any signed-in user at the route; the server answers 403 unless users.\"isAuthor\" and the story is theirs.",
+  },
+  {
+    path: "/adventures/:id/edit/:passageId",
+    access: "any",
+    shell: "frame",
+    chrome: "node",
+    note: "The author's passage editor (docs/CYOA_FEATURE.md § 5); same server-side gate as /adventures/:id/edit.",
+  },
+
   {
     path: "/reader/:id",
     access: "any",
@@ -209,6 +234,13 @@ const PAGE_ROUTES: RouteMeta[] = [
     chrome: "none",
     note: "Dev-only type labs (src/pages/fontLab/FontLabPage.tsx) — a shell over two modes: Chinese (FONTS.cjk) and Info type (FONTS.label, the overline voice). Not linked from any menu; reachable by typing the URL. Plain shell because each lab owns its own scroll container and needs the width for the compare grid.",
   },
+  {
+    path: "/gravity-lab",
+    access: "any",
+    shell: "plain",
+    chrome: "none",
+    note: "Dev-only gravity lab (src/pages/gravityLab/GravityLabPage.tsx) — per-fall-type gravity / start speed / jerk sliders (src/theme/gravity.ts), the real Deck Tower platform as its stage, and a timings table. Not linked from any menu; reachable by typing the URL. Plain shell: the lab owns its own scroll container. Docs: docs/GRAVITY_LAB.md.",
+  },
 
   // ── Unauthenticated ──
   // Auth pages sit in the FRAME (since 2026-11-14): the boot cover opens onto `/login` on a
@@ -258,6 +290,9 @@ export const FLAGGED_OFF_PATHS: ReadonlySet<string> = new Set<string>([
   ...(isFeatureEnabled("community") ? [] : ["/community"]),
   ...(isFeatureEnabled("arena") ? [] : ["/arena"]),
   ...(isFeatureEnabled("writingNotebook") ? [] : ["/flashcards/writing/notebook"]),
+  ...(isFeatureEnabled("cyoa")
+    ? []
+    : ["/adventures", "/adventures/:id", "/adventures/:id/edit", "/adventures/:id/edit/:passageId"]),
   ...(isFeatureEnabled("studyChallenge")
     ? []
     : ["/friends/challenges", "/friends/challenges/history", "/friends/challenges/:challengeId"]),

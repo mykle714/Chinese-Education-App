@@ -16,6 +16,7 @@ Referenced from [ARCHITECTURE_REVIEW.md](./ARCHITECTURE_REVIEW.md) (findings 5 a
 | `src/components/` | Genuinely shared presentational components | Importers in **two or more** features |
 | `src/hooks/`, `src/utils/` | Shared, feature-agnostic logic | Same test as `components/` |
 | `src/cardIcons/` | The card-icon subsystem (layout math, text layout, API client, `editor/`) | Consumed by both flp and cdp |
+| `src/reading/` | The reading engine: the reading box (`TextArea`), tap overlay, selection, segmentation, the rdb keycap's wiring (`useReadingKeycap`), Sentence Explain, tap-to-hear, the eip mount | Consumed by the Reader and Adventures (cyoa) — [CYOA_FEATURE.md](./CYOA_FEATURE.md) § 4. ⚠️ Still imports the eip kit from `features/flashcards` and the pawn from `features/deckTower` (DEFERRED_WORK item 61) |
 | `src/api/` | The HTTP transport (§ 3) | — |
 | `src/routes/` | `routeMeta.ts` (path table, **no page imports**) + `registry.ts` (components, **all `React.lazy`**) | — |
 

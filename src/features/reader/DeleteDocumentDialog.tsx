@@ -13,7 +13,7 @@ import { apiDelete } from '../../api/http';
 import { COLORS } from '../../theme/colors';
 import { FONTS } from '../../theme/fonts';
 import { LEADING, SIZE, WEIGHT } from '../../theme/scale';
-import { READER_CARD_RADIUS, readerMessageSx, readerPillButtonSx } from './readerStyles';
+import { READER_CARD_RADIUS, readerMessageSx, readerPillButtonSx } from '../../reading/readerStyles';
 import type { Tier2Look } from '../../timeOfDay/tier2Look';
 
 // Delete confirmation for the open document (ReaderDocumentPage header → trash icon)

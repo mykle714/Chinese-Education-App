@@ -115,7 +115,7 @@ import { useSoftIntro } from "../../softIntro/useSoftIntro";
 
 /** World units the platform sinks when a dropped tower lands on it. */
 const IMPACT_SINK = 0.55;
-/** The landing's blow: down fast, back up past rest, a small settle. Fits inside IMPACT_MS. */
+/** The landing's blow: down fast, back up past rest, a small settle (fits inside IMPACT_MS) — plus the falling rule. */
 const PLATFORM_SINK_CSS = `
 .deck-tower-page__kept-deck .iso-card-stack__shadow { opacity: var(--platform-fade); }
 @keyframes deck-tower-platform-sink {
@@ -125,11 +125,27 @@ const PLATFORM_SINK_CSS = `
     72% { transform: translateY(calc(0.08 * var(--sink))); }
     100% { transform: translateY(0); }
 }
-/* y = x²: free fall from rest (the same curve IsoCardRuns' runs fall on). */
+/*
+ * Falling things lose their floor shadows (the floor is gone from under them). Targets the
+ * shadow paths' own classes: the pawn's shadow GROUP has its opacity written inline every
+ * frame, which a class can't beat. A falling floor fixture (the lever) leaves its hatch
+ * behind: the lift top, hole and flaps belong to the swung-away floor, so only the fixture
+ * itself drops. (Lived in DeckTowerPage until 2026-11-20; moved here, beside the code that
+ * sets the class, so any host of this component — /gravity-lab too — gets it.)
+ */
+.deck-tower-page__falling .iso-card-stack__shadow,
+.deck-tower-page__falling .iso-paper-stack__shadow,
+.deck-tower-page__falling .iso-sort-platform__shadow,
+.deck-tower-page__falling .iso-pawn__shadow,
+.deck-tower-page__falling .iso-pawn__decal-anchor,
+.deck-tower-page__falling .iso-hatch__shadow { opacity: 0; transition: opacity 120ms ease-out; }
+.deck-tower-page__falling .iso-hatch__lift-top,
+.deck-tower-page__falling .iso-hatch__hole,
+.deck-tower-page__falling .iso-hatch__flap { display: none; }
+/* The sky drop's fall; its easing is the plan's own (TowerDrop.fallEase — src/theme/gravity.ts → fallEasing). */
 @keyframes deck-tower-drop-fall { from { transform: translateY(calc(-1 * var(--lift))); } to { transform: translateY(0); } }
 @keyframes deck-tower-drop-shadow-in { from { opacity: 0; } to { opacity: 1; } }
 `;
-const FREE_FALL = "cubic-bezier(0.333, 0, 0.667, 0.333)";
 
 /** A drop onto the bare floor: its shadow fades in from the impact (cardCollapse.ts → `shadowLandTiming`). */
 function dropShadowStyle(drop: TowerDrop): React.CSSProperties {
@@ -520,7 +536,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
         });
 
     // Things falling with the old tower: dropped straight down the screen, with their floor
-    // shadows faded out (DeckTowerPage's `.deck-tower-page__falling` rule). Pawns take only
+    // shadows faded out (the `.deck-tower-page__falling` rule in PLATFORM_SINK_CSS). Pawns take only
     // the class (their shadow fade): they follow the drop themselves (IsoPawn `floorDrop`).
     const fallSx = (falling: boolean) =>
         falling && dropPx > 0
@@ -735,7 +751,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                             style={
                                 {
                                     "--lift": `${(drop.lift * proj.heightUnit).toFixed(2)}px`,
-                                    animation: `deck-tower-drop-fall ${drop.fallMs.toFixed(0)}ms ${FREE_FALL} both`,
+                                    animation: `deck-tower-drop-fall ${drop.fallMs.toFixed(0)}ms ${drop.fallEase} both`,
                                 } as React.CSSProperties
                             }
                         >

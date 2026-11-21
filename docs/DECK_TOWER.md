@@ -435,7 +435,7 @@ tweens are `usePopUpMotion`'s.
 
 - **Leaving Learning** on a trap-door swap, it falls away with the old tower and is put away
   sunk and shut, unanimated.
-- **Arriving at Learning**, it drops in from the sky on the incoming pawn's `FALL_FROM_SKY`
+- **Arriving at Learning**, it drops in from the sky on the incoming pawn's sky fall (`fallFromSky`)
   cue, shifted `LEVER_LANDS_AFTER_PAWN_MS` (500 ms) later, so the pawn lands on the trap
   door's slam and the lever a beat after it. The cue is only shifted later, so the whole fall
   plays; a lever still waiting to fall draws nothing and takes no taps, even after the swap
@@ -666,7 +666,7 @@ refit to (`fitScene`, pure):
 2. **Drop:** a tower of the new cards (`IsoCardStack` with its top card printing the new
    total, `figure`) falls from with its underside `DROP_CLEARANCE` (1 unit) above the
    screen's top edge — at least `DROP_MIN_LIFT` (8) above the landing — under
-   `SKY_DROP_GRAVITY` (130 units/s²), as a CSS free fall. A seam is drawn under its bottom card,
+   the `skyDrop` fall type's own parameters (`src/theme/gravity.ts` → `fallParams("skyDrop")`: gravity 110 units/s², start speed 0, jerk 0 by default), as a CSS animation timed by `fallMs` on the plan's own `TowerDrop.fallEase` (`fallEasing`). A seam is drawn under its bottom card,
    where it meets the standing tower's top card. When the standing tower had no cards it lands
    on the bare floor instead: its floor shadow is drawn there, still, and fades in from the
    impact (`shadowLandTiming`) — not before, or it would cover the "0 cards" imprint while

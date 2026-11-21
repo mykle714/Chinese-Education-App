@@ -1,0 +1,19 @@
+{
+  "_comment": "Lines for the TTS benchmark: what the tutor actually says. 'kind': zh = all Chinese, mixed = Chinese with English (tests whether one voice can say both), heteronym = a character with two readings (the expected reading is in 'check'; listen for it).",
+  "lines": [
+    { "id": "t01", "kind": "zh", "text": "你好！今天想聊什么？" },
+    { "id": "t02", "kind": "zh", "text": "对，超市的菜很新鲜。你也可以说：我昨天去了超市，买了很多蔬菜。" },
+    { "id": "t03", "kind": "zh", "text": "没关系，我们慢慢来。你周末一般做什么？" },
+    { "id": "t04", "kind": "zh", "text": "很好！这句话说得很自然。" },
+    { "id": "t05", "kind": "mixed", "text": "\"Grocery store\" 用中文是\"超市\"。" },
+    { "id": "t06", "kind": "mixed", "text": "没关系，我们慢慢来。Take your time." },
+    { "id": "t07", "kind": "mixed", "text": "\"Deadline\" 可以说\"截止日期\"，比如：这个项目的截止日期是星期五。" },
+    { "id": "t08", "kind": "mixed", "text": "Good job! 你用了\"因为\"和\"所以\"，非常好。" },
+    { "id": "h01", "kind": "heteronym", "text": "我去银行取钱，你行不行？", "check": "银行 háng · 行不行 xíng" },
+    { "id": "h02", "kind": "heteronym", "text": "他长得很高，头发很长。", "check": "长得 zhǎng · 很长 cháng" },
+    { "id": "h03", "kind": "heteronym", "text": "我还没还图书馆的书。", "check": "还没 hái · 还书 huán" },
+    { "id": "h04", "kind": "heteronym", "text": "我睡觉的时候觉得有点冷。", "check": "睡觉 jiào · 觉得 jué" },
+    { "id": "h05", "kind": "heteronym", "text": "这首音乐让我很快乐。", "check": "音乐 yuè · 快乐 lè" },
+    { "id": "h06", "kind": "heteronym", "text": "不好意思，我得走了。", "check": "得 děi" }
+  ]
+}

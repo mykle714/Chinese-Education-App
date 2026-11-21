@@ -22,7 +22,7 @@ import { SIZE, WEIGHT, LEADING } from "../../theme/scale";
 // Every surface mirrors a real app screen at its real size. A face that looks good at
 // hero size and falls apart at SIZE.caption is the failure mode a naive specimen sheet
 // hides. See src/features/flashcards/card/CardFace.tsx (card front),
-// src/features/reader/TextArea.tsx (running text) and
+// src/reading/TextArea.tsx (running text) and
 // src/features/studyChallenge/ChallengeHistoryPage.tsx (the xs metadata line).
 
 /** Sample vocabulary, chosen for a spread of stroke counts and tone colors. */

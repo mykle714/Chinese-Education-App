@@ -213,7 +213,7 @@ Two item fields go with it:
 - `reservePinyinBand`: the cell keeps the pinyin band with no pinyin, so a line holding
   only such cells is still one cpcd line tall.
 
-First user: the Reader's Pinyin view (`src/features/reader/ReaderCpcdView.tsx` →
+First user: the Reader's Pinyin view (`src/reading/ReaderCpcdView.tsx` →
 `buildParagraphs`): one row per paragraph, one group per gsa word.
 
 ## Tunables (`src/components/cpcdLayout.ts`)

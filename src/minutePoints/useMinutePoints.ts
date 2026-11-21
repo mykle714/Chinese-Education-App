@@ -15,6 +15,7 @@ import { useActivityDetection } from '../hooks/useActivityDetection';
 import { incrementMinutePoint, fetchLanguageSummary } from './minutePointsSync';
 import { isSameStreakDay } from './streakDay';
 import { getMinutePointsPaused } from './minutePointsPause';
+import { isMinutePointsActivitySuppressed } from './activitySuppression';
 
 export interface UseMinutePointsReturn {
   currentPoints: number;
@@ -439,7 +440,12 @@ export const useMinutePoints = (): UseMinutePointsReturn => {
   }, [isEligiblePage, location.pathname]);
 
   useActivityDetection({
-    onActivity: () => recordActivityRef.current(),
+    // A suppressed interaction (e.g. typing on abc in the cyoa editors, ./activitySuppression)
+    // does not refresh the activity window; a running clock drains its idle timeout as usual.
+    onActivity: () => {
+      if (isMinutePointsActivitySuppressed()) return;
+      recordActivityRef.current();
+    },
     isEnabled: isEligiblePage && !!user?.id
   });
 

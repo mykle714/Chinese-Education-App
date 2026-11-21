@@ -544,7 +544,7 @@ showing — the root is the saved card the page is about, so the key would only 
 it — and appears on every word drilled into from it. It is the app's only Learning control
 (the dictionary cdp's glowing `LearningToggle` was deleted with that page, 2026-11-10). acp
 offers none. **Outside the eip** it has one mount: the Reader's dictionary keycap
-(VocabDisplayCard `renderHeaderActions`, wired by `src/features/reader/useReaderWordActions.ts`),
+(VocabDisplayCard `renderHeaderActions`, wired by `src/reading/useReaderWordActions.ts`),
 under the light palette `useEipColors` returns outside a provider. That toggle is SHARED with
 the Reader's eip (EipSheet `sharedLearning`): while the eip shows the selected word, its trail
 key runs on the keycap's state, so a tap in the eip flips the keycap's key behind the sheet
@@ -570,7 +570,7 @@ this replaced it.) Code: `src/hooks/useLearningToggle.ts` → `inLibraryOnLoad`,
 **Both eip keycaps carry the straight-lip rounded edge** (a 1px top rim light just inside the
 outline ring; docs/designGuidelines.md § "The rounded edge"). The headword tile also draws the
 0.5px fillet over its lip; the **Add key does not** (nor the Reader's More Info key built to
-its recipe, `src/features/reader/ReaderMoreInfoKey.tsx`): its inset outline ring sits between
+its recipe, `src/reading/ReaderMoreInfoKey.tsx`): its inset outline ring sits between
 face and fillet, so the fillet's face→lip blend read as a near-white seam under the outline
 (dropped 2026-11-17 — the outlined-key exception). Code: `EipAddKey.tsx` → `restShadow`.
 

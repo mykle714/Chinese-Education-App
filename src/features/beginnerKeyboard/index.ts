@@ -12,6 +12,7 @@ export { default as BeginnerKeyboard } from './BeginnerKeyboard';
 export { default as PinyinToneKeyboard } from './PinyinToneKeyboard';
 export { useKeyboardViewport } from './useKeyboardViewport';
 export { useBeginnerKeyboardInset, INSET_CSS_VARIABLE } from './insetContext';
+export { useActiveKeyboardSource } from './activeSourceContext';
 export {
   useBeginnerKeyboardTransition,
   transitionForInset,

@@ -57,10 +57,11 @@ cycle order, and adding it to a new header is one tag. A surface that must hide 
 (Bubble Match and Bucket Drop on a reading run, where hearing the word hands over the pronunciation
 being tested) simply does not render it.
 
-**One surface has its own setting: the Reader document page.** Its display strip shows
-`ReaderAudioChip`, the same skin bound to `useReaderAudioSettings` (`localStorage`
-`reader.audio`, default **default**), which gates the Reader's tap-to-hear and claims the
-route for the page while it is mounted (§ 5). It is not this setting, and changing one never
+**The reading pages have their own setting: the Reader document page and the cyoa story
+page** (docs/CYOA_FEATURE.md § 3.1). The Reader's display strip and the story page's header
+show `ReaderAudioChip`, the same skin bound to `useReaderAudioSettings` (`localStorage`
+`reader.audio`, default **default**) — one setting shared by both pages — which gates their
+tap-to-hear and claims the route for the page while it is mounted (§ 5). It is not this setting, and changing one never
 changes the other. See [USER_DOCUMENT_FEATURE_SUMMARY.md](./USER_DOCUMENT_FEATURE_SUMMARY.md)
 § "Tap-to-hear".
 
@@ -379,7 +380,7 @@ sequence.
 
 *Code:* `src/services/tts/types.ts` → `TTSRequest.onStart`; `CloudTTSProvider` →
 `playViaElement`, `playViaWebAudio`; `WebSpeechProvider` → `speak`; `useTTS` → `speakText`,
-`speakSentence`; `src/features/reader/useReaderReadAloud.ts`.
+`speakSentence`; `src/reading/useReaderReadAloud.ts`.
 
 **`trimSilence` — butting two clips together (2026-11-17).** Every Google clip carries
 ≈120 ms of silence before the speech and ≈230 ms after it (measured with ffmpeg
@@ -397,7 +398,7 @@ it; no Web Audio = the clip plays whole. `prefetchSentence`'s 5th argument
 
 *Code:* `CloudTTSProvider` → `resolvePlaySlice`, `getSoundBounds`, `findSoundBounds`,
 `prefetch`; `useTTS` → `speakSentence` (`options.trimSilence`), `prefetchSentence`;
-`src/features/reader/readAloudClauses.ts` → `ReadAloudClause.joinsPrevious` / `joinsNext`.
+`src/reading/readAloudClauses.ts` → `ReadAloudClause.joinsPrevious` / `joinsNext`.
 
 ---
 
@@ -923,7 +924,7 @@ rule covers input-blocking overlays, and a header chip leaves the board playable
 - `server/controllers/TTSController.ts` — request validation, incl. the voice role (§ 6)
 - `src/services/tts/CloudTTSProvider.ts` — both sinks, all three caches, unlock
 - `src/services/tts/WebSpeechProvider.ts` — the unrouteable fallback; carries no voice role (§ 6)
-- `src/features/reader/useReaderReadAloud.ts` — the Reader's read-aloud, the one `onStart` caller (§ 3c)
+- `src/reading/useReaderReadAloud.ts` — the Reader's read-aloud, the one `onStart` caller (§ 3c)
 - `src/pages/SettingsPage.tsx` — `AUDIO_MODE_OPTIONS`; `NARRATION_VOICE_OPTIONS`,
   `VOICE_SAMPLE` and the voice section (§ 6)
 - `server/services/CardAudioService.ts` — `prewarm` (default-voice only), `synthesizeForRequest`,
@@ -935,9 +936,9 @@ rule covers input-blocking overlays, and a header chip leaves the board playable
   `stopPackAutoplay`, the queue prefetch effect (§ 4)
 - `src/components/AudioModeChip.tsx` — reads `useTTSSettings`, never `useTTS` (§ 1, § 4);
   also `ReaderAudioChip`, the same skin on the Reader's own setting
-- `src/features/reader/useReaderAudioPreload.ts`, `src/api/tts.ts` — the Reader's
+- `src/reading/useReaderAudioPreload.ts`, `src/api/tts.ts` — the Reader's
   pre-warm + neighbour prefetch (§ 4)
-- `src/features/reader/useReaderAudioSettings.ts` — the Reader's own audio setting and its
+- `src/reading/useReaderAudioSettings.ts` — the Reader's own audio setting and its
   route claim (§ 1 The chip, § 5)
 - `src/services/sfx/countdownSounds.ts`, `src/games/shared/useGameCountdown.ts` — the countdown beeps (§ 7a)
 - [EXAMPLE_SENTENCES.md](./EXAMPLE_SENTENCES.md) — est narration call sites

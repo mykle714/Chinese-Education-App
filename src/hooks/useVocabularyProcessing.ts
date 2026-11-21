@@ -21,8 +21,9 @@ interface UseVocabularyProcessingReturn {
 /**
  * Helper function to fetch vocabulary entries in batches
  * Automatically handles token lists > 1000 by splitting into batches
+ * Also used by src/reading/useContentVocabulary.ts (the story page's no-cache loader).
  */
-async function fetchVocabInBatches(
+export async function fetchVocabInBatches(
     tokens: string[]
 ): Promise<{ personalEntries: VocabEntry[], dictionaryEntries: DictionaryEntry[] }> {
     if (tokens.length === 0) {

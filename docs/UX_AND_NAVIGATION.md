@@ -528,6 +528,14 @@ a new popup inherits it by being one of them, and nothing per call site opts in.
 | Every MUI `Dialog` | The Dialog **root** gets `padding-bottom: var(--keyboard-inset)`, so the paper re-centres in the space above the keyboard and a tall dialog's own `max-height` shrinks it (its content scrolls). Animated on the keyboard's own slide curve via `--keyboard-inset-timing`. | `src/contexts/ThemeContext.tsx` → `MuiDialog.styleOverrides.root` |
 | Every `SheetPanel` (eip, compare sheet, acp, cdp) | The sheet does **not** move. The body's scroll element gets extra bottom padding equal to the inset, so every row can be scrolled up above the keyboard. | `src/components/sheet/SheetPanel.tsx` → the "Keyboard clearance" layout effect |
 
+**A long-form writing field keeps the caret comfortable.** Where a learner writes a
+passage (the Reader's edit mode, the cyoa passage editor), the page ends its scroll box at
+the keyboard's top edge (reserving `useKeyboardInset()`), and
+`src/hooks/useComfortableCaretScroll.ts` holds the line being written no lower than 60% of
+that box, leaving visible space below it rather than the browser's caret-on-the-last-line
+reveal. A new writing surface uses the same pair, and it needs run-out below its last line
+to scroll into (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Editing → Comfortable caret scroll).
+
 **Sheets with a dictionary search maximize on focus.** Focusing a field inside an element
 marked `data-sheet-maximize-on-focus` animates its `SheetPanel` to full height (the same
 snap as a drag to the top), on the tap itself — so the sheet grows as the keyboard rises

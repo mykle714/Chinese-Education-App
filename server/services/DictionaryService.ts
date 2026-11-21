@@ -8,22 +8,13 @@ import { resolveMatchedSense } from '../utils/searchSenseMatch.js';
 import { ValidationError, RateLimitError } from '../types/dal.js';
 import { getAllSubstrings, buildDictMap, buildExcludeSet, segmentWithDict } from '../dal/shared/segmentString.js';
 import { DICTIONARY_AI_DAILY_LIMIT } from '../constants.js';
-import { getAnthropicClient } from './anthropicClient.js';
+import { getAnthropicClient, getDictAiClient } from './anthropicClient.js';
 
 // The enrichment helpers' client (long definition) is shared app-wide — see
 // anthropicClient.ts. Null when ANTHROPIC_API_KEY is unset (callers null-check).
 
-// Separate client for the dictionary AI synthetic-entry fallback (docs/DICTIONARY_AI_FALLBACK_SEARCH.md),
-// keyed on its OWN DICT_AI_API_KEY so this feature's usage/billing is isolated from the enrichment
-// helpers above. Missing key ⇒ the feature is silently disabled (no "AI" button ever offered).
-let dictAiClient: Anthropic | null = null;
-function getDictAiClient(): Anthropic | null {
-  if (dictAiClient) return dictAiClient;
-  const apiKey = process.env.DICT_AI_API_KEY;
-  if (!apiKey) return null;
-  dictAiClient = new Anthropic({ apiKey });
-  return dictAiClient;
-}
+// The dictionary AI fallback / Compare client (DICT_AI_API_KEY) lives in ./anthropicClient.ts →
+// getDictAiClient, shared with the Reader's sentence Explain (SentenceExplanationService).
 
 // A cached EMPTY AI result older than this is treated as a miss so the model is re-prompted.
 const AI_EMPTY_CACHE_TTL_MS = 90 * 24 * 60 * 60 * 1000; // ~3 months
@@ -138,7 +129,7 @@ export class DictionaryService {
    * The Reader's English → Chinese lookup for one document
    * (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "English words"). The client sends every
    * lookup KEY of the document's English words (each word plus its stripped-ending forms,
-   * src/features/reader/englishTranslation.ts → `englishLookupKeys`); this returns, per key
+   * src/reading/englishTranslation.ts → `englishLookupKeys`); this returns, per key
    * that has one, the best det row whose sense IS that key (DictionaryDAL →
    * findCompleteEnglishMatches). Picking one match per word across its keys is the client's.
    *

@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { insetRect, insideRoundedRect, type Projector, type WorldRect } from "./geometry";
 import { shadowSlide, shadowSpread } from "./light";
 import { prefersReducedMotion } from "./skyTraffic";
-import { PAWN_GRAVITY, type PawnEntrance } from "./pawnEntrances";
+import { type PawnEntrance } from "./pawnEntrances";
+import { pawnGravity } from "../../../theme/gravity";
 import { EMOTE_GAP, HEAD_RADIUS, PAWN_BODY_RADIUS, pawnFigure, pawnSnowClip, pawnVest } from "./pawnFigure";
 import { flinchPose, idlePose, IDLE_STALE_MS, LASTING_IDLES, type IdlePose, type PawnIdleCue, type PawnIdleKind } from "./pawnIdles";
 
@@ -57,7 +58,7 @@ import { flinchPose, idlePose, IDLE_STALE_MS, LASTING_IDLES, type IdlePose, type
  *   their own height and vertical speed under GRAVITY. A surface dropping out from under
  *   them (the plate pressed) leaves the pawn to FALL onto it rather than snap down with it.
  *   A step that sank under the pawn and then rises again (the plate released) LAUNCHES it
- *   (PLATE_LAUNCH_SPEED): it rides the plate up until the plate's spring slows below that
+ *   (`plateLaunchSpeed`): it rides the plate up until the plate's spring slows below that
  *   speed, flies off, and lands in a couple of shrinking bounces (BOUNCE_RESTITUTION) with
  *   a squash on each impact. While airborne this way it doesn't walk, waddle or set off.
  *
@@ -82,7 +83,7 @@ import { flinchPose, idlePose, IDLE_STALE_MS, LASTING_IDLES, type IdlePose, type
  * figure at once (a layout effect) rather than a frame late.
  *
  * POKE: `poke()` (IsoPawn `tappable`) pops the "!" bubble and throws the feet straight up
- * (POKE_JUMP_SPEED) through the same feet physics a plate launch uses, so it lands in the
+ * (`pokeJumpSpeed`) through the same feet physics a plate launch uses, so it lands in the
  * same shrinking bounces. Every poke counts, in the air too: it re-throws the feet from
  * wherever they are, so quick taps climb higher and GRAVITY brings the pawn back down once
  * they stop. A poked walk stops where it is, and the pawn stands until the bubble has gone
@@ -242,25 +243,28 @@ const HOP_AIR_END = HOP_PREP_MS + HOP_MS;
 const HOP_END = HOP_AIR_END + HOP_RECOVER_MS;
 
 /** Feet physics (see the header's STEPS). World units per second (squared). */
-/**
- * Pulls the feet down onto their surface: the pawn's own cartoon gravity
- * (pawnEntrances.ts → PAWN_GRAVITY; the sky-fall entrance uses a gentler SKY_FALL_GRAVITY). A 0.25-unit plate press takes ~67 ms
- * to fall — the plate's ease-out sink drops away faster at first, so the feet lift off it
- * for a moment and land with a small bounce.
+/*
+ * GRAVITY pulls the feet down onto their surface: the pawn's gravity, which is the sky fall's
+ * (src/theme/gravity.ts → `pawnGravity`, read every frame so /gravity-lab applies live).
+ * At 110 a 0.25-unit plate press takes ~67 ms to fall — the plate's ease-out sink drops away
+ * faster at first, so the feet lift off it for a moment and land with a small bounce.
+ * The speeds below are derived from it, so they are functions too.
  */
-const GRAVITY = PAWN_GRAVITY;
 /**
  * How high a released plate throws the pawn: its feet clear the plate by about the pawn's
  * own full height (IsoPawn's body + head ≈ 2.4 units). The launch speed follows from it.
  */
 const PLATE_LAUNCH_APEX = 2.4;
-const PLATE_LAUNCH_SPEED = Math.sqrt(2 * GRAVITY * PLATE_LAUNCH_APEX);
+const plateLaunchSpeed = (g: number) => Math.sqrt(2 * g * PLATE_LAUNCH_APEX);
 /**
- * Ms from a plate release to the launched pawn's apex (~209). The Deck Tower holds its trap
- * door shut at least this long after a release (useDeckSwap → PLATE_SETTLE_MS), so the floor
- * never drops out from under the pawn before it has peaked: it falls from the air.
+ * Ms from a plate release to the launched pawn's apex (~209 at gravity 110). The Deck Tower
+ * holds its trap door shut at least this long after a release (useDeckSwap →
+ * `plateSettleMs`), so the floor never drops out from under the pawn before it has peaked:
+ * it falls from the air.
  */
-export const PLATE_LAUNCH_APEX_MS = (PLATE_LAUNCH_SPEED / GRAVITY) * 1000;
+export function plateLaunchApexMs(g: number = pawnGravity()): number {
+    return (plateLaunchSpeed(g) / g) * 1000;
+}
 /** Fraction of the landing speed a bounce keeps — 0.45 gives two visible bounces after a launch (~0.5, then ~0.1 units). */
 const BOUNCE_RESTITUTION = 0.45;
 /** Landing slower than this settles instead of bouncing again. */
@@ -275,9 +279,8 @@ const FEET_EPS = 1e-4;
 const AIRBORNE_MIN = 0.03;
 /**
  * With the floor dropping away: how long the pawn's height takes to blend from its own
- * GRAVITY fall into the floor's. The two pulls are close (the trap door's is 140, raised
- * for tall towers so they clear in time), but the pawn starts from wherever its launch has
- * it while the floor starts from rest, so the blend keeps the pawn in step with the floor —
+ * GRAVITY fall into the floor's. The two pulls may differ (the pawn's is the sky fall's
+ * gravity, the floor's the trap door's — src/theme/gravity.ts), and the pawn starts from wherever its launch has it while the floor starts from rest, so the blend keeps the pawn in step with the floor —
  * and gone when the floor's fall ends and the pawn is unmounted (the shortest, a 12-unit
  * fall, takes ~0.41 s plus its 50 ms delay).
  */
@@ -329,8 +332,8 @@ const STRETCH_SETTLE_SQUASH = 0.06;
 const STRETCH_STALE_MS = 1500;
 
 /** Poke (see the header's POKE): how high the jump clears its surface, and the speed that gets it there. */
-const POKE_JUMP_HEIGHT = 2.6;
-const POKE_JUMP_SPEED = Math.sqrt(2 * GRAVITY * POKE_JUMP_HEIGHT);
+export const POKE_JUMP_HEIGHT = 2.6;
+const pokeJumpSpeed = (g: number) => Math.sqrt(2 * g * POKE_JUMP_HEIGHT);
 /**
  * Radius of the pawn's invisible tap target, in camera-facing world units. Roughly the
  * figure's half height: the body alone is only a few px wide and never stops moving.
@@ -1120,8 +1123,9 @@ export function usePawnMotion(opts: {
     /** Throws the pawn to `to`, on a surface `toZ` high: the time is what the feet will take to land there. */
     const startFlight = (to: Pt2, toZ: number, now: number) => {
         const s = state.current;
-        const v = POKE_JUMP_SPEED;
-        const seconds = (v + Math.sqrt(v * v + 2 * GRAVITY * Math.max(0, s.feetZ - toZ))) / GRAVITY;
+        const g = pawnGravity();
+        const v = pokeJumpSpeed(g);
+        const seconds = (v + Math.sqrt(v * v + 2 * g * Math.max(0, s.feetZ - toZ))) / g;
         s.feetV = v;
         s.stepPhase = 0;
         s.mode = { kind: "flight", t0: now, from: { ...s.pos }, to, ms: seconds * 1000 };
@@ -1166,7 +1170,7 @@ export function usePawnMotion(opts: {
             s.mode = { kind: "pause", until: performance.now() + (onTap ? PAUSE_MIN_MS : EMOTE_MS) };
         }
         // Re-thrown from wherever the feet are.
-        s.feetV = POKE_JUMP_SPEED;
+        s.feetV = pokeJumpSpeed(pawnGravity());
         // The "!" is the default reply; a page with `onTap` replies its own way.
         if (!onTap) setEmote((e) => ({ id: (e?.id ?? 0) + 1 }));
     };
@@ -1195,6 +1199,8 @@ export function usePawnMotion(opts: {
         const tick = (now: number) => {
             const dt = Math.min(0.05, (now - last) / 1000);
             last = now;
+            // The pawn's gravity (the sky fall's), read per frame so /gravity-lab's slider applies live.
+            const GRAVITY = pawnGravity();
             let hop = 0; // world units off the floor
             let lean = 0; // degrees
             let arch = 0; // degrees of spine bend (the back stretch only)
@@ -1537,9 +1543,9 @@ export function usePawnMotion(opts: {
                     if (dh < -FEET_EPS && !summit) s.launchArmed = true;
                     else if (dh > FEET_EPS && s.launchArmed && touching) {
                         s.launchArmed = false;
-                        s.feetV = PLATE_LAUNCH_SPEED;
+                        s.feetV = plateLaunchSpeed(GRAVITY);
                     } else if (summit && dh >= SUMMIT_JOLT_RISE && touching) {
-                        s.feetV = POKE_JUMP_SPEED;
+                        s.feetV = pokeJumpSpeed(GRAVITY);
                     }
                 } else {
                     s.launchArmed = false;

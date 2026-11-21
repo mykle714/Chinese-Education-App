@@ -4,7 +4,7 @@ import Icon from "../../components/Icon";
 import { HeaderIconButton } from "../../components/PageHeader";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
-import { readerMenuPaperSx } from "./readerStyles";
+import { readerMenuPaperSx } from "../../reading/readerStyles";
 import type { Tier2Look } from "../../timeOfDay/tier2Look";
 import { READER_SORT_OPTIONS, type ReaderSortKey } from "./readerListOrder";
 

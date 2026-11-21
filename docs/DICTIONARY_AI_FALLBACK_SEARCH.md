@@ -303,9 +303,10 @@ language)` index also serves the read path.
 
 This feature uses its **own** key, `DICT_AI_API_KEY`, separate from the `ANTHROPIC_API_KEY` that
 the definition-expansion / long-definition helpers use — so this feature's usage/billing is
-isolated. Same lazy-client pattern as `DictionaryService` (`server/services/DictionaryService.ts`
-`getAnthropicClient`): missing key ⇒ the AI endpoint returns a "disabled" response and the button
-is simply never offered. Set it in `server/.env` / `server/.env.docker` / `server/.env.production`.
+isolated. The client is `server/services/anthropicClient.ts` → `getDictAiClient` (lazy, beside the
+enrichment helpers' `getAnthropicClient`), shared with Compare and the Reader's sentence Explain —
+all three spend the same daily budget: missing key ⇒ the AI endpoint returns a "disabled" response
+and the button is simply never offered. Set it in `server/.env` / `server/.env.docker` / `server/.env.production`.
 
 ## Client integration
 

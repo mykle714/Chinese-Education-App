@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CARD_THICKNESS, cardsShowingAt, planCardCollapse } from "../iso";
+import { fallEasing, fallMs, fallParams } from "../../../theme/gravity";
 
 /** A seeded PRNG (mulberry32), so each case is reproducible. */
 function seeded(seed: number): () => number {
@@ -61,7 +62,7 @@ describe("planCardCollapse (docs/ISO_ART_FRAMEWORK.md § IsoCardRuns)", () => {
 
     it("does nothing with no ghosts", () => {
         const plan = planCardCollapse(10, 0);
-        expect(plan.runs).toEqual([{ from: 0, count: 10, dropCards: 0, fallMs: 0, hasLid: true }]);
+        expect(plan.runs).toEqual([{ from: 0, count: 10, dropCards: 0, fallMs: 0, fallEase: fallEasing(0, fallParams("collapse")), hasLid: true }]);
         expect(plan.durationMs).toBe(0);
     });
 
@@ -69,7 +70,7 @@ describe("planCardCollapse (docs/ISO_ART_FRAMEWORK.md § IsoCardRuns)", () => {
         const plan = planCardCollapse(50, 25, seeded(11));
         const maxDrop = Math.max(...plan.runs.map((r) => r.dropCards)) * CARD_THICKNESS;
         const longest = Math.max(...plan.runs.map((r) => r.fallMs));
-        expect(longest).toBeCloseTo(Math.sqrt((2 * maxDrop) / 140) * 1000, 6);
+        expect(longest).toBeCloseTo(fallMs(maxDrop, fallParams("collapse")), 6);
         expect(plan.durationMs).toBeGreaterThan(plan.fallStartMs + longest);
     });
 

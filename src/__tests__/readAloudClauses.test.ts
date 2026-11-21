@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { buildReadAloudClauses, MAX_CLAUSE_CHARS } from '../features/reader/readAloudClauses';
-import type { SegmentSpan } from '../features/reader/documentSegmentation';
+import { buildReadAloudClauses, MAX_CLAUSE_CHARS } from '../reading/readAloudClauses';
+import type { SegmentSpan } from '../reading/documentSegmentation';
 
 /**
- * The Reader read-aloud's clause splitter (src/features/reader/readAloudClauses.ts).
+ * The Reader read-aloud's clause splitter (src/reading/readAloudClauses.ts).
  * Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Read aloud".
  */
 

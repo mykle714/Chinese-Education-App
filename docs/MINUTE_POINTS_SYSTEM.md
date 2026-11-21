@@ -206,7 +206,7 @@ Accrual is decided by path, not by what a page does:
 
 | List | Match | Members |
 | --- | --- | --- |
-| `MINUTE_POINTS_ELIGIBLE_PAGES` | prefix (page + descendants) | **`/flashcards/card`**, **`/dictionary`** (prefix; matches only the search page), `/reader`, `/discover/sort`, `/games/{bubble-match,word-search,match-speed,hydra-bubbles,bucket-drop}`, `/flashcards/writing/notebook` ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)) |
+| `MINUTE_POINTS_ELIGIBLE_PAGES` | prefix (page + descendants) | **`/flashcards/card`**, **`/dictionary`** (prefix; matches only the search page), `/reader`, `/adventures` ([CYOA_FEATURE.md](./CYOA_FEATURE.md) § 8; behind the `cyoa` flag), `/discover/sort`, `/games/{bubble-match,word-search,match-speed,hydra-bubbles,bucket-drop}`, `/flashcards/writing/notebook` ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)) |
 | `MINUTE_POINTS_AUTO_ACTIVE_PAGES` | prefix; subset that starts accruing on mount | `/games` |
 
 The `/games/*` entries (and the `/games` auto-active prefix) currently match nothing: the
@@ -242,6 +242,20 @@ Only **study** surfaces earn. Menus and browse screens deliberately do not: the 
 (the Deck Tower outside a study session, Menu, Games) and browse screens such as td's
 cards page. They still show the flame — solid orange with the count, in the badge's
 off-study mode (it was grey with a frozen fill level until 2026-08-28).
+
+### Suppressed activity (2026-11-21)
+
+`src/minutePoints/activitySuppression.ts` → `useSuppressMinutePointsActivity`,
+`isMinutePointsActivitySuppressed`; read by `useMinutePoints` in its `useActivityDetection`
+callback.
+
+A page on an eligible route can declare that interactions right now are **not study**.
+While it does, an interaction does not refresh the activity window. It is **not a pause**
+(`minutePointsPause.ts`, which freezes the tick outright): a clock that is already running
+keeps running until `ACTIVITY_TIMEOUT_MS` lapses, then stops unless something that counts
+happens. It uses a counter, like study surfaces. Current user: the cyoa editors while the
+system `abc` keyboard is up ([CYOA_FEATURE.md](./CYOA_FEATURE.md) § 8,
+`src/features/cyoa/useAbcTypingIsNotActivity.ts`).
 
 ### The cdp, the dictionary, and Compare all earn (2026-09-04)
 

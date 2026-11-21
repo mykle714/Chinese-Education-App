@@ -197,7 +197,7 @@ Search's raw fetch calls it itself).
   top and shadow are hidden while it falls). Once the old tower clears it is put away sunk and
   shut with no animation (`useLeverMotion` `instant`). Arriving at Learning, it does not come up
   through the hatch: it **falls from the sky** on the incoming pawn's entrance animation
-  (`FALL_FROM_SKY`, the same height, gravity, stretch, landing squash and growing shadow),
+  (`fallFromSky`, the same height, gravity, stretch, landing squash and growing shadow),
   its cue shifted `LEVER_LANDS_AFTER_PAWN_MS` (500 ms) later so it lands a beat after the pawn
   (which lands on the trap door's slam) ([DECK_TOWER.md](./DECK_TOWER.md) § Floor fixtures).
   It is mounted from transition t = 0

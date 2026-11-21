@@ -6,7 +6,7 @@ import { COLORS, RAMP } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
 import { LEADING, SIZE, WEIGHT } from "../../theme/scale";
 import { iconImageUrl } from "../../cardIcons/cardIconLayout";
-import { readerMenuPaperSx } from "./readerStyles";
+import { readerMenuPaperSx } from "../../reading/readerStyles";
 import type { Tier2Look } from "../../timeOfDay/tier2Look";
 import { formatJournalDate, isJournal, readerDocumentGlyph, readerDocumentHue } from "./readerListOrder";
 

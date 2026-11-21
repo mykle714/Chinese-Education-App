@@ -130,6 +130,19 @@ export class ForbiddenError extends DALError {
   }
 }
 
+/**
+ * The write was based on a version of the row that is no longer current (HTTP 409) — an
+ * optimistic-concurrency refusal. First used by the cyoa passage save, which sends the
+ * `updatedAt` its draft was based on (docs/CYOA_FEATURE.md § 5.1, StoryService.savePassage).
+ * `message` is user-facing. Distinct from DuplicateError (also 409: a unique-key clash).
+ */
+export class ConflictError extends DALError {
+  constructor(message: string, originalError?: any) {
+    super(message, 'ERR_CONFLICT', 409, originalError);
+    this.name = 'ConflictError';
+  }
+}
+
 // Transaction wrapper interface
 export interface ITransaction {
   commit(): Promise<void>;

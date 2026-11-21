@@ -40,6 +40,7 @@ si = soft introduction
 rww = reading/writing world
 td = tower deck
 rdb = reader definition box
+cyoa = choose your own adventure
 
 
 ## Terminology: "Learning" cards
@@ -273,6 +274,9 @@ so the progress survives.
 
 ### Study Challenge (weekly head-to-head between friends)
 → See [docs/STUDY_CHALLENGE.md](./docs/STUDY_CHALLENGE.md) — **PHASE 1 BUILT** (async; the "DESIGN/DRAFT" this line used to claim was stale, and the set is **9** words, not 10 — `CHALLENGE_WORD_COUNT`): a Monday-issued, Friday-played challenge between two friends — the same-word vs different-word variants, the 04:00-local week boundaries, the nine words join both players' cards on accept (no study deck since 2026-11-04), the `mastered-first` provisioning mode, the per-game contested/filler scoring contract, and results/no-contest. The **2026-09-01 shelf-system redesign** changed behaviour as well as looks: the opponent's rounds are now revealed per submitted round (reversing the anti-anchoring rule), issue/withdraw/accept became a sheet over the list (two routes deleted), View Challenge became two swipeable pages, and taunts arrived (migration 156). Live (synchronous) mode is deferred to phase 2.
+
+### Voice Assistant (speech-to-speech tutor)
+→ See [docs/VOICE_ASSISTANT.md](./docs/VOICE_ASSISTANT.md) — **DESIGN, nothing built**: a hands-free spoken Chinglish tutor modeled on Claude's voice mode — a cascade (STT → Claude → TTS) over the app's first WebSocket, one free-talk mode, one fixed voice, no push-to-talk, saved cpcd transcripts (`voice_sessions` + `voice_turns`) where cards are added by tapping words. Voice never marks cards or earns minute points. Google for both speech stages (streaming Speech-to-Text; Chirp3-HD TTS with two voices, the learner's pick); Claude Opus 5.5 at low effort.
 
 ### Practice Writing (character writing-practice drill)
 → See [docs/PRACTICE_WRITING.md](./docs/PRACTICE_WRITING.md) — the "Practice Writing Me" drill: four assistance levels (Trace / Step Through / Memorize / Test), the 2×2 grid for multi-char words, the generalized modal lockout + greyed-background step-back, Memorize's study-first lock (no-writing badge + Start-Writing pulse), top-1 grading, and completion stars.

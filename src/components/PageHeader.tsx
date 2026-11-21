@@ -200,7 +200,8 @@ const EditableTitleRow = styled(Box)(() => ({
  * title's own type style, so tapping the title shows a caret in the same text rather
  * than swapping in a form control. A hairline under it marks it as editable.
  * Today: the Reader document's title in edit mode (features/reader/ReaderDocumentPage.tsx,
- * docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Editing).
+ * docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Editing), and the cyoa passage name, always on
+ * (features/cyoa/PassageEditorPage.tsx, docs/CYOA_FEATURE.md § 6.2d).
  */
 export interface PageHeaderEditableTitle {
     value: string;

@@ -15,7 +15,7 @@ The implementation lives in `server/dal/shared/segmentString.ts` and drives `Dic
 > baseline it grew out of.
 
 What `segmentWithDict` actually does (server `server/dal/shared/segmentString.ts`, client
-port `src/features/reader/documentSegmentation.ts` → `segmentRange`):
+port `src/reading/documentSegmentation.ts` → `segmentRange`):
 
 1. For lengths 4 → 3 → 2 → 1, collect every substring of that length that is in the
    dictionary (multi-char `matchException` tokens excluded).

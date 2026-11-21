@@ -34,6 +34,7 @@ import mediaRoutes from './routes/mediaRoutes.js';
 import handwritingRoutes from './routes/handwritingRoutes.js';
 import diagnosticsRoutes from './routes/diagnosticsRoutes.js';
 import metaRoutes from './routes/metaRoutes.js';
+import storyRoutes from './routes/storyRoutes.js';
 import { isFeatureEnabled, isGameEnabled } from './contracts/featureFlags.js';
 import { writeLimiter } from './middleware/rateLimits.js';
 
@@ -152,6 +153,8 @@ app.use(weatherRoutes);
 // router covers /api/studyChallenges/* only — the challenge BOARD is served by
 // ?challengeId= on /api/onDeck/*, gated inside OnDeckVocabController instead.
 if (isFeatureEnabled('studyChallenge')) app.use(studyChallengeRoutes);
+// Adventures (cyoa, docs/CYOA_FEATURE.md) — every story endpoint lives in this one router.
+if (isFeatureEnabled('cyoa')) app.use(storyRoutes);
 app.use(mediaRoutes);
 app.use(handwritingRoutes);
 app.use(diagnosticsRoutes);

@@ -1,6 +1,6 @@
 import { applyYiBuSandhi } from "../../utils/toneSandhi";
 import { syllableToNumberedPinyin } from "../../utils/textUtils";
-import type { SegmentSpan } from "./documentSegmentation";
+import type { SegmentSpan } from "../../reading/documentSegmentation";
 
 /**
  * READER FIND-IN-DOCUMENT — the pure matching half of the Reader's search bar
@@ -31,10 +31,10 @@ import type { SegmentSpan } from "./documentSegmentation";
  * Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Search".
  */
 
-export interface ReaderSearchMatch {
-    start: number;
-    end: number;
-}
+// The match shape lives with the reading engine that paints it (src/reading/readerStyles.ts);
+// re-exported so this module's callers keep one import.
+import type { ReaderSearchMatch } from "../../reading/readerStyles";
+export type { ReaderSearchMatch };
 
 const HAN_REGEX = /\p{Script=Han}/u;
 // The non-syllable stand-in for the sandhi pass (same role as ReaderCpcdView's

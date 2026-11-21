@@ -1,8 +1,9 @@
 # Choose Your Own Adventure (cyoa)
 
 > **Status: BACKEND BUILT, LEARNER PAGES BUILT, EDITOR FIRST CUT (2026-11-21).** Shipped: the
-> shared box-less reading-area restyle (§ 4.3), migrations 196–199 (§ 6 — applied on dev,
-> **not yet on PPE**), the `/api/stories/*` backend (§ 6.3), the shared reading engine in
+> shared box-less reading-area restyle (§ 4.3), migrations 196–199 (§ 6 — **on PPE
+> since 2026-11-21**, `0e9af62`; michael2 is PPE's one author, holding the two seed stories
+> copied up from dev), the `/api/stories/*` backend (§ 6.3), the shared reading engine in
 > `src/reading/` (§ 4, 2026-11-21), the learner pages (§ 7.1: list, play page with the
 > Reader's reading box + rdb + eip, inspect mode's mini reader, choice stack, end panel, both
 > tabs, prefetched picks) and the editor (§ 5.1–5.4). All behind `FEATURE_FLAGS.cyoa`, switched
@@ -736,7 +737,7 @@ This is **suppression, not a pause**: a running clock still drains its 15 s idle
    change intended on the Reader; the cyoa style copies became re-exports (DEFERRED_WORK
    item 60).
 3. ✅ Migration 196 + backend (2026-11-20, done before step 2 since it does not touch the
-   Reader). Migration not yet on PPE.
+   Reader). On PPE since 2026-11-21 (migrations 196–199).
 4. ✅ Learner page (§ 7.1): list, play page, choices, end panel, both tabs (2026-11-20);
    the reading box, the rdb + eip and inspect's mini reader (2026-11-21). The Pinyin toggle was
    dropped; the header audio chip was added back sharing the Reader's setting (§ 3.1).

@@ -3,7 +3,7 @@
 > ⚠️ **TEMPORARY.** Delete this file (and its row in [DEPLOY_RUNBOOKS.md](./DEPLOY_RUNBOOKS.md))
 > once every check below has passed on PPE.
 >
-> **Status: NOT DEPLOYED** (written 2026-11-21). Design: [CYOA_FEATURE.md](./CYOA_FEATURE.md) § 6.2a.
+> **Status: DEPLOYED 2026-11-23** (`7ed49ae`). V1/V3/V4 passed; V2 returned 2: "Someone who wants friends" and "Michael falls into a hole" are English-only (no scored words, `difficulty` was already NULL) — NULL by design. Open: V5–V6 in the app. Note: host-run scripts on PPE need `npm install` in `server/` after a dependency change (the backfill failed on `@google-cloud/speech` until it ran). Written 2026-11-21. Design: [CYOA_FEATURE.md](./CYOA_FEATURE.md) § 6.2a.
 
 ## What ships
 

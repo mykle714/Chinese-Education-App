@@ -3,7 +3,7 @@
 > ⚠️ **TEMPORARY.** Delete this file (and its row in [DEPLOY_RUNBOOKS.md](./DEPLOY_RUNBOOKS.md))
 > once PPE is verified.
 >
-> **Status: NOT DEPLOYED** (written 2026-11-21).
+> **Status: DEPLOYED 2026-11-23, flag OFF** (`7ed49ae`). V1–V3 passed. Open: the flag flip below. Written 2026-11-21.
 
 The Voice Tutor ([VOICE_ASSISTANT.md](./VOICE_ASSISTANT.md)) ships **with its flag OFF**
 (`FEATURE_FLAGS.voiceAssistant = false`, `server/contracts/featureFlags.ts`). The deploy is

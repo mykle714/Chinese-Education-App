@@ -3,7 +3,7 @@
 > ⚠️ **TEMPORARY.** Delete this file (and its row in [DEPLOY_RUNBOOKS.md](./DEPLOY_RUNBOOKS.md))
 > once every check below has passed on PPE.
 >
-> **Status: NOT DEPLOYED** (written 2026-11-23). Design: [SENTENCE_TILES_GAME.md](./SENTENCE_TILES_GAME.md).
+> **Status: DEPLOYED 2026-11-23** (`7ed49ae`). V1–V3 passed. Open: V4–V5 in the app. Design: [SENTENCE_TILES_GAME.md](./SENTENCE_TILES_GAME.md).
 
 Sentence Tiles ships **with its flag ON** (`FEATURE_FLAGS.sentenceTiles = true`,
 `server/contracts/featureFlags.ts`), reached from the Menu popover → **Sentence Tiles**. Three things the

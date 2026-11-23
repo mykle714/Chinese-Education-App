@@ -1,0 +1,432 @@
+{
+"也": {
+"usage": 0.96,
+"seen": 24,
+"points": 1
+},
+"孩子": {
+"usage": 0.94,
+"seen": 50,
+"points": 2
+},
+"回来": {
+"usage": 0.94,
+"seen": 32,
+"points": 2
+},
+"吗": {
+"usage": 0.94,
+"seen": 80,
+"points": 2
+},
+"要": {
+"usage": 0.93,
+"seen": 40,
+"points": 2
+},
+"你": {
+"usage": 0.92,
+"seen": 114,
+"points": 2
+},
+"她": {
+"usage": 0.92,
+"seen": 48,
+"points": 2
+},
+"吧": {
+"usage": 0.87,
+"seen": 54,
+"points": 2
+},
+"我": {
+"usage": 0.87,
+"seen": 84,
+"points": 2
+},
+"了": {
+"usage": 0.87,
+"seen": 120,
+"points": 2
+},
+"没有": {
+"usage": 0.86,
+"seen": 44,
+"points": 2
+},
+"他": {
+"usage": 0.86,
+"seen": 80,
+"points": 2
+},
+"出去": {
+"usage": 0.81,
+"seen": 48,
+"points": 3
+},
+"我们": {
+"usage": 0.8,
+"seen": 46,
+"points": 3
+},
+"去": {
+"usage": 0.78,
+"seen": 46,
+"points": 3
+},
+"跑步": {
+"usage": 0.77,
+"seen": 44,
+"points": 3
+},
+"呢": {
+"usage": 0.77,
+"seen": 52,
+"points": 3
+},
+"不": {
+"usage": 0.77,
+"seen": 60,
+"points": 3
+},
+"母亲": {
+"usage": 0.77,
+"seen": 30,
+"points": 3
+},
+"没事": {
+"usage": 0.76,
+"seen": 42,
+"points": 3
+},
+"等": {
+"usage": 0.72,
+"seen": 40,
+"points": 3
+},
+"好": {
+"usage": 0.71,
+"seen": 98,
+"points": 4
+},
+"对": {
+"usage": 0.71,
+"seen": 38,
+"points": 4
+},
+"女士": {
+"usage": 0.7,
+"seen": 44,
+"points": 4
+},
+"就": {
+"usage": 0.7,
+"seen": 46,
+"points": 4
+},
+"都": {
+"usage": 0.68,
+"seen": 34,
+"points": 4
+},
+"在": {
+"usage": 0.67,
+"seen": 36,
+"points": 4
+},
+"有": {
+"usage": 0.64,
+"seen": 100,
+"points": 4
+},
+"下周": {
+"usage": 0.64,
+"seen": 36,
+"points": 4
+},
+"这": {
+"usage": 0.64,
+"seen": 36,
+"points": 4
+},
+"是": {
+"usage": 0.62,
+"seen": 68,
+"points": 4
+},
+"一定要": {
+"usage": 0.59,
+"seen": 56,
+"points": 5
+},
+"别": {
+"usage": 0.58,
+"seen": 50,
+"points": 5
+},
+"发烧": {
+"usage": 0.56,
+"seen": 48,
+"points": 5
+},
+"超市": {
+"usage": 0.56,
+"seen": 50,
+"points": 5
+},
+"听不见": {
+"usage": 0.56,
+"seen": 50,
+"points": 5
+},
+"周二": {
+"usage": 0.55,
+"seen": 44,
+"points": 5
+},
+"上来": {
+"usage": 0.55,
+"seen": 44,
+"points": 5
+},
+"高兴": {
+"usage": 0.54,
+"seen": 68,
+"points": 5
+},
+"洗手": {
+"usage": 0.54,
+"seen": 52,
+"points": 5
+},
+"什么": {
+"usage": 0.53,
+"seen": 34,
+"points": 5
+},
+"很": {
+"usage": 0.53,
+"seen": 72,
+"points": 5
+},
+"工作人员": {
+"usage": 0.52,
+"seen": 44,
+"points": 5
+},
+"喝": {
+"usage": 0.5,
+"seen": 38,
+"points": 5
+},
+"春节": {
+"usage": 0.5,
+"seen": 52,
+"points": 5
+},
+"的": {
+"usage": 0.5,
+"seen": 88,
+"points": 5
+},
+"谢谢": {
+"usage": 0.46,
+"seen": 48,
+"points": 6
+},
+"书": {
+"usage": 0.45,
+"seen": 38,
+"points": 6
+},
+"有用": {
+"usage": 0.44,
+"seen": 52,
+"points": 6
+},
+"看一看": {
+"usage": 0.42,
+"seen": 48,
+"points": 6
+},
+"果汁": {
+"usage": 0.41,
+"seen": 44,
+"points": 6
+},
+"鞋子": {
+"usage": 0.41,
+"seen": 44,
+"points": 6
+},
+"钱包": {
+"usage": 0.39,
+"seen": 44,
+"points": 7
+},
+"点单": {
+"usage": 0.38,
+"seen": 40,
+"points": 7
+},
+"量体重": {
+"usage": 0.36,
+"seen": 44,
+"points": 7
+},
+"冰水": {
+"usage": 0.34,
+"seen": 44,
+"points": 7
+},
+"传球": {
+"usage": 0.33,
+"seen": 36,
+"points": 7
+},
+"非常多": {
+"usage": 0.33,
+"seen": 46,
+"points": 7
+},
+"水": {
+"usage": 0.33,
+"seen": 46,
+"points": 7
+},
+"算了": {
+"usage": 0.32,
+"seen": 38,
+"points": 7
+},
+"鸟儿": {
+"usage": 0.3,
+"seen": 40,
+"points": 7
+},
+"北方": {
+"usage": 0.28,
+"seen": 60,
+"points": 7
+},
+"想想看": {
+"usage": 0.28,
+"seen": 46,
+"points": 7
+},
+"图片": {
+"usage": 0.27,
+"seen": 52,
+"points": 8
+},
+"裤子": {
+"usage": 0.26,
+"seen": 42,
+"points": 8
+},
+"进": {
+"usage": 0.26,
+"seen": 46,
+"points": 8
+},
+"回头见": {
+"usage": 0.25,
+"seen": 44,
+"points": 8
+},
+"好处": {
+"usage": 0.25,
+"seen": 36,
+"points": 8
+},
+"法语": {
+"usage": 0.25,
+"seen": 44,
+"points": 8
+},
+"早": {
+"usage": 0.25,
+"seen": 48,
+"points": 8
+},
+"理想": {
+"usage": 0.24,
+"seen": 42,
+"points": 8
+},
+"电视机": {
+"usage": 0.23,
+"seen": 40,
+"points": 8
+},
+"阳光": {
+"usage": 0.22,
+"seen": 60,
+"points": 8
+},
+"厕所": {
+"usage": 0.21,
+"seen": 42,
+"points": 8
+},
+"平安": {
+"usage": 0.2,
+"seen": 54,
+"points": 8
+},
+"强": {
+"usage": 0.17,
+"seen": 40,
+"points": 8
+},
+"毛衣": {
+"usage": 0.13,
+"seen": 54,
+"points": 9
+},
+"黄": {
+"usage": 0.12,
+"seen": 48,
+"points": 9
+},
+"学费": {
+"usage": 0.11,
+"seen": 46,
+"points": 9
+},
+"公共汽车": {
+"usage": 0.1,
+"seen": 48,
+"points": 9
+},
+"进入": {
+"usage": 0.08,
+"seen": 50,
+"points": 9
+},
+"河": {
+"usage": 0.07,
+"seen": 44,
+"points": 9
+},
+"表现": {
+"usage": 0.05,
+"seen": 56,
+"points": 10
+},
+"手指": {
+"usage": 0.05,
+"seen": 44,
+"points": 10
+},
+"腿": {
+"usage": 0.04,
+"seen": 50,
+"points": 10
+},
+"云": {
+"usage": 0.02,
+"seen": 50,
+"points": 10
+}
+}

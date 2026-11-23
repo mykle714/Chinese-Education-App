@@ -598,11 +598,20 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
             />
         </g>
     );
-    // The floor decals as a pawn's shadow darkens them: the corner fixture's si print, then
-    // the plate at the same height, so the shaded copy lines up with the slab it covers.
-    // Same paint order as the lit decals (print under plate).
+    // Lightning's scorches (towerLightning.ts), floor decals. Drawn twice: lit with the floor's
+    // decals, and again inside a pawn's shadow (`floorDecalsShaded`), because that shadow is an
+    // opaque floor-tone patch that would otherwise paint the scorch out as the pawn walks over
+    // it. The same copy serves both: a scorch is translucent ink, so over the shadow's tone it
+    // reads as the same scorch, darkened. Buried under the floor's snow, the shaded copy is
+    // skipped (the shadow then falls on the snow over it).
+    const renderBurns = (shaded: boolean) =>
+        (!shaded || !floorSnow) && lightning?.burns.map((b) => <IsoBurnMark key={`burn-${b.id}`} at={b.at} z={floor.z} seed={b.id} />);
+    // The floor decals as a pawn's shadow darkens them: the scorches, the corner fixture's si
+    // print, then the plate at the same height, so the shaded copy lines up with the slab it
+    // covers. Same paint order as the lit decals (burns under print under plate).
     const floorDecalsShaded = (
         <>
+            {renderBurns(true)}
             {renderFixturePrint(true)}
             {/* Not while it is buried: the shadow then falls on the snow over it. */}
             {plate && !plateBuried && (
@@ -1041,7 +1050,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                     <>
                         {!textOverSnow && imprint}
                         {/* Lightning's scorches: floor decals, under everything standing on it. */}
-                        {lightning?.burns.map((b) => <IsoBurnMark key={`burn-${b.id}`} at={b.at} z={floor.z} seed={b.id} />)}
+                        {renderBurns(false)}
                         {renderFixturePrint(false)}
                         {/* The plate, under the floor's snow when there is any (its press handlers
                             still take taps: the snow lets pointer events through). */}

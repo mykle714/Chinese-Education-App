@@ -11,7 +11,7 @@
  *
  * For es the word side is the Spanish headword, so "Pinyin" reads "Spanish".
  *
- * LAYER: client feature logic. Pure; no React.
+ * LAYER: shared client logic (src/components/dictionarySearch). Pure; no React.
  *
  * The server tags each `/search` row with its ranking bucket (`matchKind` —
  * `DictionaryMatchKind` in server/contracts/wire.ts) and returns rows in bucket order, which
@@ -19,7 +19,8 @@
  * it, and infinite scroll needs no extra care: the next page continues the last section or
  * opens the next one.
  *
- * Depended on by: DictionaryPage.tsx. Docs: docs/SHELF_REDESIGN.md § 7b "Match sections",
+ * Depended on by: DictionarySearchResults.tsx (the Dictionary page and DictionaryWordSearch).
+ * Moved here from features/dictionary on 2026-11-21, when the mini search gained sections. Docs: docs/SHELF_REDESIGN.md § 7b "Match sections",
  * docs/DICTIONARY_NUMBERED_PINYIN_SEARCH.md § "Match kinds on the wire".
  */
 import type { DictionaryEntry, DictionaryMatchKind, Language } from '../../types';

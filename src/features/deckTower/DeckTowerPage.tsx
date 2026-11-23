@@ -62,6 +62,8 @@ import { RAIN_ALPHA, RAIN_LEAN, RAIN_STROKE_PX, SNOW_ALPHA, SNOW_R, SNOW_SPEED, 
 import { useTowerSnow } from "./useTowerSnow";
 import { SNOW_COMPONENTS, type SnowComponent } from "./towerSnow";
 import BalloonSpawnChip from "./BalloonSpawnChip";
+import LoaderPreviewChip from "./LoaderPreviewChip";
+import PawnLoader from "./PawnLoader";
 import ShootingStarChip from "./ShootingStarChip";
 import SnowResetChip from "./SnowResetChip";
 import { useSoftIntro } from "../../softIntro/useSoftIntro";
@@ -698,6 +700,12 @@ const DeckTowerPage: React.FC = () => {
         dealtWorlds: user?.id !== undefined ? [worldId, ...shownWorlds.filter((w) => w !== worldId)] : [],
         onClimbedOut: (w, n) => climbedOut.current(w, n),
         focusedWorlds: { core: readyCounts.core.focusOn, reading: readyCounts.reading.focusOn, writing: readyCounts.writing.focusOn },
+        // For the hint pawn's deck-review line (docs/HINT_PAWN.md § "Deck review").
+        readyBandCounts: {
+            core: readyCounts.core.loaded ? readyCounts.core.counts : undefined,
+            reading: readyCounts.reading.loaded ? readyCounts.reading.counts : undefined,
+            writing: readyCounts.writing.loaded ? readyCounts.writing.counts : undefined,
+        },
     });
     const studying = (id: TowerWorldId) => study.active && study.world === id;
     // While a session is up the footer slides away, the edge swipe is blocked (a game-like
@@ -932,6 +940,10 @@ const DeckTowerPage: React.FC = () => {
     // time of day (SpaceBackdrop → ShootingStars `burstRequest`).
     const [shootingStarRequest, setShootingStarRequest] = useState(0);
     const fireShootingStars = useCallback(() => setShootingStarRequest((n) => n + 1), []);
+    // Feature testing (LoaderPreviewChip): holds PawnLoader up on demand, since the real
+    // loads it covers are too quick to catch by hand (§ "Loading feedback").
+    const [loaderPreview, setLoaderPreview] = useState(false);
+    const toggleLoaderPreview = useCallback(() => setLoaderPreview((on) => !on), []);
     // Wind blows only once the tower reaches the wind band, in EVERY world (2026-11-08: the
     // skill worlds' always-on wind was dropped). Clouds still keep the skill worlds' sky.
     const windActive = skyLive && cardsOnTower >= WIND_BAND_CARDS.from;
@@ -1585,9 +1597,11 @@ const DeckTowerPage: React.FC = () => {
                                         <SnowResetChip onReset={towerSnow.reset} />
                                         <BalloonSpawnChip onSpawn={spawnBalloon} />
                                         <ShootingStarChip onFire={fireShootingStars} />
+                                        <LoaderPreviewChip shown={loaderPreview} onToggle={toggleLoaderPreview} />
                                         <BankingAlwaysPlayToggle />
                                     </TesterSharedRow>
                                     <ForcedBreakPicker world={worldId} language={language as Language} />
+                                    {loaderPreview && <PawnLoader delayMs={0} label="Loading (tester preview)" />}
                                 </>
                             )}
                         </Box>

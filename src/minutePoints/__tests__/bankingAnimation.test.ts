@@ -26,7 +26,6 @@ describe('planBankingRun', () => {
   it('scales every knob with the size of yesterday', () => {
     const small = planBankingRun(3, 0);
     const big = planBankingRun(200, 0);
-    expect(big.peakScale).toBeGreaterThan(small.peakScale);
     expect(big.totalMs).toBeGreaterThan(small.totalMs);
     expect(big.peakGlowPx).toBeGreaterThan(small.peakGlowPx);
   });
@@ -39,20 +38,22 @@ describe('planBankingRun', () => {
 
 describe('sampleBankingRun', () => {
   const plan = planBankingRun(45, 7);
-  const drainStart = plan.restMs + plan.swellMs;
+  const drainStart = plan.restMs;
   const settleStart = drainStart + plan.drainMs;
 
-  it('opens on yesterday, full, at normal size, with no glow', () => {
+  it('opens on yesterday, full, with no glow', () => {
     const f = sampleBankingRun(plan, 0);
     expect(f.displayCount).toBe(45);
     expect(f.fillLevel).toBe(1);
-    expect(f.flameScale).toBe(1);
     expect(f.glowPx).toBe(0);
     expect(f.done).toBe(false);
   });
 
-  it('swells above 1× before the drain', () => {
-    expect(sampleBankingRun(plan, drainStart - 1).flameScale).toBeGreaterThan(1.1);
+  it('holds yesterday unchanged through the rest, then drains straight away (no swell)', () => {
+    const f = sampleBankingRun(plan, drainStart - 1);
+    expect(f.displayCount).toBe(45);
+    expect(f.fillLevel).toBe(1);
+    expect(sampleBankingRun(plan, drainStart + plan.drainMs / 2).displayCount).toBeLessThan(45);
   });
 
   it('only ever grows the glow during the drain — nothing else counts up (Q6)', () => {
@@ -64,10 +65,9 @@ describe('sampleBankingRun', () => {
     }
   });
 
-  it('always drains to 0 at exactly 1×, whatever today holds', () => {
+  it('always drains to 0, whatever today holds', () => {
     const f = sampleBankingRun(plan, settleStart);
     expect(f.displayCount).toBe(0);
-    expect(f.flameScale).toBe(1);
     expect(f.fillLevel).toBe(0);
   });
 

@@ -40,7 +40,12 @@ All test users are created automatically via database initialization scripts in 
   database no longer matches that file.)
 - **Author account** (`users."isAuthor"` = true): owns the dev cyoa story used for editor
   testing.
-- **Vocabulary Entries**: 135 words from reader texts
+- **Vocabulary Entries (dev, since 2026-11-21)**: 53 zh cards picked to exercise the
+  card-face sense picker — words with 2 to 13 sense clusters, single- and multi-reading,
+  plus a few multi-character words (`library` bucket, no marks). The reader-text set
+  described below is what `database/init/03-reader-vocab-test-user.sql` seeds on a fresh
+  stack; the old dev rows are backed up as CSV in `/root/vet-backups/` on the dev box.
+- **Seeded vocabulary (init script)**: 135 words from reader texts
 - **Content**: All vocabulary from the three reader documents:
   - **咖啡店的早晨** (Coffee Shop Morning) - 47 words
   - **春节的准备** (Spring Festival Preparation) - 47 words  

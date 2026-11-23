@@ -1,0 +1,7905 @@
+{
+"你": {
+"connectivity": 5,
+"seen": 58,
+"play_rate": 0.95,
+"points": 1,
+"source": "measured"
+},
+"吗": {
+"connectivity": 5,
+"seen": 40,
+"play_rate": 0.96,
+"points": 1,
+"source": "measured"
+},
+"吧": {
+"connectivity": 5,
+"seen": 24,
+"play_rate": 0.96,
+"points": 1,
+"source": "measured"
+},
+"她": {
+"connectivity": 5,
+"seen": 16,
+"play_rate": 0.95,
+"points": 1,
+"source": "measured"
+},
+"不": {
+"connectivity": 5,
+"seen": 30,
+"play_rate": 0.84,
+"points": 2,
+"source": "measured"
+},
+"不可能": {
+"connectivity": 5,
+"seen": 0,
+"play_rate": 0.88,
+"points": 2,
+"source": "rating prior"
+},
+"不好意思": {
+"connectivity": 5,
+"seen": 0,
+"play_rate": 0.88,
+"points": 2,
+"source": "rating prior"
+},
+"不对": {
+"connectivity": 5,
+"seen": 0,
+"play_rate": 0.88,
+"points": 2,
+"source": "rating prior"
+},
+"不行": {
+"connectivity": 5,
+"seen": 0,
+"play_rate": 0.88,
+"points": 2,
+"source": "rating prior"
+},
+"也": {
+"connectivity": 4,
+"seen": 14,
+"play_rate": 0.86,
+"points": 2,
+"source": "measured"
+},
+"了": {
+"connectivity": 5,
+"seen": 48,
+"play_rate": 0.88,
+"points": 2,
+"source": "measured"
+},
+"他": {
+"connectivity": 5,
+"seen": 34,
+"play_rate": 0.9,
+"points": 2,
+"source": "measured"
+},
+"他们": {
+"connectivity": 5,
+"seen": 0,
+"play_rate": 0.88,
+"points": 2,
+"source": "rating prior"
+},
+"你好": {
+"connectivity": 5,
+"seen": 0,
+"play_rate": 0.88,
+"points": 2,
+"source": "rating prior"
+},
+"再见": {
+"connectivity": 5,
+"seen": 0,
+"play_rate": 0.88,
+"points": 2,
+"source": "rating prior"
+},
+"加油": {
+"connectivity": 5,
+"seen": 0,
+"play_rate": 0.88,
+"points": 2,
+"source": "rating prior"
+},
+"太好了": {
+"connectivity": 5,
+"seen": 0,
+"play_rate": 0.88,
+"points": 2,
+"source": "rating prior"
+},
+"好": {
+"connectivity": 5,
+"seen": 50,
+"play_rate": 0.86,
+"points": 2,
+"source": "measured"
+},
+"对不起": {
+"connectivity": 5,
+"seen": 0,
+"play_rate": 0.88,
+"points": 2,
+"source": "rating prior"
+},
+"我": {
+"connectivity": 5,
+"seen": 42,
+"play_rate": 0.94,
+"points": 2,
+"source": "measured"
+},
+"我们": {
+"connectivity": 5,
+"seen": 20,
+"play_rate": 0.89,
+"points": 2,
+"source": "measured"
+},
+"没": {
+"connectivity": 5,
+"seen": 0,
+"play_rate": 0.88,
+"points": 2,
+"source": "rating prior"
+},
+"没关系": {
+"connectivity": 5,
+"seen": 0,
+"play_rate": 0.88,
+"points": 2,
+"source": "rating prior"
+},
+"没有": {
+"connectivity": 5,
+"seen": 30,
+"play_rate": 0.84,
+"points": 2,
+"source": "measured"
+},
+"知道了": {
+"connectivity": 5,
+"seen": 0,
+"play_rate": 0.88,
+"points": 2,
+"source": "rating prior"
+},
+"等一下": {
+"connectivity": 5,
+"seen": 0,
+"play_rate": 0.88,
+"points": 2,
+"source": "rating prior"
+},
+"这": {
+"connectivity": 4,
+"seen": 16,
+"play_rate": 0.84,
+"points": 2,
+"source": "measured"
+},
+"出去": {
+"connectivity": 4,
+"seen": 24,
+"play_rate": 0.79,
+"points": 3,
+"source": "measured"
+},
+"去": {
+"connectivity": 4,
+"seen": 18,
+"play_rate": 0.74,
+"points": 3,
+"source": "measured"
+},
+"呢": {
+"connectivity": 4,
+"seen": 26,
+"play_rate": 0.83,
+"points": 3,
+"source": "measured"
+},
+"回来": {
+"connectivity": 4,
+"seen": 20,
+"play_rate": 0.82,
+"points": 3,
+"source": "measured"
+},
+"孩子": {
+"connectivity": 3,
+"seen": 28,
+"play_rate": 0.77,
+"points": 3,
+"source": "measured"
+},
+"对": {
+"connectivity": 5,
+"seen": 22,
+"play_rate": 0.81,
+"points": 3,
+"source": "measured"
+},
+"是": {
+"connectivity": 5,
+"seen": 36,
+"play_rate": 0.8,
+"points": 3,
+"source": "measured"
+},
+"有": {
+"connectivity": 5,
+"seen": 46,
+"play_rate": 0.76,
+"points": 3,
+"source": "measured"
+},
+"没事": {
+"connectivity": 4,
+"seen": 24,
+"play_rate": 0.79,
+"points": 3,
+"source": "measured"
+},
+"要": {
+"connectivity": 4,
+"seen": 22,
+"play_rate": 0.8,
+"points": 3,
+"source": "measured"
+},
+"谢谢": {
+"connectivity": 5,
+"seen": 22,
+"play_rate": 0.81,
+"points": 3,
+"source": "measured"
+},
+"跑步": {
+"connectivity": 4,
+"seen": 24,
+"play_rate": 0.76,
+"points": 3,
+"source": "measured"
+},
+"都": {
+"connectivity": 4,
+"seen": 20,
+"play_rate": 0.79,
+"points": 3,
+"source": "measured"
+},
+"一个人": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"一定": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"一定要": {
+"connectivity": 3,
+"seen": 36,
+"play_rate": 0.65,
+"points": 4,
+"source": "measured"
+},
+"一起": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"上学": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"上班": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"上网": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"上课": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"上车": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"下周": {
+"connectivity": 3,
+"seen": 14,
+"play_rate": 0.63,
+"points": 4,
+"source": "measured"
+},
+"下次见": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"下班": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"下课": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"下车": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"下雨": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"下雪": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"不一定": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"不会": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"不可以": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"不在": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"不太好": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"不好": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"不客气": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"不方便": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"不是": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"不用": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"不用客气": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"不要": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"不见了": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"为什么": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"买东西": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"买票": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"买菜": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"了不起": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"了解": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"什么": {
+"connectivity": 4,
+"seen": 18,
+"play_rate": 0.63,
+"points": 4,
+"source": "measured"
+},
+"什么时候": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"付钱": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"休息": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"会": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"会不会": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"低头": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"便宜": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"健康": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"关机": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"关门": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"冷": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"出发": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"出国": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"出门": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"别客气": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"刮风": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"单身": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"反对": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"发烧": {
+"connectivity": 4,
+"seen": 20,
+"play_rate": 0.69,
+"points": 4,
+"source": "measured"
+},
+"发热": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"发短信": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"取钱": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"受不了": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"受伤": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"可以": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"可爱": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"可能": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"吃": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"吃不下": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"吃药": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"吃饭": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"同意": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"后天": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"听": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"听不到": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"听不见": {
+"connectivity": 4,
+"seen": 32,
+"play_rate": 0.66,
+"points": 4,
+"source": "measured"
+},
+"听话": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"哈哈": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"哪儿": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"哪里": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"唱歌": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"喜欢": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"回去": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"回国": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"回家": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"在": {
+"connectivity": 4,
+"seen": 20,
+"play_rate": 0.69,
+"points": 4,
+"source": "measured"
+},
+"在家": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"坐下": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"坐车": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"多云": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"天冷": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"天黑": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"失望": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"头疼": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"女士": {
+"connectivity": 3,
+"seen": 22,
+"play_rate": 0.66,
+"points": 4,
+"source": "measured"
+},
+"好不好": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"好吃": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"好用": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"好起来": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"妈妈": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"存钱": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"学习": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"它": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"客气": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"害怕": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"对不对": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"对了": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"小心": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"工作": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"巴士": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"年轻": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"度假": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"开会": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"开始": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"开学": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"开心": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"开灯": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"开车": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"开门": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"开饭": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"弹琴": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"当然": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"快乐": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"快点": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"急": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"想": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"想家": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"感冒": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"感动": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"慢": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"打包": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"打字": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"打工": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"打球": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"打电话": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"打车": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"打针": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"报名": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"担心": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"拍照": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"放假": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"放学": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"放心": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"散步": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"数数": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"新年快乐": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"旅游": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"旅行": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"明天见": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"明白": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"是不是": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"有了": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"有事": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"有可能": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"有名": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"有意义": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"有意思": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"有没有": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"有病": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"有空": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"有趣": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"有道理": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"有钱": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"来": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"母亲": {
+"connectivity": 3,
+"seen": 16,
+"play_rate": 0.66,
+"points": 4,
+"source": "measured"
+},
+"气死": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"没了": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"没事儿": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"没想到": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"没意思": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"没有事": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"没有意思": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"没用": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"没电": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"没空儿": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"洗头": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"洗澡": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"洗脸": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"游泳": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"满意": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"点头": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"点菜": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"照相": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"照镜子": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"爬山": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"爱": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"理发": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"理解": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"生日快乐": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"生气": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"生病": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"画画": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"留学": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"的": {
+"connectivity": 4,
+"seen": 48,
+"play_rate": 0.63,
+"points": 4,
+"source": "measured"
+},
+"相信": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"看": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"看一看": {
+"connectivity": 4,
+"seen": 24,
+"play_rate": 0.67,
+"points": 4,
+"source": "measured"
+},
+"看不清": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"看不见": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"看书": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"看医生": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"看得见": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"看球": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"看病": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"看看": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"真的": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"着急": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"睡觉": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"知道": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"离开": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"站起来": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"笑": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"等": {
+"connectivity": 3,
+"seen": 18,
+"play_rate": 0.68,
+"points": 4,
+"source": "measured"
+},
+"等一会": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"等一等": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"等等": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"简单": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"紧张": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"累": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"结婚": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"老实": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"聊天": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"能": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"脏": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"脱衣服": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"花钱": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"苦": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"行": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"见面": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"认真": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"记不住": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"记住": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"记得": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"试一试": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"试试看": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"说": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"说话": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"说说": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"谁": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"贵": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"走": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"走开": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"走路": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"起床": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"跑": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"跳舞": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"输": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"过年": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"过来": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"过生日": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"过马路": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"进去": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"进来": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"进步": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"逛街": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"锻炼": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"问路": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"阴天": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"难": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"难受": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"难吃": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"难看": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"难过": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"香": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"马路": {
+"connectivity": 4,
+"seen": 0,
+"play_rate": 0.67,
+"points": 4,
+"source": "rating prior"
+},
+"上来": {
+"connectivity": 3,
+"seen": 26,
+"play_rate": 0.56,
+"points": 5,
+"source": "measured"
+},
+"书": {
+"connectivity": 3,
+"seen": 20,
+"play_rate": 0.57,
+"points": 5,
+"source": "measured"
+},
+"别": {
+"connectivity": 3,
+"seen": 20,
+"play_rate": 0.6,
+"points": 5,
+"source": "measured"
+},
+"喝": {
+"connectivity": 4,
+"seen": 22,
+"play_rate": 0.59,
+"points": 5,
+"source": "measured"
+},
+"就": {
+"connectivity": 3,
+"seen": 18,
+"play_rate": 0.57,
+"points": 5,
+"source": "measured"
+},
+"工作人员": {
+"connectivity": 3,
+"seen": 18,
+"play_rate": 0.5,
+"points": 5,
+"source": "measured"
+},
+"很": {
+"connectivity": 3,
+"seen": 38,
+"play_rate": 0.59,
+"points": 5,
+"source": "measured"
+},
+"春节": {
+"connectivity": 3,
+"seen": 28,
+"play_rate": 0.5,
+"points": 5,
+"source": "measured"
+},
+"有用": {
+"connectivity": 3,
+"seen": 26,
+"play_rate": 0.56,
+"points": 5,
+"source": "measured"
+},
+"洗手": {
+"connectivity": 4,
+"seen": 24,
+"play_rate": 0.55,
+"points": 5,
+"source": "measured"
+},
+"点单": {
+"connectivity": 3,
+"seen": 6,
+"play_rate": 0.51,
+"points": 5,
+"source": "measured"
+},
+"算了": {
+"connectivity": 4,
+"seen": 14,
+"play_rate": 0.53,
+"points": 5,
+"source": "measured"
+},
+"超市": {
+"connectivity": 3,
+"seen": 30,
+"play_rate": 0.6,
+"points": 5,
+"source": "measured"
+},
+"量体重": {
+"connectivity": 3,
+"seen": 20,
+"play_rate": 0.5,
+"points": 5,
+"source": "measured"
+},
+"高兴": {
+"connectivity": 4,
+"seen": 30,
+"play_rate": 0.54,
+"points": 5,
+"source": "measured"
+},
+"一会儿": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"一家人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"丈夫": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"上下班": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"上个星期": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"上个月": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"上午": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"上去": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"上周": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"上山": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"上星期": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"上次": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"上船": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"上面": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"下个星期": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"下个月": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"下午": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"下去": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"下山": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"下星期": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"下来": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"下棋": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"下次": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"下面": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"下飞机": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"不同": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"不正常": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"不满意": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"不能": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"世界": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"东西": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"个子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"中午": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"中国": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"中国人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"中国菜": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"中国话": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"中学生": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"中文": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"中饭": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"主人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"主意": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"书包": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"书本": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"买": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"事实": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"事情": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"交通": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"人人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"人们": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"人家": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"今天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"介绍": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"代表": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"以为": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"以前": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"价格": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"价钱": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"优点": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"会议": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"传球": {
+"connectivity": 3,
+"seen": 18,
+"play_rate": 0.4,
+"points": 6,
+"source": "measured"
+},
+"伯伯": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"位置": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"住": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"作业": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"保护": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"信": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"信息": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"假日": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"假期": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"假的": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"做": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"像": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"儿子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"元旦": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"先生": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"兔子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"全世界": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"全家": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"全班": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"公主": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"公交车": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"公司": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"公园": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"公路": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"公车": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"关": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"关上": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"关心": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"关系": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"兴趣": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"养": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"写": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"农村": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"农民": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"冬天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"冰水": {
+"connectivity": 3,
+"seen": 26,
+"play_rate": 0.47,
+"points": 6,
+"source": "measured"
+},
+"冰箱": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"冷天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"冷水": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"准备": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"几点": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"出口": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"出来": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"出现": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"出生": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"出租车": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"分开": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"分数": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"别人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"前一天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"前天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"前年": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"前面": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"加入": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"动作": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"动物": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"劳动节": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"包包": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"包子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"北京": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"医生": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"医院": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"十分": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"半夜": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"半天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"单词": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"单车": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"卖": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"南方": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"卡": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"卧室": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"卫生": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"卫生纸": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"卫生间": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"原来": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"厨房": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"去年": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"又": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"友好": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"发信": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"发现": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"发生": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"发音": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"取消": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"变": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"变化": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"变红": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"变老": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"变黑": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"口水": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"叫": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"可乐": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"可口可乐": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"号码": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"司机": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"吃的": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"合作": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"同学": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"同时": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"同班同学": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"名字": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"后年": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"后来": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"后面": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"向上": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"听到": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"听力": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"听清": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"听见": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"听说": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"听起来": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"周一": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"周三": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"周二": {
+"connectivity": 3,
+"seen": 28,
+"play_rate": 0.48,
+"points": 6,
+"source": "measured"
+},
+"周五": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"周四": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"周天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"周日": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"周末": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"味道": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"和好": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"和平": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"咖啡": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"咖啡店": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"哥哥": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"哪个": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"哪些": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"商人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"商场": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"啤酒": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"喜爱": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"嘴": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"嘴巴": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"回信": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"回头": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"回头见": {
+"connectivity": 4,
+"seen": 26,
+"play_rate": 0.41,
+"points": 6,
+"source": "measured"
+},
+"回答": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"困难": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"国家": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"国庆节": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"国旗": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"国王": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"土地": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"土豆": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"在一起": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"地图": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"地方": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"地点": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"地球": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"地铁": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"坏": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"坐": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"城市": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"声调": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"声音": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"夏天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"外国": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"外国人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"外套": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"外教": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"外语": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"外边": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"外面": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"多": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"多大": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"多少": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"多年": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"夜市": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"夜里": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"大": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"大事": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"大人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"大城市": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"大夫": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"大学": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"大学生": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"大家": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"大海": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"大米": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"大门": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"大雨": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"大风": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"天天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"天气": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"天空": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"太": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"太太": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"太阳": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"头发": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"女人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"女儿": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"女子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"女生": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"女的": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"奶奶": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"好事": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"好人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"好听": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"好多": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"好好": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"好好儿": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"好看": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"好运": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"妹妹": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"妻子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"姐姐": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"季节": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"学": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"学会": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"学期": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"学校": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"学生": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"安排": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"宝宝": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"实在": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"实用": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"客人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"客厅": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"室友": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"家": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"家乡": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"家人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"家里": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"家长": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"容易": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"对话": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"小": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"小事": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"小区": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"小吃": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"小学": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"小学生": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"小狗": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"小组": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"小说": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"小雨": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"小鸟": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"工人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"工作时间": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"工资": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"巧克力": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"差": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"差不多": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"市": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"带走": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"帮助": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"帽子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"干净": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"平时": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"年底": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"年轻人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"广告": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"广场": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"店": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"座位": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"开": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"开关": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"开水": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"弟弟": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"很多": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"得到": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"微信": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"德国人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"德语": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"心情": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"快": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"怎么": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"总是": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"想到": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"想法": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"想要": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"想起来": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"意大利面": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"意思": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"意见": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"感到": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"慢慢": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"成功": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"成绩": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"成长": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"房子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"房间": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"手套": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"手拉手": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"手指头": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"手机": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"手纸": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"手表": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"打": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"打不过": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"打印": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"打印机": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"打开": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"打扫": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"打算": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"技术": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"护士": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"报告": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"报纸": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"拉": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"接": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"接下来": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"接人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"推": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"提前": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"收到": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"收音机": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"改变": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"放": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"放下": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"故事": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"教": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"教室": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"教师": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"教育": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"数字": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"数学": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"文件": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"文化": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"新": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"新年": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"新闻": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"方便": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"方便面": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"方向": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"方式": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"方法": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"日子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"日本人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"日记": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"旧": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"早上": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"时候": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"时间": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"明天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"明年": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"明星": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"星星": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"星期一": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"星期三": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"星期二": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"星期五": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"星期四": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"星期天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"星期日": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"春天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"昨天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"晚上": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"普通": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"普通人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"普通话": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"晴天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"最近": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"有些人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"有人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"朋友": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"服务": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"服务员": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"木头": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"本子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"本星期": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"本月": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"机会": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"机器": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"机票": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"果汁": {
+"connectivity": 3,
+"seen": 18,
+"play_rate": 0.43,
+"points": 6,
+"source": "measured"
+},
+"柜子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"查": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"树叶": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"桃子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"桌子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"梨": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"梳子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"椅子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"橘子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"橙子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"歌": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"歌儿": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"歌手": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"歌曲": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"正常": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"死": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"每天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"比一比": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"比赛": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"毛巾": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"水": {
+"connectivity": 3,
+"seen": 24,
+"play_rate": 0.41,
+"points": 6,
+"source": "measured"
+},
+"水平": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"水果": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"汉字": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"汉语": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"汤": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"汽车": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"沙拉": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"没有差别": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"油": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"油条": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"法国人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"法语": {
+"connectivity": 3,
+"seen": 18,
+"play_rate": 0.4,
+"points": 6,
+"source": "measured"
+},
+"洗": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"洗发水": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"洗手间": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"活动": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"活着": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"海": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"海水": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"消息": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"温度": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"湖": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"满足": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"漂亮": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"火车": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"火车票": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"火锅": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"灯": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"炉子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"炒饭": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"热": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"热情": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"热气": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"热水": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"热水器": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"照片": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"照相机": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"爱好": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"爷爷": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"爸爸": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"牙刷": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"牙膏": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"牛奶": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"牛排": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"牛肉": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"牛肉面": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"特别": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"狗": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"狗狗": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"猪": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"猪肉": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"猫": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"现在": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"现金": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"班级": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"班长": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"球": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"瓜子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"生字": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"生意": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"生日": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"生日卡": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"生活": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"生词": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"生词本": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"用": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"用力": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"电子书": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"电影": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"电影票": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"电影院": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"电梯": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"电灯": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"电脑": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"电视": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"电视台": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"电视节目": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"电话": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"电话卡": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"男人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"男友": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"男生": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"男的": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"画": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"留学生": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"病": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"病人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"白": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"白人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"白天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"白开水": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"白米饭": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"白色": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"白菜": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"白酒": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"皮包": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"皮球": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"盘子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"目前": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"相同": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"相片": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"看上去": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"看到": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"看得出": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"看法": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"看见": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"看起来": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"真": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"真是": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"真正": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"眼睛": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"眼镜": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"短": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"短信": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"矮": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"石头": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"矿泉水": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"礼物": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"社会": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"秋天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"空气": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"窗户": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"立刻": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"站": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"笔记": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"笔记本": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"笨": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"管理": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"管理员": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"篮球": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"米饭": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"粉红色": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"粉色": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"粥": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"糖": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"糖果": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"红": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"红包": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"红灯": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"红绿灯": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"红色": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"红茶": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"红酒": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"练习": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"经常": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"经理": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"绿": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"绿灯": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"绿色": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"缺点": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"网上": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"网球": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"美国人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"美女": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"美好": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"美食": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"老人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"老公": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"老家": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"老师": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"老年人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"老是": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"老虎": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"考试": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"耳朵": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"耳机": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"联系": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"肉": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"肚子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"背包": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"胡子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"能力": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"脸": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"自然": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"自行车": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"船": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"节日": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"节目": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"芒果": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"花": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"花时间": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"花生": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"英国人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"英文": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"英语": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"苹果": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"茶": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"草地": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"草莓": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"药": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"菜": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"菜单": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"菜市场": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"葡萄": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"蓝天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"蓝色": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"蔬菜": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"虫子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"虾": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"蛋糕": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"血": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"行为": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"行李": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"街上": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"街道": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"衣服": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"衬衫": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"袜子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"裙子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"西方": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"西班牙人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"西班牙语": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"西瓜": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"西红柿": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"西边": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"西面": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"要有": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"要求": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"见到": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"计划": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"计算": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"计算机": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"记者": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"试": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"语文": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"语言": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"说好": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"说明": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"请": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"读": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"豆子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"豆腐": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"起名": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"起点": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"超级市场": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"超过": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"足球": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"足球场": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"足球赛": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"足球队": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"路上": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"跳": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"身上": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"身体": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"身子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"身高": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"车": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"车子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"车票": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"轻": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"达到": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"过一会儿": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"过程": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"运动": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"运动会": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"运动员": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"运动场": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"运气": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"近": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"远": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"选": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"通电话": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"通知": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"道理": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"邻居": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"部分": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"酒": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"酸": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"重": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"重新": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"钥匙": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"钱": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"铁路": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"银行": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"错": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"镜子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"长大": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"门外": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"门票": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"问": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"问好": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"问题": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"闻": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"闻到": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"阳台": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"阴": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"附近": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"院子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"雨伞": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"雨天": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"雨衣": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"雪": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"雪人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"青年": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"青菜": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"非常": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"非常多": {
+"connectivity": 3,
+"seen": 20,
+"play_rate": 0.4,
+"points": 6,
+"source": "measured"
+},
+"面包": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"面条": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"鞋子": {
+"connectivity": 3,
+"seen": 30,
+"play_rate": 0.43,
+"points": 6,
+"source": "measured"
+},
+"音乐": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"音乐会": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"音乐家": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"颜色": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"风": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"飞": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"飞机": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"飞机场": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"飞机票": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"食品": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"食堂": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"食物": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"餐厅": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"饭": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"饭菜": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"饺子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"首先": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"香水": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"香蕉": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"马": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"马上": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"高": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"高中": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"高中生": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"高声": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"高铁": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"鬼": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"鱼": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"鸟": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"鸡": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"鸡肉": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"鸡蛋": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"黄色": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"黑": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"黑人": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"黑板": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"黑色": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"鼻子": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"龙": {
+"connectivity": 3,
+"seen": 0,
+"play_rate": 0.41,
+"points": 6,
+"source": "rating prior"
+},
+"北方": {
+"connectivity": 3,
+"seen": 24,
+"play_rate": 0.36,
+"points": 7,
+"source": "measured"
+},
+"图片": {
+"connectivity": 3,
+"seen": 32,
+"play_rate": 0.38,
+"points": 7,
+"source": "measured"
+},
+"平安": {
+"connectivity": 3,
+"seen": 24,
+"play_rate": 0.36,
+"points": 7,
+"source": "measured"
+},
+"强": {
+"connectivity": 3,
+"seen": 8,
+"play_rate": 0.28,
+"points": 7,
+"source": "measured"
+},
+"想想看": {
+"connectivity": 4,
+"seen": 24,
+"play_rate": 0.37,
+"points": 7,
+"source": "measured"
+},
+"早": {
+"connectivity": 3,
+"seen": 22,
+"play_rate": 0.32,
+"points": 7,
+"source": "measured"
+},
+"理想": {
+"connectivity": 3,
+"seen": 26,
+"play_rate": 0.34,
+"points": 7,
+"source": "measured"
+},
+"电视机": {
+"connectivity": 3,
+"seen": 20,
+"play_rate": 0.37,
+"points": 7,
+"source": "measured"
+},
+"裤子": {
+"connectivity": 3,
+"seen": 30,
+"play_rate": 0.33,
+"points": 7,
+"source": "measured"
+},
+"进": {
+"connectivity": 3,
+"seen": 20,
+"play_rate": 0.3,
+"points": 7,
+"source": "measured"
+},
+"钱包": {
+"connectivity": 3,
+"seen": 22,
+"play_rate": 0.38,
+"points": 7,
+"source": "measured"
+},
+"阳光": {
+"connectivity": 3,
+"seen": 32,
+"play_rate": 0.36,
+"points": 7,
+"source": "measured"
+},
+"鸟儿": {
+"connectivity": 3,
+"seen": 26,
+"play_rate": 0.31,
+"points": 7,
+"source": "measured"
+},
+"黄": {
+"connectivity": 3,
+"seen": 22,
+"play_rate": 0.32,
+"points": 7,
+"source": "measured"
+},
+"公共汽车": {
+"connectivity": 3,
+"seen": 30,
+"play_rate": 0.23,
+"points": 8,
+"source": "measured"
+},
+"厕所": {
+"connectivity": 3,
+"seen": 24,
+"play_rate": 0.18,
+"points": 8,
+"source": "measured"
+},
+"好处": {
+"connectivity": 3,
+"seen": 22,
+"play_rate": 0.25,
+"points": 8,
+"source": "measured"
+},
+"学费": {
+"connectivity": 3,
+"seen": 26,
+"play_rate": 0.22,
+"points": 8,
+"source": "measured"
+},
+"手指": {
+"connectivity": 3,
+"seen": 22,
+"play_rate": 0.19,
+"points": 8,
+"source": "measured"
+},
+"毛衣": {
+"connectivity": 3,
+"seen": 30,
+"play_rate": 0.23,
+"points": 8,
+"source": "measured"
+},
+"河": {
+"connectivity": 3,
+"seen": 18,
+"play_rate": 0.25,
+"points": 8,
+"source": "measured"
+},
+"表现": {
+"connectivity": 3,
+"seen": 26,
+"play_rate": 0.17,
+"points": 8,
+"source": "measured"
+},
+"进入": {
+"connectivity": 3,
+"seen": 18,
+"play_rate": 0.18,
+"points": 8,
+"source": "measured"
+},
+"云": {
+"connectivity": 3,
+"seen": 26,
+"play_rate": 0.14,
+"points": 9,
+"source": "measured"
+},
+"腿": {
+"connectivity": 3,
+"seen": 26,
+"play_rate": 0.14,
+"points": 9,
+"source": "measured"
+}
+}

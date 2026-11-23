@@ -16,12 +16,15 @@ CLAUDE.md § "Nonstandard deploys need a temp runbook"; the deploy procedure its
 > `schema_migrations` and `migrate.sh --dry-run`, and treat any disagreement as this
 > file (or the runbook banner) being stale.
 
-PPE is current through migration **194** (2026-11-17). Latest code deploy: `a7be7b0` (2026-11-17, migration 194).
+PPE is current through migration **199** (2026-11-21). Latest code deploy: `8323dbb` + `0e9af62` (2026-11-21, migrations 195–199).
 
 ## Open runbooks
 
 | Runbook | What | Status | Still open because |
 |---|---|---|---|
+| [SENTENCE_TILES_DEPLOY_RUNBOOK.md](./SENTENCE_TILES_DEPLOY_RUNBOOK.md) | Sentence Tiles (flag ON): additive migration **204** (four `sentence_tile_*` tables) applied by hand with the batch before the rebuild; new env `SENTENCE_TILES_AI_API_KEY` in PPE's repo-root `.env` (owner supplies it) | **Not deployed** (written 2026-11-23) | Everything |
+| [VOICE_ASSISTANT_DEPLOY_RUNBOOK.md](./VOICE_ASSISTANT_DEPLOY_RUNBOOK.md) | Voice Tutor: additive migration **202** (`voice_sessions`, `voice_turns`), two new backend packages (`ws`, `@google-cloud/speech`), new env `VOICE_AI_API_KEY`, the app's first WebSocket through nginx + Cloudflare. Ships with the flag OFF | **Not deployed** (written 2026-11-21) | Everything |
+| [STORY_COMMONALITY_DEPLOY_RUNBOOK.md](./STORY_COMMONALITY_DEPLOY_RUNBOOK.md) | cyoa stories measured by commonality: expand **200** (`stories.commonality`) BEFORE the rebuild, run `backfill-story-commonality.ts`, contract **205** (drop `stories.difficulty`; renumbered from 201 on 2026-11-23 to be the batch's highest) AFTER it. **Holds the batch step order for 200/202/203/204/205** | **Not deployed** (written 2026-11-21) | Everything |
 | [PRIVATE_COMPONENT_DEPLOY_RUNBOOK.md](./PRIVATE_COMPONENT_DEPLOY_RUNBOOK.md) | Private-use component U+E000 (the two-dot ⺼ of 然 祭 炙). **No migration**; after the pull, re-run `backfill-character-components.js --words=然,祭,察,擦,蔡,嚓,镲,炙 --force` on PPE via `run-ppe.sh` | Deployed 2026-11-15 (`75ee4fb`; 8 rows written; V1–V3 passed) | In-app check: the keyboard chip and a Word Search No Pinyin hint for 然 |
 | [LOGIN_REWORK_DEPLOY_RUNBOOK.md](./LOGIN_REWORK_DEPLOY_RUNBOOK.md) | Login rework: expand **188** (username, phone, verified-at, `email_codes`) BEFORE the rebuild, contract **189** (drop `users."isPublic"`) AFTER it; new env `RESEND_API_KEY` (+ optional `FIREBASE_PROJECT_ID`, `VITE_FIREBASE_*`) | Deployed 2026-11-14 (`b242d8a`; 187 + 188 before the rebuild, 189 after; V1–V4 + HTTP checks passed) | V5, V7, V8 in the app; V6 waits for `RESEND_API_KEY` (DEFERRED_WORK item 50) |
 | [NM_IW_REMOVAL_DEPLOY_RUNBOOK.md](./NM_IW_REMOVAL_DEPLOY_RUNBOOK.md) | Night Market + Immersive World removal: drop migration **185** (8 tables, `users."isTemplateAuthor"`, `nightmarket_unlocks_for_minutes`) AFTER the rebuild; `install-timers.sh` required (maintenance unit loses its prune step) | Deployed 2026-11-09 (`6a227da`; 185 + 186 applied after the rebuild; checks 1–5 passed) | Check 6: the first `cow-maintenance` run on the new unit (00:01 tick) must succeed |

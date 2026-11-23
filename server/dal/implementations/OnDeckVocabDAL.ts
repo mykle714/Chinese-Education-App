@@ -7,9 +7,10 @@ import type { MasteryWorldId } from '../../contracts/wire.js';
 import {
   vetTableForLanguage, vetReadFrom, CORE_CATEGORY_SELECT, barCategoryExpr, masteredBarClause,
   builtinCollectionClause, type BuiltinCollectionId, typeCategoryExpr, vetSortedClause,
-  WRITING_MASTERY_SELECT, WRITING_FLP_WORD_CLAUSE,
+  WRITING_MASTERY_SELECT,
 } from '../shared/vetTable.js';
 import { DICT_COLS, DICT_JOIN } from '../shared/dictJoin.js';
+import { writingDeckFrom, materializeWritingIds } from '../shared/writingDeck.js';
 
 /**
  * Data access for the study surfaces' card reads — see IOnDeckVocabDAL.
@@ -107,11 +108,24 @@ export class OnDeckVocabDAL implements IOnDeckVocabDAL {
     language: string,
     opts: { category: string | null; world: MasteryWorldId; excludeIds: number[]; lentIds: number[]; scope?: CollectionFilter | null }
   ): Promise<VocabEntry[]> {
-    // Fixed placeholders: $1 user, $2 excluded ids, $3 language, $4 lent ids. The band
-    // ($5, when one is asked for) and the focus scope take the next free ones. Numbered
-    // as they are added, because an unreferenced placeholder is a Postgres error
-    // ("could not determine data type of parameter").
-    const params: unknown[] = [userId, opts.excludeIds, language, opts.lentIds];
+    // Fixed placeholders: $1 user, $2 excluded ids, $3 language. Everything after —
+    // the lent ids, the band and the focus scope — takes the next free number as it is
+    // added, because an unreferenced placeholder is a Postgres error ("could not
+    // determine data type of parameter").
+    const params: unknown[] = [userId, opts.excludeIds, language];
+    // The WRITING flp reads the writing deck (dal/shared/writingDeck.ts): single
+    // characters of the learner's sorted words, hidden character rows and virtual
+    // (row-less, negative-id) characters included — so it skips the sorted-only rule,
+    // and takes no lent ids (the writing flp never lends —
+    // OnDeckVocabService.canLendProvisional).
+    const writing = opts.world === 'writing';
+    let membership = '';
+    if (!writing) {
+      params.push(opts.lentIds);
+      // SORTED ONLY: same rule as the game pools — a lent card enters a round only
+      // through the last-resort lend tier, by id (docs/PROVISIONAL_CARDS.md § 4b).
+      membership = `AND (${vetSortedClause()} OR ve.id = ANY($${params.length}::int[]))`;
+    }
     let bandClause = '';
     if (opts.category !== null) {
       params.push(opts.category);
@@ -121,22 +135,28 @@ export class OnDeckVocabDAL implements IOnDeckVocabDAL {
     params.push(...scope.params);
     return this.rows<VocabEntry>(`
       SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}, ${CORE_CATEGORY_SELECT}
-      FROM ${vetReadFrom(language)} ${DICT_JOIN}
+      FROM ${writing ? writingDeckFrom('$1') : vetReadFrom(language)} ${DICT_JOIN}
       WHERE ve."userId" = $1
       AND ve."language" = $3
-      -- SORTED ONLY: same rule as the game pools — a lent card enters a round only
-      -- through the last-resort lend tier, by id (docs/PROVISIONAL_CARDS.md § 4b).
-      AND (${vetSortedClause()} OR ve.id = ANY($4::int[]))
+      ${membership}
       ${bandClause}
       AND ve.id != ALL($2::int[])
-      ${opts.world === 'writing' ? WRITING_FLP_WORD_CLAUSE : ''}
       ${scope.clause}
       -- Stable tiebreak only; the real ordering is rankFlpEligible in app code, which
       -- also puts own cards before lent ones in its stale tier. The tie is REAL for
       -- stale cards of equal ease, which keep this order — own-first is repeated here
-      -- so the tiebreak agrees with the ranker.
-      ORDER BY (ve."starterPackBucket" = 'provisional') ASC, ve."createdAt" DESC
+      -- so the tiebreak agrees with the ranker. NULLS LAST: a virtual writing-deck row
+      -- has no createdAt and must not jump the queue.
+      ORDER BY (ve."starterPackBucket" = 'provisional') ASC, ve."createdAt" DESC NULLS LAST
     `, params);
+  }
+
+  async materializeWritingIds(userId: string, ids: number[]): Promise<number[]> {
+    if (!ids.some((id) => id < 0)) return ids;
+    // executeQuery wants a pg-shaped result, so the ids travel as rows.
+    const result = await this.dbManager.executeQuery<number>(async (client) =>
+      ({ rows: await materializeWritingIds(client, userId, ids) }));
+    return result.recordset;
   }
 
   async findRowsByIds(userId: string, language: string, ids: number[]): Promise<VocabEntry[]> {
@@ -233,13 +253,15 @@ export class OnDeckVocabDAL implements IOnDeckVocabDAL {
   ): Promise<FlpReadinessRow[]> {
     return this.rows<FlpReadinessRow>(`
       SELECT ve.id, ve."typedMarkHistory", ${WRITING_MASTERY_SELECT}
-      FROM ${vetReadFrom(language)}
+      FROM ${world === 'writing' ? writingDeckFrom('$1') : vetReadFrom(language)}
       WHERE ve."userId" = $1
       AND ve."language" = $2
-      ${world === 'writing' ? WRITING_FLP_WORD_CLAUSE : ''}
       -- SORTED: deck read, same rule as countMasteredByWorld — a lent provisional
-      -- card must not inflate a figure the learner reads as "my deck".
-      AND ${vetSortedClause()}
+      -- card must not inflate a figure the learner reads as "my deck". The writing
+      -- deck is its own membership rule (characters of sorted words, hidden and
+      -- virtual character rows included — dal/shared/writingDeck.ts); a READ, so a
+      -- virtual character counts without a row being created.
+      ${world === 'writing' ? '' : `AND ${vetSortedClause()}`}
       ${onlyIds ? 'AND ve.id = ANY($3::int[])' : ''}
     `, onlyIds ? [userId, language, onlyIds] : [userId, language]);
   }

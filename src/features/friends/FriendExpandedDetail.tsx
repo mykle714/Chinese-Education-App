@@ -12,15 +12,15 @@ import { LEADING, SIZE, WEIGHT } from "../../theme/scale";
 /**
  * FriendExpandedDetail — what a leaderboard row shows when it is expanded in place
  * (docs/FRIENDS_FEATURE.md § "Expand in place"). Replaced the `/users/:userId` profile page,
- * deleted 2026-11-13. Two pieces, in the order the page drew them:
+ * deleted 2026-11-13. It is ONE progress panel (`LibraryShelfPanel`) for the friend's ACTIVE language —
+ * the language the row is ranked in, unboxed: its flag-over-name title, the
+ * banked-minutes flame in the corner, the spines, and the Velocity card under them.
  *
- *   1. the page header's lines — email, "Studying 🇨🇳 CN · friends since …" (the avatar
- *      and name are already on the row itself, so they are not repeated);
- *   2. ONE progress panel (`LibraryShelfPanel`) for the friend's ACTIVE language —
- *      the language the row is ranked in, unboxed: its flag-over-name title, the
- *      banked-minutes flame in the corner, the spines, and the Velocity card under them.
+ * The old page header's lines (@handle, "Studying 🇨🇳 CN · friends since …") were dropped
+ * 2026-11-22: the handle moved up into the row's always-visible subtitle, and the
+ * studying language already reads off the panel's flag title.
  *
- * NOT shown, by decision (2026-11-13): the Reading / Writing goal badges, every
+ * NOT shown, by decision (2026-11-13): the "friends since" date (2026-11-22), the Reading / Writing goal badges, every
  * relationship control (unfriending lives behind the Remove tile), the Study Challenge
  * block toggle (dropped — docs/DEFERRED_WORK.md), and the community designs grid.
  *
@@ -37,15 +37,7 @@ import { LEADING, SIZE, WEIGHT } from "../../theme/scale";
  * FriendPersonRow's `detail` slot.
  */
 
-/** "Friends since 3 Aug 2026", or null when the timestamp is missing/unparseable. */
-function friendsSinceText(iso: string | null | undefined): string | null {
-    if (!iso) return null;
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return null;
-    return `friends since ${date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}`;
-}
-
-/** Small muted line — the header lines and the loading / error states. */
+/** Small muted line — the loading / error / no-stats states. */
 const metaSx = {
     fontFamily: FONTS.sans,
     fontSize: SIZE.micro,
@@ -79,18 +71,6 @@ function FriendExpandedDetail({ language, profileState }: FriendExpandedDetailPr
 
     return (
         <Box className="friend-expanded-detail" sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-            {/* The page header's lines (the row already carries avatar + name). */}
-            <Box className="friend-expanded-detail__identity">
-                <Typography className="friend-expanded-detail__username" noWrap sx={metaSx}>
-                    {`@${profile.identity.username}`}
-                </Typography>
-                <Typography className="friend-expanded-detail__since" sx={metaSx}>
-                    {[`Studying ${flag}${flag ? " " : ""}${code}`, friendsSinceText(profile.friendsSince)]
-                        .filter(Boolean)
-                        .join(" · ")}
-                </Typography>
-            </Box>
-
             {stats ? (
                 <LibraryShelfPanel
                     className={`friend-expanded-detail__panel friend-expanded-detail__panel--${stats.language}`}

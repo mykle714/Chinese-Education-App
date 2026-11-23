@@ -15,7 +15,7 @@
  *   - `writingLevelForMastery` — the level a card is practised at in the writing flp,
  *     from its (possibly fractional, averaged) writing mastery;
  *   - `writingMarkCounts` — the anti-farming gate: a writing mark only counts when the
- *     level is above the character's mastery.
+ *     level is above the character's mastery (the top level always counts).
  *
  * Pure data — no value imports — so the Node build and the client bundle both load it.
  *
@@ -31,9 +31,15 @@ export const WRITING_LEVELS = [
   { level: 1, mode: 'snap', name: 'Walk-through' }, // renamed from "Snap" 2026-10-04 (display only)
   { level: 2, mode: 'trace', name: 'Trace' },
   { level: 3, mode: 'walkthrough', name: 'Step-through' }, // was "Step Through" (display only)
-  { level: 4, mode: 'thirds', name: 'Thirds' }, // was 'quarters' (4 田 squares) until 2026-11-08
+  { level: 4, mode: 'sections', name: 'Sections' }, // ⅓ window stepping by ⅙; was 'thirds' (3 disjoint wedges) until 2026-11-22, 'quarters' (4 田 squares) until 2026-11-08
   { level: 5, mode: 'memorize', name: 'Memorize' },
-  { level: 6, mode: 'quarters', name: 'Quarters' }, // 4 X triangles; was 'sixths' (6 centre wedges) until 2026-11-08, 'eighths' (8 米 triangles) until 2026-10-06
+  // Starts blank; one Flash press per panel open shows the whole outline for 0.5s
+  // (`LEVEL_BEHAVIOR.flash.flashMs`, src/components/handwriting/levelBehavior.ts).
+  // Replaced 'quarters' (4 X triangles) 2026-11-22, which replaced 'sixths' (6 centre wedges)
+  // 2026-11-08, which replaced 'eighths' (8 米 triangles) 2026-10-06. The mode name `flash`
+  // was also an early mode's name; migration 172 keys stars by level NUMBER and erased the
+  // old rows, so nothing stored refers to that one.
+  { level: 6, mode: 'flash', name: 'Flash' },
   { level: 7, mode: 'test', name: 'Blank' }, // renamed from "Test" 2026-10-04 (display only)
   { level: 8, mode: 'timed', name: 'Timed' },
 ] as const;
@@ -67,10 +73,10 @@ export function modeOfLevel(level: number): WritingMode {
 }
 
 /**
- * The longest word any writing surface accepts: the practice popup's 2×2 grid and the
- * writing flp card both hold four characters. Enforced on every path — the popup's
- * eligibility (`usePracticeWriting`), the writing flp's deal SQL (`WRITING_FLP_WORD_CLAUSE`) and the
- * mark endpoint (`FlashcardMarkService.applyWritingResult`).
+ * The longest word any writing surface accepts: the practice popup's 2×2 grid holds four
+ * characters. Enforced on the popup's eligibility (`usePracticeWriting`) and the mark
+ * endpoint (`FlashcardMarkService.applyWritingResult`). The writing flp deals single
+ * characters only (dal/shared/writingDeck.ts, since 2026-11-22), well inside it.
  * Referenced by docs/WRITING_PRACTICE_REWORK.md § 3 and docs/PRACTICE_WRITING.md.
  */
 export const WRITING_MAX_CHARS = 4;
@@ -93,8 +99,18 @@ export function writingLevelForMastery(m: number): number {
  * Anti-farming gate: a writing mark against a character counts only when the level
  * it was written at is ABOVE that character's writing mastery (its 0–8 positive
  * count). Writing a well-known character at a heavily assisted level earns nothing.
- * Note `writingLevelForMastery(m) > m` always holds, so the flp's own level passes.
+ *
+ * The TOP level always counts. It has no assistance to farm, and it is the level a
+ * fully mastered character (m = 8) is dealt at — `writingLevelForMastery(8)` is 8, so
+ * `level > m` alone would be false there. Without this exception every mark on a
+ * Mastered character was dropped as farming: its 180-day clock could never restart
+ * (so once it rested out, the writing flp kept dealing it, recording nothing), and a
+ * wrong answer could never cost it mastery. With it, `writingLevelForMastery(m)`
+ * always passes this gate for every m in 0..8, so the flp's own level always counts.
+ *
+ * Depended on by: server/services/FlashcardMarkService.ts → `applyWritingResult`.
+ * Docs: docs/WRITING_PRACTICE_REWORK.md § "Anti-farming", docs/SUPERPOSITION_GAME.md.
  */
 export function writingMarkCounts(level: number, characterMastery: number): boolean {
-  return level > characterMastery;
+  return level >= WRITING_LEVEL_COUNT || level > characterMastery;
 }

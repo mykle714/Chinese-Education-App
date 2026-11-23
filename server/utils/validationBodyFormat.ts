@@ -71,7 +71,8 @@ export function composeDifficultyBody(difficulty: number | null): string {
   return `Difficulty: ${difficulty ?? '(none)'}`;
 }
 
-/** The 1–5 everyday-conversation frequency score, surfaced to users as "Commonality". */
+/** The 1–5 everyday-conversation frequency score, surfaced to users as "Usefulness" (the body keeps
+ * "Commonality": it is an approval fingerprint, and renaming it would stale every approval). */
 export function composeFrequencyScoreBody(frequencyScore: number | null): string {
   return `Commonality: ${frequencyScore ?? '(none)'}/5`;
 }

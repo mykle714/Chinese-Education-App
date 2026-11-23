@@ -79,15 +79,21 @@ export interface WordToolsRailProps {
     pillSx?: SxProps<Theme>;
     /**
      * Drawn but greyed and inert, like the flp's `More Info` pill (styled.ts →
-     * `MoreInfoPill` `isDisabled`, opacity 0.32): the flp sets it while the card under the
-     * rail is not a word (a game break, the out-of-ready-cards card). Taps are still
-     * SWALLOWED (the buttons are `disabled`, the rail stops the press): falling through
-     * would land on the tower's tap-off-the-card Back. Covers `Compare` and `Customize`
-     * only: `Write it` has no disabled state, and its one host that disables (the flp)
-     * does not show it.
+     * `MoreInfoPill` `isDisabled`, opacity 0.32). The flp sets it while the card under the
+     * rail is not a word (a game break, the out-of-ready-cards card) and while the icon
+     * editor (fie) is open; the cdp sets it while the editor is open. Taps are still
+     * SWALLOWED (the buttons are `disabled`, the rail stops the press) so a press never
+     * falls through to whatever lies under the rail. Covers `Compare` and `Customize`
+     * only — the greying is applied per pill (`DISABLED_PILL_SX`), so the cdp's `Write it`
+     * stays live and un-greyed beside them.
      */
     disabled?: boolean;
 }
+
+// The greyed + inert look of a disabled `Compare` / `Customize` pill — the flp `More Info`
+// pill's (styled.ts → `MoreInfoPill` `isDisabled`: opacity 0.32, default cursor). Applied
+// per PILL, not to the rail, so a `Write it` beside them (cdp) is never greyed by it.
+const DISABLED_PILL_SX = { opacity: 0.32, cursor: "default" } as const;
 
 export const WordToolsRail: React.FC<WordToolsRailProps> = ({ entry, onCompare, onCustomize, onToolPress, showWriteIt = true, className, sx, pillSx, disabled = false }) => {
     // Re-checked here purely to decide whether the CONTAINER is worth rendering;
@@ -116,7 +122,6 @@ export const WordToolsRail: React.FC<WordToolsRailProps> = ({ entry, onCompare, 
                     "& .MuiBadge-root": { display: "flex", flex: 1, minWidth: 0 },
                     "& .MuiBadge-root > *": { width: "100%" },
                 },
-                disabled && { opacity: 0.32, "& button": { cursor: "default" } },
                 ...(Array.isArray(sx) ? sx : [sx]),
             ]}
             onPointerDown={stop}
@@ -143,7 +148,7 @@ export const WordToolsRail: React.FC<WordToolsRailProps> = ({ entry, onCompare, 
                     onClick={(e) => { stop(e); onCompare(entry); }}
                     onMouseDown={stop}
                     onTouchStart={stop}
-                    sx={[WORD_TOOL_PILL_SX, ...(Array.isArray(pillSx) ? pillSx : [pillSx])]}
+                    sx={[WORD_TOOL_PILL_SX, ...(Array.isArray(pillSx) ? pillSx : [pillSx]), disabled && DISABLED_PILL_SX]}
                 >
                     <Icon name="compare_arrows" size={17} />
                     Compare
@@ -158,7 +163,7 @@ export const WordToolsRail: React.FC<WordToolsRailProps> = ({ entry, onCompare, 
                     onClick={(e) => { stop(e); onCustomize(); }}
                     onMouseDown={stop}
                     onTouchStart={stop}
-                    sx={[WORD_TOOL_PILL_SX, ...(Array.isArray(pillSx) ? pillSx : [pillSx])]}
+                    sx={[WORD_TOOL_PILL_SX, ...(Array.isArray(pillSx) ? pillSx : [pillSx]), disabled && DISABLED_PILL_SX]}
                 >
                     {/* The brush, as on the old `•••` rail — the pencil-ish `draw` is
                         `Write it`'s, and the two must not be confused side by side. */}

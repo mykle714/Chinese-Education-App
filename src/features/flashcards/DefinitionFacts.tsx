@@ -1,5 +1,5 @@
 import { Box, Typography, useTheme } from "@mui/material";
-import { CommonalityMeter, DifficultyMeter } from "../../components/ScoreMeters";
+import { CommonalityMeter } from "../../components/ScoreMeters";
 import { AiGeneratedBadge } from "../../components/AiGeneratedBadge";
 import { aiGeneratedCardSx, aiGeneratedSurfaceSx, aiGeneratedTagPositionSx } from "../../theme/aiGeneratedStyling";
 import MetaChipLabel from "./MetaChipLabel";
@@ -9,8 +9,14 @@ import type { VocabEntry } from "../../types";
 import { useEipColors } from "./FlashcardsLearnPage/useEipPalette";
 
 /**
- * `DefinitionFacts` — the design's `.dfx` (artboards 20 and 20b): the three measured
- * facts about a word, under its definition paragraph.
+ * `DefinitionFacts` — the design's `.dfx` (artboards 20 and 20b): the measured facts
+ * about a word (parts of speech, commonality), under its definition paragraph.
+ *
+ * ── Difficulty is hidden (2026-11-21) ─────────────────────────────────────────
+ * The det `difficulty` level is no longer shown to anyone (validators included): it is
+ * an AI estimate that still drives acp's adaptive leveling, game lending and provisional
+ * picks, but is not a fact a learner reads. The Difficulty column (and its validator
+ * Approve/Flag) was removed here; `entry.difficulty` stays on the wire for those uses.
  *
  * ── One component, because there were two identical copies ────────────────────
  * This block existed VERBATIM in two places — the eip's definition tab
@@ -31,8 +37,9 @@ import { useEipColors } from "./FlashcardsLearnPage/useEipPalette";
  *     Split into separate terms delimited by a faint middle dot, each POS reads as a
  *     tag. (Per-POS sense counts used to sit beside each term; dropped
  *     2026-10-10 by request.)
- *   • Commonality and difficulty are the two measures words get COMPARED by, so they
- *     share a two-column row with a rule between them, not a centred huddle.
+ *   • Commonality (and, until 2026-11-21, difficulty beside it in a two-column row)
+ *     is a measure words get COMPARED by, so it sits under its own overline rather
+ *     than in a centred huddle.
  *
  * ── Provenance: per-field, or one grouped block ───────────────────────────────
  * Every value here is machine-written until a validator approves it
@@ -106,22 +113,17 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
     // alone does not carry the narrowing across the JSX boundary.
     const commonalityScore = commonality.score;
     const hasCommonality = commonalityScore != null;
-    // Difficulty renders as a bare 6-unit meter in every language — no "HSK N" naming.
-    // Held as a local for the same narrowing reason as `commonalityScore`.
-    const difficultyScore = entry.difficulty;
-    const hasDifficulty = difficultyScore != null;
-    if (!hasPos && !hasCommonality && !hasDifficulty && !paragraph) return null;
+    if (!hasPos && !hasCommonality && !paragraph) return null;
 
 
     // The grouped-AI test: every provenance-bearing value PRESENT in the block is
     // unapproved. A field that isn't rendered can't vote — otherwise a word with only
-    // an approved difficulty would still take the grouped treatment on the strength of
-    // two absent fields.
+    // approved parts of speech would still take the grouped treatment on the strength of
+    // an absent field.
     const votes: boolean[] = [
         ...(paragraph ? [paragraphApproved === true] : []),
         ...(hasPos ? [entry.partsOfSpeechApproved === true] : []),
         ...(hasCommonality ? [commonality.approved] : []),
-        ...(hasDifficulty ? [entry.difficultyApproved === true] : []),
     ];
     const grouped = votes.length > 0 && votes.every((approved) => !approved);
 
@@ -223,88 +225,47 @@ export const DefinitionFacts: React.FC<DefinitionFactsProps> = ({
                 </Box>
             )}
 
-            {/* The two measures a learner compares words by, side by side with a rule
-                between them — they are peers, and both are read off the same word. */}
-            {(hasCommonality || hasDifficulty) && (
+            {/* Commonality, the one measure shown (difficulty is hidden, see the header).
+                Full width now that its old peer column is gone. */}
+            {hasCommonality && (
                 <Box
                     className={`${classPrefix}__definition-facts-measures`}
-                    // Two equal columns even when only one is present, so a word missing
-                    // its difficulty does not print a lone half-width commonality that
-                    // reads as a rendering bug.
                     sx={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
                         // Only when the POS row is absent — otherwise its own bottom rule
                         // already separates the two.
                         borderTop: hasPos ? undefined : topRule,
                     }}
                 >
-                    {hasCommonality && (
-                        <Box
-                            className={`${classPrefix}__definition-facts-commonality`}
-                            sx={{ padding: "10px 0 2px", position: "relative", ...fieldSx(commonality.approved) }}
-                        >
-                            {/* A per-sense score validates the CLUSTER ('senseFrequencyScore'
-                                + senseLabel, migration 139); the entry-level fallback
-                                validates the det column. */}
-                            <MetaChipLabel
-                                label="Commonality"
-                                field={commonality.senseLabel ? "senseFrequencyScore" : "frequencyScore"}
-                                word1={entry.entryKey}
-                                language={entry.language}
-                                senseLabel={commonality.senseLabel}
-                                approved={commonality.approved}
-                                classPrefix={classPrefix}
+                    <Box
+                        className={`${classPrefix}__definition-facts-commonality`}
+                        sx={{ padding: "10px 0 2px", position: "relative", ...fieldSx(commonality.approved) }}
+                    >
+                        {/* A per-sense score validates the CLUSTER ('senseFrequencyScore'
+                            + senseLabel, migration 139); the entry-level fallback
+                            validates the det column. */}
+                        <MetaChipLabel
+                            label="Usefulness"
+                            field={commonality.senseLabel ? "senseFrequencyScore" : "frequencyScore"}
+                            word1={entry.entryKey}
+                            language={entry.language}
+                            senseLabel={commonality.senseLabel}
+                            approved={commonality.approved}
+                            classPrefix={classPrefix}
+                        />
+                        <Box sx={{ display: "flex", alignItems: "center", gap: "9px", marginTop: "8px" }}>
+                            {/* Filled and empty circles both in ink2 (the old `.dots` look);
+                                icons only, no "n/5" readout (2026-11-07). */}
+                            <CommonalityMeter
+                                className={`${classPrefix}__commonality-meter`}
+                                // 12px (≈10px shapes): a notch above the 10px default, since
+                                // this is the meters' primary surface and no number rides beside them.
+                                unitSize={12}
+                                score={commonalityScore}
+                                filledColor={colors.ink2}
+                                emptyColor={colors.ink2}
                             />
-                            <Box sx={{ display: "flex", alignItems: "center", gap: "9px", marginTop: "8px" }}>
-                                {/* Filled and empty circles both in ink2 (the old `.dots` look);
-                                    icons only, no "n/5" readout (2026-11-07). */}
-                                <CommonalityMeter
-                                    className={`${classPrefix}__commonality-meter`}
-                                    // 12px (≈10px shapes): a notch above the 10px default, since
-                                    // this is the meters' primary surface and no number rides beside them.
-                                    unitSize={12}
-                                    score={commonalityScore}
-                                    filledColor={colors.ink2}
-                                    emptyColor={colors.ink2}
-                                />
-                            </Box>
                         </Box>
-                    )}
-                    {hasDifficulty && (
-                        <Box
-                            className={`${classPrefix}__definition-facts-difficulty`}
-                            sx={{
-                                padding: "10px 0 2px",
-                                position: "relative",
-                                // The dividing rule belongs to the SECOND column, so it is
-                                // absent when difficulty is the only measure present.
-                                ...(hasCommonality ? { borderLeft: rule, paddingLeft: "15px" } : {}),
-                                ...fieldSx(entry.difficultyApproved),
-                            }}
-                        >
-                            <MetaChipLabel
-                                label="Difficulty"
-                                field="difficulty"
-                                word1={entry.entryKey}
-                                language={entry.language}
-                                approved={entry.difficultyApproved}
-                                classPrefix={classPrefix}
-                            />
-                            <Box sx={{ display: "flex", alignItems: "center", gap: "9px", marginTop: "8px" }}>
-                                {/* Six triangles, same ink as the commonality meter beside it.
-                                    No "HSK n" label: the level is an AI estimate, not an
-                                    HSK-list lookup (removed 2026-11-07). */}
-                                <DifficultyMeter
-                                    className={`${classPrefix}__difficulty-meter`}
-                                    unitSize={12}
-                                    score={difficultyScore}
-                                    filledColor={colors.ink2}
-                                    emptyColor={colors.ink2}
-                                />
-                            </Box>
-                        </Box>
-                    )}
+                    </Box>
                 </Box>
             )}
         </Box>

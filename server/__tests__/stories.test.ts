@@ -3,12 +3,12 @@ import { StoryService } from '../services/StoryService.js';
 import { ValidationError, NotFoundError, ForbiddenError, ConflictError } from '../types/dal.js';
 import type { IStoryDAL, StoryRow, StoryPassageRow } from '../dal/interfaces/IStoryDAL.js';
 import type { IDictionaryDAL } from '../dal/interfaces/IDictionaryDAL.js';
-import { computeStoryDifficulty, storyPublishWarnings } from '../contracts/stories.js';
+import { computeStoryCommonality, storyPublishWarnings } from '../contracts/stories.js';
 
 /**
  * Tests for Adventures (cyoa) — docs/CYOA_FEATURE.md.
  *
- *   • the pure rules in server/contracts/stories.ts (90%-coverage difficulty, publish
+ *   • the pure rules in server/contracts/stories.ts (90%-coverage commonality, publish
  *     warnings incl. reachability over a free graph with loops);
  *   • StoryService policy against an IN-MEMORY IStoryDAL that mimics migration 196's
  *     semantics (ending = no choices, ON CONFLICT DO NOTHING for endings found,
@@ -88,7 +88,7 @@ function makeMemoryDAL() {
     createStory: async ({ authorUserId, language, title, iconId }) => {
       const row: StoryRow = {
         id: uuid(), language, title, iconId, authorUserId, startPassageId: null,
-        publishedAt: null, difficulty: null, createdAt: now(), updatedAt: now(),
+        publishedAt: null, commonality: null, createdAt: now(), updatedAt: now(),
       };
       stories.set(row.id, row);
       return row;
@@ -125,12 +125,17 @@ function makeMemoryDAL() {
       for (const [key, value] of progress) if (value === passageId) progress.delete(key);
       return passages.delete(passageId);
     },
-    publish: async (id, difficulty) => {
+    publish: async (id, commonality) => {
       const row = stories.get(id)!;
       row.publishedAt = now();
-      row.difficulty = difficulty;
+      row.commonality = commonality;
       return row.publishedAt;
     },
+    setCommonality: async (id, commonality) => {
+      stories.get(id)!.commonality = commonality;
+    },
+    listPublishedStoryIds: async () =>
+      [...stories.values()].filter((row) => row.publishedAt !== null).map((row) => row.id),
     unpublish: async (id) => {
       stories.get(id)!.publishedAt = null;
       return true;
@@ -142,29 +147,29 @@ function makeMemoryDAL() {
 /** A transaction runner that just hands the operation a dummy client. */
 const fakeTx = { executeInTransaction: async (op: any) => op({ getClient: () => ({}) }) } as any;
 
-/** Dictionary stub: maps word → difficulty. */
-function makeDictionaryDAL(levels: Record<string, number | null>): IDictionaryDAL {
+/** Dictionary stub: maps word → frequencyScore (commonality, 5 = everyday). */
+function makeDictionaryDAL(scores: Record<string, number | null>): IDictionaryDAL {
   return {
     findMultipleByWord1: async (words: string[]) =>
-      words.filter((w) => w in levels).map((w) => ({ word1: w, difficulty: levels[w], frequencyScore: 3 })),
+      words.filter((w) => w in scores).map((w) => ({ word1: w, difficulty: 3, frequencyScore: scores[w] })),
   } as unknown as IDictionaryDAL;
 }
 
 // ── Pure rules ──────────────────────────────────────────────────────────────
 
-describe('computeStoryDifficulty', () => {
-  it('returns the lowest level covering 90% of distinct leveled words', () => {
-    // 9 HSK1 words + 1 HSK6 word: 90% covered at level 1.
-    expect(computeStoryDifficulty([1, 1, 1, 1, 1, 1, 1, 1, 1, 6])).toBe(1);
-    // 8 HSK1 + 2 HSK6: level 1 covers only 80%, so it takes 6.
-    expect(computeStoryDifficulty([1, 1, 1, 1, 1, 1, 1, 1, 6, 6])).toBe(6);
-    expect(computeStoryDifficulty([2, 2, 3, 3, 3, 3, 3, 3, 3, 4])).toBe(3);
+describe('computeStoryCommonality', () => {
+  it('returns the highest commonality that 90% of distinct scored words reach', () => {
+    // 9 everyday (5) words + 1 rare (1): 90% are at least 5.
+    expect(computeStoryCommonality([5, 5, 5, 5, 5, 5, 5, 5, 5, 1])).toBe(5);
+    // 8 everyday + 2 rare: only 80% reach 5, so it drops to 1.
+    expect(computeStoryCommonality([5, 5, 5, 5, 5, 5, 5, 5, 1, 1])).toBe(1);
+    expect(computeStoryCommonality([4, 4, 3, 3, 3, 3, 3, 3, 3, 2])).toBe(3);
   });
 
-  it('ignores unleveled words and returns null when none are leveled', () => {
-    expect(computeStoryDifficulty([null, undefined, 2])).toBe(2);
-    expect(computeStoryDifficulty([null, null])).toBeNull();
-    expect(computeStoryDifficulty([])).toBeNull();
+  it('ignores unscored words and returns null when none are scored', () => {
+    expect(computeStoryCommonality([null, undefined, 4])).toBe(4);
+    expect(computeStoryCommonality([null, null])).toBeNull();
+    expect(computeStoryCommonality([])).toBeNull();
   });
 });
 
@@ -209,7 +214,7 @@ describe('StoryService', () => {
 
   beforeEach(() => {
     mem = makeMemoryDAL();
-    service = new StoryService(mem.dal, makeDictionaryDAL({ 我: 1, 你: 1, 好: 1, 去: 1, 森林: 4 }), fakeTx);
+    service = new StoryService(mem.dal, makeDictionaryDAL({ 我: 5, 你: 5, 好: 5, 去: 5, 森林: 2 }), fakeTx);
   });
 
   /** Start → (choice 1) forest ending, (choice 2) unwritten. Returns ids. */
@@ -427,12 +432,23 @@ describe('StoryService', () => {
     expect(edit.warnings.map((w) => w.kind)).toContain('noEnding');
   });
 
-  it('publish computes difficulty from distinct words and returns warnings without blocking', async () => {
+  it('publish computes commonality from distinct words and returns warnings without blocking', async () => {
     const { storyId } = await buildStory();
     const result = await service.publish(AUTHOR, storyId);
-    // Distinct words: 你 好 去 我 (HSK1) + 森林 (HSK4) → 4/5 = 80% at level 1, so level 4.
-    expect(result.difficulty).toBe(4);
+    // Distinct words: 你 好 去 我 (5) + 森林 (2) → only 4/5 = 80% reach 5, so 2.
+    expect(result.commonality).toBe(2);
     expect(result.warnings).toEqual([{ kind: 'choiceWithoutTarget', passageId: expect.any(String), position: 2 }]);
     expect(result.publishedAt).toBeTruthy();
+  });
+
+  it('recomputeCommonality updates the value without re-publishing', async () => {
+    const { storyId } = await buildStory();
+    await service.publish(AUTHOR, storyId);
+    const row = mem.stories.get(storyId)!;
+    const publishedAt = row.publishedAt;
+    row.commonality = null;
+    expect(await service.recomputeCommonality(storyId)).toBe(2);
+    expect(row.commonality).toBe(2);
+    expect(row.publishedAt).toBe(publishedAt);
   });
 });

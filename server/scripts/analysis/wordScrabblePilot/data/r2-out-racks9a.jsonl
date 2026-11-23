@@ -1,0 +1,50 @@
+{"id": 1, "best_len": 3, "plays": ["太|好|听", "好|听"], "n_plays_est": 3}
+{"id": 2, "best_len": 4, "plays": ["能力|不|太|低", "能力|太|低", "不|太|低"], "n_plays_est": 4}
+{"id": 3, "best_len": 3, "plays": ["我|都|不会", "我|不会"], "n_plays_est": 3}
+{"id": 4, "best_len": 3, "plays": ["这|技术|呢", "技术|呢", "好|吃饭"], "n_plays_est": 3}
+{"id": 5, "best_len": 4, "plays": ["就|是|你|吗", "是|你|吗", "你|能力|不太好", "就|是|你", "有|吗"], "n_plays_est": 6}
+{"id": 6, "best_len": 3, "plays": ["但是|出生日期|不对", "但是|我们|不对", "但是|不对"], "n_plays_est": 3}
+{"id": 7, "best_len": 4, "plays": ["我|有|作业|了", "我|有|了", "分开|了", "有|了"], "n_plays_est": 5}
+{"id": 8, "best_len": 2, "plays": ["请|用力"], "n_plays_est": 2}
+{"id": 9, "best_len": 2, "plays": ["方便面|不太好", "放|白菜"], "n_plays_est": 3}
+{"id": 10, "best_len": 2, "plays": ["不对|吧", "回头见|吧"], "n_plays_est": 3}
+{"id": 11, "best_len": 0, "plays": [], "n_plays_est": 0}
+{"id": 12, "best_len": 6, "plays": ["这|个|也|是|作业|吗", "这|个|是|作业|吗", "这|是|说明|吗"], "n_plays_est": 10}
+{"id": 13, "best_len": 3, "plays": ["但是|他|年轻", "他|年轻", "我|不对"], "n_plays_est": 4}
+{"id": 14, "best_len": 3, "plays": ["但是|大小|不太好", "大小|不太好"], "n_plays_est": 3}
+{"id": 15, "best_len": 4, "plays": ["今年|你|就|去", "今年|你|去"], "n_plays_est": 3}
+{"id": 16, "best_len": 5, "plays": ["你|的|电影票|在下面|呢", "你|的|电影票|呢", "电影票|在下面", "电影票|呢"], "n_plays_est": 8}
+{"id": 17, "best_len": 4, "plays": ["他|也|不|年轻", "他|不|年轻", "请|用力"], "n_plays_est": 5}
+{"id": 18, "best_len": 4, "plays": ["我|要|这|本", "这|本|我|有", "这|本|不太好", "他|不太好", "大小|不太好"], "n_plays_est": 7}
+{"id": 19, "best_len": 4, "plays": ["她|心里|有|你", "你|心里|有|她", "她|心里|不太好", "你|有|吗", "我|不太好"], "n_plays_est": 8}
+{"id": 20, "best_len": 4, "plays": ["也|是|不对|的", "是|不对|的", "有|了"], "n_plays_est": 5}
+{"id": 21, "best_len": 2, "plays": ["你|呢", "矿泉水|呢"], "n_plays_est": 3}
+{"id": 22, "best_len": 4, "plays": ["我们|很|有|能力", "我们|有|作业", "洗发水|有|了"], "n_plays_est": 8}
+{"id": 23, "best_len": 4, "plays": ["你|放|的|不对", "放|的|不对"], "n_plays_est": 3}
+{"id": 24, "best_len": 5, "plays": ["对|我|接到|电影票|了", "对|我|接到|了", "我|听|对|了", "对|了", "请|她|听"], "n_plays_est": 8}
+{"id": 25, "best_len": 3, "plays": ["知道|出生日期|吗", "不|知道", "知道|吗"], "n_plays_est": 5}
+{"id": 26, "best_len": 3, "plays": ["有|什么|不太好", "什么|不太好", "洗发水|不太好"], "n_plays_est": 4}
+{"id": 27, "best_len": 3, "plays": ["你|不|在"], "n_plays_est": 3}
+{"id": 28, "best_len": 4, "plays": ["这|个|是|白菜", "我|是|医生", "这|是|医生"], "n_plays_est": 10}
+{"id": 29, "best_len": 3, "plays": ["我|是|医生", "什么|是|作业", "什么|是|电影票"], "n_plays_est": 6}
+{"id": 30, "best_len": 2, "plays": ["有|方便面"], "n_plays_est": 2}
+{"id": 31, "best_len": 2, "plays": ["有|方便面"], "n_plays_est": 2}
+{"id": 32, "best_len": 5, "plays": ["今年|的|作业|很|困难", "今年|的|作业|不|困难", "作业|很|困难", "不|知道"], "n_plays_est": 8}
+{"id": 33, "best_len": 4, "plays": ["好|要|开灯|了", "今年|很|好", "对|了", "好|了"], "n_plays_est": 8}
+{"id": 34, "best_len": 6, "plays": ["我|不|要|你|的|方便面", "我|要|他|的|方便面", "我|不|要|方便面", "好|我|要"], "n_plays_est": 12}
+{"id": 35, "best_len": 5, "plays": ["好|的|我|知道|了", "我|知道|了", "我|不会"], "n_plays_est": 8}
+{"id": 36, "best_len": 4, "plays": ["我们|有|足球场|了", "他|知道|印度"], "n_plays_est": 4}
+{"id": 37, "best_len": 4, "plays": ["这|有|白菜|吗", "有|白菜|吗"], "n_plays_est": 5}
+{"id": 38, "best_len": 0, "plays": [], "n_plays_est": 0}
+{"id": 39, "best_len": 4, "plays": ["他|也|在|印度", "他|也|在|这", "他|在|印度"], "n_plays_est": 6}
+{"id": 40, "best_len": 4, "plays": ["不|是|白菜|吧", "是|白菜|吧", "好|吧"], "n_plays_est": 7}
+{"id": 41, "best_len": 3, "plays": ["我们|在|印度", "你|在|印度"], "n_plays_est": 5}
+{"id": 42, "best_len": 4, "plays": ["他|就|去|了", "我们|去|吗", "他|呢", "电影票|呢"], "n_plays_est": 8}
+{"id": 43, "best_len": 2, "plays": ["太|好"], "n_plays_est": 3}
+{"id": 44, "best_len": 3, "plays": ["这|不会|困难", "不会|困难"], "n_plays_est": 2}
+{"id": 45, "best_len": 3, "plays": ["你|是|我", "我|不太好", "我|去", "洗发水|不太好", "什么|不太好"], "n_plays_est": 8}
+{"id": 46, "best_len": 2, "plays": ["要|什么", "想起来|什么"], "n_plays_est": 3}
+{"id": 47, "best_len": 3, "plays": ["好|想起来|了", "分开|吧", "分开|了", "好|吧"], "n_plays_est": 6}
+{"id": 48, "best_len": 4, "plays": ["你|太|年轻|了", "有|什么|不对", "请|你|吃饭", "请|吃饭"], "n_plays_est": 8}
+{"id": 49, "best_len": 4, "plays": ["他|对|我|不太好", "我|对|他|不太好", "我|不太好", "大小|不太好"], "n_plays_est": 6}
+{"id": 50, "best_len": 5, "plays": ["他|都|不会|去|的", "他|不会|去|印度|的", "他|不会|去|的", "好|的"], "n_plays_est": 8}

@@ -103,8 +103,12 @@ const ScreenRoot = styled(Box)(() => ({
 // Non-scrolling pages also drop the edge-fade mask (it would clip their edge rows).
 const ScrollArea = styled(Box, {
     shouldForwardProp: (prop) =>
-        prop !== "scrollable" && prop !== "topFade" && prop !== "horizontalPan" && prop !== "bottomFadeBand",
-})<{ scrollable: boolean; topFade: boolean; horizontalPan: boolean; bottomFadeBand: number }>(({ scrollable, topFade, horizontalPan, bottomFadeBand }) => ({
+        prop !== "scrollable" && prop !== "topFade" && prop !== "horizontalPan" && prop !== "bottomFadeBand" && prop !== "footerless" && prop !== "hideScrollbar",
+})<{ scrollable: boolean; topFade: boolean; horizontalPan: boolean; bottomFadeBand: number; footerless: boolean; hideScrollbar: boolean }>(({ scrollable, topFade, horizontalPan, bottomFadeBand, footerless, hideScrollbar }) => {
+    // A footerless route has no slab to clear: no bottom reservation, and the bottom fade
+    // ends at the viewport edge instead of at the slab's top.
+    const footprint = footerless ? "0px" : FOOTER_FOOTPRINT;
+    return {
     flex: 1,
     minHeight: 0,
     overflowY: scrollable ? "auto" : "hidden",
@@ -131,19 +135,22 @@ const ScrollArea = styled(Box, {
     touchAction: scrollable ? (horizontalPan ? "pan-x pan-y" : "pan-y") : "none",
     overscrollBehavior: "contain",
     WebkitOverflowScrolling: "touch",
-    // Clears the floating footer slab.
-    paddingBottom: FOOTER_CLEARANCE,
+    // Clears the floating footer slab (none on a footerless page).
+    paddingBottom: footerless ? 0 : FOOTER_CLEARANCE,
+    // Scrolling stays; only the bar is hidden (touch / wheel / drag still scroll).
+    ...(hideScrollbar ? { scrollbarWidth: "none" as const, "&::-webkit-scrollbar": { display: "none" } } : {}),
     // Soft fade at the top/bottom edges (see EDGE_FADE_MASK above), scrollable pages only.
     // Pages that opt out of the top fade (topFade=false) drop the top band. The
     // scrollbar gutter is exempt, so a desktop scrollbar draws over the fade, not in it.
     ...(scrollable
         ? edgeFadeMaskSx(
             topFade
-                ? edgeFadeMask(bottomFadeBand, FOOTER_FOOTPRINT)
-                : edgeFadeMaskNoTop(bottomFadeBand, FOOTER_FOOTPRINT),
+                ? edgeFadeMask(bottomFadeBand, footprint)
+                : edgeFadeMaskNoTop(bottomFadeBand, footprint),
         )
         : {}),
-}));
+    };
+});
 
 // Page content column. `flex: 1` makes it fill the viewport on short pages so the
 // surface color covers the full height; per-page styling comes via `contentSx`.
@@ -206,6 +213,12 @@ interface MobileTabScreenProps {
     // scroller's own `touch-action` is overruled by this ancestor and the swipe does
     // nothing at all, silently.
     horizontalPan?: boolean;
+    // The route has no footer slab (no `footerTab` in routeMeta): drop the bottom padding
+    // that clears it, so content runs to the screen's bottom edge. Must match the route —
+    // set on a footer-bearing page, the last row would hide under the slab.
+    footerless?: boolean;
+    // Hide the scroll area's scrollbar (the page still scrolls). Sentence Tiles.
+    hideScrollbar?: boolean;
     /**
      * Wrap the page header in the page's own chrome, without moving it out of the
      * scroll area (so it still scrolls away exactly as an unwrapped header does).
@@ -241,6 +254,8 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
     topFade = true,
     bottomFadeBand = EDGE_FADE_BOTTOM_BAND,
     horizontalPan = false,
+    footerless = false,
+    hideScrollbar = false,
     wrapHeader,
     children,
 }) => {
@@ -260,6 +275,8 @@ const MobileTabScreen: React.FC<MobileTabScreenProps> = ({
             topFade={topFade}
             bottomFadeBand={bottomFadeBand}
             horizontalPan={horizontalPan}
+            footerless={footerless}
+            hideScrollbar={hideScrollbar}
             sx={backdrop ? { position: "relative" } : undefined}
         >
             {(() => {

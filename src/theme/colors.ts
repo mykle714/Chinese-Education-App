@@ -88,6 +88,17 @@ export const COLORS = {
     teaM: "#70FAFA",     // oklch(91%   0.12   195)
     teaTint: "#EAFBFA",  // oklch(97.5% 0.018  195)
 
+    // `moss` (2026-11-22) — a leafy "nature" green, OUTSIDE the design's v2 ramp. Asked for
+    // as "some nature green" for Sentence Tiles (docs/SENTENCE_TILES_GAME.md § "Pages"), its
+    // only wearer. It is NOT `grn`: grn (hue 150, Comfortable's band colour) reads as cool
+    // mint, and a game tinted with it would look like it shows mastery. Moss sits 15° warmer
+    // (hue 135, toward yellow-green) at lower chroma, so it reads as foliage. Built on the
+    // ramp's tier recipe; all four are inside sRGB.
+    moss: "#D1F0C1",     // oklch(92%   0.07   135)
+    mossM: "#BAE8A1",    // oklch(88%   0.105  135)
+    mossMk: "#83C66C",   // oklch(76%   0.14   138)
+    mossTint: "#F2FAEE", // oklch(97.5% 0.018  135)
+
     // `--yel` — v2 promotes it from a side hue to a BAND hue: Target is yellow now
     // (artboard 18: "Target yellow"). It also still carries Study Mix / Learning.
     yel: YEL_SURFACE,    // oklch(94%   0.085   92) clipped
@@ -339,6 +350,18 @@ export const COLORS = {
     // (the wrong-streak hints' {keyword} markup, docs/HINT_PAWN.md § Wrong-streak).
     keywordInk: "#E8604C",
 
+    // ── In-copy utcm band names ───────────────────────────────────
+    // ALSO outside the ramp (owner, 2026-11-21). Colours a utcm band's NAME where it is
+    // written in a line of copy ("Comfortable", "Mastered"), in the band's own hue. The
+    // ramp's tiers are grounds, never text: the band's Mark tier as text is too faint on a
+    // white bubble (grnMk 1.8:1, bluMk 2.1:1), so each ink is its band's hue pulled down to
+    // ~57% L. Same hues as BAND_HUES.Comfortable (grn 145) and .Mastered (blu 259).
+    //
+    // Used by: src/features/flashcards/FlashcardsLearnPage/hintPawn/PawnHintBody.tsx
+    // (the `[Band]` markup → `BAND_INK`, docs/HINT_PAWN.md § Deck review).
+    comfortableInk: "#1D9330",   // oklch(58% 0.17 145) — 4.0:1 on white
+    masteredInk: "#3174D9",      // oklch(57% 0.17 259) — 4.6:1 on white
+
     // ── Notification badge ────────────────────────────────────────
     // ALSO outside the ramp (owner, 2026-11-13: "a red that more closely aligns with the
     // classic notification"). The saturated system red of an app-icon badge, under white
@@ -386,6 +409,7 @@ export const RAMP = {
     org: { surface: COLORS.org, mid: COLORS.orgM, mark: COLORS.orgMk, tint: COLORS.orgTint },
     grn: { surface: COLORS.grn, mid: COLORS.grnM, mark: COLORS.grnMk, tint: COLORS.grnTint },
     tea: { surface: COLORS.tea, mid: COLORS.teaM, mark: COLORS.teaM, tint: COLORS.teaTint },
+    moss: { surface: COLORS.moss, mid: COLORS.mossM, mark: COLORS.mossMk, tint: COLORS.mossTint },
     yel: { surface: COLORS.yel, mid: COLORS.yelM, mark: COLORS.yelMk, tint: COLORS.yelTint },
     gld: { surface: COLORS.gld, mid: COLORS.gld, mark: COLORS.gld, tint: COLORS.gldTint },
 } as const;

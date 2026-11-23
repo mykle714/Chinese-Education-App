@@ -25,8 +25,13 @@
 // `theme.palette.flashcard.cardShadow` / `.cardShadowSubtle` / `.sheetShadow` where a
 // call site already reads the theme, and directly otherwise.
 
-/** The one shadow ink. Every value below is this hue at some alpha. */
+/**
+ * The one shadow ink. Every value below is this hue at some alpha. Exported as `shadowInk`
+ * for the rare shadow that must be computed rather than picked (an animated lift — e.g.
+ * features/sentenceTiles/sentenceTilesStyles.ts → `tileStockShadow`).
+ */
 const INK = (alpha: number): string => `rgba(20, 18, 26, ${alpha})`;
+export const shadowInk = INK;
 
 export const SHADOW = {
     /**
@@ -73,7 +78,9 @@ export const SHADOW = {
     menu: `0 14px 36px ${INK(0.24)}`,
 
     /**
-     * `.ssheet` — a floating popover SHEET (the sense picker). The deepest in the set.
+     * `.ssheet` — a floating popover SHEET (MinimizablePopup, SteppedHelpPopup). The deepest
+     * in the set. (The sense picker it was named for moved to the lighter `lifted` on
+     * 2026-11-21 — owner found this one too dark there.)
      */
     popover: `0 18px 44px ${INK(0.26)}`,
 
@@ -95,8 +102,9 @@ export const SHADOW = {
      * A RECESS — an empty well pressed into a surface, lit from above so the shadow
      * falls inside the TOP edge. No artboard equivalent (the designs never draw a
      * pressed-in shape); this is the sort page's old "already sorted" card shadow,
-     * re-inked, now used for the card crater a dragged/sorted card leaves behind
-     * (AddCardsPage → CardCrater, docs/SORT_CARDS_REQUIREMENTS.md §4.5).
+     * re-inked. Used by Superposition's tray: the empty slot a tile leaves when it is
+     * out on the board (src/games/superposition/SuperpositionTray.tsx,
+     * docs/SUPERPOSITION_GAME.md § Tray). (The acp's card crater it was made for is gone.)
      */
     recessed: `inset 0 2px 5px ${INK(0.22)}`,
     /**
@@ -115,6 +123,12 @@ export const SHADOW = {
     peekUp: `0 -9px 26px ${INK(0.1)}`,
     /** `.sheet` — a pull-up sheet at rest over its own page. */
     sheetUp: `0 -10px 30px ${INK(0.12)}`,
+    /**
+     * `sheetUp` mirrored — the one TOP-anchored sheet: the fie's Customize panel
+     * (src/cardIcons/editor/CardEditPanel.tsx), which drops down over the page header and
+     * casts DOWN onto the card below it. Same weight as `sheetUp`, positive Y.
+     */
+    sheetDown: `0 10px 30px ${INK(0.12)}`,
     /** `.eic`, `.pnl` — a raised panel covering most of the page. Deepest upward. */
     panelUp: `0 -12px 34px ${INK(0.18)}`,
 } as const;

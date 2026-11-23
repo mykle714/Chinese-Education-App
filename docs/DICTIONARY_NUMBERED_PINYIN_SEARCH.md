@@ -103,7 +103,7 @@ two-bucket order (numbered pinyin — below) every row is `word`, since complete
 The Dictionary page maps kinds to five sections — English "…" / Pinyin "…" (word-exact,
 reading-alternate and `word`) / English starts with / Pinyin starts with / Other — and draws one
 labelled section per run
-(`src/features/dictionary/dictionaryMatchSections.ts` → `groupByMatchSection`, `matchSectionLabel`;
+(`src/components/dictionarySearch/dictionaryMatchSections.ts` → `groupByMatchSection`, `matchSectionLabel` — also drawn by the mini search, `DictionaryWordSearch`;
 docs/SHELF_REDESIGN.md § 7b). `LADDER_MATCH_KINDS` must be reordered with the CASE ladder.
 
 ### Primary vs alternate readings (added 2026-10-03)
@@ -175,7 +175,7 @@ a **different** sense, the search response names it, and the row shows that sens
   (the matched cluster's reading via `clusterReadingOrColumn`, else `resolveDefaultPronunciation`)
   and its sense list (each sense's dd, as the eip's Definition-tab sense list shows it, with the matched cluster's dd
   moved to the front; every gloss of the one sense, dd first, when there is no choice of sense — `singleSenseGlossList`). Used by `src/components/DictionaryEntryRow.tsx` (dictionary page
-  and Compare slot B) and `src/features/community/CommunitySearchBar.tsx`.
+  and the mini search — Compare, notebook picker) and `src/features/community/CommunitySearchBar.tsx`.
 - **Click-through.** `DictionaryPage` → `handleEntryClick` looks the word up and opens the eip
   sheet with `selectedSense` overridden to the hit's `matchedSense`, so `useEipTabs.openForRoot`
   seeds the root tab's sense from it (outranking the requester's saved pick) through

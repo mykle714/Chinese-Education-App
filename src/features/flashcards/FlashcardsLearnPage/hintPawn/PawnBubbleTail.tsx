@@ -10,9 +10,12 @@ import { COLORS } from "../../../../theme";
  * space below the card, the head reaches up beside the card), so the tail has to lean.
  *
  * Drawn as a child of the bubble body (HintBubbleSurface `tailSide="custom"`), positioned
- * against the body's top-left corner. The head is given relative to the body's BOTTOM-left
- * corner (the bubble is bottom-anchored, so that is static); the body's height is measured
- * (ResizeObserver on the parent) to turn it into a direction from the base.
+ * against the body's top-left corner. The head is given relative to an ANCHOR's bottom-left
+ * corner (the bubble slot, `anchorSelector`): the body is centred vertically in that slot, so
+ * where it sits moves with its own height and the slot's. Both are measured (ResizeObserver
+ * on the body and the anchor) in LAYOUT px — offsetTop/clientHeight, which ignore transforms,
+ * so neither the grow-in scale nor the dive camera skews the aim — to turn the head into a
+ * direction from the base.
  *
  * The wedge's fill reaches 1px inside the body, over the body's 1px left border, between
  * its two base points (the border is hidden there), and its stroke runs only along the two
@@ -31,26 +34,48 @@ const BASE_HALF = 5;
 const LENGTH = 14;
 
 interface PawnBubbleTailProps {
-    /** The pawn head's centre, px from the body's bottom-left corner (x right, y UP; x is negative — left of the bubble). */
+    /**
+     * The pawn head's centre, px from the anchor's bottom-left corner (x right, y UP; x is
+     * negative — left of the bubble). The body must span the anchor's left edge (width 100%).
+     */
     head: { x: number; y: number };
+    /** CSS selector for the anchor: the body's nearest ancestor matching it (the bubble slot). */
+    anchorSelector: string;
 }
 
-export default function PawnBubbleTail({ head }: PawnBubbleTailProps) {
+/** The body's top edge, px down from the anchor's padding-box top, summed over offsetParents. */
+function topWithin(el: HTMLElement, anchor: HTMLElement): number {
+    let top = 0;
+    let node: HTMLElement | null = el;
+    while (node && node !== anchor) {
+        top += node.offsetTop;
+        node = node.offsetParent as HTMLElement | null;
+    }
+    return top;
+}
+
+export default function PawnBubbleTail({ head, anchorSelector }: PawnBubbleTailProps) {
     const ref = useRef<SVGSVGElement | null>(null);
-    const [bodyHeight, setBodyHeight] = useState(0);
+    // The anchor's bottom, px down from the body's top (body coords, y down). 0 = unmeasured.
+    const [anchorBottom, setAnchorBottom] = useState(0);
 
     useLayoutEffect(() => {
         const body = ref.current?.parentElement;
-        if (!body) return;
-        const measure = () => setBodyHeight(body.clientHeight);
+        const anchor = body?.closest<HTMLElement>(anchorSelector);
+        if (!body || !anchor) return;
+        const measure = () => {
+            const next = anchor.clientHeight - topWithin(body, anchor);
+            setAnchorBottom((prev) => (prev === next ? prev : next));
+        };
         measure();
         const ro = new ResizeObserver(measure);
         ro.observe(body);
+        ro.observe(anchor);
         return () => ro.disconnect();
-    }, []);
+    }, [anchorSelector]);
 
     // Direction from the base midpoint (0, BASE_FROM_TOP) to the head, in body coords (y down).
-    const headY = bodyHeight - head.y;
+    const headY = anchorBottom - head.y;
     const dx = head.x;
     const dy = headY - BASE_FROM_TOP;
     const dist = Math.hypot(dx, dy) || 1;
@@ -70,7 +95,7 @@ export default function PawnBubbleTail({ head }: PawnBubbleTailProps) {
             aria-hidden
             width={1}
             height={1}
-            style={{ position: "absolute", left: 0, top: 0, overflow: "visible", pointerEvents: "none", visibility: bodyHeight ? undefined : "hidden" }}
+            style={{ position: "absolute", left: 0, top: 0, overflow: "visible", pointerEvents: "none", visibility: anchorBottom ? undefined : "hidden" }}
         >
             <path
                 className="pawn-bubble-tail__fill"

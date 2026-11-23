@@ -1,0 +1,211 @@
+听说	verb,noun	to hear it said
+告诉	verb	to tell
+呢	particle	sentence particle
+周	noun,verb,adjective	week
+周一	noun	Monday
+周三	noun	Wednesday
+周二	noun	Tuesday
+周五	noun	Friday
+周四	noun	Thursday
+周日	noun	Sunday
+周末	noun	weekend
+咖啡	noun	(loanword) coffee
+哈哈	onomatopoeia,interjection	haha
+哥哥	noun	older brother
+四次	numeral,adjective	four times
+回到	verb	to return to
+回去	verb	to go back
+回头见	interjection	See you!
+回家	verb	to return home
+回答	verb,noun	to answer
+因为	conjunction,preposition	because
+国家	noun	country
+在一起	adverb,verb	together
+在下面	adverb	underneath
+地	noun,particle	ground
+坏	adjective,verb	bad
+坐下	verb	to sit down
+坐车	verb	to travel by car
+声	noun,classifier	sound
+声音	noun	voice
+夏天	noun	summer
+外国	noun	foreign country
+外国人	noun	foreigner
+外边	noun	outside
+外面	noun	outside
+多大	adjective	how big?
+夜	noun	night
+大声	adverb,noun	loud voice
+大学	noun	university
+大海	noun	sea
+天冷	adjective	it's cold (weather)
+天天	adverb	every day
+天空	noun	sky
+太阳	noun	sun
+女人	noun	woman
+女儿	noun	daughter
+女的	noun	woman
+奶奶	noun	paternal grandmother
+好不好	interjection	OK?
+好人	noun	good person
+好听	adjective	pleasant to hear
+好多	adjective	many
+好好	adverb	well
+好看	adjective	good-looking
+妻子	noun	wife
+姐姐	noun	older sister
+客气	adjective,verb	polite
+害怕	verb	to be afraid
+家人	noun	family member
+容易	adjective	easy
+对不对	adjective	Is it right?
+对了	interjection	Oh, by the way, ...
+小声	adverb,noun	in a low voice
+小学	noun	elementary school
+小学生	noun	schoolchild
+小狗	noun	puppy
+工人	noun	worker
+工作	noun,verb	work
+已经	adverb	already
+带	verb,noun	to bring
+帮助	verb,noun	to help
+常	adverb,adjective	often
+常常	adverb	often
+帽子	noun	hat
+干	verb,adjective,adverb	to do
+干净	adjective	clean
+年级	noun	grade
+年轻人	noun	young people
+店	noun	store
+开心	adjective,verb	to feel happy
+开灯	verb	to turn on the light
+开车	verb	to drive
+开门	verb	to open a door
+弟弟	noun	younger brother
+当	verb,preposition,adjective,onomatopoeia	to be
+当然	adverb,adjective	of course
+很多	adjective,numeral	a lot of
+得	verb,particle	to get
+德国	noun	Germany
+心里	noun	heart
+快点	verb,adverb	Hurry up!
+快要	adverb	about to
+想要	verb	to want to
+意思	noun,verb	meaning
+感冒	noun,verb	(common) cold
+慢慢	adverb	slowly
+成功	verb,noun,adjective	success
+所以	conjunction	so
+手机	noun	mobile phone
+手表	noun	wristwatch
+打开	verb	to open
+打扫	verb	to clean
+打电话	verb	to make a phone call
+报纸	noun	newspaper
+拉	verb	to pull
+接	verb	to receive
+推	verb	to push
+放	verb	to put
+放学	verb	school lets out
+教	verb,noun	to teach
+教室	noun	classroom
+散步	verb	to take a walk
+数	noun,verb	number
+数字	noun,adjective	number
+数学	noun	mathematics
+新年	noun	New Year
+方便	adjective,verb	convenient
+方向	noun	direction
+方法	noun	method
+旁边	noun	side
+旅游	verb,noun	to travel
+旅行	verb,noun	to travel
+日子	noun	day
+日文	noun	Japanese (language)
+日语	noun	Japanese language
+旧	adjective	old
+时间	noun	(duration of) time
+明	adjective,verb,noun	bright
+明天见	interjection,noun	see you tomorrow
+明白	verb,adjective	to understand
+星	noun	star
+星星	noun	(coll.) a star
+星期一	noun	Monday
+星期三	noun	Wednesday
+星期二	noun	Tuesday
+星期五	noun	Friday
+星期四	noun	Thursday
+星期日	noun	Sunday
+春	noun,adjective	spring (season)
+春节	noun	Spring Festival
+普通	adjective	ordinary
+月份	noun	month
+有一点	adverb	a little
+有一点儿	adverb	a little
+有人	pronoun,verb	someone
+有意思	adjective	interesting
+有时	adverb	sometimes
+有时候	adverb	sometimes
+有点	adverb	a little
+有点儿	adverb	a little
+有用	adjective	useful
+有的	pronoun	some (exist)
+服务	verb,noun	service
+服务员	noun	waiter
+机票	noun	plane ticket
+条	classifier,noun	long thin strip
+来到	verb	to arrive
+极了	particle	extremely
+查	verb	to check
+楼	noun,classifier	floor
+次	classifier,adjective	time
+歌	noun	song
+正在	adverb	in the process of
+步	noun,classifier	a step
+母亲	noun	mother
+每天	noun,adverb	every day
+水果	noun	fruit
+汤	noun	soup
+汽车	noun	car
+没事	verb,interjection	it's nothing
+没事儿	verb,interjection	it's nothing
+没关系	interjection	it doesn't matter
+法国	noun	France
+洗	verb	to wash
+洗手	verb	to wash one's hands
+洗手间	noun	toilet
+洗脸	verb	to wash the face
+活	verb,adjective,noun	to live
+活动	noun,verb,adjective	activity
+海	noun	sea
+消息	noun	(piece of) news
+游	verb	to swim
+游泳	verb,noun	to swim
+漂亮	adjective	beautiful
+火车	noun	train
+火车票	noun	train ticket
+灯	noun	lamp
+热	adjective,noun,verb	hot (of weather)
+热水	noun	hot water
+然后	conjunction,adverb	then
+照片	noun	photograph
+爱好	noun,verb	hobby
+爷爷	noun	grandpa
+牛奶	noun	cow's milk
+狗	noun	dog
+猫	noun,verb	cat
+班	noun,classifier	class
+生	verb,adjective,noun	to be born
+生日	noun	birthday
+生活	noun,verb	life
+生病	verb	to fall ill
+电	noun,verb	electricity
+电影	noun	movie
+电影票	noun	cinema ticket
+电影院	noun	cinema
+电脑	noun	computer
+男	adjective	(bound form) male
+男人	noun	a man
+男生	noun	boy
+男的	noun	man
+画画	verb	to draw

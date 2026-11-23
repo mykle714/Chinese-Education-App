@@ -111,7 +111,9 @@ export function towerPlatePressSx(tones: PlateTones, baseTransform = "") {
 /**
  * The plate's print — ink-set in the UI sans, bold, upper-case, tracked out. Its own
  * fragment so a control that takes only the slab (`towerPlatePressSx`) can still set its
- * type to match the plates: the study header's audio chip.
+ * type to match the plates. Also the lettering of the card face's sense picker sheet (its
+ * reading bands — features/flashcards/card/SensePicker.tsx →
+ * `SHEET_PRINT_SX`; docs/DEFINITION_CLUSTERS.md sense-picker row).
  */
 export const TOWER_PLATE_PRINT = {
     fontFamily: FONTS.sans,

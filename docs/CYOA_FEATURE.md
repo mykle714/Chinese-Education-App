@@ -2,7 +2,8 @@
 
 > **Status: BACKEND BUILT, LEARNER PAGES BUILT, EDITOR FIRST CUT (2026-11-21).** Shipped: the
 > shared box-less reading-area restyle (§ 4.3), migrations 196–199 (§ 6 — **on PPE
-> since 2026-11-21**, `0e9af62`; michael2 is PPE's one author, holding the two seed stories
+> since 2026-11-21**; 200–201, the story-commonality swap, **not yet**:
+> [STORY_COMMONALITY_DEPLOY_RUNBOOK.md](./STORY_COMMONALITY_DEPLOY_RUNBOOK.md)), `0e9af62`; michael2 is PPE's one author, holding the two seed stories
 > copied up from dev), the `/api/stories/*` backend (§ 6.3), the shared reading engine in
 > `src/reading/` (§ 4, 2026-11-21), the learner pages (§ 7.1: list, play page with the
 > Reader's reading box + rdb + eip, inspect mode's mini reader, choice stack, end panel, both
@@ -517,7 +518,7 @@ does, § 5.2).
 
 | Table | Columns (sketch) | Notes |
 |---|---|---|
-| `stories` ✅ approved | `id`, `language`, `title`, `iconId` (FK `icons8`), `authorUserId` (FK `users`), `startPassageId`, `publishedAt` (TIMESTAMPTZ NULL — NULL = unpublished; set to now() on every publish, replacing the earlier `published` boolean, owner's call 2026-11-20), `createdAt`, `updatedAt` | zh only for now |
+| `stories` ✅ approved | `id`, `language`, `title`, `iconId` (FK `icons8`), `authorUserId` (FK `users`), `startPassageId`, `publishedAt` (TIMESTAMPTZ NULL — NULL = unpublished; set to now() on every publish, replacing the earlier `published` boolean, owner's call 2026-11-20), `commonality` (SMALLINT 1–5, migration 200, § 6.2a; it replaced migration 196's `difficulty`, dropped by 201), `createdAt`, `updatedAt` | zh only for now |
 | `story_passages` ✅ approved | `id`, `storyId` (FK, cascade), `content` text, `createdAt`, `updatedAt`; later `name` (197), `position` (199, § 5.3) | an ending = a passage with no choices |
 | `story_choices` ✅ approved | `id`, `passageId` (FK, cascade), `position` 1–4, `label` text, `targetPassageId` (FK, nullable while drafting) | `UNIQUE(passageId, position)`, `CHECK (position BETWEEN 1 AND 4)` |
 | `story_progress` ✅ approved | `userId`, `storyId`, `currentPassageId` (FK `story_passages`), `updatedAt`; PK (`userId`, `storyId`) | resume point (§ 3.3); no row = start from the first passage; deleted when an ending is reached (§ 3.6). `currentPassageId` is `ON DELETE CASCADE`: if the author deletes that passage, the row goes and the learner restarts from the start, keeping endings found (owner's call 2026-11-20). No `path` column: choices are final, so there is no step-back to support |
@@ -530,27 +531,38 @@ yet — tracked in docs/DEFERRED_WORK.md; nothing to pull until the editor exist
 `story_progress`, `story_endings_found` and `story_passages_seen` are per-user and would not.
 
 ### 6.2a Story list card fields
-**Order** (owner's call 2026-11-20): by `difficulty` ascending (easiest first), then
-newest `publishedAt` first within a level. In-progress stories are not pinned.
+**Order** (owner's call 2026-11-20; re-keyed 2026-11-21): by `commonality` descending (most
+common = easiest first), then newest `publishedAt` first within a band; never-published
+drafts last. In-progress stories are not pinned. Code: `StoryDAL` → `listForViewer`.
 
 The learner list's card shows (owner's call 2026-11-20): **endings found x/y**
-(§ 3.5), an **in-progress marker** (a `story_progress` row exists), the **HSK level**, and
+(§ 3.5), an **in-progress marker** (a `story_progress` row exists), the story's
+**commonality** (the 5-circle `CommonalityMeter`, `src/components/ScoreMeters.tsx`), and
 the **author's name**. The author's name is joined from `users` via `authorUserId`. One
 list read returns all four per story.
 
-**The level is computed, at publish time** (owner's call 2026-11-20), and stored so the
-list read stays cheap. It is not author-picked. Column `stories."difficulty"` (approved)
-`SMALLINT` 1–6, NULL until first publish: named and scaled like det's `difficulty` (migrations 76/79/92 — the app's
-one integer scale, where zh 1–6 = HSK 1–6), so the UI labels it "HSK n" as it does
-elsewhere. Computed in `StoryService` on Publish: segment every passage and choice label
+**The commonality is computed, at publish time** (owner's call 2026-11-20), and stored so
+the list read stays cheap. It is not author-picked. Column `stories."commonality"` (approved
+2026-11-21, migration 200) `SMALLINT` 1–5, NULL until first publish: det `frequencyScore`'s
+scale (5 = everyday), drawn with the same meter the eip uses for a word. Computed in
+`StoryService` → `computeCommonality` on Publish: segment every passage and choice label
 with the server's gsa (`server/dal/shared/segmentString.ts` → `segmentWithDict`, already
-used by `TextService` for titles), look up each word's det `difficulty`, and take **the lowest level that covers 90% of
-the distinct words** (owner's call 2026-11-20) — so one rare word does not push an easy
-story to HSK 6. Distinct words, not occurrences: a word repeated twenty times counts once.
-Words with no det row or no `difficulty` (names, English, punctuation runs) are left out
-of the count. Re-publishing recomputes it. A det word re-levelled
-later does NOT move a published story until its next publish (unlike sort packs, which
+used by `TextService` for titles), give each distinct word the HIGHEST `frequencyScore`
+among its det rows, and take **the highest commonality that 90% of the distinct words
+reach** (`server/contracts/stories.ts` → `computeStoryCommonality`) — so one rare word does
+not drag an everyday story down to 1. Distinct words, not occurrences: a word repeated
+twenty times counts once. Words with no det row or no `frequencyScore` (names, English,
+punctuation runs) are left out of the count. Re-publishing recomputes it; so does
+`server/scripts/backfill/cyoa/backfill-story-commonality.ts` (`StoryService` →
+`recomputeCommonality`, which leaves `publishedAt` alone). A det word re-scored later does
+NOT move a published story until its next publish or backfill (unlike sort packs, which
 derive at read time — migration 177).
+
+**History.** Until 2026-11-21 this was an HSK level: `stories."difficulty"` 1–6 from det
+`difficulty`, the LOWEST level covering 90% of words, labelled "HSK n". It changed when
+word difficulty stopped being shown to learners anywhere (eip, acp). The commonality rule
+is the same 90% rule walked from the common end. Migration 205 (renumbered from 201) drops the old column (held
+back; [STORY_COMMONALITY_DEPLOY_RUNBOOK.md](./STORY_COMMONALITY_DEPLOY_RUNBOOK.md)).
 
 ### 6.2b Named endings
 Each ending passage carries an author-written name (owner's call 2026-11-20), shown on the
@@ -587,7 +599,7 @@ case is needed.
 ### 6.3 Backend (layers — docs/BACKEND_LAYERING.md) — BUILT 2026-11-20
 - **Contract** `server/contracts/stories.ts` — every wire type, the input caps
   (`STORY_MAX_CHOICES`, `STORY_PASSAGE_MAX_LENGTH`, …), and two pure rules both halves use:
-  `computeStoryDifficulty` (§ 6.2a) and `storyPublishWarnings` (the checks below). The client
+  `computeStoryCommonality` (§ 6.2a) and `storyPublishWarnings` (the checks below). The client
   imports this file directly — no hand-kept mirror.
 - **DAL** `server/dal/interfaces/IStoryDAL.ts` / `server/dal/implementations/StoryDAL.ts` —
   SQL only. The passage + choices read is one query (`PASSAGE_SELECT`, choices folded into a
@@ -597,7 +609,7 @@ case is needed.
 - **Service** `server/services/StoryService.ts` — visibility, the two write checks, the
   progression rules (`arrive`: an ending records + clears progress; a passage with only
   targetless choices is "To be continued" and keeps progress), choice/target validation,
-  start-passage delete refusal, publish (`computeDifficulty`). Malformed ids 404 before any
+  start-passage delete refusal, publish (`computeCommonality`). Malformed ids 404 before any
   query (`isUuid`).
 - **Controller** `server/controllers/StoryController.ts`; **routes**
   `server/routes/storyRoutes.ts`, mounted in `server/server.ts` behind the flag.
@@ -618,7 +630,7 @@ case is needed.
 | `PUT /api/stories/:id/passages/order` `{passageIds}` | own story | `StoryEditResponse` — exactly the story's passage ids in the new order, else 400 (`StoryService.reorderPassages`, § 5.3). Registered before `/:passageId` |
 | `PUT /api/stories/:id/passages/:passageId` `{content, name?, endingTitle?, choices[], expectedUpdatedAt?}` | own story | `StoryPassageEdit` — choices REPLACED. 409 when `expectedUpdatedAt` is sent and the passage was saved since (`StoryService.savePassage`) |
 | `DELETE /api/stories/:id/passages/:passageId` | own story | 204 (400 for the start passage) |
-| `POST /api/stories/:id/publish` | own story | `StoryPublishResponse` — `publishedAt`, `difficulty`, `warnings` |
+| `POST /api/stories/:id/publish` | own story | `StoryPublishResponse` — `publishedAt`, `commonality`, `warnings` |
 | `POST /api/stories/:id/unpublish` | own story | 204 |
 
 Status codes the client must handle: **404** "This story is no longer available" (unpublished
@@ -680,7 +692,7 @@ comes from `src/reading/` (§ 4).
 |---|---|---|
 | `src/api/stories.ts` | API | `fetchStories`, `fetchStoryPlay`, `chooseStoryChoice`, via `src/api/http.ts`; wire types from `server/contracts/stories.ts` |
 | `adventuresPaths.ts` | constants | `ADVENTURES_LIST_PATH`, `storyPlayPath` |
-| `AdventuresPage.tsx` | page | `/adventures`: a 2-column grid of 4:5 cards in the Reader grid's skin, in the server's order. A card shows the icon (green ramp tile), title, "HSK n · Endings f/t", and a corner chip: **Draft** (author's unpublished) or **In progress** |
+| `AdventuresPage.tsx` | page | `/adventures`: a 2-column grid of 4:5 cards in the Reader grid's skin, in the server's order. A card shows the icon (green ramp tile), title, the commonality meter + "Endings f/t", and a corner chip: **Draft** (author's unpublished) or **In progress** |
 | `useStoryPlay.ts` | client state | load `/play`, `choose()`: shows the prefetched `next[choiceId]` at once and confirms with `/choose` in the background (a pick before the confirmation lands is queued and replayed); on a 400 (stale choice) re-reads `/play` and shows a notice; on 404 → "no longer available"; on a network failure puts the previous passage back. Keeps `endingsFoundBefore` for the end panel's tick. The decisions are pure functions in `storyPlayModel.ts` |
 | `storyPlayModel.ts` | model (pure, tested) | `planPick` (queue / predict / wait), `planChooseFailure` (unavailable / re-read / revert), `shouldReplayQueued`, `endingsFoundBeforeFor` — tests in `__tests__/storyPlayModel.test.ts` |
 | `StoryPlayPage.tsx` | page | `/adventures/:id`: header with no title (Back → `location.state.from` when the opener set it, else the list), the top tab + rdb, the passage's reading box, the foot (notice, choice stack or end panel, bottom tab), the eip. Composes the engine: `useContentVocabulary` over passage + labels, two `useReadingText`s (passage, inspected label), `useReadingKeycap` on the active one, `useReadingVocabSync` |
@@ -760,7 +772,7 @@ This is **suppression, not a pause**: a running clock still drains its 15 s idle
 | Q-8 | Name, routes, entry point | **Adventures, `/adventures`, Menu popover row** (2026-11-20) |
 | Q-9 | Box-less Reader edit field: keep? | **keep** (2026-11-20) |
 | Q-10 | Inspect mode details (§ 3.2) | **main rdb; other buttons dim + lock; key swaps to ✕; passage selection parked and restored** (2026-11-20). **must close inspect mode before picking** |
-| Q-11 | Story difficulty rule | **90% coverage of distinct words, stored in `stories."difficulty"`** (2026-11-20, § 6.2a) |
+| Q-11 | Story difficulty rule | **90% coverage of distinct words, stored in `stories."difficulty"`** (2026-11-20, § 6.2a). **Superseded 2026-11-21:** the same rule on commonality, stored in `stories."commonality"` (migration 200) |
 | Q-12 | `story_passages."endingTitle"` | **approved** (2026-11-20) |
 | Q-12a | `story_passages.name` (author-only passage name, § 6.2d) | **approved** (2026-11-20) — nullable, max 200, shown in rows / target picker / incoming lines, saved with the draft |
 | Q-12b | `story_passages_seen` (§ 3.6b, pages found x/y on the end card) | **approved** (2026-11-21) — distinct passages ever served, across plays, out of the story's passage count; chosen over a per-run "pages read" count |

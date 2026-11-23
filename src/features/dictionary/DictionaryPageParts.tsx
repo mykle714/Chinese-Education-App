@@ -7,17 +7,18 @@
  * search state (useDictionarySearch) and hands these pieces what to show.
  *
  * Split out of DictionaryPage.tsx to keep that file about state and flow; nothing
- * here is used outside the Dictionary page.
+ * here is used outside the Dictionary page. The result slab, its group labels and the
+ * infinite-scroll tail moved to src/components/dictionarySearch/DictionaryResultParts.tsx
+ * on 2026-11-21, when the mini dictionary search (DictionaryWordSearch) adopted them.
  *
  * Every piece takes the page's time-of-day `look` (src/timeOfDay/tier2Look.ts → useTier2Look,
  * called once in DictionaryPage): white surfaces on a tinted ground by day, slate at night.
  *
  * Depended on by: docs/SHELF_REDESIGN.md § Part B entry 7 (Dictionary).
  */
-import { useEffect, useRef } from 'react';
-import { Box, keyframes } from '@mui/material';
+import { Box } from '@mui/material';
 import Icon from '../../components/Icon';
-import { Label } from '../../components/primitives/Label';
+import { DictionaryNoResultsWell } from '../../components/dictionarySearch/DictionaryResultParts';
 import { COLORS, FONTS, SIZE, WEIGHT } from '../../theme';
 import type { Tier2Look } from '../../timeOfDay/tier2Look';
 import { keycapPressSx } from '../../theme/keycapPress';
@@ -122,110 +123,8 @@ export function DictionaryAskAiRow({
 }
 
 /**
- * `.slab` — dictionary hits grouped on ONE white slab with hairlines between rows,
- * instead of a full-bleed list. Children are `DictionaryEntryRow variant="slab"`,
- * which draw their own between-row rules.
- */
-export function DictionaryResultSlab({ className, look, children }: { className: string; look: Tier2Look; children: React.ReactNode }) {
-    return (
-        <Box
-            className={`dictionary-result-slab ${className}`}
-            sx={{
-                backgroundColor: look.surface,
-                borderRadius: '18px',
-                // The app's outline (CLAUDE.md § Buttons & cards). The artboard drops it,
-                // relying on the tinted ground alone.
-                border: `1px solid ${look.outline}`,
-                overflow: 'hidden',
-            }}
-        >
-            {children}
-        </Box>
-    );
-}
-
-/**
- * `.sl` — a group label between slabs ("starts with “shí”", a segment's name, a match
- * kind), set in lowercase. `first` drops the top gap for a label directly under the meta row, which already
- * spaces itself.
- */
-export function DictionarySlabLabel({
-    className,
-    look,
-    first = false,
-    children,
-}: {
-    className: string;
-    look: Tier2Look;
-    first?: boolean;
-    children: React.ReactNode;
-}) {
-    return (
-        <Box className={className} sx={{ m: first ? '0 4px 10px' : '20px 4px 10px' }}>
-            {/* Lowercase, not the overline's usual caps, and at body size rather than the
-                overline's 10px — these name the result groups, so they read as section titles
-                (owner's calls 2026-10-29). The caps tracking (0.14em) is eased to 0.02em:
-                wide letter-spacing is a small-caps device and reads as gappy on lowercase. */}
-            <Label
-                color={look.muted}
-                sx={{ textTransform: 'lowercase', letterSpacing: '0.02em', fontSize: SIZE.body, fontWeight: WEIGHT.medium }}
-            >
-                {children}
-            </Label>
-        </Box>
-    );
-}
-
-const spin = keyframes`to { transform: rotate(360deg); }`;
-
-/**
- * `.more` — the infinite-scroll tail. Rendered while more pages exist; it calls
- * `onReach` when it scrolls into view (an IntersectionObserver on the page's own
- * scroll container — MobileTabScreen's `.mobile-tab-screen__scroll`, resolved via
- * `closest` so the observer watches the box that actually scrolls).
- *
- * The 300px root margin starts the next fetch before the learner hits the end, so
- * on a normal flick the spinner is rarely seen.
- */
-export function DictionaryLoadMore({ onReach, loading, look }: { onReach: () => void; loading: boolean; look: Tier2Look }) {
-    const sentinelRef = useRef<HTMLDivElement | null>(null);
-    // The latest callback, so the observer is not torn down on every render.
-    const onReachRef = useRef(onReach);
-    useEffect(() => { onReachRef.current = onReach; }, [onReach]);
-
-    useEffect(() => {
-        const sentinel = sentinelRef.current;
-        if (!sentinel) return;
-        const root = sentinel.closest('.mobile-tab-screen__scroll');
-        const observer = new IntersectionObserver(
-            (records) => { if (records.some((r) => r.isIntersecting)) onReachRef.current(); },
-            { root, rootMargin: '0px 0px 300px 0px' },
-        );
-        observer.observe(sentinel);
-        return () => observer.disconnect();
-    }, []);
-
-    return (
-        <Box
-            ref={sentinelRef}
-            className="dictionary-page__load-more"
-            sx={{ display: 'flex', justifyContent: 'center', py: 2 }}
-        >
-            <Icon
-                name="progress_activity"
-                size={22}
-                color={look.muted}
-                aria-label={loading ? 'Loading more results' : undefined}
-                sx={{ animation: `${spin} 1s linear infinite` }}
-            />
-        </Box>
-    );
-}
-
-/**
- * `.empty` — the no-results state as a RECESSED well (the mirror of a raised
- * keycap: an inset lip on top instead of a lip below), followed by the wide
- * "Ask AI" keycap when the query can be asked.
+ * `.empty` — the no-results state: the RECESSED well (DictionaryNoResultsWell, shared
+ * with the mini search), followed by the wide "Ask AI" keycap when the query can be asked.
  *
  * The artboard also lists "Closest matches" between the two; there is no
  * closest-match search on the server yet, so that block is deferred
@@ -244,38 +143,8 @@ export function DictionaryNoResults({
 }) {
     return (
         <Box className="dictionary-page__no-results">
-            <Box
-                className="dictionary-page__no-results-well"
-                sx={{
-                    mt: '6px',
-                    padding: '26px 22px',
-                    borderRadius: '18px',
-                    // The ground's own well (`--well` / `--wellSh`), tinted with the hour.
-                    backgroundColor: look.well,
-                    boxShadow: `inset 0 3px 0 ${look.wellShadow}`,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 1,
-                    textAlign: 'center',
-                }}
-            >
-                <Icon name="search_off" size={34} color={look.muted} />
-                <Box
-                    component="h3"
-                    className="dictionary-page__no-results-title"
-                    sx={{ m: 0, fontFamily: FONTS.sans, fontSize: '19px', fontWeight: WEIGHT.semibold, color: look.ink, overflowWrap: 'anywhere' }}
-                >
-                    Nothing for “{term}”
-                </Box>
-                <Box
-                    component="p"
-                    className="dictionary-page__no-results-hint"
-                    sx={{ m: 0, fontFamily: FONTS.sans, fontSize: SIZE.body, lineHeight: 1.4, color: look.ink2, textWrap: 'pretty' }}
-                >
-                    Check the spelling, or search without tone marks.
-                </Box>
-            </Box>
+            {/* The recessed well is shared with the mini search (DictionaryResultParts). */}
+            <DictionaryNoResultsWell className="dictionary-page__no-results-well" term={term} look={look} />
             {showAskAi && (
                 <Keycap
                     className="dictionary-page__ask-ai-wide"

@@ -212,6 +212,11 @@ export function useTowerStudy(opts: {
     onClimbedOut: (world: TowerWorldId, cards: number) => void;
     /** Each world's focus switch, passed to the studied session's host (`FlpTowerHost.focused`). */
     focusedWorlds: Record<TowerWorldId, boolean>;
+    /**
+     * Each world's off-cooldown band counts, passed to the studied session's host
+     * (`FlpTowerHost.readyBandCounts`, for the hint pawn's deck-review line). Undefined until loaded.
+     */
+    readyBandCounts: Record<TowerWorldId, Readonly<Record<string, number>> | undefined>;
 }): TowerStudy {
     const { unit, card } = opts;
     const [phase, setPhase] = useState<TowerStudyPhase>("idle");
@@ -579,6 +584,8 @@ export function useTowerStudy(opts: {
 
     // The studied world's focus switch, for its host (a dep below, so a flip re-makes the host).
     const studiedFocused = world !== null && opts.focusedWorlds[world];
+    // The studied world's ready band counts, for its host (a dep below, like the focus switch).
+    const studiedReadyCounts = world !== null ? opts.readyBandCounts[world] : undefined;
     const sessions: TowerStudySession[] = useMemo(
         () =>
             mountedWorlds.map((w) => {
@@ -600,12 +607,13 @@ export function useTowerStudy(opts: {
                     cardFrameRef,
                     plateTones: STUDY_PLATE_TONES,
                     focused: studiedFocused,
+                    readyBandCounts: studiedReadyCounts,
                 };
                 return { world: w, key, host };
             }),
         // `handlesFor` / `parkedHostFor` read refs and stable callbacks only.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [mountedWorlds, dealKeys, world, phase, studiedFocused]
+        [mountedWorlds, dealKeys, world, phase, studiedFocused, studiedReadyCounts]
     );
 
     const e = easeDive(u);

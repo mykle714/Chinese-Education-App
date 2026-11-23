@@ -48,16 +48,16 @@ interface UseCardDragReturn {
     isFlipped: boolean;
     setIsFlipped: (value: boolean) => void;
     // Full per-card reset (Side 1, not-yet-flipped, hints/shake/flip-lock cleared) for
-    // when the card under resetKey is REPLACED without resetKey changing — the
-    // working loop's fresh fetch, which always lands at index 0. Clearing only
-    // isFlipped there would leave hasFlippedCurrentCard stuck true from a tap on the
-    // card that was replaced: the new card then can't be flipped (so More Info stays
-    // greyed) yet can be swiped unseen.
+    // when the SAME card must start over without resetKey (its id) changing — the
+    // last card's incorrect return (useWorkingLoop → FlyOut.returnsAlone), a re-deal
+    // whose first card is the one already showing, a visit ending. Clearing only
+    // isFlipped there would leave hasFlippedCurrentCard stuck true: the card then
+    // can't be flipped (so More Info stays greyed) yet can be swiped unseen.
     resetCard: () => void;
     // Puts the (restored) card back on Side 2 — used by mark-undo, which brings a
     // card the user has already flipped back into view. Survives the per-card
     // reset effect that would otherwise force Side 1 (see restoreFlippedRef).
-    restoreFlipped: (targetResetKey: number) => void;
+    restoreFlipped: (targetResetKey: number | null) => void;
     hasFlippedCurrentCard: boolean;
     resetDragPosition: () => void;
     // Whether the swipe-direction hint labels (← Incorrect / Correct →) should be
@@ -131,8 +131,13 @@ export function classifyRelease(g: Pick<Gesture, "start" | "last" | "maxDist" | 
 export function useCardDrag(
     isAnimating: boolean,
     onDismiss: (direction: 'left' | 'right') => void,
-    // resetKey should change whenever a new card is shown so flip-tracking resets
-    resetKey: number = 0,
+    // The identity of the card on front — the flp passes its vocab id (null: no card).
+    // Flip-tracking resets whenever it changes. An id, NOT the card's position in the
+    // loop: a position can stay put while the card under it is swapped (a one-card
+    // loop's replacement lands at index 0 again — it arrived flipped, 2026-11-22), and
+    // move while the card stays (a removal behind the front re-anchors the index — it
+    // un-flipped the card being studied and dropped its drag).
+    resetKey: number | null = null,
     // The flip's duration — the lockout below lasts exactly this long. The flp's card is
     // the Deck Tower's, with its slower flip (TOWER_CARD_FLIP_MS).
     flipMs: number = TOWER_CARD_FLIP_MS,
@@ -150,13 +155,13 @@ export function useCardDrag(
     // audio over an English Side 1 (see FlashcardsLearnPage's "TTS narration"
     // effect). Scoping the flip to the card it was made on closes that window
     // without depending on effect ordering.
-    const flippedForKeyRef = useRef<number | null>(null);
+    const flippedForKeyRef = useRef<number | null | undefined>(undefined);
     const isFlipped = isFlippedRaw && flippedForKeyRef.current === resetKey;
 
     // Exposed setter — only ever called with `false` (a fresh deck fetch forcing
     // Side 1) or by revealAnswer with `true`, so it keys the flip like a tap does.
     const setIsFlipped = useCallback((value: boolean) => {
-        flippedForKeyRef.current = value ? resetKey : null;
+        flippedForKeyRef.current = value ? resetKey : undefined;
         hasFlippedRef.current = hasFlippedRef.current || value;
         if (value) setHasFlippedCurrentCard(true);
         setIsFlippedRaw(value);
@@ -180,11 +185,12 @@ export function useCardDrag(
 
     // Holds the resetKey that restoreFlipped() is restoring for, so the per-card
     // reset effect can land on Side 2 instead of Side 1 for exactly that card.
-    // Undo changes resetKey (currentIndex) and restores the flip in the same
-    // batch, so the reset effect always runs afterwards and would otherwise
-    // clobber the restored flip back to Side 1. Storing the key (rather than a
-    // bare flag) makes a stale value harmless.
-    const restoreFlippedForKeyRef = useRef<number | null>(null);
+    // Undo usually changes resetKey (the restored card's id) and restores the flip
+    // in the same batch, so the reset effect runs afterwards and would otherwise
+    // clobber the restored flip back to Side 1. When the restored card is the one
+    // already showing (no key change, so no effect), restoreFlipped clears it itself.
+    // `undefined` = no restore pending (null is a real key: no card).
+    const restoreFlippedForKeyRef = useRef<number | null | undefined>(undefined);
 
     // The press in progress, or null. See `Gesture`.
     const gestureRef = useRef<Gesture | null>(null);
@@ -216,8 +222,21 @@ export function useCardDrag(
     // card the user already flipped is brought back into view (mark-undo): the
     // user has seen the answer, so re-hiding it behind Side 1 would be wrong —
     // and hasFlippedCurrentCard must be true or the card couldn't be swiped again.
-    const restoreFlipped = useCallback((targetResetKey: number) => {
-        restoreFlippedForKeyRef.current = targetResetKey;
+    const restoreFlipped = useCallback((targetResetKey: number | null) => {
+        // The restored card is already the one showing (e.g. a one-card loop's
+        // incorrect return, undone): resetKey will not change, so no reset effect is
+        // coming to consume the marker — clear what it would have cleared, now.
+        // Otherwise a stale marker would later spare that card's next arrival its reset.
+        if (liveRef.current.resetKey === targetResetKey) {
+            restoreFlippedForKeyRef.current = undefined;
+            setShowSwipeHint(false);
+            setShowTapToFlipHint(false);
+            setShakeNonce(0);
+            flipLockRef.current = false;
+            if (flipLockTimer.current) clearTimeout(flipLockTimer.current);
+        } else {
+            restoreFlippedForKeyRef.current = targetResetKey;
+        }
         flippedForKeyRef.current = targetResetKey;
         hasFlippedRef.current = true;
         setIsFlippedRaw(true);
@@ -245,10 +264,10 @@ export function useCardDrag(
     // loop can run it when it swaps the card WITHOUT changing resetKey (see the
     // UseCardDragReturn docblock). Refs + state setters only, so its identity is stable.
     const resetCard = useCallback(() => {
-        restoreFlippedForKeyRef.current = null;
+        restoreFlippedForKeyRef.current = undefined;
         hasFlippedRef.current = false;
         setHasFlippedCurrentCard(false);
-        flippedForKeyRef.current = null;
+        flippedForKeyRef.current = undefined;
         setIsFlippedRaw(false);
         setShowSwipeHint(false);
         setShowTapToFlipHint(false);
@@ -266,7 +285,7 @@ export function useCardDrag(
         if (restoreFlippedForKeyRef.current === resetKey) {
             // Undo restore: restoreFlipped already put this card on Side 2; only the
             // transient hints and any flip lock need clearing.
-            restoreFlippedForKeyRef.current = null;
+            restoreFlippedForKeyRef.current = undefined;
             setShowSwipeHint(false);
             setShowTapToFlipHint(false);
             setShakeNonce(0);

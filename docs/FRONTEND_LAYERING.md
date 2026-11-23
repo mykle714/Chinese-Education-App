@@ -62,7 +62,7 @@ neither could change it safely. It now lives in `src/cardIcons/editor/`.
 **Applied again, 2026-09-04.** `SheetPanel` — the modal/persistent bottom-sheet chrome —
 sat in the same folder while the old Home page's card sheets and the acp already used it. That was still
 *within* the flashcards feature, so it was legal; it stopped being legal the moment
-`src/components/CompareSheet.tsx` (mounted by the dictionary cdp, deleted 2026-11-10; today by the saved-card cdp) needed it. It moved to
+`src/components/CompareSheet.tsx` (mounted by the dictionary cdp, deleted 2026-11-10; the Compare panel itself moved into the flashcards feature as `features/flashcards/compare/CompareSheet.tsx` on 2026-11-21, every host of it being in that feature) needed it. It moved to
 `src/components/sheet/`, taking the four styled surfaces it renders
 (`EicScrim`, `InfoSheetContainer`, `InfoSheetGrabber`, `SheetHeaderSlot`) out of
 `FlashcardsLearnPage/styled.ts` and into `src/components/sheet/sheetStyled.ts` — they had

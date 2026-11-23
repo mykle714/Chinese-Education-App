@@ -15,9 +15,11 @@ One registry file switches whole features, and individual games, on and off:
 | `superpositionStoredGroups` | A data path, not a feature: Superposition reads the AI-authored tile groups stored on det instead of computing them ([SUPERPOSITION_GAME.md](./SUPERPOSITION_GAME.md) § Stored groups) | ON (since 2026-11-03) |
 | `standaloneGames` | The five routed games' own pages (`/games/bubble-match`, `/word-search`, `/match-speed`, `/hydra-bubbles`, `/bucket-drop`). Client-only; their flp breaks are not gated ([GAMES_FEATURE.md](./GAMES_FEATURE.md)) | **OFF** (since 2026-11-06) |
 | `cyoa` | Adventures — branching stories + the author editor ([CYOA_FEATURE.md](./CYOA_FEATURE.md)). Learner pages partly built (plain-text passages, no editor yet) | ON (since 2026-11-20; needs migration 196) |
+| `voiceAssistant` | Voice Tutor — the spoken Mandarin tutor ([VOICE_ASSISTANT.md](./VOICE_ASSISTANT.md)). Built end to end; needs migration 202 + `VOICE_AI_API_KEY` | OFF (default per VOICE_ASSISTANT.md § 10) |
+| `sentenceTiles` | Sentence Tiles — the two-player correspondence word-tile game judged by AI ([SENTENCE_TILES_GAME.md](./SENTENCE_TILES_GAME.md)). Needs migration 204 + `SENTENCE_TILES_AI_API_KEY`; feature testers only while testing | ON (testers only) |
 | `GAME_FLAGS['<gameId>']` | One switch per game, eight of them ([GAMES_FEATURE.md](./GAMES_FEATURE.md)); `writing-grid` also gates the server's `/api/writingGrid/*` router (`server/server.ts`) | all ON |
 
-**`studyChallenge`, `community` and `standaloneGames` are the only things currently switched off.** Every other
+**`studyChallenge`, `community`, `standaloneGames` and `voiceAssistant` are the only things currently switched off.** Every other
 flag exists so it *can* be switched off, and documents what would go away if it were.
 
 Before this, the app had no flag mechanism at all — CLAUDE.md records the previous house
@@ -175,6 +177,35 @@ migration 196 first**, or every `/api/stories` call 500s on the missing tables.
 |---|---|
 | Server | `server/server.ts` → `if (isFeatureEnabled('cyoa')) app.use(storyRoutes)`. **No second entry point**: every story read and write is in `server/routes/storyRoutes.ts`. users."isAuthor" is read only by `StoryDAL.isAuthor` (not by `UserDAL.findById`), so nothing outside the router touches the new schema |
 | Client | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` drops `/adventures` and `/adventures/:id`; `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` hides the **Adventures** row. No other entry point: nothing else links to `/adventures`, and `src/api/stories.ts` is called only from `src/features/cyoa/` |
+
+### 2j. `voiceAssistant` — OFF
+
+Voice Tutor ([VOICE_ASSISTANT.md](./VOICE_ASSISTANT.md)). Built end to end (2026-11-21): the
+`/api/voice/*` REST router, the app's only WebSocket, migration 202, the `/voice` pages and
+the live sheet. OFF by default per VOICE_ASSISTANT.md § 10 until the owner has tried it.
+**A deploy with the flag on must ship migration 202 first** and set `VOICE_AI_API_KEY` on the
+backend (without the key the routes mount but report the tutor unavailable). See
+[VOICE_ASSISTANT_DEPLOY_RUNBOOK.md](./VOICE_ASSISTANT_DEPLOY_RUNBOOK.md).
+
+| Layer | Site |
+|---|---|
+| Server | `server/server.ts` → `if (isFeatureEnabled('voiceAssistant')) app.use(voiceRoutes)` AND, after `app.listen`, `if (isFeatureEnabled('voiceAssistant')) attachVoiceSocket(httpServer)` — the **second entry point**: the WebSocket on `/api/voice/session` is not an Express route, so the router gate alone would leave it open. `server/routes/voiceRoutes.ts` (and therefore `ws` / `@google-cloud/speech`) is still IMPORTED with the flag off, so the backend container needs those packages either way |
+| Client | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` drops `/voice` and `/voice/:sessionId`; `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` hides the **Voice Tutor** row (the only entry point, Q2). `src/api/voice.ts` and `src/api/voiceSocket.ts` are called only from `src/features/voice/` |
+
+### 2k. `sentenceTiles` — ON (feature testers only)
+
+Sentence Tiles ([SENTENCE_TILES_GAME.md](./SENTENCE_TILES_GAME.md)), built 2026-11-22. The flag is
+ON, but the game is **testing-only** by a second, per-user gate: `SentenceTilesService.assertTester`
+refuses (403) any account without `users."isFeatureTester"` on every endpoint, and the Menu row
+also requires testing features switched on. Opening it to everyone means removing that check and
+the `testingFeatures` condition on the row. **A deploy must ship migration 204** (additive) and set
+`SENTENCE_TILES_AI_API_KEY`; without the key the routes mount and new lines answer "judging is
+unavailable".
+
+| Layer | Site |
+|---|---|
+| Server | `server/server.ts` → `if (isFeatureEnabled('sentenceTiles')) app.use(sentenceTilesRoutes)`. **No second entry point**: every endpoint is in `server/routes/sentenceTilesRoutes.ts`, and nothing else reads the four `sentence_tile_*` tables |
+| Client | `src/routes/routeMeta.ts` → `FLAGGED_OFF_PATHS` drops `/sentence-tiles` and `/sentence-tiles/:gameId`; `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` hides the **Sentence Tiles** row (the only entry point). `src/api/sentenceTiles.ts` is called only from `src/features/sentenceTiles/` |
 
 ---
 

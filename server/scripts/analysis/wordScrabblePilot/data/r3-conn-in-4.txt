@@ -1,0 +1,211 @@
+病	noun,verb	illness
+白天	noun	daytime
+白色	noun,adjective	white
+看一看	verb	to have a look
+看不见	verb	cannot see
+看书	verb	to read
+看医生	verb	to visit a doctor
+真	adjective,adverb	real
+着	particle,verb,noun	-ing (ongoing)
+知	verb	to know
+知道了	interjection	Got it!
+短	adjective,noun,verb	short
+石头	noun	stone
+礼物	noun	gift
+票	noun,classifier	ticket
+离	verb,preposition	to leave
+离开	verb	to leave
+秋天	noun	autumn
+窗户	noun	window
+站起来	verb	to stand up
+笔	noun,classifier	pen
+等	verb,particle	to wait for
+等一下	verb,adverb	to wait a moment
+简单	adjective	simple
+算	verb	to calculate
+糖	noun	sugar
+累	adjective,verb,noun	tired
+纸	noun,classifier	paper
+练	verb	to practice
+练习	verb,noun	to practice
+结婚	verb	to get married
+结果	noun,adverb,verb	result
+美	adjective,noun,verb	beautiful
+老虎	noun	tiger
+考试	noun,verb	exam
+而	conjunction	and
+肉	noun,adjective	meat
+肚子	noun	belly
+背	noun,verb,adjective	back
+腿	noun	leg
+自行车	noun	bicycle
+色	noun	(coll.) color
+花钱	verb	to spend money
+英国人	noun	British person
+草	noun,adjective	grass
+药	noun,verb	medicine
+葡萄	noun	grape
+蓝	adjective,noun	blue
+蛋	noun	egg
+行	verb,adjective,noun,classifier	all right
+表	noun,verb	watch (timepiece)
+裙子	noun	skirt
+裤子	noun	pants
+见到	verb	to see
+见面	verb	to meet
+计划	noun,verb	plan
+记	verb,noun,classifier	to remember
+记住	verb	to remember
+记得	verb	to remember
+许多	adjective,numeral	many
+词	noun	word
+试一试	verb	to have a try
+话	noun	words
+说说	verb	to say something
+读	verb	to read
+贵	adjective	expensive
+走路	verb	to walk
+起来	verb,particle	to get up
+足球	noun	soccer
+跑	verb	to run
+跑步	verb,noun	to run
+路	noun,classifier	road
+跳	verb	to jump
+跳舞	verb	to dance
+身体	noun	body
+车子	noun	vehicle
+车票	noun	bus or train ticket
+边	noun,adverb	side
+过去	verb,noun,particle	(in the) past
+过来	verb,particle	to come over
+运动	noun,verb	sports
+运动会	noun	sports competition
+运动员	noun	athlete
+近	adjective,verb	near
+还有	conjunction,verb	in addition
+进去	verb	to go in
+进来	verb	to come in
+远	adjective,adverb	far
+里边	noun	inside
+错	adjective,noun,verb	wrong
+镜子	noun	mirror
+长大	verb	to grow up
+门口	noun	doorway
+问题	noun	problem
+间	classifier,noun	between
+阳光	noun,adjective	sunshine
+雨伞	noun	umbrella
+雪	noun,verb	snow
+非常	adverb,adjective	very
+非常多	adjective	very many
+面	noun,classifier,adjective	face
+面包	noun	bread
+面条	noun	noodles
+鞋子	noun	shoe
+颜色	noun	color
+风	noun	wind
+飞机	noun	airplane
+食物	noun	food
+餐厅	noun	restaurant
+马	noun	horse
+鸟	noun,verb	bird
+鸡	noun	chicken
+鸡蛋	noun	(chicken) egg
+黄色	adjective,noun	yellow
+一下儿	numeral	a bit
+一下子	adverb	all at once
+一个半	numeral	one and a half
+一会	noun,numeral	a moment
+一共	adverb	altogether
+一半	numeral,noun	half
+一套	numeral,noun	a set
+一家	noun,numeral	the whole family
+一家人	noun	the whole family
+一对	noun	pair
+一对儿	noun	a pair
+一层	numeral,noun	layer
+一年多	noun	more than a year
+一排	numeral	row
+一点点	numeral	a little bit
+一直	adverb	continuously
+一眼	numeral,noun	a glance
+一种	numeral	one kind of
+一般	adjective,adverb	ordinary
+一部分	noun	part of
+三分之一	numeral	one third
+上下	noun,verb	top and bottom
+上下班	verb	to and from work
+上个	adjective	last (week etc)
+上山	verb	to climb a hill
+上方	noun	place above (it)
+上海	noun	Shanghai
+上班	verb	to go to work
+上班时间	noun	working hours
+上网	verb	to go online
+上船	verb	to get on the boat
+下一步	noun	the next step
+下半年	noun	second half of year
+下山	verb	to go down a hill
+下方	noun,verb	below
+下棋	verb	to play chess
+下车	verb	to get off (vehicle)
+下雪	verb	to snow
+下飞机	verb	to get off a plane
+不一定	adverb	not necessarily
+不了	verb,interjection	no thanks
+不到	verb	less than
+不可能	adjective	impossible
+不同	adjective	different
+不在	verb	not to be present
+不大	adverb	not very
+不少	adjective,numeral	many
+不方便	adjective,noun	inconvenient
+不正常	adjective	abnormal
+不满意	adjective	dissatisfied
+不然	conjunction,adverb	otherwise
+不管	conjunction,verb	no matter
+不见	verb	to have disappeared
+不见了	verb	to have disappeared
+世界	noun	world
+世界地图	noun	world map
+东北	noun	Northeast China
+东面	noun	east side
+两千年	noun	2000 years
+两国	noun	the two countries
+两边	noun	both sides
+个人	noun,pronoun	individual
+个子	noun	height
+中号	adjective,noun	medium-sized
+中学生	noun	middle schooler
+中式	noun,verb	Chinese style
+中心	noun	center
+中间	noun	in the middle
+为	verb,preposition	to do
+为了	preposition,conjunction	in order to
+主人	noun	owner
+主意	noun	idea
+主要	adjective,adverb	main
+之内	noun	inside
+之后	preposition,adverb	after
+之间	noun	between
+乡	noun	countryside
+书本	noun	books in general
+了不起	adjective	amazing
+了解	verb,noun	to understand
+事实	noun	fact
+二号	noun	2nd day of the month
+云	noun	cloud
+五一	noun	5-1 (May 1st)
+交通	noun	traffic
+亲爱	adjective	dear
+人人	pronoun,noun	everyone
+人家	pronoun,noun	other people
+人民	noun	the people
+从不	adverb	never
+从来没	adverb	have never
+付钱	verb	to pay
+代	noun,verb	generation
+代表	noun,verb	representative
+以上	noun	that amount or more
+以下	noun	the following
+以为	verb	to think

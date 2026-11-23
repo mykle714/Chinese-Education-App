@@ -114,7 +114,9 @@ export interface IOnDeckVocabDAL {
   /**
    * Every flp candidate in `category` on `world`'s bar (`null` = every band), sorted or
    * lent, newest first with own cards ahead of lent. Deliberately UNLIMITED — see
-   * `OnDeckVocabService.fetchFlpCandidates`.
+   * `OnDeckVocabService.fetchFlpCandidates`. On `writing` the candidates are the writing
+   * deck's single characters, which may include VIRTUAL rows (negative ids, no vet row
+   * yet — dal/shared/writingDeck.ts); `lentIds` is ignored there.
    */
   findFlpCandidates(
     userId: string,
@@ -127,6 +129,14 @@ export interface IOnDeckVocabDAL {
       scope?: CollectionFilter | null;
     }
   ): Promise<VocabEntry[]>;
+
+  /**
+   * Turn the VIRTUAL writing-deck ids in `ids` (negative — a deck character with no vet
+   * row yet) into real hidden character rows, creating them; real ids pass through, order
+   * kept. Called on the cards a writing deal actually selects, so marks land on vet rows
+   * (dal/shared/writingDeck.ts → `materializeWritingIds`).
+   */
+  materializeWritingIds(userId: string, ids: number[]): Promise<number[]>;
 
   /** The rows behind named vet ids, any bucket, in arbitrary order. DICT-joined. */
   findRowsByIds(userId: string, language: string, ids: number[]): Promise<VocabEntry[]>;
@@ -152,7 +162,10 @@ export interface IOnDeckVocabDAL {
     userId: string, language: string, categories: string[], world: MasteryWorldId
   ): Promise<Array<{ category: string; n: number }>>;
 
-  /** `id` + mark history only, for the ready counts (writing flp: words it can deal). */
+  /**
+   * `id` + mark history only, for the ready counts. On `writing` the rows are the writing
+   * deck (dal/shared/writingDeck.ts), virtual row-less characters included (negative ids).
+   */
   findReadinessRows(
     userId: string, language: string, world: MasteryWorldId, onlyIds?: number[]
   ): Promise<FlpReadinessRow[]>;

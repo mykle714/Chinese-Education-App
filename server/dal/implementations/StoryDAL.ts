@@ -12,7 +12,7 @@ import type { StoryListItem } from '../../contracts/stories.js';
 
 /** Every column of a `stories` row, in StoryRow's order. */
 const STORY_COLUMNS = `id, language, title, "iconId", "authorUserId", "startPassageId",
-  "publishedAt", difficulty, "createdAt", "updatedAt"`;
+  "publishedAt", commonality, "createdAt", "updatedAt"`;
 
 /**
  * A passage with its choices folded into one jsonb array (ordered by position), so the
@@ -73,7 +73,7 @@ export class StoryDAL implements IStoryDAL {
     // a passage is an ending when no story_choices row hangs off it.
     const { rows } = await this.run<StoryListItem>(undefined, (c) =>
       c.query(
-        `SELECT s.id, s.title, s."iconId", s.difficulty, s."publishedAt",
+        `SELECT s.id, s.title, s."iconId", s.commonality, s."publishedAt",
                 COALESCE(NULLIF(u.name, ''), u.username) AS "authorName",
                 (s."authorUserId" = $1) AS "isOwn",
                 (SELECT COUNT(*)::int FROM story_endings_found f
@@ -88,7 +88,7 @@ export class StoryDAL implements IStoryDAL {
          LEFT JOIN users u ON u.id = s."authorUserId"
          WHERE s.language = $2
            AND (s."publishedAt" IS NOT NULL OR s."authorUserId" = $1)
-         ORDER BY s.difficulty ASC NULLS LAST,
+         ORDER BY s.commonality DESC NULLS LAST,
                   s."publishedAt" DESC NULLS FIRST,
                   s."createdAt" DESC`,
         [viewerId, language]
@@ -386,15 +386,29 @@ export class StoryDAL implements IStoryDAL {
     return rowCount > 0;
   }
 
-  async publish(storyId: string, difficulty: number | null): Promise<string> {
+  async publish(storyId: string, commonality: number | null): Promise<string> {
     const { rows } = await this.run<{ publishedAt: string }>(undefined, (c) =>
       c.query(
-        `UPDATE stories SET "publishedAt" = now(), difficulty = $2, "updatedAt" = now()
+        `UPDATE stories SET "publishedAt" = now(), commonality = $2, "updatedAt" = now()
          WHERE id = $1 RETURNING "publishedAt"`,
-        [storyId, difficulty]
+        [storyId, commonality]
       )
     );
     return rows[0]?.publishedAt;
+  }
+
+  async setCommonality(storyId: string, commonality: number | null): Promise<void> {
+    this.requireId(storyId, 'storyId');
+    await this.run(undefined, (c) =>
+      c.query(`UPDATE stories SET commonality = $2 WHERE id = $1`, [storyId, commonality])
+    );
+  }
+
+  async listPublishedStoryIds(): Promise<string[]> {
+    const { rows } = await this.run<{ id: string }>(undefined, (c) =>
+      c.query(`SELECT id FROM stories WHERE "publishedAt" IS NOT NULL ORDER BY "createdAt"`)
+    );
+    return rows.map((row) => row.id);
   }
 
   async unpublish(storyId: string): Promise<boolean> {

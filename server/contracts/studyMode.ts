@@ -9,8 +9,9 @@ import type { MasteryWorldId } from './wire.js';
  *     reading — the READING flp (docs/READING_WRITING_CENTERS.md § Phase 4): hanzi-only
  *               question face, every mark a reading mark. zh only.
  *     writing — the WRITING flp (docs/WRITING_PRACTICE_REWORK.md § 3): the card is drawn
- *               by hand at a level set by its averaged writing mastery; every mark a
- *               per-character writing mark. zh only, 1–4-character words.
+ *               by hand at a level set by its writing mastery; every mark a
+ *               per-character writing mark. zh only, single characters (the writing
+ *               deck, server/dal/shared/writingDeck.ts, since 2026-11-22).
  *
  * Every flp session is Study Mix (the 1-2-2-5 shape, server/contracts/studyMix.ts). The
  * second axis this file used to carry — the Review / Challenge study MODES (`?mode=`) —

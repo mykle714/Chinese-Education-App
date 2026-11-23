@@ -29,16 +29,16 @@ export type SortBucket = Exclude<DiscoverSortBucket, "skip">;
 
 /**
  * Initial pack-queue fill for Add Cards. `level` is the requested difficulty (the
- * client-tracked auto target, or the user's pin); `manual` marks the level as pinned
- * rather than adaptive. Omitting `level` asks the server for a cold-start seed.
+ * client-tracked adaptive target). Omitting `level` asks the server for a cold-start
+ * seed. (The server still accepts `mode: "manual"` for a pinned level; no client sends
+ * it since the level pill was removed 2026-11-21.)
  */
 export function fetchStarterPacks(
     language: Language,
     level: number | null,
-    manual: boolean,
 ): Promise<DiscoverFetchResponse> {
     return apiGet<DiscoverFetchResponse>(`/api/starterPacks/${language}`, {
-        params: { level, ...(manual ? { mode: "manual" } : {}) },
+        params: { level },
     });
 }
 
@@ -47,13 +47,11 @@ export function fetchNextPack(input: {
     language: Language;
     excludePackKeys: string[];
     level: number | null;
-    manual: boolean;
 }): Promise<DiscoverNextPackResponse> {
     return apiPost<DiscoverNextPackResponse>("/api/starterPacks/nextPack", {
         language: input.language,
         excludePackKeys: input.excludePackKeys,
         ...(input.level != null ? { level: input.level } : {}),
-        ...(input.manual ? { mode: "manual" } : {}),
     });
 }
 

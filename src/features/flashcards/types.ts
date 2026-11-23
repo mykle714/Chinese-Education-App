@@ -40,11 +40,37 @@ export interface MarkCardResult {
 // Side 2 always shows both languages.
 export type SideOneLanguage = 'en' | 'zh';
 
-export interface LastMarkUndoSnapshot {
-    cardId: number;
+/**
+ * The server's key for one written mark — what `POST /api/flashcards/undoLastMark` needs
+ * to revert it.
+ */
+export interface WrittenMarkKey {
     markTimestamp: string;
-    markType: MarkType;
     displacedMarks: ReviewMark[];
+}
+
+/**
+ * Everything needed to undo the flp's last swipe. It is taken AT THE SWIPE, not when the
+ * mark's reply comes back, so the undo button lights up at once (docs/FLP_CARD_GESTURES.md
+ * § "Undo"). The server half of the key arrives later, through `markWritten`.
+ *
+ * Used by: src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts (built in
+ * `handleCardDismiss`, consumed by `handleUndoLastMark`), TowerStudyHeader (enables the button).
+ */
+export interface LastMarkUndoSnapshot {
+    /**
+     * Set by the undo; read by this swipe's mark reply. A reply landing after the undo
+     * must leave the loop alone (no refill patch over the restored card, no wind-down).
+     */
+    undone: { current: boolean };
+    cardId: number;
+    markType: MarkType;
+    /**
+     * Resolves once the mark's reply is in: the key to revert, or null when the server
+     * wrote nothing (a suppressed mark, or a request that failed after its retries) —
+     * then there is nothing to revert server-side and the undo is local only.
+     */
+    markWritten: Promise<WrittenMarkKey | null>;
     workingLoop: VocabEntry[];
     currentIndex: number;
     currentSideOneLanguage: SideOneLanguage;

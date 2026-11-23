@@ -16,7 +16,7 @@ export function superpositionBreakRequest(context: FlpBreakContext): WritingGrid
  */
 export const SUPERPOSITION_BREAK: FlpBreakGame<SuperpositionWord[]> = {
     gameId: "superposition",
-    rulesLine: "Stack the scattered strokes back into their characters.",
+    rulesLine: "Drag the strokes up from the tray and stack them into their characters.",
     prefetch: async (_candidate, context) => {
         const words = await dealSuperposition(superpositionBreakRequest(context));
         await Promise.all(words.flatMap((word) => word.characters.map(({ char }) => loadGlyph(char))));

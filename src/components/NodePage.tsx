@@ -89,6 +89,10 @@ interface NodePageProps {
     // is a ceiling on its descendants, so without this a sideways swipe inside the page
     // does nothing at all. See the note on MobileTabScreen's ScrollArea.
     horizontalPan?: boolean;
+    // Footerless route: no bottom clearance for the slab. See MobileTabScreen.footerless.
+    footerless?: boolean;
+    // Hide the page's scrollbar (it still scrolls). See MobileTabScreen.hideScrollbar.
+    hideScrollbar?: boolean;
     // Wrap the page header in this page's own chrome — see MobileTabScreen.wrapHeader.
     // /arena uses it to draw the header inside its full-bleed division banner.
     wrapHeader?: (header: ReactNode) => ReactNode;
@@ -126,6 +130,8 @@ const NodePage: React.FC<NodePageProps> = ({
     topFade,
     bottomFadeBand,
     horizontalPan,
+    footerless,
+    hideScrollbar,
     wrapHeader,
     overlay,
     children,
@@ -162,6 +168,8 @@ const NodePage: React.FC<NodePageProps> = ({
                 topFade={topFade}
                 bottomFadeBand={bottomFadeBand}
                 horizontalPan={horizontalPan}
+                footerless={footerless}
+                hideScrollbar={hideScrollbar}
                 wrapHeader={wrapHeader}
             >
                 {children}

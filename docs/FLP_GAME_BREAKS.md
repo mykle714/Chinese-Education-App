@@ -38,10 +38,23 @@ card 1 … card 14 │ card 15 │ BREAK CARD │ (game) │ card 16 … card 30
 ```
 
 - **Counter.** `cardsSinceBreak` counts every dismiss: left, right, the wflp tap, and
-  cooldown-suppressed marks. Undo takes one back. It is per page visit (reset on
-  remount) and resets to 0 when a break ends, **played or skipped**. The counts come
-  from `useWorkingLoop`'s `onDismissed` / `onUndone` callbacks, which fire only for a
-  dismiss that actually advanced the stack and an undo that actually restored a card.
+  cooldown-suppressed marks. Undo takes one back. It resets to 0 when a break ends,
+  **played or skipped**. The counts come from `useWorkingLoop`'s `onDismissed` /
+  `onUndone` callbacks, which fire only for a dismiss that actually advanced the stack and
+  an undo that actually restored a card.
+- **The count persists** across Deck Tower visits, reloads and app restarts: it is stored
+  in localStorage per **(user, language, world)** (`flp.breakProgress:<user>:<lang>:<world>`),
+  so core, reading and writing each keep their own count. It is written on every change,
+  in the form the next session resumes from (`progressToResume`):
+  - studying → `cardsSinceBreak % BREAK_INTERVAL`;
+  - **mid-break** (`MID_BREAK_PHASES`: the break's card is up, or the game is growing or
+    mid-run) → `BREAK_INTERVAL − 1`, so the next session's first card is the last before
+    the break and swiping it brings the break back — re-planned, so possibly another game;
+  - from `shrinking` on (the run is over), or Skip → the break is spent, 0.
+
+  A parked visit (`reset`) keeps the count in the same way. No user → nothing is stored;
+  a missing or malformed value reads as 0. Not written while a tester's pin is honoured
+  (§ 10): a pinned visit's `reset` puts the stored, pre-pin count back.
 - **Break due** when `cardsSinceBreak % BREAK_INTERVAL === BREAK_INTERVAL − 1`
   (`BREAK_INTERVAL = 15`), **and** there is a candidate game (§ 3), **and** the loop
   holds ≥ 2 cards (a 1-card loop is about to run dry), **and** the card editor is
@@ -59,7 +72,8 @@ card 1 … card 14 │ card 15 │ BREAK CARD │ (game) │ card 16 … card 30
   as usual, so when the break ends the front card is simply `workingLoop[currentIndex]`.
 
 Code: `src/features/flashcards/FlashcardsLearnPage/gameBreak/useGameBreak.ts` →
-`useGameBreak`, `BREAK_INTERVAL`; `useWorkingLoop.ts` → `onDismissed` / `onUndone`;
+`useGameBreak`, `BREAK_INTERVAL`, `MID_BREAK_PHASES`, `progressToResume`;
+`gameBreak/breakProgressStore.ts` → `readBreakProgress` / `writeBreakProgress`; `useWorkingLoop.ts` → `onDismissed` / `onUndone`;
 `FlashCardSection.tsx` → `gameBreak` prop, `holdOutgoing`; `FlashcardsLearnPage.tsx`
 (the wiring, `breakCountersRef`).
 
@@ -77,7 +91,7 @@ Leave before a deal) goes `playing → leaving → cards`.
 | **growing** | Play: `GameBreakArea` portals to the phone frame (`useScreenOverlayHost`), above the flp header and the footer, below a game's own popups. A white circle grows out of the screen's middle (`BREAK_AREA_MOTION.growMs`, a `transform` so the compositor runs it) until it passes the corners. The break's card holds still under it (`stackHold: "growing"`), so it goes when it is covered, not at the tap. The break's **header row** (`GameBreakChrome`: Leave, the game's name, the audio chip, the flame) is up from the first frame, at the study header's spots, and the study header steps aside (`TowerStudyHeader` `hidden={gameBreak.areaMounted}`). Its ink turns from the sky's white to the ground's dark exactly where the circle passes under each control (§ 6 "the header row"). Leave here cancels the break: the circle freezes part-way and falls away with the area (`leaving`). |
 | **playing** | The Stage mounts on the finished circle: the area is white from here on, and the game IS the screen (`GameBreakFrame`). The header row is already there; only the game's content arrives, fading in (`GameFrame` / `GameCentered` under a host, `GAME_FRAME_HOST_FADE_IN_MS`; Word Search's letters at random delays, `staggerFadeIn`; Match Speed's cards at their own random delays). There is no header bar: the game sits straight on the white ground under the row. Leave on a live run ENDS it (the run reports what it managed, as a natural end does; Writing Grid left during Phase 1 keeps showing Phase 1 on the way out — `WritingGridStage` → `leftDuringArrange`); with the lent-card offer up, Leave answers "not now"; from any other phase it closes the break. The word cards behind are hidden by opacity (`FlashCardSection` → `hiddenForBreak`). |
 | **shrinking** | The run ended (`FlpBreakStageProps.onRunEnded` → `finishRun`). The grow in reverse: the board holds `shrinkHoldMs`, fades to the white circle at full size (`shrinkFadeMs`), and the circle closes to the screen's middle over `growMs`. The break's card is back under it, now showing the results (§ 5b), over the next word card. Input is dead throughout: the area stops taking touches as the shrink starts, and the break's card swallows them until **results**, so a tap or swipe aimed at the card as it appears can't reach the word card under it (`BreakCardLayer.tsx` → `pointerEvents`). A lent-card offer holds this until it is answered, because the offer lives over the board. |
-| **results** | The results card is on top, where the learner left off; the word tools stay away. A tap or a swipe either way moves on (undo is locked; a tap off the card is still Back). No mark. |
+| **results** | The results card is on top, where the learner left off; the word tools stay away. A tap or a swipe either way moves on (undo is locked; the back arrow still leaves). No mark. |
 | **skipping** (after results) | A swiped card flies on from where the finger let go, a tapped one plays the writing flp's throw, and the word tools and More Info come back. Same phase as Skip, so nothing rises. |
 | **leaving** | No run to report. The whole game falls away through the bottom; then the stack comes back and the page plays `playBreakReturn`: the next card rises, the word tools drop back in, More Info fades up. |
 
@@ -312,9 +326,8 @@ left edge (`HintPawn` → `away`, `FlashcardsLearnPage.tsx` → `PAWN_AWAY_PHASE
 slides back in once the cards return. Skip leaves it where it is (HINT_PAWN.md § Game
 breaks).
 
-It behaves as a card in the session too: undo works on it, and a tap off
-it is Back through the same `handleTowerOffCardTap` as any card (`stackIsCards`). Leaving
-that way drops the break, and the next visit counts its own interval.
+It behaves as a card in the session too: undo works on it (`stackIsCards`), and the back
+arrow leaves the session from it as from any card. Leaving that way drops the break, and the next visit counts its own interval.
 
 While a flip leaves the front card edge-on, the card's content blanks as a back word card's
 does, so the game isn't given away early.
@@ -407,10 +420,15 @@ lot in one zoom when the game ends (DECK_TOWER.md § "Studying the tower"), and 
 takes the card out of its working loop (§ 4a). A new Stage must call it from its mark path,
 or its cards stay on the tower until the climb-out and come straight back in the flp. It must
 also skip a card stamped `outsideFocus` (a focused break's off-set card, which was never on
-the tower), and send `flpBreak` on every pool request (FOCUS_MODE.md § 4a). Writing Grid's
-marks land on character rows, so only a cell whose row is the learner's own card
-(`WritingGridCharacter.ownCard`) calls it: a word stays on the tower until its own card is
-studied. A game joins the rotation by getting an entry in `FLP_BREAK_GAMES`.
+the tower), and send `flpBreak` on every pool request (FOCUS_MODE.md § 4a). Writing Grid's and
+Superposition's marks land on character rows, so only a character in the learner's
+writing deck (`WritingGridCharacter.ownCard`: a character of one of their sorted words,
+whether its own row is sorted or hidden — `WritingGridDAL.findCandidateCharacters`)
+calls it. That is the same set the writing tower counts and the writing flp deals
+(`server/dal/shared/writingDeck.ts`). A character reached only through a lent word does
+not. (Until 2026-11-22 `ownCard` meant "the row is sorted", so a break marked hidden deck
+characters without clearing them, and they repeated in the loop on cooldown —
+WRITING_PRACTICE_REWORK.md § 4.) A game joins the rotation by getting an entry in `FLP_BREAK_GAMES`.
 
 The break's screen is split between the AREA and the game:
 
@@ -597,6 +615,10 @@ Direction: `features/flashcards` imports `src/games` (engine), never the reverse
 
 - **2026-11-10:** `BREAK_INTERVAL` went from 10 to 15: breaks came round too often (§ 1).
 
+- **2026-11-22:** the count toward the next break persists per (user, language, world) in
+  localStorage instead of starting over each visit; a session left mid-break resumes one
+  card before it (§ 1 "The count persists").
+
 - **2026-10-31:** a run's end card became the reverse of the grow: the game closes back onto
   the break's card, which shows the results and is swiped away (§ 2, § 5b). The fall remains
   only for a game with no run to report.
@@ -611,7 +633,7 @@ pin, `useGameBreak` (`forcedKey`):
   the game card (`forcedOpeningSpentRef`). The break's card is up once the plan is, before
   the board has landed, and Play waits for the board as usual. Once per visit: the opening is
   spent when it shows or when a card is swiped first, and it comes back on the next visit
-  (`reset`). The first word card is under it, so Skip lands there;
+  (`reset`), whatever the persisted count (§ 1). The first word card is under it, so Skip lands there;
 - falls **due on every card** after that, not every `BREAK_INTERVAL` cards. The other due
   gates still apply: no card editor, and at least 2 cards in the loop;
 - **plans the pinned game** instead of a random pick. The focus rule of § 3 still applies,

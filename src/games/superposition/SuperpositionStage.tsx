@@ -15,12 +15,12 @@ import type { WritingGridDealRequest } from "../../api/writingGrid";
 import { useTTS } from "../../hooks/useTTS";
 import { formatTimeMs } from "../../utils/timeUtils";
 import { WRITING_LEVEL_COUNT } from "../../../server/contracts/writingLevels";
-import { buildTiles, lockFinishedStacks, moveTile, pickHintPair, scatterTiles, stackKey, type BoardCharacter, type Tile } from "./board";
+import { buildTiles, dealToTray, lockFinishedStacks, moveTile, pickHintPair, sendToTray, stackKey, type BoardCharacter, type Tile } from "./board";
 import SuperpositionBoard from "./SuperpositionBoard";
 import SuperpositionExitButton from "./SuperpositionExitButton";
 import SuperpositionHintButton from "./SuperpositionHintButton";
 import SuperpositionHints from "./SuperpositionHints";
-import { GAME_ID, HINT_COOLDOWN_SECONDS, LOOKALIKE_TOLERANCE_UNITS, SPAWN_MARGIN_UNITS, SPAWN_SPREAD_UNITS, SPEED_TIERS, TILE_UNITS } from "./constants";
+import { GAME_ID, HINT_COOLDOWN_SECONDS, LOOKALIKE_TOLERANCE_UNITS, SPEED_TIERS } from "./constants";
 import { gradeSpeed } from "../shared/runTiers";
 import type { GameStageFrameProps } from "../types";
 import type { FlpBreakResults } from "../flpBreak/types";
@@ -64,8 +64,8 @@ async function loadCharacters(words: readonly SuperpositionWord[]): Promise<Boar
 }
 
 /**
- * Superposition — every stroke of four characters is scattered on a snapping grid, and the
- * learner stacks them back into place (docs/SUPERPOSITION_GAME.md). BREAK-ONLY: the game
+ * Superposition — the strokes of four characters are dealt as mini tiles into a tray under a
+ * snapping grid, and the learner drags them up and stacks them back into place (docs/SUPERPOSITION_GAME.md). BREAK-ONLY: the game
  * has no route of its own (src/games/registry.ts), so it runs only as an flp game break
  * (docs/FLP_GAME_BREAKS.md § 6).
  *
@@ -110,9 +110,9 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
     // Set when the run ended through Leave: how many characters stood finished by then.
     const [leftWith, setLeftWith] = useState<number | null>(null);
     /**
-     * The pre-run 3·2·1 is up (src/games/shared/GameCountdown.tsx). Armed once the tiles
-     * are scattered (`handleMeasured`), so the count runs over the real board, not over
-     * tiles piled at 0,0. While it is set the run is not `running`: no stopwatch, no hint.
+     * The pre-run 3·2·1 is up (src/games/shared/GameCountdown.tsx). Armed once the board
+     * has measured itself (`handleMeasured`), so the count runs over the laid-out grid and
+     * tray. While it is set the run is not `running`: no stopwatch, no hint.
      */
     const [counting, setCounting] = useState(false);
 
@@ -130,11 +130,11 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
                 const playable = loaded !== null && loaded.length > 0;
                 setWords(dealt);
                 setCharacters(loaded ?? []);
-                // Unplaced until the board measures itself (`handleMeasured`).
-                setTiles(playable ? buildTiles(loaded, LOOKALIKE_TOLERANCE_UNITS) : []);
+                // Every tile starts in the tray, in shuffled slots; the grid starts empty.
+                setTiles(playable ? dealToTray(buildTiles(loaded, LOOKALIKE_TOLERANCE_UNITS)) : []);
                 markedRef.current = new Set();
-                placedRef.current = false;
-                setPlaced(false);
+                measuredRef.current = false;
+                setMeasured(false);
                 setLiftedId(null);
                 setHintedTileIds([]);
                 setHintSecondsLeft(0);
@@ -153,28 +153,29 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isAuthenticated]);
 
-    // ── Placement ────────────────────────────────────────────────────────────────
-    // Until the board measures itself every tile sits at 0,0, which is not a stack anyone
-    // built, so no hint is offered before `placed`. (Stacks are only judged on a drop, which
-    // cannot happen before placement.)
-    const placedRef = useRef(false);
-    const [placed, setPlaced] = useState(false);
-    const handleMeasured = useCallback((cols: number, rows: number, infoRows: number) => {
-        // Once per deal: a later resize must not reshuffle a board in progress.
-        if (placedRef.current) return;
-        placedRef.current = true;
-        setTiles((current) => scatterTiles(current, cols, rows, TILE_UNITS, {
-            marginUnits: SPAWN_MARGIN_UNITS,
-            topUnits: infoRows + SPAWN_MARGIN_UNITS,
-            spreadUnits: SPAWN_SPREAD_UNITS,
-        }));
-        setPlaced(true);
+    // ── Measurement ──────────────────────────────────────────────────────────────
+    // The countdown waits for the board to lay itself out (grid + tray). Until then the
+    // run is not live, so no hint is offered before `measured` either.
+    const measuredRef = useRef(false);
+    const [measured, setMeasured] = useState(false);
+    const handleMeasured = useCallback(() => {
+        // Once per deal: a later resize must not restart the countdown.
+        if (measuredRef.current) return;
+        measuredRef.current = true;
+        setMeasured(true);
         setCounting(true);
     }, []);
 
-    // A locked stack moves as one (`moveTile`), on top of the pile.
+    // A locked stack moves as one (`moveTile`), on top of the pile. A tray tile moved this
+    // way (a drag out, or a tap) leaves the tray for the board.
     const handleMove = useCallback((tileId: number, x: number, y: number) => {
         setTiles((current) => moveTile(current, tileId, x, y));
+    }, []);
+
+    // A loose tile dropped over the tray goes home to its slot. `sendToTray` refuses a locked
+    // one (the board already puts a locked stack back where it was lifted).
+    const handleReturn = useCallback((tileId: number) => {
+        setTiles((current) => sendToTray(current, tileId));
     }, []);
 
     // The drop is the one moment a stack can finish: any loose stack that now holds exactly a
@@ -202,7 +203,7 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
         else if (runningSinceRef.current === null) runningSinceRef.current = Date.now();
     }, [backgroundPaused, running]);
 
-    // 3·2·1 over the scattered board; the stopwatch starts on release (`running`). Gated on
+    // 3·2·1 over the dealt board; the stopwatch starts on release (`running`). Gated on
     // "playing", so a Leave mid-count takes the dim down with the run.
     const countdownStep = useGameCountdown({
         active: counting && phase === "playing",
@@ -238,8 +239,8 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
     // React's "store info from previous renders" pattern (setState during render, guarded so
     // it settles in one extra pass) rather than an effect, so the button never flashes.
     const liveHintPair = useMemo(
-        () => (running && placed && liftedId === null ? pickHintPair(tiles) : null),
-        [running, placed, liftedId, tiles]
+        () => (running && measured && liftedId === null ? pickHintPair(tiles) : null),
+        [running, measured, liftedId, tiles]
     );
     const [restingHintPair, setRestingHintPair] = useState<[number, number] | null>(null);
     if (liftedId === null && liveHintPair !== restingHintPair) setRestingHintPair(liveHintPair);
@@ -396,6 +397,7 @@ const SuperpositionStage: React.FC<SuperpositionStageProps> = ({
                         }
                         onMeasured={handleMeasured}
                         onMove={handleMove}
+                        onReturn={handleReturn}
                         onLift={handleLift}
                     />
                     {/* Inspection's exit: an "Exit →" pill that inflates in. */}

@@ -19,8 +19,10 @@ writing bar), [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) (hidden character r
 | 1 | Eight levels | `src/components/handwriting/` |
 | 2 | Writing Grid game | `src/games/writing-grid/`, `server/services/WritingGridService.ts` |
 | 2a | Personal bests (every game but Bubble Match / Memory Map) | `game_personal_bests`, `src/games/shared/usePersonalBest.ts` |
-| 3 | Writing flp | `?world=writing`, `FlashcardsLearnPage/useWritingFlashcard.tsx` + `WritingCardFace.tsx` |
+| 3 | Writing flp (single characters) | `?world=writing`, `FlashcardsLearnPage/useWritingFlashcard.tsx` + `WritingCardFace.tsx` |
 | 3a | Writing mastery lives on characters | migration 170, `FlashcardMarkService.applyWritingResult` |
+| 3b | Source words ("From your words") | `FlashcardsLearnPage/WritingSourceWords.tsx`, `VocabEntryDAL.findWritingSourceWordsForCharacters` |
+| 3d | The writing deck (what the flp deals and counts) | `server/dal/shared/writingDeck.ts` |
 
 ---
 
@@ -44,9 +46,9 @@ removed, **Trace moved from 1 to 2**, and **Snap** became Level 1.
 | 1 | `snap` | persistent outline; only the **next** stroke animates, on repeat (`--faint`) | — | always — a stroke that matches the next expected stroke **snaps** into the printed stroke shape (in ink); a miss turns red and fades out ([PRACTICE_WRITING.md § Snap](./PRACTICE_WRITING.md)) |
 | 2 | `trace` | persistent outline + looped stroke order | — | always |
 | 3 | `walkthrough` | outline flashes 1.5s on entry | **Show** — 1.5s flash, 6s cooldown from press | locked while visible — except a stroke during the **entry** flash ends it early and draws |
-| 4 | `thirds` | one of **3** regions (equal-area wedges meeting at the centre, rim cut every 4⁄3 of a side), first shown on entry, stays up (was `quarters` / 田 squares until 2026-11-08) | **Next** — next region, no cooldown | always |
+| 4 | `sections` ("Sections") | a **⅓ window** (a wedge meeting at the centre covering ⅓ of the square), first shown on entry starting at the top-left corner, stays up; each Next slides it **⅙** clockwise, so there are 6 windows and consecutive ones overlap by half (`regions: { positions: 6, span: 2 }`; was `thirds` / 3 disjoint wedges until 2026-11-22, `quarters` / 田 squares until 2026-11-08) | **Next** — slide the window ⅙, no cooldown | always |
 | 5 | `memorize` | persistent outline, no timer | — | locked until the first stroke (which unlocks + hides) |
-| 6 | `quarters` | one of **4** regions (the X split: top / right / bottom / left triangles, corner to corner), first shown on entry, stays up (Thirds at a finer split; was `sixths` / 6 centre wedges until 2026-11-08, `eighths` / 8 米 triangles until 2026-10-06) | **Next** — next region, no cooldown | always |
+| 6 | `flash` ("Flash") | none on entry — the canvas opens **blank**; a Flash press shows the **whole** outline for **0.5s** (`flashMs: 500`), cut in and out (no fade) (was `quarters` / 4 X triangles cycled by Next until 2026-11-22, `sixths` / 6 centre wedges until 2026-11-08, `eighths` / 8 米 triangles until 2026-10-06) | **Flash** — **one press per panel open** (`button.uses: 1`), then disabled and reading **Used**; reopening a slot / the editor re-arms it (decided 2026-11-22) | always — not locked during the flash |
 | 7 | `test` | none | — | always |
 | 8 | `timed` | none; **`TIMED_MS_PER_STROKE` (500) × strokes**, one clock per character, started by its first stroke; Clear / Undo do not reset it | **Retry** (popup, after time-out) | until time runs out → canvas locks, what was drawn is graded |
 
@@ -60,12 +62,16 @@ Regions cycle clockwise from the top-left corner. 500 ms/stroke is a starting va
 - `src/components/handwriting/levelBehavior.ts` → `LEVEL_BEHAVIOR` (what each mode does),
   `regionClipPath` (N equal-area centre wedges, built from perimeter cut points), `WRITING_FOCUS_SIZE` (the 300px capture space).
 - `src/components/handwriting/useLevelGuide.ts` → `useLevelGuide` — the guide / lock /
-  assist-button state machine (`enter`, `leave`, `press`, `blockedAttempt`). One
+  assist-button state machine (`enter`, `leave`, `press`, `blockedAttempt`). It also owns the
+  assist button's text and disabled state (`assistLabel`, `assistDisabled`: label, live `Ns`
+  cooldown, or `USED_LABEL` once a `button.uses` cap is spent), so the hosts render it as-is.
+- `levelBehavior.ts` → `levelHasGuide` — whether an editor must mount the outline at all
+  (every level except Blank / Timed; true for Flash, which opens blank but flashes on press). One
   interpreter shared by the popup, the Writing Grid and the writing flp.
 - `src/components/handwriting/useStrokeClock.ts` → `useStrokeClock`, `getStrokeCount`
   (stroke counts from the bundled Hanzi Writer data). Clocks are wall-clock deadlines.
 - `HanziGuide` gained `loopStrokeIndex` (Snap's repeating next-stroke cue) and
-  `regionClip` (a CSS `clip-path`, Thirds / Quarters); `WritingCanvas` gained
+  `regionClip` (a CSS `clip-path`, Sections); `WritingCanvas` gained
   `onStrokeStart` (level 8's clock starts on pointerdown), `onStrokeEnd` (a per-stroke
   keep / replace / reject verdict) and `hideCommittedInk`; `WritingStage` gained `clock`
   (the draining bar + seconds overlay, `StageClock`) and `snap` (owns the whole Snap
@@ -218,7 +224,7 @@ Client-only — no server or schema change. Built 2026-11-17.
   `resolveDisplayDefinition` (`server/utils/definitions.ts`), honouring the `selectedSense`
   on the character's own vet row — so the cell reads what that card reads;
 - every dealt character is given a single-char vet row (`ensureCharacterRows`, a hidden
-  `provisional` row when new), whose id is the `cardId` a check marks, and whose `ownCard`
+  `tracked` row when new — never lent, migration 203), whose id is the `cardId` a check marks, and whose `ownCard`
   says whether that row is one of the learner's sorted cards.
 
 Speed tiers (1 = best … 7; placeholders, tune from play data): 1:30 · 2:00 · 2:45 · 3:30 ·
@@ -264,8 +270,10 @@ are never recorded (they are dealt from the round's set).
 
 Studied in place on the Deck Tower's **writing** world (tap its Learning tower —
 [DECK_TOWER.md](./DECK_TOWER.md) § "Studying the tower"); always Study Mix. `FlpWorld` includes `writing`
-(`server/contracts/studyMode.ts`); the server deals only 1–4-character all-Han words
-(`WRITING_FLP_WORD_CLAUSE`) and bands, rests and refills on the writing bar.
+(`server/contracts/studyMode.ts`); the server deals **single characters only** — the
+writing deck, every Han character of the learner's sorted words (§ 3d, since 2026-11-22;
+until then it dealt whole 1–4-character words) — and bands, rests and refills on the
+writing bar. The writing flp **never lends** (§ 3d).
 
 The card is the **ordinary flp card** — `FlashCardSection`'s stack, flip, fly-out and the
 More Info pill below it, laid out as on the core flp — with only its CONTENT changed:
@@ -294,42 +302,46 @@ flying out keeps its graded back face (`FlashCardSection` holds the outgoing ent
 holds its frozen attempt). The word-tools rail stays hidden (`Write it` is redundant and
 `Compare` would show the characters); More Info is gated on the flip like everywhere else,
 so it opens only after the submit tap.
-- **Level** = `writingLevelForMastery(entry.writingMastery)` = `min(floor(m) + 1, 8)`.
+- **Level** = `writingLevelForMastery(entry.writingMastery)` = `min(floor(m) + 1, 8)` — the
+  character's own writing count.
 - **Header** (both faces) — a row: on the left, level · pinyin · dd stacked and
   left-aligned, the pinyin **tone-coloured per syllable** (`TonedPronunciation`,
   `src/components/TonedPronunciation.tsx`, shared with Memory Map's prompt); on the right,
   the card's **icon** (`WritingCardFace` → `headerIconId`: the largest-scale icon of a saved
   custom arrangement, else `iconId`; omitted when the card has none).
-- **Cell size** — every word, 1–4 characters, gets cells of the **4-character** size:
-  `useFourCharCellSize` measures the grid area as if it held the 2×2 layout and hands that
-  side to every `CellBox`. Shorter words lay out 2 per row (0→TL, 1→TR, 2→BL), so cell
-  size never hints at word length; the block is centred. A back face showing the
-  look-alike notice may nudge it up (§ 3c).
-- **Front** — the header, then the character grid. Each cell PREVIEWS
+- **Source words** (both faces) — under the header, the "From your words" strip: up to 3
+  of the learner's words containing the character, masked, with "See all N" for the rest
+  (§ 3b).
+- **Cell size** — ONE cell, as large as the grid area allows on both axes
+  (`WritingCardFace` → `useCellSize`), centred. Beside a look-alike notice (back face only)
+  it takes the old 2×2 cell size instead — half the area — and the notice the other half
+  (§ 3c). The per-character arrays the attempt carries (`inks`, `locked`, `results`, the
+  mark's `perChar`) keep their shape and hold one entry.
+- **Front** — the header, the source words, then the cell. The cell PREVIEWS
   what the editor first shows at the level (`levelPreview`, `levelBehavior.ts`): the outline
-  (looping on Trace) for Snap / Trace / Step Through, the first region for Thirds / Quarters,
-  nothing for Memorize / Blank / Timed (Memorize's outline is the editor's study phase, never
-  previewed: `levelPreview`, 2026-10-04) — with the learner's ink on top once written. Tap a cell →
+  (looping on Trace) for Walk-through / Trace / Step-through, the first region for Sections,
+  nothing for Memorize / Flash / Blank / Timed (Memorize's outline is the editor's study phase, never
+  previewed: `levelPreview`, 2026-10-04) — with the learner's ink on top once written. Tap the cell →
   `WritingFocusEditor` in a phone-sized Dialog. On level 8, a character whose clock started
   is **locked** once its editor closes (reopening would reset the clock). There is **no
   Submit button**: the bottom line reads "Tap the card to submit" followed by a small tap icon on its right
   (`TouchApp`; the back's "Tap the card to continue" carries the same icon), and a tap on the card
   body (`useWritingFlashcard.handleCardClick` via `FlashCardSection.onCardClick`) verifies
-  every character and flips the card — but only once **every** cell has ink (a level-8
+  the character and flips the card — but only once the cell has ink (a level-8
   locked cell counts as filled, since it can never be reopened). Otherwise the card plays
   the core flp's `cardShake` wiggle (the hook's own `shakeNonce`, passed to
-  `FlashCardSection.shakeNonce` in place of `useCardDrag`'s) and every still-empty cell
+  `FlashCardSection.shakeNonce` in place of `useCardDrag`'s) and the empty cell
   pulses its **outline** (not its ground) `COLORS.orgMk` twice (`WritingCardFace.flashNonce` → `CellBox.flash`) to show the
-  learner which cells to fill. Orange, not red: red (the ✗ icon) already means "graded wrong".
-- **Back** — the same, with ✓ / ✗ (stamped in once the flip finishes — see below) and the whole outline behind each character's ink. Tapping
-  a **cell** inspects it enlarged; tapping **anywhere else** on the card
-  (`FlashCardSection.onCardClick`) sends it off — right iff every character was correct.
+  learner what to fill. Orange, not red: red (the ✗ icon) already means "graded wrong".
+- **Back** — the same, with ✓ / ✗ (stamped in once the flip finishes — see below) and the whole outline behind the ink. Tapping
+  the **cell** inspects it enlarged; tapping **anywhere else** on the card
+  (`FlashCardSection.onCardClick`) sends it off — right iff the character was correct.
   The learner never drags. A wrong cell read as a listed look-alike gets the
   **look-alike notice** (§ 3c) in place of the bottom line.
 - The dismissal calls `useWorkingLoop` → `handleCardDismiss(direction, { level, perChar })`,
   which sends `writing` on the mark. Writing marks offer **no undo** (the server refuses it).
 
-### 3c. Look-alike notice (graded back, 1–2 character words)
+### 3c. Look-alike notice (graded back)
 
 Grading stays strict top-1 — writing 未 for 末 is wrong. The notice explains *why*: when a
 wrong cell's ink was read as a **listed look-alike** of its character, the back face
@@ -345,8 +357,9 @@ names the other character and how to tell them apart.
   pairs fire; a miss read as an unrelated character shows the normal bottom line.
 - **Detection** — `useWritingFlashcard.handleSubmit` keeps each cell's recognizer top-1
   (`Attempt.recognized`) alongside its verdict; `lookalikeFor` returns the FIRST wrong cell
-  (reading order) with a look-alike match. Words over `LOOKALIKE_MAX_CHARS` (2) get none —
-  a 3–4 character card has no free space below its cells (decided 2026-10-28).
+  (reading order) with a look-alike match. (Until 2026-11-22 only 1–2 character words got
+  one — `LOOKALIKE_MAX_CHARS`, deleted — since a 3–4 character card had no free space; every
+  writing card is one character now.)
 - **Pinyin** — the table's pinyin is each character's standalone reading. `lookalikeFor`
   replaces the TARGET's with the card's own syllable for that position
   (`resolveDisplayPronunciation`, split one syllable per character), so a polyphone shows
@@ -354,14 +367,17 @@ names the other character and how to tell them apart.
   character count, it falls back to the table. The RECOGNIZED character has no word
   around it, so it keeps the table's reading.
 - **Presentation** — `LookalikeNotice` (`src/features/flashcards/FlashcardsLearnPage/`)
-  takes the 2×2 block's empty second row, bottom-aligned on the card: its slot reaches
+  takes the bottom half of the grid area, bottom-aligned on the card: its slot reaches
   past the grid area through the blank hint row to the face's content bottom
-  (`WritingCardFace` → `NOTICE_REACH_PX`). The 1–2 cells stay centred in the grid area
-  unless the notice would reach them; then they move up only by the overlap
-  (`WritingCardFace` → `writing-card-face__block`: equal flex spacers above the cells and
+  (`WritingCardFace` → `NOTICE_REACH_PX`). Beside it the cell shrinks to the old 2×2 cell
+  size (`useCellSize(true)`: half the area on both axes, so the notice — two cells and a gap
+  wide, one cell high — keeps the proportions it was designed at). The cell stays centred
+  in the grid area unless the notice would reach it; then it moves up only by the overlap
+  (`WritingCardFace` → `writing-card-face__block`: equal flex spacers above the cell and
   in `writing-card-face__notice-slot` — the slot's negative margin offset by an equal
-  flex-basis — the slot unable to shrink below the notice, so no measuring). Any move happens across the flip, while the card is edge-on, so the cells
-  never visibly jump. The notice shows the two characters side by side as
+  flex-basis — the slot unable to shrink below the notice, so no measuring). The shrink and
+  any move happen across the flip, while the card is edge-on, so the cell never visibly
+  jumps. The notice shows the two characters side by side as
   printed corpus glyphs (`GlyphSvg`, the stroke shapes Snap paints — so the proportions
   the tell describes are exact), the target in ink (unlabelled), the misread in
   `COLORS.textFaint` labelled "yours looks like", each with tone-coloured pinyin, then the
@@ -373,52 +389,100 @@ names the other character and how to tell them apart.
 - Tests: `src/__tests__/lookalikes.test.ts` (lookup contract; every listed character has
   `hanzi-writer-data` strokes).
 
-### 3b. Used-in hints (single-character cards)
+### 3b. Source words ("From your words")
 
-**Spoken by the hint pawn** in the flp's bottom-left corner ([HINT_PAWN.md](./HINT_PAWN.md),
-since 2026-11-08; until then they floated as bubbles on the writing card's top edge):
-**up to 2 words that contain the card's character — the learner's own saved words
-first, then everyday dictionary words**, under one of the pawn's cycling lines ("This
-character is used in these words", …). Each with
-its pinyin, its dd, and the word with the character being written drawn as a **mask**: a
-plain `?` (`ForeignText` → `maskChar`, see below). For 你, a saved
-你们 shows as `?们 · nǐmen · you (plural)`, with the pinyin kept above the mask.
+Every writing card is a single character that is in the deck because it appears in some of
+the learner's sorted words (§ 3d). The card names those words, so the learner knows WHICH
+word the character is from (owner, 2026-11-22; it replaced the hint pawn's used-in hint,
+which the writing world no longer has — [HINT_PAWN.md](./HINT_PAWN.md)).
 
-| question | decision (2026-10-04) |
+```
+FROM YOUR WORDS                 (See all 7 ›)
+  ?习          ?生          大?
+ xuéxí       xuésheng      dàxué
+ to study    student     university
+```
+
+| question | decision (2026-11-22) |
 |---|---|
-| which cards | **single-character zh only**. Multi-character writing cards have no hint (the pawn's bubble pops; the pawn stays) |
-| which words | used-in **pass 1**: the learner's own *sorted* vet words (≤ 4 chars) containing the character (lent/provisional cards don't count), then **pass 2**: dictionary words (2–4 chars) not already in the sorted vet. Both kinds look the same |
-| frequency gate | pass 1 **none**: words the learner chose aren't vetted for commonality. Pass 2 **`frequencyScore` 4–5** (added 2026-10-04), stricter than the eip list's 3–5. Ordered saved-first, then `frequencyScore DESC NULLS LAST`, then shortest, then `entryKey` |
-| how many | up to **2** in total (cut from 4 on 2026-10-04). Saved words fill first, and dictionary words only take the slots left over |
-| tap | **inert**. The eip is gated until submit on the writing flp, so a tap must not open the word |
-| presentation | the hint pawn's speech bubble: arrival, motion, placement, swipe-away and the setting are [HINT_PAWN.md](./HINT_PAWN.md) |
-| faces | shown on both faces. The mask stays after the flip |
-| mask by level | levels **1–3** (Snap / Trace / Step Through) show the **real character** in the hint: the card front already shows its whole outline, so there's nothing to hide. Levels 4–8 mask it. Derived from `levelBehavior.ts` → `previewShowsWholeCharacter(mode)` for the card's level (`writingLevelForMastery`), so the hint and the card's own preview can't disagree |
+| which words | **every sorted word of the learner's containing the character** (any length — idioms too — not the character's own 1-character card). No dictionary words: they are the deck's reason for the character |
+| order | most frequent first: `frequencyScore DESC NULLS LAST`, then shortest, then `entryKey` |
+| on the card | the first **3** (`WritingSourceWords` → `STRIP_WORDS`), each a `sm` cpcd with pinyin over it and its dd under it, truncated |
+| see all | a **"See all N"** pill, only when there are more than 3. It opens a popover anchored under the pill: the whole list, one row per word (cpcd + dd, two lines), scrolling when long |
+| mask | the character is drawn as `?` (`ForeignText` → `maskChar`) except at levels **1–3** (Walk-through / Trace / Step-through), whose card front already previews the whole character — `levelBehavior.ts` → `previewShowsWholeCharacter(mode)`. Same on both faces |
+| none | a character in the deck only as the learner's own 1-character card has no source words; the strip renders nothing |
+| tap | the words are **inert** (the eip is gated until submit on the writing flp). The pill and the popover stop every press from reaching the card, whose click submits / dismisses and whose touch handlers read a slipping press as a swipe attempt (`useWritingFlashcard` → `swipeHandlers`) |
+
+**Popover.** A dim, so it portals to the phone frame (`useScreenOverlayHost`; the scrim
+dims everything, footer included — `src/components/overlayHost.ts` § "THE RULE FOR A DIM").
+It is cut from the flashcard's card stock (`COLORS.cardFace` on a `COLORS.cardWall` lip, the
+MenuPopover look), right-aligned under the pill and clamped inside the frame. Closes on a
+scrim tap or Escape, and when the card stops being interactive. React events bubble through
+a portal to the React parent, so the portal root stops click / mousedown / touch events.
 
 Data path: the writing bar's loop and refill (`getDistributedWorkingLoop`,
-`getNextLibraryCardWithFallback`) pass `bar` into `enrichMultipleWithUsedIn`. On `writing` it attaches
-`VocabEntry.writingUsedIn` from `VocabEntryDAL.findWritingUsedInForCharacters` (one query for
-every single-character card in the batch), alongside the
-regular `usedIn` the eip still uses after submit. Every other bar omits the field.
+`getNextLibraryCardWithFallback`) pass `bar` into `enrichMultipleWithUsedIn`. On `writing` it
+attaches `VocabEntry.writingSourceWords` from
+`VocabEntryDAL.findWritingSourceWordsForCharacters` (one query for every single-character
+card in the batch, no limit — the whole list travels with the card, so "See all" needs no
+request), alongside the regular `usedIn` the eip still uses after submit. Every other bar
+omits the field.
 
 Code:
-- `server/dal/implementations/VocabEntryDAL.ts` → `findWritingUsedInForCharacters`,
-  `writingUsedInSql` (the per-character query), `toUsedInItem` (row mapper shared with
-  `findUsedInForCharacter`)
+- `server/dal/implementations/VocabEntryDAL.ts` → `findWritingSourceWordsForCharacters`,
+  `toUsedInItem` (row mapper shared with the used-in reads)
 - `server/services/OnDeckVocabService.ts` → `enrichMultipleWithUsedIn`
-- `server/contracts/wire.ts` → `VocabEntry.writingUsedIn`
-- `src/features/flashcards/FlashcardsLearnPage/hintPawn/pawnHints.ts` → `pawnHintFor`,
-  `UsedInPawnHint` (the hint's data, mask by level); `hintPawn/PawnHintBody.tsx` (the words);
-  `hintPawn/HintPawn.tsx` (the pawn — [HINT_PAWN.md](./HINT_PAWN.md))
+- `server/contracts/wire.ts` → `VocabEntry.writingSourceWords`
+- `src/features/flashcards/FlashcardsLearnPage/WritingSourceWords.tsx` → `WritingSourceWords`
+  (the strip), `SourceWordsPopover`; mounted by `WritingCardFace.tsx`
 - `src/components/ForeignText.tsx` → `maskChar` prop (row layout only) →
   `src/components/CPCDRow.tsx` → `CPCDRowItem.masked`, `MaskedCharMark`. The mask is a plain
-  `?` in `FONTS.sans` (the circled-`?` ring was dropped 2026-10-28; the earlier `⍰` (U+2370)
-  isn't in the CJK fonts, so it rendered in a fallback font). It sits in a 1em-wide box, the
-  advance of the CJK glyph it replaces, so the row's spacing and pinyin centring don't
-  shift, and inherits the cell's font size, so it scales with every CPCDSize; it takes the glyph colour (`characterColor`, else
-  `COLORS.textSecondary`) and copies as `?` under `tapToCopy`
-- `src/components/hintBubble/HintBubbleSurface.tsx`, `useHintBubblePresence.ts`,
-  `hintMotion.ts`: shared with the beginner keyboard
+  `?` in `FONTS.sans` in a 1em-wide box (the advance of the CJK glyph it replaces), so the
+  row's spacing and pinyin centring don't shift; it takes the glyph colour and copies as `?`
+  under `tapToCopy`
+
+### 3d. The writing deck (what the flp deals and counts)
+
+`server/dal/shared/writingDeck.ts` → `writingDeckFrom` (decided 2026-11-22). The writing
+world studies **single characters**: every distinct Han character of the learner's
+**sorted** words that has a det row. A sorted 1-character card is its own word, so it is
+included. Writing mastery already lives on characters (§ 3a), so the deck is the unit the
+marks land on.
+
+- **Rows.** A deck character is backed by the learner's single-character vet row when one
+  exists, in any bucket: sorted, a hidden `tracked` row, or (rows made before migration
+  203) a `provisional` one ([PROVISIONAL_CARDS.md § "Tracked rows"](./PROVISIONAL_CARDS.md)).
+  A character with none yet appears as a **virtual row**: a full `vocabentries_zh`-shaped
+  record (`jsonb_populate_record`) with no history, `starterPackBucket = 'tracked'`, and
+  id = the **negated code point** of the character (`-ascii(ch)`), unique within the deck.
+  It bands Unfamiliar and is off cooldown.
+- **Reads never write.** The tower's counts (`OnDeckVocabDAL.findReadinessRows`) and the
+  deal's candidate read (`findFlpCandidates`) count virtual rows as they are.
+- **Selection materializes.** A virtual card that is actually chosen — dealt into a working
+  loop or a refill (`OnDeckVocabService` → `materializeWritingCards`), or picked into a
+  focus snapshot (`FocusModeService.resolveWorld`) — gets a real hidden row first
+  (`materializeWritingIds` → `ensureCharacterRows`, the insert the Writing Grid and
+  Superposition deals also use), so every mark lands on a vet row exactly as a lent card's
+  would. The client never sees a negative id.
+- **Membership is its own rule.** A query over `writingDeckFrom` must NOT add
+  `vetSortedClause()`: hidden character rows are members. A character drops out when its
+  last sorted word is removed.
+- **Never lends.** A lent card is a dictionary word, never a deck character, so
+  `OnDeckVocabService.canLendProvisional` refuses on `writing`; running dry ends on
+  "Done for the day!" (`FlashcardsLearnPage` → `neverLends`).
+- **Counts.** The writing world's **Learning** tower counts off-cooldown deck CHARACTERS;
+  its **Mastered** tower still counts sorted WORDS whose averaged writing bar is Mastered
+  (`countMasteredByWorld`, unchanged — owner, 2026-11-22). The two towers count different
+  units on purpose ([DECK_TOWER.md](./DECK_TOWER.md) § Data).
+- **Focus mode** reads the same population (`FocusModeDAL` → `worldSource`).
+- **Cost.** ~38 ms for a 426-word deck (355 characters) on dev, the same as the old
+  word-based read. The split characters are `MATERIALIZED` and de-duplicated before the det
+  check: unfolded, the planner hashed all ~115k det rows (~50 ms more). The virtual rows come
+  from a LATERAL `jsonb_populate_record`, never `(f(…)).*`, which Postgres evaluates once
+  per column.
+
+The Practice Writing popup, the Writing Grid, Superposition and the Writing Notebook are
+unchanged: they still take 1–4-character words (`WRITING_MAX_CHARS`).
 
 ### 3a. Writing mastery lives on characters (migration 170)
 
@@ -438,22 +502,27 @@ Code:
   `mastery_positive_count` skip `clockOnly` marks. The word's cooldown = its last correct
   clock mark + the window of its AVERAGED band. A word on cooldown writes nothing at all.
 - **Characters get the marks.** `FlashcardMarkService.applyWritingResult` locks (creating
-  hidden `provisional` rows as needed — `VocabEntryDAL.ensureCharacterMarkStates`, in
+  hidden `tracked` rows as needed — `VocabEntryDAL.ensureCharacterMarkStates`, in
   `entryKey` order to avoid deadlocks) every character's row and appends one `viaWord`
   mark per distinct character (a repeated character is correct only if every occurrence
   was). `viaWord` marks count as mastery but `lastCorrectMarkTimestamp` skips them, so they
   never restart the character's own clock — and the character's cooldown does not block them.
 - **Anti-farming:** a character mark is written only when `level > that character's
   mastery` (`writingMarkCounts`) — on every writing surface (popup, grid, flp). A single-
-  character card applies the same gate to its own mark.
+  character card applies the same gate to its own mark. **The top level (8) always counts**:
+  it has no assistance to farm, and it is where a Mastered character (m = 8) is dealt, so
+  without the exception a Mastered character could never be marked — its 180-day clock
+  never restarted and a miss never cost it mastery
+  (`server/contracts/writingLevels.ts` → `writingMarkCounts`).
 - **Every writing mark carries `{ level, perChar }`**; the server rejects a writing mark
   without it, and rejects any writing mark on a word longer than `WRITING_MAX_CHARS` (4,
   `server/contracts/writingLevels.ts`). That constant is the one limit every writing
-  surface reads: the popup's eligibility (`usePracticeWriting`), the writing flp's deal SQL (`WRITING_FLP_WORD_CLAUSE`)
+  surface reads: the popup's eligibility (`usePracticeWriting`)
   and `FlashcardMarkService.applyWritingResult`.
-- Hidden character rows are ordinary provisional rows: never selected as the learner's own
-  card, may be re-lent into a short round, promoted in place (keeping their writing
-  progress) when the learner adds the character for real.
+- Hidden character rows are `tracked` rows (migration 203, [PROVISIONAL_CARDS.md § "Tracked rows"](./PROVISIONAL_CARDS.md)):
+  never selected as the learner's own card, **never lent** into a round, promoted in place
+  (keeping their writing progress) when the learner adds the character for real. Rows made
+  before migration 203 are still `provisional` (no backfill) and can still be re-lent.
 - `masteredAt.writing` and velocity follow the word's averaged band at the moment of its
   own result; a word whose average moves because a SHARED character was marked elsewhere
   gets no stamp (known gap — the stamp is only observable at a mark).
@@ -470,6 +539,19 @@ needs only `word1`, so enrichment is not a prerequisite.
 ---
 
 ## 4. Open flags
+
+- **Repeating cards near the end of a writing session: fixed in code 2026-11-22, not yet
+  verified on a device.** A card whose mark the server refused (cooling) used to stay in the
+  working loop and come back on every pass. Three causes are closed:
+  - a word's fan-out marking a loop character: impossible, since the writing flp deals single
+    characters only (§ 3d);
+  - a Mastered character refused as `farming` at level 8: `writingMarkCounts` always counts the top level;
+  - a Writing Grid / Superposition break marking a hidden deck character without clearing it:
+    `ownCard` now means "in the writing deck" (FLP_GAME_BREAKS.md § 6).
+
+  The backstop is client-side: a suppressed mark now takes the card out of the loop
+  (`useWorkingLoop.ts` → `handleCardDismiss`), so no cause can make a card repeat.
+  Delete this entry once it is verified on PPE.
 
 - **Writing Grid Phase 2 prompt.** Settled 2026-10-04: L1–L3 show the shadow preview,
   L4–L8 show tone-coloured pinyin + dd (§ 2, Flow step 3).

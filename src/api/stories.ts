@@ -103,7 +103,7 @@ export function deleteStoryPassage(storyId: string, passageId: string): Promise<
     return apiDelete<void>(`${storyPath(storyId)}/passages/${encodeURIComponent(passageId)}`);
 }
 
-/** Publish: computes the difficulty; warns, never blocks. */
+/** Publish: computes the story's commonality; warns, never blocks. */
 export function publishStory(storyId: string): Promise<StoryPublishResponse> {
     return apiPost<StoryPublishResponse>(`${storyPath(storyId)}/publish`);
 }

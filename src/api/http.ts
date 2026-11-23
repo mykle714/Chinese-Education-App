@@ -157,6 +157,31 @@ export const apiPatch = <T>(path: string, body?: unknown, options?: RequestOptio
   request<T>('PATCH', path, body, options);
 
 /**
+ * POST that returns a binary body (e.g. synthesized audio) as a Blob. Same auth, base URL
+ * and error mapping as the JSON helpers; only the success body is read differently.
+ * First caller: src/api/voice.ts → fetchVoiceLineAudio (docs/VOICE_ASSISTANT.md § 9.3).
+ */
+export async function apiPostBlob(path: string, body?: unknown, options: RequestOptions = {}): Promise<Blob> {
+  const res = await fetch(buildUrl(path, options.params), {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...authHeader(), ...options.headers },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: options.signal,
+  });
+  noteFocusEnded(res);
+  if (!res.ok) {
+    const data = await parseBody(res);
+    const message =
+      data && typeof data === 'object' && 'error' in data
+        ? String((data as { error: unknown }).error)
+        : `Request failed with status ${res.status}`;
+    throw new ApiError(res.status, data, message);
+  }
+  return res.blob();
+}
+
+/**
  * DELETE. Accepts an optional body — a few endpoints require one (e.g.
  * `/api/auth/deleteAccount` takes the confirming password), which is legal HTTP and
  * which `fetch` supports.

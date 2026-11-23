@@ -1,0 +1,211 @@
+没	adverb,verb	not
+没有	verb,adverb	to not have
+火	noun,adjective,classifier	fire
+点	noun,verb,classifier	point
+爱	verb,noun	to love
+爸爸	noun	dad
+牛	noun,adjective	cow
+现在	noun,adverb	now
+生日快乐	interjection	Happy birthday
+用	verb,preposition,noun	to use
+电视	noun	TV
+电话	noun	phone call
+画	noun,verb	picture
+白	adjective,adverb,verb	white
+百	numeral	hundred
+的	particle	~'s
+看	verb,particle	to look at
+看到	verb	to see
+看看	verb	to take a look at
+看见	verb	to see
+真的	adverb,adjective	really
+眼	noun,classifier	eye
+眼睛	noun	eye
+睡觉	verb	to sleep
+知道	verb	to know
+空气	noun	air
+站	verb,noun	to stand
+笑	verb	to laugh
+第一	numeral,adjective	first
+第二	numeral	second
+米	noun,classifier	uncooked rice
+米饭	noun	(cooked) rice
+红	adjective,noun	red
+红色	noun,adjective	red (color)
+给	verb,preposition,particle	to give
+绿	adjective,verb	green
+美国	noun	United States
+美国人	noun	American
+老	adjective,adverb,particle	prefix used before the surname of a person or a nu
+老师	noun	teacher
+耳朵	noun	ear
+能	verb	can
+脚	noun,classifier	foot
+花	noun,verb,adjective	flower
+英国	noun	United Kingdom (UK)
+英文	noun	English (language)
+英语	noun	English (language)
+苹果	noun	apple
+茶	noun	tea
+菜	noun,adjective	dish (of food)
+衣服	noun	clothes
+西	noun	west
+要	verb,conjunction	to want
+见	verb,noun	to see
+说	verb	to say
+说话	verb,noun	to speak
+请	verb	please
+谁	pronoun	who
+谢谢	verb,interjection	thank you
+走	verb	to walk
+起	verb,classifier	to get up
+起床	verb	to get out of bed
+车	noun,verb	car
+过	verb,particle	to cross
+这	pronoun	(pronoun) this
+进	verb,classifier	to enter
+都	adverb,noun	all
+里	noun,particle	inside
+里面	noun	inside
+钱	noun,classifier	money
+长	adjective,verb,noun	long
+门	noun,classifier	door
+问	verb	to ask
+雨	noun,verb	rain
+零	numeral,verb,adjective	zero
+音乐	noun	music
+飞	verb	to fly
+饭	noun	meal
+高	adjective	tall
+高兴	adjective,verb	happy
+鱼	noun	fish
+黄	adjective,verb	yellow
+黑	adjective,verb	black
+鼻子	noun	nose
+一个人	adverb	alone
+一些	numeral	some
+一会儿	noun,adverb	a moment
+一号	noun,numeral	number one
+一周	numeral,noun	one week
+一定	adverb,adjective	surely
+一定要	adverb	must
+一年半	numeral	a year and a half
+一起	adverb,noun	together
+一边	noun,adverb	one side
+丈夫	noun	husband
+三次	numeral,adjective	three times
+上一个	adjective,pronoun	previous one
+上个星期	noun	last week
+上个月	noun	last month
+上去	verb	to go up
+上周	noun	last week
+上学	verb	to go to school
+上星期	noun	last week
+上月	noun	last month
+上来	verb,particle	to come up
+上次	noun	last time
+上课	verb	to attend class
+上车	verb	to board
+上边	noun	above
+上面	noun,adjective	on top of
+下一个	noun	the next one
+下一次	noun	next
+下个	adjective	next (week etc)
+下个星期	noun	next week
+下个月	noun	next month
+下去	verb,particle	to go down
+下周	noun	next week
+下星期	noun	next week
+下月	noun	next month
+下来	verb,particle	to come down
+下次	noun	next time
+下班	verb	to get off work
+下课	verb	to finish class
+下边	noun	below
+下雨	verb	to rain
+下面	noun,verb	below
+不会	verb	will not
+不可以	verb	may not
+不太好	adjective	not so good
+不好意思	interjection,adjective,verb	sorry
+不对	adjective	incorrect
+不用	adverb	need not
+不行	verb,adjective	won't do
+不过	conjunction,adverb	but
+东边	noun	east
+两	numeral,classifier	two
+两星期	noun	fortnight
+中午	noun	noon
+中国菜	noun	Chinese cuisine
+中国话	noun	spoken Chinese
+中学	noun	middle school
+中饭	noun	lunch
+为什么	pronoun	why?
+之前	preposition,adverb	before
+乐	adjective,verb	happy
+书包	noun	schoolbag
+买东西	verb	to do one's shopping
+买票	verb	to buy tickets
+买菜	verb	to buy groceries
+二十多	numeral	over 20
+五号	noun	fifth day of a month
+交	verb,noun	to hand over
+人们	noun	people
+什么时候	pronoun	when?
+今年	noun	this year
+介绍	verb,noun	to introduce (somebody to somebody)
+从	preposition,adverb	from
+以前	noun	before
+件	classifier,noun	item, piece
+休息	verb,noun	to rest
+但是	conjunction	but
+位	noun,classifier	position
+低	adjective,verb	low
+体育	noun	sports
+作业	noun,verb	homework
+便宜	adjective,noun,verb	cheap
+像	verb,noun	to resemble
+儿	noun,particle	child
+全	adjective,adverb	all
+公共汽车	noun	bus
+公园	noun	park
+公里	noun	kilometer
+关	verb,noun	to turn off
+关系	noun,verb	relationship
+冬天	noun	winter
+准备	verb,noun	to prepare
+出去	verb	to go out
+出发	verb	to set off
+出来	verb,particle	to come out
+出生	verb	to be born
+出门	verb	to go out
+分	verb,noun,classifier	minute
+分钟	noun	minute
+别人	pronoun	other people
+别的	pronoun	other
+前边	noun	front
+力	noun	strength
+加	verb,noun	to add
+加油	verb	to cheer somebody on
+动	verb	to move
+动物	noun	animal
+北边	noun	north
+十三日	noun	the 13th (of month)
+千	numeral	thousand
+半小时	numeral,noun	half hour
+半年	noun	half a year
+卖	verb	to sell
+南边	noun	south
+厕所	noun	toilet
+又	adverb	(once) again
+发烧	verb	to have a fever
+变	verb,noun	to change
+变得	verb	to become
+可	verb,adverb,conjunction	may
+可是	conjunction,adverb	but
+可能	adverb,adjective,noun	possible
+吃的	noun	(coll.) food
+吃药	verb	to take medicine
+后边	noun	behind
+后面	noun,adverb	the back
+听到	verb	to hear

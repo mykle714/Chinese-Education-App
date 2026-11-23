@@ -30,9 +30,11 @@ import type { LastMarkUndoSnapshot } from "../types";
  * Layer: feature view (src/features/flashcards). Rendered by FlashcardsLearnPage.
  */
 interface TowerStudyHeaderProps {
+    /**
+     * Set from the moment of the swipe (not the mark's reply), so the button lights up at
+     * once; a tap mid-fly-out is queued by useWorkingLoop rather than disabled here.
+     */
     lastMarkUndoSnapshot: LastMarkUndoSnapshot | null;
-    isAnimating: boolean;
-    isUndoing: boolean;
     onBack: () => void;
     onUndo: () => void;
     /** The icon-layout editor is open: undo is disabled while it is. */
@@ -52,8 +54,6 @@ const ON_SKY_INK = COLORS.white;
 
 const TowerStudyHeader: React.FC<TowerStudyHeaderProps> = ({
     lastMarkUndoSnapshot,
-    isAnimating,
-    isUndoing,
     onBack,
     onUndo,
     editMode,
@@ -78,7 +78,7 @@ const TowerStudyHeader: React.FC<TowerStudyHeaderProps> = ({
                     label="Undo last mark"
                     color={ON_SKY_INK}
                     onClick={onUndo}
-                    disabled={!lastMarkUndoSnapshot || isAnimating || isUndoing || editMode}
+                    disabled={!lastMarkUndoSnapshot || editMode}
                 />
                 <AudioModeChip
                     className="tower-study-header__audio-chip"

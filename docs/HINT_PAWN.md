@@ -2,13 +2,15 @@
 
 A pawn on a tiny platform in the bottom-left corner of the flp, which speaks the
 front card's hint in a speech bubble. It runs in every Deck Tower world's session. The
-writing world's hint is the used-in words (which used to float as bubbles on the writing
-card's top edge). Main and reading have the **wrong-streak** hint: a study tip on a card
-whose last 3 marks in the world were all wrong. A session with no hint-worthy card never
+writing world has no card hint of its own since 2026-11-22 (its used-in words moved onto
+the writing card itself — WRITING_PRACTICE_REWORK.md § 3b). Main and reading have the **wrong-streak** hint: a study tip on a card
+whose last 3 marks in the world were all wrong. Every world also has the **deck-review**
+line, said on a dive's first card when most of the deck is Comfortable + Mastered cards.
+A session with no hint-worthy card never
 sees the pawn.
 
 Parent: [DECK_TOWER.md](./DECK_TOWER.md) (the flp runs only inside td). Related:
-[WRITING_PRACTICE_REWORK.md](./WRITING_PRACTICE_REWORK.md) § 3b (the used-in data),
+[WRITING_PRACTICE_REWORK.md](./WRITING_PRACTICE_REWORK.md) § 3b (the source words that replaced the writing world's used-in hint),
 [ISO_ART_FRAMEWORK.md](./ISO_ART_FRAMEWORK.md) (§ IsoPawn, § IsoPlatform),
 [BEGINNER_KEYBOARD.md](./BEGINNER_KEYBOARD.md) § 6z-4 (the shared hint-bubble motion).
 
@@ -23,8 +25,9 @@ Parent: [DECK_TOWER.md](./DECK_TOWER.md) (the flp runs only inside td). Related:
 | flp page presentation hook | `hintPawn/useHintPawnIdles.ts` → `useHintPawnIdles`, `pickHintPawnIdle`, `HINT_PAWN_IDLES`, `IDLE_EVERY_MS` | When the pawn plays an idle, and which (§ Idle animations) |
 | flp page presentation hook | `hintPawn/usePawnOuch.ts` → `usePawnOuch`, `OUCH_TTL_MS`, `OUCH_EXIT_MS` | The "ouch" bubbles that are up, and their lifetimes (§ Tap reactions) |
 | flp page presentation | `hintPawn/PawnOuchBubble.tsx` → `PawnOuchBubble` | The "ouch" bubble's look and its inflate / fade-and-drop motion |
-| flp page logic (pure) | `hintPawn/pawnHints.ts` → `PawnHint`, `pawnHintFor`, `hasWrongStreak`, `WRONG_STREAK_LENGTH`, `PawnBubbleVariant`, `PAWN_BUBBLE_VARIANT` | What the pawn has to say about the front card, as data |
-| flp page constants | `hintPawn/pawnHintLines.ts` → `USED_IN_LINES`, `WRONG_STREAK_LINES`, `CPCD_LINE_MAX_CHARS`, `OUCH_LINES`, `OUCH_LINE_BAG` | The line collection each kind draws from, in random order, and the tap "ouch" lines |
+| flp page logic (pure) | `hintPawn/pawnHints.ts` → `PawnHint`, `pawnHintFor`, `hasWrongStreak`, `WRONG_STREAK_LENGTH`, `isReviewHeavyDeck`, `PawnBubbleVariant`, `PAWN_BUBBLE_VARIANT` | What the pawn has to say about the front card, as data |
+| flp page presentation hook | `hintPawn/useDeckReviewHint.ts` → `useDeckReviewHint` (pure core: `initialDiveState`, `nextDiveState`, `deckReviewKeyOf`) | When the deck-review line is due: a review-heavy dive's first card (§ Deck review) |
+| flp page constants | `hintPawn/pawnHintLines.ts` → `WRONG_STREAK_LINES`, `DECK_REVIEW_LINES`, `CPCD_LINE_MAX_CHARS`, `OUCH_LINES`, `OUCH_LINE_BAG`, `splitHintKeywords`, `HintBandName` | The line collection each kind draws from, in random order, the tap "ouch" lines, and the `{keyword}` / `[Band]` markup |
 | feature store | `hintPawn/hintPawnVisit.ts` → `useHintPawnVisit`, `useHintPawnDismissed`, `dismissHintPawn`, `takeHintLineIndex` | State scoped to one td visit: dismissed, and one line shuffle bag per kind (`dealLineBag`) |
 | flp loop hook | `FlashcardsLearnPage/useWorkingLoop.ts` → the miss branch of the mark's `.then` (uses `server/contracts/mastery.ts` → `appendTypedMark`) | Patches a missed card's in-loop `typedMarkHistory`, so a card that fails a 3rd time in-session gets the hint when it comes around (§ Wrong-streak) |
 | shared hook | `src/timeOfDay/useDayClock.ts` → `useDayClock` | The Deck Tower's clock, read for the night vest (§ Night vest) |
@@ -49,8 +52,37 @@ kind — a case in `PawnHintBody` → `CpcdRowContent`.
 
 | World | Kind | Content |
 |---|---|---|
-| writing | `used-in` (cpcd variant) | Up to 2 words containing the card's character (`entry.writingUsedIn`; data and selection rules: WRITING_PRACTICE_REWORK.md § 3b). Each word is an `xs` cpcd (`ForeignText size="xs"`) with its pinyin, and its dd under it. The character is masked as `?` except at levels 1–3, whose card front already previews it (`previewShowsWholeCharacter`). Null when the card has no words (multi-character cards always) |
+| writing | — | **No card hint** (`pawnHintFor` returns null). The `used-in` kind it had — up to 2 words containing the card's character — was removed on 2026-11-22: the writing card now names the learner's words containing its character itself, up to 3 plus "See all" (WRITING_PRACTICE_REWORK.md § 3b). The pawn stays mounted and still says the deck-review line |
 | core, reading | `wrong-streak` (text variant) | One study tip from `WRONG_STREAK_LINES`, line only (§ Wrong-streak). Null unless the card is on a wrong streak |
+| all three | `deck-review` (text variant) | The `DECK_REVIEW_LINES` reassurance, line only (§ Deck review). Only on a review-heavy dive's first card, where it **outranks** the card's own hint |
+
+### Deck review
+
+Code: `pawnHints.ts` → `isReviewHeavyDeck`, `DECK_REVIEW_MIN_CARDS`, `deckReviewHint`, `pawnHintFor`'s `deckReviewKey`;
+`useDeckReviewHint.ts`; `pawnHintLines.ts` → `DECK_REVIEW_LINES`; the counts arrive as
+`flpTowerHost.ts` → `FlpTowerHost.readyBandCounts`, set by `deckTower/useTowerStudy.ts`
+(`readyBandCounts` option → the studied host) from `DeckTowerPage.tsx`'s `readyCounts`
+(`useFlpReadyCounts`, once `loaded`). Tests: `src/__tests__/deckReviewHint.test.ts`.
+
+- **Line** (owner, 2026-11-21): "Hey! Most of today's deck is reviewing **Comfortable** &
+  **Mastered** cards. You got this!" The band names use `[Band]` markup (§ The lines) and are
+  drawn in their band's ink: `COLORS.comfortableInk` `#1D9330` and `COLORS.masteredInk`
+  `#3174D9`. These two tokens sit outside the ramp, like `keywordInk`, because a ramp tier
+  as text is too faint on the white bubble (grnMk 1.8:1, bluMk 2.1:1). They are 4.0:1 and
+  4.6:1. Code: `PawnHintBody.tsx` → `BAND_INK`, `HintLine`.
+- **Trigger:** the world's off-cooldown deck holds **at least 40 cards** across the four
+  utcm bands (`DECK_REVIEW_MIN_CARDS`, owner 2026-11-21), and Comfortable + Mastered make up
+  **strictly more than half** of them. That is the figure the Learning tower
+  stands at (Mastered included, CLAUDE.md § "Terminology"). Each world is judged by its
+  own bar's bands. A smaller deck never qualifies, however much of it is review.
+- **Once per dive:** a dive (parked → studied, `FlpTowerHost.parked`) takes a snapshot of
+  "review-heavy?" and of its first front card (the parked session's top card, or the first
+  card dealt if the deal was still loading). Later marks moving the counts don't re-judge
+  it. The line is up while that first card is on top. It goes when the learner swipes past
+  the card, and an undo back onto the card brings it back. Every new dive is judged again
+  and gets a new key (`deck-review|<dive seq>|<card id>`), so each dive grows a fresh bubble.
+- **Priority:** on that card the deck-review line replaces the card's own hint (wrong-streak). After the card is passed, the per-card hints take over as usual. Tapping the
+  bubble closed (`closedKey`) does **not** reveal the first card's own hint.
 
 ### Wrong-streak
 
@@ -98,8 +130,8 @@ in-session patch).
 Code: `pawnHintLines.ts`, `hintPawnVisit.ts` → `takeHintLineIndex`, `dealLineBag`,
 `HintPawn` → `lineForKey`.
 
-Each kind has a line collection (used-in: 10 phrasings of one idea; wrong-streak: 5
-different tips), said in **random order** (owner, 2026-11-08) from a shuffle bag: each new
+Each kind has a line collection (wrong-streak: 5 different tips; deck-review: phrasings
+of one idea), said in **random order** (owner, 2026-11-08) from a shuffle bag: each new
 hint key takes the next line of a shuffled round, every line is said once per round, and a
 reshuffle never puts the last line said first, so no line repeats back to back. There is
 **one bag per kind** (keyed by `kind`), so the kinds keep separate rounds. The bags live in
@@ -109,13 +141,19 @@ deals new ones.
 A conditional collection (wrong-streak) passes its `eligible` mask to `takeHintLineIndex`.
 The bag is still dealt over the whole collection. The taker skips lines this card does not
 fit and leaves them in the round for a later card that does. When nothing eligible is left
-in the round, it re-deals. A line that leads into the listed content (the
-used-in words) ends in a colon. A key takes its line once (cached in a ref), so
-re-renders never re-roll it. The used-in lines say "character", never "word" (owner's call
-2026-11-08), because a writing card with a used-in hint is always a single character.
+in the round, it re-deals. A line that leads into listed content ends in a colon. A key
+takes its line once (cached in a ref), so re-renders never re-roll it.
 A cpcd-variant kind's lines must fit **one line** (`CPCD_LINE_MAX_CHARS`, 33 characters —
-about 240 px of 12 px semibold caption on a 360 px phone); the used-in lines were shortened
-to fit (2026-11-08), and `src/__tests__/wrongStreakHint.test.ts` enforces the cap.
+about 240 px of 12 px semibold caption on a 360 px phone). No kind uses the cpcd variant
+today (its one user, the writing world's used-in hint, was removed 2026-11-22), so no test
+enforces the cap; add one with the next cpcd kind.
+
+**Markup** (`splitHintKeywords`, rendered by `PawnHintBody` → `HintLine`): `{Button}` names
+an app button and is drawn in `COLORS.keywordInk` (§ Wrong-streak). `[Band]` names a utcm
+band and is drawn in that band's ink (`BAND_INK`, § Deck review). Only `[Comfortable]` and
+`[Mastered]` are recognised (`HintBandName`). Any other bracketed text stays plain, brackets
+included. To make another band nameable, add its ink token, then add it to `HintBandName`
+and `BAND_INK`.
 
 ## Bubble variants
 
@@ -127,8 +165,8 @@ Every hint kind picks one of two dialogue-box variants (owner, 2026-11-08). The 
 
 | Variant | Kinds | Layout |
 |---|---|---|
-| `text` | `wrong-streak` | The line alone. It **wraps**; the dismiss cue sits beside it, bottom-right. A line too long for the bubble's capped height clips inside the line's box, so the cue stays visible |
-| `cpcd` | `used-in` | The line on **one line** (`white-space: nowrap`, an ellipsis only as a safety net), then a row of cpcd content. The dismiss cue sits **in the cpcd row**, taking its width from the words rather than from the line, and the words centre in what is left. One line keeps the cpcd row from being pushed off the bubble's bottom |
+| `text` | `wrong-streak`, `deck-review` | The line alone. It **wraps**; the dismiss cue sits beside it, bottom-right. A line too long for the bubble's capped height clips inside the line's box, so the cue stays visible |
+| `cpcd` | — (none since 2026-11-22; was `used-in`) | The line on **one line** (`white-space: nowrap`, an ellipsis only as a safety net), then a row of cpcd content. The dismiss cue sits **in the cpcd row**, taking its width from the words rather than from the line, and the words centre in what is left. One line keeps the cpcd row from being pushed off the bubble's bottom |
 
 The root (`pawn-hint-body--text` / `--cpcd`) fills the bubble's content box, so the cue keeps
 its corner in both variants.
@@ -321,7 +359,7 @@ Code: `HintPawn` → `onPointerDown` / `onPointerMove` / `onPointerEnd`, `LEAVE_
 
 ## Layout and hit area
 
-Code: `HintPawn` → `SCENE_BOX`, `GUTTER`, `BASELINE_DROP`, `BUBBLE_MAX_WIDTH`.
+Code: `HintPawn` → `SCENE_BOX`, `GUTTER`, `BASELINE_DROP`, `BUBBLE_GAP`, `BUBBLE_BAND_INSET`, `PAWN_HEAD_FROM_SLOT`; `useSpaceBelowCard`; `PawnBubbleTail`.
 
 - A fixed dimetric scene (`makeProjector(39)`, tripled from 13 on 2026-11-08 so the pawn is
   3× as big). The platform keeps its original on-screen size (`PLATFORM_SCALE` = 13/39: the
@@ -340,19 +378,24 @@ Code: `HintPawn` → `SCENE_BOX`, `GUTTER`, `BASELINE_DROP`, `BUBBLE_MAX_WIDTH`.
   More Info pill's baseline (`24px + SAFE_BOTTOM`) — i.e. 4 px above the safe area's bottom
   (lowered from 6 px below the baseline, owner 2026-11-08). That puts it in the free space
   left of the centred pill.
-- **Bubble**: in the band below the card (owner, 2026-11-08), **covering the More Info pill**
-  (z-index 3 over the pill's 2) until the learner taps it closed. A sibling of the stage:
-  from beside the stage (`BUBBLE_GAP` + the tail) to the right gutter, its bottom
-  `BUBBLE_BOTTOM` (10 px) + `SAFE_BOTTOM` up. It **never overlaps the card**: its height is
-  capped to the measured space below the card (`useSpaceBelowCard`: ContentArea's bottom
-  minus the card frame's, de-scaled for the dive camera, less `BUBBLE_BOTTOM`,
-  `BUBBLE_CARD_CLEARANCE` and `SAFE_BOTTOM`; floor 44 px). What doesn't fit is clipped by
+- **Bubble**: **centred vertically** in the band below the card (owner, 2026-11-08; centred
+  2026-11-21), **over the More Info pill** (z-index 3 over the pill's 2) until the learner taps
+  it closed — a short bubble in a tall band can leave part of the pill showing beneath it. A
+  sibling of the stage: from beside the stage (`BUBBLE_GAP` + the tail) to the right gutter.
+  Its slot (`hint-pawn__bubble-slot`) IS the band: bottom `SAFE_BOTTOM`, height the measured
+  space below the card (`useSpaceBelowCard`: ContentArea's bottom minus the card frame's,
+  de-scaled for the dive camera) less `SAFE_BOTTOM`, padded `BUBBLE_BAND_INSET` (8 px) top and
+  bottom, the bubble flex-centred inside. It **never overlaps the card**: its height is capped
+  to the band less both insets (floor 44 px). What doesn't fit is clipped by
   the content box (`hint-pawn__bubble-content`), not the body, so the tail survives. The
   hint fills the row; the dismiss cue sits in its bottom-right corner (§ Bubble variants). Its tail **points at the pawn's head** (owner, 2026-11-08): the head sits up and to the
   left of the bubble, so the shared straight-out tail can't reach it. `PawnBubbleTail` draws
   a short wedge (14 px) on the upper left edge, angled at the head's centre
-  (`PAWN_HEAD_FROM_BUBBLE`, from `HEAD_CENTRE` in pawnFigure.ts), re-aimed as the body's
-  measured height changes (`HintBubbleSurface tailSide="custom"`). It stays put during a drag and pops on a
+  (`PAWN_HEAD_FROM_SLOT`, from `HEAD_CENTRE` in pawnFigure.ts, given from the slot's
+  bottom-left). Because the body is centred, its position in the slot moves with its height
+  and the band's: the tail measures both (ResizeObserver on the body and the slot, in layout
+  px via `offsetTop`, so the grow-in scale and the dive camera don't skew it) and re-aims
+  (`HintBubbleSurface tailSide="custom"`). It stays put during a drag and pops on a
   throw.
 - **Hit area**: the stage is `pointer-events: none` except for the platform's hit box (from
   the floor's back corner down) and the pawn's tap target, so a swipe on the card's corner

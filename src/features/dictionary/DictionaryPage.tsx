@@ -14,7 +14,6 @@ import DelayedCircularProgress from '../../components/DelayedCircularProgress';
 import AiDictionaryEntryCard from '../../components/AiDictionaryEntryCard';
 import { useAuth } from '../../AuthContext';
 import type { DictionaryEntry, Language } from '../../types';
-import DictionaryEntryRow from '../../components/DictionaryEntryRow';
 import PinyinKeypad from '../../components/PinyinKeypad';
 import { FooterSpacer } from '../../components/MobileFooter';
 import { usePageTitle } from '../../hooks/usePageTitle';
@@ -26,15 +25,13 @@ import { useEipTabs } from '../flashcards/FlashcardsLearnPage/useEipTabs';
 import { registerDictionarySearchFocus } from './dictionarySearchFocus';
 import { DEFAULT_SOURCE_ATTRIBUTE } from '../beginnerKeyboard';
 import { useTier2Look } from '../../timeOfDay/useTier2Look';
-import type { Tier2Look } from '../../timeOfDay/tier2Look';
+import { DictionaryAskAiRow, DictionaryNoResults } from './DictionaryPageParts';
+import DictionarySearchResults from '../../components/dictionarySearch/DictionarySearchResults';
 import {
-    DictionaryAskAiRow,
-    DictionaryResultSlab,
-    DictionarySlabLabel,
-    DictionaryLoadMore,
-    DictionaryNoResults,
-} from './DictionaryPageParts';
-import { groupByMatchSection, matchSectionLabel } from './dictionaryMatchSections';
+    dictionarySearchFieldSx,
+    dictionarySearchPlaceholderFor,
+    showsInlineKeypad,
+} from '../../components/dictionarySearch/dictionarySearchField';
 import DictionarySearchHistoryPanel from './DictionarySearchHistoryPanel';
 import { useDictionarySearchHistory } from './useDictionarySearchHistory';
 
@@ -61,38 +58,8 @@ type HistoryPhase = 'closed' | 'opening' | 'open' | 'closing';
 const prefersReducedMotion = () =>
     typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
-// The search field as drawn in the 2026-10-29 redesign (artboard "Dictionary · search +
-// results", `.field`): a 50px well with a 14px corner, and a 2px INK ring while focused
-// instead of MUI's blue primary outline. Unfocused it keeps the app's 1px input outline
-// (CLAUDE.md § Buttons & cards). Coloured by the time-of-day look: white by day, slate
-// at night (src/timeOfDay/tier2Look.ts).
-const searchFieldSx = (look: Tier2Look) => ({
-    '& .MuiOutlinedInput-root': {
-        height: 50,
-        borderRadius: '14px',
-        backgroundColor: look.surface,
-        color: look.ink,
-        fontSize: '17px',
-        '& fieldset': { borderColor: look.outline },
-        '&:hover fieldset': { borderColor: look.outline },
-        '&.Mui-focused fieldset': { borderColor: look.ink, borderWidth: 2 },
-        // The search glyph and the clear ✕.
-        '& .MuiSvgIcon-root': { color: look.muted },
-        '& input::placeholder': { color: look.muted, opacity: 1 },
-    },
-});
-
-// The dictionary search accepts several shapes of query (see DictionaryDAL ->
-// searchByWord1): the headword itself, pinyin — tone-marked, plain, or numbered, spaced or
-// spaceless (zh only) — and English definition text. Nothing else on the page says so, so the
-// empty-state placeholder spells the formats out with one word written each accepted way; the
-// numbered form in particular is otherwise undiscoverable.
-const SEARCH_PLACEHOLDERS: Partial<Record<Language, string>> = {
-    zh: '你好   ·   nǐ hǎo   ·   ni3 hao3', // middle-dot separators with triple-space gaps; input placeholders render whitespace verbatim
-    es: 'hola, hello',
-};
-const searchPlaceholderFor = (language: Language): string =>
-    SEARCH_PLACEHOLDERS[language] ?? `Search ${language.toUpperCase()} dictionary...`;
+// The search field's look, its placeholder and the es-only keypad rule are shared with the
+// mini dictionary search (DictionaryWordSearch): src/components/dictionarySearch/dictionarySearchField.ts.
 
 // The empty state's welcome, before anything is typed (owner's copy, 2026-10-29). It lists
 // every query shape the search accepts as "example — what it is", the same examples the
@@ -262,10 +229,8 @@ function DictionaryPage() {
     // Zero hits and no AI card / note standing in for them → the recessed empty well.
     const showNoResults = !loading && !!debouncedSearchTerm && entries.length === 0 && segmentGroups.length === 0
         && !aiEntry && !askingAi && !aiNoMatch && !aiError && !aiLimitReached;
-    // Zh learners type tone vowels on the beginner keyboard's ā pad (写 · ā · ABC), so the
-    // inline keypad above the field is now Spanish-only (á é í ó ú ñ ü ¿ ¡ — es has no
-    // beginner keyboard).
-    const showInlineKeypad = userLanguage !== 'zh';
+    // The accent keypad above the field is Spanish-only (dictionarySearchField.ts → showsInlineKeypad).
+    const showInlineKeypad = showsInlineKeypad(userLanguage);
 
     return (
         // Dictionary is a FOOTER TAB (it took Account's slot on 2026-10-09; it used to be
@@ -318,7 +283,7 @@ function DictionaryPage() {
                     <SearchField
                         className="dictionary-page__search-input"
                         size="medium"
-                        placeholder={searchPlaceholderFor(userLanguage)}
+                        placeholder={dictionarySearchPlaceholderFor(userLanguage)}
                         value={searchInput}
                         onChange={handleSearchInputChange}
                         onClear={clearSearch}
@@ -347,7 +312,7 @@ function DictionaryPage() {
                             // ā pad's action key alike (PinyinToneKeyboard → actionFor).
                             enterKeyHint: 'search',
                         }}
-                        sx={[searchFieldSx(look), showInlineKeypad && { mt: 2 }]}
+                        sx={[dictionarySearchFieldSx(look), showInlineKeypad && { mt: 2 }]}
                     />
                 </Box>
             )}
@@ -419,82 +384,25 @@ function DictionaryPage() {
                         </Box>
                     )}
 
-                    {/* Segment Mode Results — one slab per group:
-                          1. All exact matches across all segments (in segment order); every group
-                             after the first is headed by its segment.
-                          2. All "starts with" groups (in segment order), each headed by its label. */}
-                    {!loading && isSegmentMode && segmentGroups.length > 0 && (
-                        <Box className="dictionary-page__segment-results" sx={{ mb: 3 }}>
-                            {segmentGroups
-                                .filter(g => g.exactEntries.length > 0)
-                                .map((group, idx) => (
-                                    <Box key={`exact-${group.segment}`} className="dictionary-page__segment-exact-group">
-                                        {idx > 0 && (
-                                            <DictionarySlabLabel className="dictionary-page__segment-label" look={look}>{group.segment}</DictionarySlabLabel>
-                                        )}
-                                        <DictionaryResultSlab className="dictionary-page__segment-exact-list" look={look}>
-                                            {group.exactEntries.map((entry) => (
-                                                <DictionaryEntryRow key={entry.id} entry={entry} onClick={handleEntryClick} language={userLanguage} headwordTapToCopy variant="slab" tones={look} swipeGloss />
-                                            ))}
-                                        </DictionaryResultSlab>
-                                    </Box>
-                                ))
-                            }
-
-                            {segmentGroups
-                                .filter(g => g.prefixEntries.length > 0)
-                                .map((group) => (
-                                    <Box key={`prefix-${group.segment}`} className="dictionary-page__segment-prefix-section">
-                                        <DictionarySlabLabel className="dictionary-page__starts-with-label" look={look}>
-                                            Starts with “{group.segment}”
-                                        </DictionarySlabLabel>
-                                        <DictionaryResultSlab className="dictionary-page__segment-prefix-list" look={look}>
-                                            {group.prefixEntries.map((entry) => (
-                                                <DictionaryEntryRow key={entry.id} entry={entry} onClick={handleEntryClick} language={userLanguage} headwordTapToCopy variant="slab" tones={look} swipeGloss />
-                                            ))}
-                                        </DictionaryResultSlab>
-                                    </Box>
-                                ))
-                            }
-                        </Box>
-                    )}
-
-                    {/* Regular search results — one labelled slab per kind of match (English “long”,
-                        Pinyin “long”, English starts with …, Pinyin starts with …, Other), in the
-                        server's rank order. Sections are runs of the server's `matchKind`, so the next
-                        infinite-scroll page simply extends the last one or opens the next
-                        (dictionaryMatchSections.ts). */}
-                    {!loading && !isSegmentMode && entries.length > 0 && (
-                        <Box className="dictionary-page__results" sx={{ mb: 3 }}>
-                            {groupByMatchSection(entries).map((section, index) => (
-                                <Box
-                                    key={`${section.key}-${index}`}
-                                    className={`dictionary-page__match-section dictionary-page__match-section--${section.key}`}
-                                >
-                                    <DictionarySlabLabel
-                                        className="dictionary-page__match-section-label"
-                                        look={look}
-                                        first={index === 0}
-                                    >
-                                        {matchSectionLabel(section.key, debouncedSearchTerm, userLanguage)}
-                                    </DictionarySlabLabel>
-                                    <DictionaryResultSlab className="dictionary-page__results-list" look={look}>
-                                        {section.entries.map((entry) => (
-                                            <DictionaryEntryRow
-                                                key={entry.id}
-                                                entry={entry}
-                                                onClick={handleEntryClick}
-                                                language={userLanguage}
-                                                headwordTapToCopy
-                                                variant="slab"
-                                                tones={look}
-                                                swipeGloss
-                                            />
-                                        ))}
-                                    </DictionaryResultSlab>
-                                </Box>
-                            ))}
-                            {hasMore && <DictionaryLoadMore onReach={loadMore} loading={loadingMore} look={look} />}
+                    {/* The hits — segment slabs, or one labelled slab per kind of match with the
+                        infinite-scroll tail (DictionarySearchResults, shared with the mini search). */}
+                    {!loading && (
+                        <Box className="dictionary-page__results-block" sx={{ mb: 3, '&:empty': { display: 'none' } }}>
+                            <DictionarySearchResults
+                                classPrefix="dictionary-page"
+                                entries={entries}
+                                segmentGroups={segmentGroups}
+                                isSegmentMode={isSegmentMode}
+                                debouncedSearchTerm={debouncedSearchTerm}
+                                hasMore={hasMore}
+                                loadingMore={loadingMore}
+                                loadMore={loadMore}
+                                language={userLanguage}
+                                look={look}
+                                onEntryClick={handleEntryClick}
+                                headwordTapToCopy
+                                swipeGloss
+                            />
                         </Box>
                     )}
 

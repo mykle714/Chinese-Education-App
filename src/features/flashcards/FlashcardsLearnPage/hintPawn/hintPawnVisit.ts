@@ -12,7 +12,7 @@ import { useEffect, useSyncExternalStore } from "react";
  *               order): the line indices not yet said this round, in a random order. Each
  *               hint shown takes one; when it runs out it is reshuffled, so every line is
  *               said once per round and no line repeats back to back across a reshuffle.
- *               Per kind, so the used-in lines and the wrong-streak hints keep separate
+ *               Per kind, so the deck-review lines and the wrong-streak hints keep separate
  *               rounds. Visit-scoped, so a new session continues the round instead of
  *               starting a fresh one. The tap "ouch" lines have a bag of their own too,
  *               under `OUCH_LINE_BAG` (pawnHintLines.ts), beside the hint kinds'.

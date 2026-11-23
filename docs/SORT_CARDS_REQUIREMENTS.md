@@ -96,7 +96,7 @@ This asymmetry drives the core requirement:
     `.sort-bins__bin-slot--<index>` group: a CSS transform on the outer group would
     replace its `transform` attribute, and the bin's own group owns the active-scale
     transform.
-  - **The toolbar** (level pill · undo · skip) from the right (`dockInKeyframes`), 60 ms
+  - **The toolbar** (undo · skip) from the right (`dockInKeyframes`), 60 ms
     behind the first card.
 
   It plays once per mount; packs that land later don't replay it. Off under
@@ -268,7 +268,7 @@ A **sort pack** is a small group of vocabulary cards shown together:
       text, so every card's meter, and so every card face, stay on one baseline. This is
       the per-card face of the register ordering the supply uses (§6.4). The tag sits on
       the ground (a sibling above the card, not inside it), so it stays put while the card
-      is dragged. *(The eip meter keeps its "Commonality" caption; its x/5 readout was dropped 2026-11-07.)*
+      is dragged. *(The eip meter is captioned "Usefulness" (was "Commonality" until 2026-11-22); its x/5 readout was dropped 2026-11-07.)*
       Code: `src/features/discover/AddCardsPage.tsx` → `CardDeckHeader`,
       `COMMONALITY_TIER_LABELS`, `CommonalityTierLabel`; `src/components/ScoreMeters.tsx`.
     - **Play-audio action.** A bare 28px `volume_up` glyph **below the card**
@@ -550,11 +550,11 @@ project "Tower Tier 2 - Time of Day", the three "Sort ·" artboards, built on th
 | Header | NodePage header: back + "Add Cards" in the look's `ink` (white by day, like the tower's sky ink) and the tower's header type (`TOWER_TYPE_SX`, `src/features/deckTower/towerType.ts`, via `wrapHeader`); `AudioModeChip` (the app-wide outlined skin: pill outline + label) in the same ink, the flame | `AddCardsPage` → `groundChrome` (incl. `wrapHeader`), `headerExtraActions` |
 | Rating prompt | "Rate each card 1–4 on how well you know it", painted straight on the sky in the look's `ink` (white by day) and the tower's header type at `SIZE.subtitle`, centred horizontally and vertically in the gap between the toolbar's bottom and the tops of the empty platforms: its box is exactly the space above the platforms (`--sort-above`, see Bins). The numbers it names are printed on the platforms (§5.3). Not interactive | `SortPrompt`, `TOOLBAR_TOP_PX` |
 | Bins | The four utcm drop targets as iso decks on floating platforms in a tetromino on the iso grid (§5.3). **Placement:** the bins area runs from the content's top to the dock; the height the EMPTY platform cluster (highest platform top → nearest underside, `SORT_BINS_CLUSTER_WIDTH_FRACTION`) leaves over splits **5 : 1** between the space ABOVE the platforms (prompt, toolbar, deck growth) and BELOW them (to the dock's tier tags), the space below never under **8px** (`SORT_SPACE_ABOVE_SHARE`, `SORT_SPACE_BELOW_SHARE`, `SORT_MIN_SPACE_BELOW_PX`; user 2026-11-14 — it was all spare height above and a fixed ~24px below). Pure CSS: `BinsArea` is a size container and declares `--sort-scene-w` / `--sort-cluster-h` / `--sort-below` / `--sort-above` in `cqw`/`cqh`. The scene box (`BinsScene`, the scene's aspect) is absolutely placed by its platforms: top = `--sort-above` − the deck headroom it reserves above them (`SORT_BINS_HEADROOM_WIDTH_FRACTION`, ~42 viewBox px for a full deck + margin), so a full deck may rise into the prompt's space and the box's 16-viewBox-px bottom margin (`SCENE_BOTTOM_MARGIN`) hangs into the gap below (`overflow: visible`). On a screen too short for the cluster + 8px, the box narrows so they fit | `BinsArea`, `BinsScene`, `SortBins.tsx` → `LAYOUT`, `SORT_BINS_ASPECT_RATIO`, `SORT_BINS_HEADROOM_WIDTH_FRACTION`, `SORT_BINS_CLUSTER_WIDTH_FRACTION` |
-| Toolbar | Level pill · undo · skip, keycaps in a row at the top-right, above the Mastered bin (Undo moved here from the header). Lettered in 975 Maru SC (`FONTS.cjk`), like the platforms' numbers | `SortToolbar`, `keycapSx` |
+| Toolbar | Undo · skip, keycaps in a row at the top-right, above the Mastered bin (Undo moved here from the header). Lettered in 975 Maru SC (`FONTS.cjk`), like the platforms' numbers | `SortToolbar`, `keycapSx` |
 | On deck | The pack's levitating cards (§4.5), their action glyphs sitting right on the slab footer (`ON_DECK_FOOTER_GAP_PX` 0 — the glyphs are inset 4px in their 36px targets; the section's negative margin hands back the ScrollArea's **slab** reservation, `SLAB_FOOTER_TOTAL_CLEARANCE`), `SLOT_ACTIONS_GAP_PX` (12px) below the card | `OnDeckSection` |
 | Footer | The floating **slab** footer (the app's only footer), casting its shadow on the ground | `src/routes/routeMeta.ts`, `setFooterCastShadow` |
 
-- **Keycaps.** The level pill, undo and skip are keycaps — all three fully rounded pills,
+- **Keycaps.** Undo and skip are keycaps — both fully rounded pills,
   `TOOLBAR_KEY_HEIGHT_PX` (30) tall (skip's hold ring follows `SKIP_BUTTON_RADIUS_PX`, half
   that height): the look's `keyFace` on a solid
   `0 3px 0` lip (`keyWall`), casting `4px 7px 0` onto the ground (`groundShadow`), with
@@ -827,6 +827,21 @@ platform.
   crossing, and a quick sweep over several platforms lagged.)
   *Code:* `AddCardsPage.tsx` → `DraggableCard`, `highlightBucket`; `SortBins.tsx` →
   `SortBinsHitTester.highlight`, `SortBin` (memo), `ACTIVE_SCALE`, `.sort-bins__bin--active`.
+- **The held card snaps to the bin in iso (hover ghost).** While a held card is over a
+  bin (the same highlight that grows it), the bin draws **that card in iso**: a card-stock
+  top card with the card's mini face (`TopCard`, the same one a sort places), one layer
+  above the deck and lifted `PLACE_DROP_PX` (28px), hovering where a drop would set it down
+  from (user request 2026-11-22). The flat held card under the finger fades out (its
+  spring's `opacity`) and the ghost fades in, both over `HOVER_GHOST_FADE_MS` (120 ms); leaving
+  the bin reverses both (the ghost fades back out, `leaving`). The bin still grows and says
+  its sentence, and the speech bubble's tail moves up to the **ghost's** back corner
+  (`bubbleTipFor(count, ghost)`) so it never covers the hovering card. `highlight(binId, card)`
+  carries the held card; only the active `SortBin` gets a non-null `hoverCard`, so the
+  memo still re-renders just the two bins whose state flipped. A drop falls from the ghost
+  (next bullet).
+  *Code:* `SortBins.tsx` → `HOVER_GHOST_FADE_MS`, `.sort-bins__ghost`, `.sort-bins__ghost-lift`,
+  `SortBin` (`ghost`, `prevHoverCard`), `bubbleTipFor`; `AddCardsPage.tsx` → `DraggableCard`
+  (`opacity` while `overBucket`), `highlightBucket`.
 - **Hit test.** On the diagonal the bins' screen boxes overlap heavily, so the drop test
   is done on the **iso floor**: SortBins hands the page a `SortBinsHitTester` through
   `hitTesterRef`; at drag start it snapshots the scene's screen transform (`snapshot`),
@@ -842,9 +857,16 @@ platform.
   pack-completing drop starts the pack exit (§4.1) in the same frame. Nothing travels to
   the bin — the dropped card simply vanishes (user request 2026-10-29; a portalled
   "falling ghost" used to glide it onto the deck). The bin's deck grows in the same
-  render, and its new top card (the dropped word's mini card) is **set down onto the deck** from
-  `PLACE_DROP_PX` (28px) above (`sort-bins__placed`, 320 ms after a 120 ms beat (`PLACE_DELAY_MS`), fading in, with a small
-  settle bounce; none under reduced motion). Until it lands, the deck under it keeps
+  render, and its new top card (the dropped word's mini card) **falls from the hover ghost**
+  onto the deck: the ghost is already showing it `PLACE_DROP_PX` (28px) up, so the drop
+  removes the ghost with no fade and the top card falls from that height at once — an
+  ease-in fall, then the small settle bounce, 320 ms, no delay
+  (`.sort-bins__placed--from-hover`). The bin tells a drop from the card merely leaving
+  because the hover clears and the deck grows in **one batched render**
+  (`onHighlight(null)` + `onDrop` → `handleSortCard`'s synchronous `adjustTally`): a rise
+  whose new top card is last render's `hoverCard` is a drop from the ghost. Any other
+  rise keeps the older set-down — fading in from 28px above after a 120 ms beat
+  (`PLACE_DELAY_MS`, `sort-bins__placed`). None of it animates under reduced motion. Until it lands, the deck under it keeps
   its OLD top card and face (or the bare platform and its number), which the new card then
   covers (`placingFrom`, cleared on the animation's end). **Undo** taking a card back off
   plays it **backwards**: the old top card, still showing its word, lifts off and fades
@@ -852,7 +874,8 @@ platform.
   own face (`.sort-bins__lifted`, `lifted`, which keeps the removed card since `cards` no
   longer holds it). Any other fall (more than one card at once) just redraws.
   *Code:* `AddCardsPage.tsx` → `DraggableCard`, `handleSortCard`, `adjustTally`;
-  `SortBins.tsx` → `PLACE_DROP_PX`, `PLACE_MS`, `PLACE_DELAY_MS`, `.sort-bins__placed`, `SortBin` (`placingFrom`, `lifted`).
+  `SortBins.tsx` → `PLACE_DROP_PX`, `PLACE_MS`, `PLACE_DELAY_MS`, `.sort-bins__placed`,
+  `.sort-bins__placed--from-hover`, `SortBin` (`placingFrom`, `lifted`, `placeFromHover`).
 
 ### 5.3a Learning supply glow — REMOVED 2026-10-29
 
@@ -900,8 +923,8 @@ so Undo is accounted for, and nothing is re-read.
 `src/__tests__/deckFillNotices.test.ts`.
 
 ### 5.1 Skip is a de-emphasized action, not a drag target
-- Skip is a small lowercase **"skip" keycap at the right end of the toolbar** (level pill ·
-  undo · skip, top-right over the bins — §4.9) — not a drag bin. The intent is to
+- Skip is a small lowercase **"skip" keycap at the right end of the toolbar** (undo · skip,
+  top-right over the bins — §4.9) — not a drag bin. The intent is to
   **de-emphasize** skipping as an option.
 - Client implementation: `src/features/discover/AddCardsPage.tsx` → `SortToolbar`,
   `handleSkipPack`.
@@ -1058,49 +1081,28 @@ the user **chooses** to bring it back, in one of three ways:
 
 ---
 
-## 6.6 Manual level override (dropdown)
+## 6.6 Manual level override — REMOVED 2026-11-21
 
-- The level indicator is a **dropdown**, not a static readout: the first entry is
-  **Auto**, and one further entry per difficulty level.
-- The trigger (`add-cards__level-dropdown`) is the first keycap of the toolbar (§4.9):
-  a fully rounded pill (`keycapSx`, bold) with a trailing `keyboard_arrow_down` glyph.
-- A pinned level renders as the six-triangle **`DifficultyMeter`**
-  (`src/components/ScoreMeters.tsx`) in the pill (`look.keyInk`) and in each menu item
-  (`COLORS.onSurface`, aria-label from `difficultyAriaLabel`), never as text. The
-  "HSK 3" / "Level 3" label was removed 2026-11-07 because `difficulty` is an AI
-  estimate, not an HSK-list lookup.
-- A **"DIFFICULTY"** caption **under** the pill, horizontally centred on it, 9px below
-  (`add-cards__level-caption`, `LevelCaption`), is a **soft introduction** (si `sortDifficultyCaption`,
-  docs/SOFT_INTRODUCTION.md): shown for a learner's first visits, gone once they have
-  made **7 visits over at least 7 days** — the artboard draws the pill alone. It is drawn
-  like the Deck Tower sort platform's si print ("ADD MORE / CARDS →"): bold caps in
-  `FONTS.cjk`, the look's full `ink`, 9px. Absolutely placed, so it never widens the
-  toolbar or pushes the rating prompt down (2026-11-09 → 11-14 it sat left of the pill as "DIFFICULTY →").
-- The **Auto** entry always just reads "Auto" — it never shows the live target level
-  number, since the target can change every pack and a fluctuating number in the
-  dropdown would be noisy rather than informative.
-- Selecting **Auto** resumes serving from the client's current running target level
-  exactly as §6.1–§6.4 describe.
-- Selecting a **specific level** pins supply to **exactly that level** — no
-  adjacent-level drift (§6.4) while a manual level is active, and pack outcomes seen
-  while pinned do **not** feed §6.2's signal (the running auto target is untouched
-  until the user switches back to Auto).
-- A level switch is **exempt** from §6.5's "must not disturb the on-deck card" rule: it
-  is an explicit user action, and it is acceptable (expected) for it to replace the
-  on-deck pack with one matching the newly-selected level.
-- The level list itself is `src/features/discover/difficultyLevels.ts` →
-  `DIFFICULTY_LEVELS` (shared with the panel); the dropdown adds Auto on top.
+There is **no manual level control**. Leveling is always the adaptive target of §6.1–§6.4.
+Until 2026-11-21 the toolbar opened with a **level pill**: a dropdown of Auto plus one
+entry per level, drawn as the six-triangle `DifficultyMeter`, with a soft-introduction
+"DIFFICULTY" caption under it (si `sortDifficultyCaption`). It was removed, along with the
+meter, when word `difficulty` stopped being shown to learners anywhere (owner's call
+2026-11-21; the eip's Difficulty meter went at the same time, docs/DEFINITION_MAPPING.md).
+`difficulty` still drives this leveling invisibly: a pack's `level` is derived from its
+cards' det `difficulty` (docs/SORT_PACKS_IMPLEMENTATION.md).
+
 - Client implementation: `src/features/discover/AddCardsPage.tsx` — `autoLevelRef` (running
   target) and `packBucketsRef` (per-pack bucket outcomes this session, from which
   `applyPackSignal` derives the pack's one ±1 signal — there is no streak/threshold
-  state), plus the `add-cards__level-dropdown` / `add-cards__level-menu`
-  dropdown. Server: `StarterPacksService.getNextPacks`'s `requestedLevel` (the level
-  to center supply on — client's tracked target, or its dropdown pin) and `manual`
-  (whether to drift on exhaustion) parameters, threaded through
-  `GET /api/starterPacks/:language` (`level`/`mode` query params) and
-  `POST /api/starterPacks/nextPack` (`level`/`mode` body fields) via
-  `StarterPacksController`. `estimateLevel` is called **only** for the cold-start
-  seed (§6.1) — never again mid-session.
+  state), bounded by `src/features/discover/difficultyLevels.ts` →
+  `MIN_DIFFICULTY_LEVEL` / `MAX_DIFFICULTY_LEVEL`. Server: `StarterPacksService.getNextPacks`'s
+  `requestedLevel` (the level to center supply on — the client's tracked target) and
+  `manual` parameters, threaded through `GET /api/starterPacks/:language` (`level`/`mode`
+  query params) and `POST /api/starterPacks/nextPack` (`level`/`mode` body fields) via
+  `StarterPacksController`. The client never sends `mode: "manual"` any more; the server's
+  pinned-level branch (no drift) is unused (docs/DEFERRED_WORK.md). `estimateLevel` is
+  called **only** for the cold-start seed (§6.1) — never again mid-session.
 
 ---
 
@@ -1185,10 +1187,8 @@ API paths are camelCase; they must stay in step with `server/routes/starterPacks
     and clearing any seen mark.
 15. **Never empty:** under normal data volumes the user can sort indefinitely without
     reaching an "all sorted" state.
-16. **Manual level override:** picking a specific level from the dropdown serves only
-    that level (no drift to adjacent levels, and pack outcomes seen while pinned don't
-    feed the auto target) until switched back to Auto; the Auto entry always just reads
-    "Auto" — it never displays the target level number.
+16. **No visible level:** there is no level control or readout on the page (removed
+    2026-11-21, §6.6); leveling is always adaptive.
 17. **Session decks:** all four bins start empty (the bare platform with its number) on every visit; a
     drop onto a bin adds one layer to its deck and one to its printed count as the card
     lands, Undo takes one back off, and a skip changes neither.

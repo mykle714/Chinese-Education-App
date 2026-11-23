@@ -6,7 +6,7 @@
 
 The strokes of four characters are cut out onto transparent tiles, grouped into
 pieces that read as parts of the character (AI-authored per character, § Stored groups; the
-density algorithm in § Stroke groups covers a character not authored yet), and dealt in a bunch on a snapping grid. The learner stacks each character's tiles at one exact grid position. The
+density algorithm in § Stroke groups covers a character not authored yet), and dealt as mini tiles into a tray under a snapping grid (§ Tray). The learner drags them up and stacks each character's tiles at one exact grid position. The
 stroke keeps its true place inside the tile, so an exact stack redraws the character.
 
 | Layer | Piece | Where |
@@ -17,17 +17,19 @@ stroke keeps its true place inside the tile, so an exact stack redraws the chara
 | Controller / route | `GET /api/superposition/deal` | `server/controllers/SuperpositionController.ts`, `server/routes/superpositionRoutes.ts` |
 | Contract (pure, shared) | Stroke groups: the fallback algorithm | `server/contracts/superpositionGroups.ts` |
 | Backfill (pipeline step) | Stroke groups: AI-authored, stored on det | `server/scripts/backfill/chinese/backfill-superposition-groups.js` |
-| Game logic (pure) | Tiles, stacks, tap cycle, snapping | `src/games/superposition/board.ts` |
+| Game logic (pure) | Tiles, stacks, tap cycle, snapping, tray in/out, tap placement | `src/games/superposition/board.ts` |
+| Layout (pure) | Tray slot rects + hit-test | `src/games/superposition/tray.ts` |
+| Components | Grid + one pointer handler (`SuperpositionBoard`), the tray band (`SuperpositionTray`), a tile's strokes (`TileGlyph`, shared by both) | `src/games/superposition/` |
 | Stage | The run: deal, stopwatch, marks, end | `src/games/superposition/SuperpositionStage.tsx` |
 | Break | The one host | `src/games/flpBreak/superpositionBreak.ts`, `SuperpositionBreakStage.tsx` |
 
 ## Tuning
 
 `src/games/superposition/constants.ts` → `GRID_UNIT_PX` (16) and `TILE_UNITS` (9, so 144px).
-Every board measure derives from these two. The spawn constants are whole grid units, so they
-need rescaling when the pitch changes. `SPAWN_MARGIN_UNITS` (2, so 32px) sets the deal's
-gap from the board edges and the word info. `SPAWN_SPREAD_UNITS` (6, so 96px) sets how tight
-the opening bunch is. `TILE_OUTLINE_PX` (2) sets the tile outline.
+Every board measure derives from these two. `PLACE_MARGIN_UNITS` (2, so 32px) is whole grid
+units, so it needs rescaling when the pitch changes: it keeps a tap-placed tray tile clear of the
+board edges and the word info. `TILE_OUTLINE_PX` (2) sets the tile outline. The tray has its own
+pixel sizes: `MINI_TILE_PX` (40), `TRAY_GAP_PX` (8), `TRAY_PADDING_PX` (32).
 
 ## Deal
 
@@ -45,10 +47,10 @@ Refused: a character shared between words or repeated in one (two identical stac
 ## Play
 
 - **Grid:** `SuperpositionBoard` fills the whole play area (the `GameFrame` panel's inset is
-  removed) and draws a dot on every grid intersection, the points a tile's corner snaps to.
-- **Deal:** `scatterTiles` drops every tile in a tight bunch at the bottom centre, spread over
-  `SPAWN_SPREAD_UNITS` on each axis, `SPAWN_MARGIN_UNITS` clear of every edge and below the
-  word info. Tiles overlap but never start as a stack. Drags may go anywhere.
+  removed): the grid on top, which draws a dot on every grid intersection (the points a tile's
+  corner snaps to), and the tray under it (§ Tray). The grid takes whatever height the tray leaves.
+- **Deal:** `dealToTray` puts every tile in the tray, one slot each, in shuffled order. The grid
+  starts empty. Drags may go anywhere on the grid.
 - **Stack:** tiles at one exact `(x, y)`. An overlap at an offset is not a stack.
 - **Judged on the drop:** stacks are judged only when a drag ends (`SuperpositionStage` →
   `handleLift`, called through `SuperpositionBoard`'s `onLift`). Hovering over a stack finishes
@@ -104,7 +106,41 @@ Refused: a character shared between words or repeated in one (two identical stac
   `syllableChecks`). A larger check sits in a word's top corner once all its characters are
   finished. Only the audio button takes input, so a tile lying over the info stays grabbable.
 
-Colors: game hue `tea`; finished outline, character checks and word check `RAMP.grn.mark`; selection `RAMP.pur.mark`; hint outline and stroke `RAMP.org.mark`.
+Colors (`constants.ts`, shared by the board, the tray and the word info): game hue `tea`; finished outline, character checks and word check `FINISHED_INK` (`RAMP.grn.mark`); selection and the tray's homing ring `SELECTED_INK` (`RAMP.pur.mark`); hint outline and stroke, on the board or a mini, `HINT_INK` (`RAMP.org.mark`).
+
+## Tray
+
+The band under the grid that every tile is dealt into (`SuperpositionTray.tsx`, layout in
+`tray.ts` → `trayLayout`). Built 2026-11-22.
+
+- **Slots:** one per tile, `MINI_TILE_PX` square, in rows that wrap at the board's width, each row
+  centred on its own. The tray's height follows its row count, and nothing scrolls, so it never
+  competes with a drag. A tile's `slot` is set by the deal and fixed for the run.
+- **Order:** shuffled (`dealToTray`). Slots grouped by character would give the stacks away.
+- **Mini:** a tile in its slot (`Tile.inTray`) shows as an outlined white mini of itself
+  (`TileGlyph`, the same strokes the full tile draws), sitting flush in the well.
+- **Shadow:** a slot whose tile is out on the board shows as an empty **well**: the `COLORS.card`
+  empty-cell fill under `SHADOW.recessed`.
+- **Out:** a drag from a mini lifts its tile onto the grid at the drag grip. A **tap** on a mini
+  places it on the grid at `placementSpot`: the spot nearest the bottom centre (next to the tray)
+  that overlaps no board tile, below the word info. On a full board it takes the nearest spot no
+  tile sits on exactly, so a tap never builds a stack. Stacking stays a drop. A tap placement is
+  not judged.
+- **Back:** a loose tile released **anywhere over the tray** goes home to its own slot
+  (`sendToTray`). While one hangs over the tray, the tile fades (`HOMING_TILE_OPACITY`) and its
+  well rings in `SELECTED_INK`. Over the tray a dragged tile does not snap: it hovers under the
+  finger in pixels (`SuperpositionBoard` → `trayHover` / `hoverShift`, clamped to the board),
+  while its grid x/y stay at the last snapped cell. A drag that starts on a mini takes the tile
+  out of the tray at once, so its slot shows the empty well. A **locked** stack hovers whole
+  but dropped over the tray is refused: it goes back to the cell it was lifted from, and gets
+  no fade or ring. A cancelled pointer leaves a tile at its last snapped cell on the grid.
+- **In the rules:** a tray tile is in no stack and no pile. `stackKey` gives it a key of its own
+  (`tray:<id>`), `completedStacks` skips it (it still counts towards its character's size),
+  and `tilesAt` never finds it. For the hint it lies alone, so a hint can outline minis, which
+  show in `HINT_INK`.
+- **One pointer handler:** the board's handler covers grid and tray, and hit-tests the same
+  slot rects the tray draws (`slotAt`), so a press can start on one and end on the other.
+- **On a win:** the tray stays, every slot an empty well.
 
 ## Stroke parts
 
@@ -269,7 +305,8 @@ no wins. Shared model: [GAMES_FEATURE.md § Run tiers](./GAMES_FEATURE.md).
 
 Each character's first finish in a run sends a full writing mark to its single-character card
 (`type: "writing"`, `surface: "superposition"`, top level so `writingMarkCounts` passes). The
-server still drops a mark on a resting or fully mastered character. Leave ends a break's run
+server still drops a mark on a resting character (top-level marks count even on a fully
+mastered one). Leave ends a break's run
 with what stands finished, and no personal best.
 
 ## Referenced by

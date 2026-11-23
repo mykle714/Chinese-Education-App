@@ -18,18 +18,18 @@ Parent: [MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md). Related:
 Two surfaces that tell one story: **a day's minutes are banked into a running total.**
 
 1. **The banking animation (td, once per streak day).** On the learner's first visit to the
-   Deck Tower (`/`) in a new streak day, the header flame opens on **yesterday's** minutes, swells
-   to draw the eye, then drains — the number counts down and the flame's fill empties —
+   Deck Tower (`/`) in a new streak day, the header flame opens on **yesterday's** minutes, holds
+   a beat so the eye can read it, then drains — the number counts down and the flame's fill empties —
    while embers fly from the flame into the profile-picture button, which charges up a glow.
-   The count always drains to 0, which brings the flame back to its normal size. The
-   avatar's glow then settles, and finally the flame relights while the count climbs from
+   The count always drains to 0. The flame never changes size (the earlier swell/pop
+   phase was cut 2026-11-21 in favour of the burst-then-home ember spray). The avatar's glow then settles, and finally the flame relights while the count climbs from
    0 to today's minutes.
 2. **The bank banner (AccountSheet).** A banner directly under the profile row showing
    the **banked** total — NET through the end of yesterday — with a "Today's minutes"
    column down its right side for today's not-yet-banked minutes. The real balance is banked + today;
    tomorrow's first td visit animates today's chip into the bank.
 
-Everything about the animation's magnitude — how far the flame swells, how long the drain
+Everything about the animation's magnitude — how long the drain
 takes, how bright the avatar glows, how many embers fly — is a function of yesterday's
 minutes. A big day gets a big ceremony; a 3-minute day gets a quick nod.
 
@@ -56,18 +56,27 @@ happened. Consequences for the build:
 
 Plays in td's header, where the flame sits right beside the corner avatar:
 `[flame] [avatar]` (PageHeader `trailingContent` → `DeckTowerAvatar`). td has no Settings
-gear, so the embers travel a short arc straight into the 40px avatar.
+gear, so the embers fly a short way into the 40px avatar.
+
+**Ember path — burst then home.** Each ember shoots out of the flame along its own launch
+angle (any of 360°, picked per ember id by a deterministic hash so it holds one path for
+its whole flight), travels 34–64 px outward, then bends round on a smooth curve into the
+avatar. Geometrically it is a cubic Bézier: P1 sits out along the launch angle (`BURST_PX`)
+and P2 sits `HOMING_SHARE` of the way from P1 to the avatar. A sine time-warp
+(`burstThenHome`, `BURST_HANG`) makes the ember fast leaving the flame, slower at the turn
+and fast again arriving at the avatar. Embers launched upward can briefly leave the top of
+the viewport, because the header sits at the screen edge.
+Code: `src/minutePoints/dailyBanking/BankingEmbers.tsx` → `BankingEmbers`, `emberNoise`, `burstThenHome`.
 
 | # | Phase | Flame badge | Avatar | Notes |
 |---|---|---|---|---|
 | 0 | **Rest-on-yesterday** | Shows yesterday's count, flame **full** (solid `fireActive`) | Normal | Held briefly so the eye can read the number before it moves. |
-| 1 | **Swell / pop** | Scales up to `peakScale` with an overshoot, then settles slightly back | Normal | The "look at me" beat. Spring-like ease-out. |
-| 2 | **Drain + flight** | Count ticks down to **0**; flame fill empties in step (bottom-anchored window from `FireCount`'s `fillPct`, top → 0). Scale eases from `peakScale` back to 1 **in proportion to the drained fraction**, reaching exactly 1 when the count lands. | Each arriving ember adds charge: glow radius/opacity ramps toward `peakGlow` | **One ember per minute drained**, launched the instant the count drops by that minute, so the stream literally *is* the minutes. |
-| 3 | **Settle** | Empty flame at 0, normal size | Glow holds a beat at peak, then decays to none | Yesterday is in the bank. |
-| 4 | **Count up** | Flame relights to solid while the count climbs 0 → **today's minutes** (`countUpMs`, 450–1200 ms, sized by today on the same log curve). With nothing earned today the count stays at 0 and the flame just relights (`relightOnlyMs`, 300 ms). | Normal | End state = exactly what the header would show with no animation. |
+| 1 | **Drain + flight** | Count ticks down to **0**; flame fill empties in step (bottom-anchored window from `FireCount`'s `fillPct`, top → 0). The badge stays at 1× throughout. | Each arriving ember adds charge: glow radius/opacity ramps toward `peakGlow` | **One ember per minute drained**, launched the instant the count drops by that minute, so the stream literally *is* the minutes. |
+| 2 | **Settle** | Empty flame at 0 | Glow holds a beat at peak, then decays to none | Yesterday is in the bank. |
+| 3 | **Count up** | Flame relights to solid while the count climbs 0 → **today's minutes** (`countUpMs`, 450–1200 ms, sized by today on the same log curve). With nothing earned today the count stays at 0 and the flame just relights (`relightOnlyMs`, 300 ms). | Normal | End state = exactly what the header would show with no animation. |
 
 **The drain always goes to 0** (Q2, revised 2026-10-10). Yesterday empties completely, and
-only then does today's count, if any, climb back up from 0 in phase 4. So "yesterday banked"
+only then does today's count, if any, climb back up from 0 in phase 3. So "yesterday banked"
 and "today so far" read as two separate beats rather than one blended number.
 
 **When it does NOT play:**
@@ -85,8 +94,8 @@ boundary the ledger uses, so "yesterday" always means the previous `userminutepo
 Code: `src/minutePoints/dailyBanking/bankingAnimation.ts` → `sampleBankingRun` (the whole
 timeline as a pure function of elapsed ms). Two details the table leaves open, as built:
 
-- **Phase 4 relights the flame.** The drain ends on an empty (ghost-only) flame, but td
-  is off-study (it is a menu; only a session studied inside it earns), where the header draws a solid flame. Phase 4 refills it alongside the
+- **Phase 3 relights the flame.** The drain ends on an empty (ghost-only) flame, but td
+  is off-study (it is a menu; only a session studied inside it earns), where the header draws a solid flame. Phase 3 refills it alongside the
   count-up, so the hand-back to the live badge is invisible.
 - **A hidden tab pauses the run.** The clock advances by real frame time, and a gap over
   100 ms (rAF stops in a background tab) is not counted (`MAX_FRAME_GAP_MS` in
@@ -94,7 +103,7 @@ timeline as a pure function of elapsed ms). Two details the table leaves open, a
 
 ## 4. Magnitude scaling
 
-One normalized intensity drives every parameter, so the four knobs can never disagree
+One normalized intensity drives every parameter, so the knobs can never disagree
 about how big a day was:
 
 ```
@@ -107,8 +116,7 @@ between 120 and 150 small. `M_CAP` is the day size that earns the full ceremony.
 
 | Parameter | min (m = 1) | max (m ≥ M_CAP) | Proposed `M_CAP` |
 |---|---|---|---|
-| `peakScale` (flame swell) | 1.15× | 1.8× | 120 min |
-| Total duration (phases 1–3, excluding the settle phase's extra ember-flight time) | ~1.6 s | ~5 s | |
+| Total duration (phases 1–2, excluding the settle phase's extra ember-flight time) | ~1.3 s | ~4 s | 120 min |
 | `peakGlow` (avatar halo spread) | 3 px | 14 px | |
 
 **Ember count = exactly yesterday's minutes**, uncapped (decided 2026-10-10, replacing the
@@ -116,16 +124,16 @@ original 3–14 cap). Ember `i` launches when the count ticks from `Y − i` to 
 count is `round(Y · (1 − d))`, where `d` is the eased drain, so that tick is at
 `d = (i + 0.5) / Y`, inverted through the drain's easing (`emberLaunchMs`).
 
-- Only embers in the air are mounted, about one flight's worth (0.5 s) of the drain, so a
+- Only embers in the air are mounted, about one flight's worth (0.8 s) of the drain, so a
   200-minute day has a few dozen nodes up at once, not 200.
-- All per-frame values (ember transforms, flame scale, fill height, avatar glow) go in
+- All per-frame values (ember transforms, fill height, avatar glow) go in
   `style`, never MUI `sx`, because emotion mints a new CSS class for every distinct `sx`
   value.
 
 Constants live together in `BANKING_ANIMATION`
 (`src/minutePoints/dailyBanking/bankingAnimation.ts`), so tuning is one edit. Also there:
-the phase split (`phaseShare`: swell 20% / drain 58% / settle 22%), the 500 ms phase-0
-rest, and the 520 ms ember flight. The last ember launches as the count reaches 0, so the
+the phase split (`phaseShare`: drain 72.5% / settle 27.5%), the 500 ms phase-0
+rest, and the 800 ms ember flight. The last ember launches as the count reaches 0, so the
 settle phase begins with one extra flight time for it to land. Only then does the glow hold
 and decay.
 
@@ -144,7 +152,7 @@ and decay.
 | **Client view-model** | `src/minutePoints/dailyBanking/bankingAnimation.ts` → `BANKING_ANIMATION`, `bankingIntensity`, `planBankingRun`, `sampleBankingRun` | Pure maths for the timeline. Tests: `src/minutePoints/__tests__/bankingAnimation.test.ts`. |
 | **Client view** | `MinutePointsFireBadge` | While a frame is live, draws the run's `displayCount`, fill and scale instead of the live readout, and registers itself as the `flame` anchor. |
 | **Client view** | `HeaderAvatarButton` (`glowPx`, `buttonRef` props) + `src/minutePoints/dailyBanking/BankingAvatarButton.tsx` | `HeaderAvatarButton` draws a `fireActive` halo of `glowPx`, appended to any `restShadow`. `DeckTowerAvatar` renders the `BankingAvatarButton` wrapper (forwarding `sizePx` 40 and `SHADOW.float`), which subscribes to the run and registers the `avatar` anchor, so per-frame updates stay inside that leaf. |
-| **Client view** | `src/minutePoints/dailyBanking/BankingEmbers.tsx` | A `position: fixed` layer portaled to `<body>` that flies flame glyphs along a lifted Bézier between the two anchors' live rects. Rects are re-read every frame, so scrolling and the swell are tracked. |
+| **Client view** | `src/minutePoints/dailyBanking/BankingEmbers.tsx` | A `position: fixed` layer portaled to `<body>` that flies flame glyphs along a burst-then-home cubic Bézier (§ 3) between the two anchors' live rects. Rects are re-read every frame, so scrolling and any header movement are tracked. |
 | **Client view** | `src/minutePoints/BankBanner.tsx`, rendered by `AccountSheet` | § 6. |
 
 **Why the provider fetches its own summary.** The original plan was to surface
@@ -256,7 +264,7 @@ Answered 2026-10-10:
 | # | Question | Answer |
 |---|---|---|
 | Q1 | Where is "already seen today" recorded? | **Server-side, once per user across devices.** |
-| Q2 | Already earned today before reaching Home — drain to today's count or to 0? | **Revised 2026-10-10: always drain to 0, then count up to today's minutes** as a separate final beat (§ 3 phase 4). The first answer was "today's count". |
+| Q2 | Already earned today before reaching Home — drain to today's count or to 0? | **Revised 2026-10-10: always drain to 0, then count up to today's minutes** as a separate final beat (§ 3 phase 3). The first answer was "today's count". |
 | Q4 | Banner placement in AccountSheet? | **Directly under the profile row.** |
 | Q5 | Banner content? | **NET through yesterday** as the main figure, plus today's minutes beside it (originally a small `+🔥 N` chip; since 2026-11-14 the "Today's minutes" right-side column, § 6); the real total is the sum. |
 | Q3 | Does a language switch replay it for the other language the same day? | **Yes** — one run per (user, language, streak day). |

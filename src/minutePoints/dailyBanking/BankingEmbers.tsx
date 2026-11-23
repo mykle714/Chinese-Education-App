@@ -6,24 +6,37 @@ import { useBankingAnchors, useBankingFrame } from "./DailyBankingContext";
 
 /**
  * BankingEmbers — the small flames that fly from the header flame into the profile
- * picture during the td daily banking run (docs/DAILY_MINUTE_BANKING.md § 3 phase 2).
+ * picture during the td daily banking run (docs/DAILY_MINUTE_BANKING.md § 3 phase 1).
  *
  * A `position: fixed` layer PORTALED to <body>: the header row clips, and the path
  * runs between two controls, so the embers cannot live inside either one. Both ends
  * are re-read from the anchors' live rects on every frame, so any movement of the header
- * or the flame's own swell never leaves the stream aimed at a stale point.
+ * never leaves the stream aimed at a stale point.
  *
  * Draws nothing between runs. Pointer-transparent throughout.
  *
  * LAYER: client view. Frames from `DailyBankingContext`; all motion maths from
- * `bankingAnimation.ts` except the path shape, which is pure geometry and lives here.
+ * `bankingAnimation.ts` except the path shape (burst-then-home Bézier), which is pure geometry and lives here.
  */
 
 /** Ember glyph size leaving the flame / arriving at the avatar, px. */
 const EMBER_START_PX = 13;
 const EMBER_END_PX = 8;
-/** How far the arc rises above the straight line between the two anchors, px. */
-const ARC_LIFT_PX = 26;
+/**
+ * Burst-then-home path (§ 3 phase 1). Each ember first shoots out of the flame in its own
+ * direction — any of 360° — then bends round on a smooth curve into the avatar, like a
+ * spark caught by a pull. `BURST_PX` is how far along its launch direction the curve's
+ * first control point sits (min/max, picked per ember), so it sets how far the ember
+ * travels outward before it turns.
+ */
+const BURST_PX = { min: 34, max: 64 };
+/**
+ * Where the second control point sits on the line from the burst point to the avatar,
+ * 0 = at the burst point, 1 = on the avatar. Lower = a wider, lazier turn; higher = the
+ * ember snaps onto the avatar sooner. Also sets the arrival speed (a cubic Bézier arrives
+ * at 3 × |P3 − P2|), so the ember slots in fast but not instantly.
+ */
+const HOMING_SHARE = 0.55;
 /** Above MUI modals (1300) so a sheet opening mid-run cannot hide the stream. */
 const EMBER_Z_INDEX = 1400;
 
@@ -45,7 +58,26 @@ const emberSx = {
     willChange: "transform, opacity",
 } as const;
 
-const easeInOutQuad = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+/**
+ * Deterministic 0–1 noise from an ember id and a salt. The path is recomputed every frame
+ * from `id` alone, so a `Math.random()` would make each ember jitter between directions;
+ * a hash keeps one ember on one path for its whole flight while neighbours still differ.
+ */
+function emberNoise(id: number, salt: number): number {
+    const x = Math.sin(id * 12.9898 + salt * 78.233) * 43758.5453;
+    return x - Math.floor(x);
+}
+
+/**
+ * Time warp along the curve. The Bézier is already fast at both ends (the control points
+ * sit far from the anchors), so a straight-linear parameter would read as constant hurry.
+ * This holds a little speed back in the middle — the ember decelerates out of the burst,
+ * hangs at the turn for a beat, then is pulled into the avatar. Its slope is
+ * `1 + BURST_HANG · cos(2πt)`: (1 + h)× speed at both ends, (1 − h)× at the midpoint. It
+ * stays monotonic (no backtracking) for any `BURST_HANG` < 1.
+ */
+const BURST_HANG = 0.35;
+const burstThenHome = (t: number) => t + (BURST_HANG * Math.sin(2 * Math.PI * t)) / (2 * Math.PI);
 
 function BankingEmbers() {
     const frame = useBankingFrame();
@@ -65,15 +97,22 @@ function BankingEmbers() {
             sx={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: EMBER_Z_INDEX }}
         >
             {frame.embers.map(({ id, progress }) => {
-                const t = easeInOutQuad(progress);
-                // Quadratic Bézier through a lifted midpoint. Alternate embers lift a
-                // little more or less so the stream reads as several flames, not one
-                // repeated sprite on a rail. There is one ember per minute drained.
-                const lift = ARC_LIFT_PX * (id % 2 === 0 ? 1 : 0.6);
-                const cx = (from.x + to.x) / 2;
-                const cy = Math.min(from.y, to.y) - lift;
-                const x = (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * cx + t * t * to.x;
-                const y = (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * cy + t * t * to.y;
+                const t = burstThenHome(progress);
+                // Cubic Bézier P0 → P3 (flame → avatar). P1 sits out along this ember's own
+                // launch angle, so it LEAVES the flame heading that way — up, down, even
+                // straight away from the avatar. P2 sits part-way from P1 to the avatar, so
+                // the second half bends smoothly round and arrives on target. There is one
+                // ember per minute drained; the per-id angle and burst length turn the
+                // stream into a spray instead of one sprite on a rail.
+                const angle = emberNoise(id, 1) * 2 * Math.PI;
+                const burst = BURST_PX.min + (BURST_PX.max - BURST_PX.min) * emberNoise(id, 2);
+                const p1x = from.x + Math.cos(angle) * burst;
+                const p1y = from.y + Math.sin(angle) * burst;
+                const p2x = p1x + (to.x - p1x) * HOMING_SHARE;
+                const p2y = p1y + (to.y - p1y) * HOMING_SHARE;
+                const u = 1 - t;
+                const x = u * u * u * from.x + 3 * u * u * t * p1x + 3 * u * t * t * p2x + t * t * t * to.x;
+                const y = u * u * u * from.y + 3 * u * u * t * p1y + 3 * u * t * t * p2y + t * t * t * to.y;
                 // Shrinks toward the avatar. Drawn as a transform on a FIXED-size glyph,
                 // and every per-frame value goes in `style`, never `sx`: emotion mints a
                 // new CSS class for each distinct sx value, and with one ember per minute

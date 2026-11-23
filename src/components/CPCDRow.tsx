@@ -42,8 +42,8 @@ export interface CPCDRowItem extends CpcdCharItem {
     cellRef?: (node: HTMLDivElement | null) => void;
     // Draw a MASK — a plain "?" — in place of the glyph, keeping the cell's width and the
     // pinyin above it. `character` stays the real character so the row's measurement is
-    // unchanged; it is never shown (or copied). Set via ForeignText's `maskChar`. First
-    // user: the writing flp's used-in hint, in the hint pawn's bubble (docs/HINT_PAWN.md).
+    // unchanged; it is never shown (or copied). Set via ForeignText's `maskChar`. Used by
+    // the writing flp card's source words (docs/WRITING_PRACTICE_REWORK.md § 3b).
     masked?: boolean;
     // Size the cell to its own text instead of a fixed `charCount × COLUMN_WIDTH` column —
     // for a run with no pinyin that is not a CJK character: a Latin word, a digit run, a

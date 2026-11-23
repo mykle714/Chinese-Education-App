@@ -182,6 +182,31 @@ const PAGE_ROUTES: RouteMeta[] = [
     note: "The author's passage editor (docs/CYOA_FEATURE.md § 5); same server-side gate as /adventures/:id/edit.",
   },
 
+  // Voice Tutor (docs/VOICE_ASSISTANT.md § 8–9, Q2) — a Menu node list plus a node drill-in
+  // for one saved conversation; both keep the Menu tab lit. The live conversation is a sheet
+  // over /voice, not a route. Behind the `voiceAssistant` flag.
+  { path: "/voice", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
+  {
+    path: "/voice/:sessionId",
+    access: "any",
+    shell: "frame",
+    chrome: "node",
+    footerTab: "menu",
+    note: "One saved voice conversation (read + listen, docs/VOICE_ASSISTANT.md § 9.3).",
+  },
+
+  // Sentence Tiles (docs/SENTENCE_TILES_GAME.md § "Pages") — a Menu node list of your games, and
+  // a FOOTERLESS node page for one game (the board, rack and actions need the whole height).
+  // Behind the `sentenceTiles` flag; the server answers 403 to non-testers.
+  { path: "/sentence-tiles", access: "any", shell: "frame", chrome: "node", footerTab: "menu" },
+  {
+    path: "/sentence-tiles/:gameId",
+    access: "any",
+    shell: "frame",
+    chrome: "node",
+    note: "One Sentence Tiles game. Footerless like /adventures/:id; polls for the opponent's move every 10 s while visible.",
+  },
+
   {
     path: "/reader/:id",
     access: "any",
@@ -293,6 +318,8 @@ export const FLAGGED_OFF_PATHS: ReadonlySet<string> = new Set<string>([
   ...(isFeatureEnabled("cyoa")
     ? []
     : ["/adventures", "/adventures/:id", "/adventures/:id/edit", "/adventures/:id/edit/:passageId"]),
+  ...(isFeatureEnabled("voiceAssistant") ? [] : ["/voice", "/voice/:sessionId"]),
+  ...(isFeatureEnabled("sentenceTiles") ? [] : ["/sentence-tiles", "/sentence-tiles/:gameId"]),
   ...(isFeatureEnabled("studyChallenge")
     ? []
     : ["/friends/challenges", "/friends/challenges/history", "/friends/challenges/:challengeId"]),

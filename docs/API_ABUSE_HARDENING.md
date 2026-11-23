@@ -125,6 +125,20 @@ a second caller. The one exception is `/api/arena/admin/tick`, gated in
 
 ---
 
+## 3a. AI spend caps
+
+Every learner-triggered model call has a per-user daily budget enforced atomically before the
+call, and its own API key so spend can be cut off per feature:
+
+| Feature | Key | Budget |
+|---|---|---|
+| Dictionary AI fallback, Compare, sentence Explain | `DICT_AI_API_KEY` | `dictionary_ai_usage`, `DICTIONARY_AI_DAILY_LIMIT` |
+| Voice Tutor | `VOICE_AI_API_KEY` | daily voice minutes ([VOICE_ASSISTANT.md](./VOICE_ASSISTANT.md)) |
+| Sentence Tiles judge | `SENTENCE_TILES_AI_API_KEY` | per-player daily cap (conditional upsert on `sentence_tile_judge_usage`), one call in flight per game, rejections per turn, a global 24 h ceiling, and a verdict cache — [SENTENCE_TILES_GAME.md § 6](./SENTENCE_TILES_GAME.md) |
+
+Sentence Tiles also never lets client text reach the model: the server builds the judged line
+from its own rack and board state.
+
 ## 4. Open items
 
 * **`community_layout_votes."entryKey"` is still an unconstrained `VARCHAR`** at the

@@ -30,13 +30,16 @@ import friendRoutes from './routes/friendRoutes.js';
 import arenaRoutes from './routes/arenaRoutes.js';
 import weatherRoutes from './routes/weatherRoutes.js';
 import studyChallengeRoutes from './routes/studyChallengeRoutes.js';
+import sentenceTilesRoutes from './routes/sentenceTilesRoutes.js';
 import mediaRoutes from './routes/mediaRoutes.js';
 import handwritingRoutes from './routes/handwritingRoutes.js';
 import diagnosticsRoutes from './routes/diagnosticsRoutes.js';
 import metaRoutes from './routes/metaRoutes.js';
 import storyRoutes from './routes/storyRoutes.js';
+import voiceRoutes, { attachVoiceSocket } from './routes/voiceRoutes.js';
 import { isFeatureEnabled, isGameEnabled } from './contracts/featureFlags.js';
 import { writeLimiter } from './middleware/rateLimits.js';
+import { isAllowedOrigin } from './middleware/allowedOrigins.js';
 
 // Load environment variables
 dotenv.config();
@@ -61,23 +64,8 @@ app.use(cors({
     // Allow requests with no origin (like mobile apps or curl requests)
     if(!origin) return callback(null, true);
 
-    // Define allowed origins
-    const allowedOrigins = [
-      process.env.CLIENT_URL || 'http://localhost:3000',
-      'http://localhost:5175',  // Original frontend port
-      'http://127.0.0.1:5175',  // Also allow 127.0.0.1 equivalent
-      'http://localhost:5174',  // Vite dev server port
-      'http://127.0.0.1:5174',  // Also allow 127.0.0.1 equivalent
-      'http://localhost:5173',  // Fallback for development
-      'http://127.0.0.1:5173',  // Also allow 127.0.0.1 equivalent for development
-      'http://localhost:3000',  // Docker frontend development port
-      'http://127.0.0.1:3000',  // Docker frontend development port
-      'http://frontend:3000',   // Docker container networking
-      'http://cow-frontend:3000', // Docker container name
-      'https://mren.me' // PPE domain (HTTPS only — auth cookies are `secure` in PPE)
-    ];
-
-    if(allowedOrigins.indexOf(origin) !== -1) {
+    // One list shared with the voice WebSocket's Origin check (middleware/allowedOrigins.ts).
+    if(isAllowedOrigin(origin)) {
       callback(null, true);
     } else {
       console.warn(`Origin ${origin} not allowed by CORS`);
@@ -155,11 +143,17 @@ app.use(weatherRoutes);
 if (isFeatureEnabled('studyChallenge')) app.use(studyChallengeRoutes);
 // Adventures (cyoa, docs/CYOA_FEATURE.md) — every story endpoint lives in this one router.
 if (isFeatureEnabled('cyoa')) app.use(storyRoutes);
+// Sentence Tiles (docs/SENTENCE_TILES_GAME.md) — every endpoint lives in this one router.
+if (isFeatureEnabled('sentenceTiles')) app.use(sentenceTilesRoutes);
+// Voice Assistant (docs/VOICE_ASSISTANT.md): REST here, the WebSocket attached after listen.
+if (isFeatureEnabled('voiceAssistant')) app.use(voiceRoutes);
 app.use(mediaRoutes);
 app.use(handwritingRoutes);
 app.use(diagnosticsRoutes);
 app.use(metaRoutes);
 // Start the server - bind to 0.0.0.0 to accept connections from all interfaces (required for Docker networking)
-app.listen(PORT, '0.0.0.0', () => {
+const httpServer = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT} on all interfaces (0.0.0.0)`);
 });
+// The app's only WebSocket — the voice tutor's session (/api/voice/session), same flag as its router.
+if (isFeatureEnabled('voiceAssistant')) attachVoiceSocket(httpServer);

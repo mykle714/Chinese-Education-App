@@ -4,7 +4,7 @@ import EipSectionLabel from "./EipSectionLabel";
 import type { Language, ValidationField } from "../../types";
 
 interface MetaChipLabelProps {
-    // User-facing caption, e.g. "Difficulty" / "Commonality". Optional: omitted, only the
+    // User-facing caption, e.g. "Usefulness". Optional: omitted, only the
     // validator overlay renders (the Parts of Speech field has no caption since 2026-11-14 —
     // its pills speak for themselves — but a validator still needs its Approve/Flag pair).
     label?: string;

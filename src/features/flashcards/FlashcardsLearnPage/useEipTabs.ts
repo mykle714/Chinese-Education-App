@@ -1,16 +1,18 @@
 import { useCallback, useRef, useState } from "react";
 import { TONE_COLORS } from "../../../utils/toneColors";
 import { getBreakdownItems } from "../../../utils/breakdownUtils";
-import type { LongDefinitionPart } from "../../../types";
-import type { CompareState } from "../../../components/CompareWorkspace";
 import type { VocabEntry, BreakdownItem } from "../types";
 import { lookupVocabEntry } from "../../../api/dictionary";
 import { resolveSelectedSenseIndex } from "../../../utils/definitionUtils";
 
-// A normal word tab — one looked-up dictionary entry with its own definition/examples/breakdown
-// sub-tabs (rendered by InfoCardPanelBody).
-export interface EntryEipTab {
-    kind: "entry";
+// One crumb on the word trail — a looked-up dictionary entry with its own
+// definition/examples/breakdown sub-tabs (rendered by InfoCardPanelBody).
+//
+// Every crumb is a WORD. The trail used to hold a second kind, a singleton Compare crumb
+// (`CompareEipTab`, `kind: "compare"`); Compare left the eip on 2026-11-21 and is now its
+// own panel (features/flashcards/compare/CompareSheet), so the `kind` discriminator went
+// with it. Docs: docs/WORD_COMPARE_FEATURE.md.
+export interface EipTab {
     id: string;            // entryKey — used as React key and for dedupe
     entry: VocabEntry;
     breakdownItems: BreakdownItem[];
@@ -24,23 +26,6 @@ export interface EntryEipTab {
     selectedSenseIndex: number;
 }
 
-// The Compare tab (docs/WORD_COMPARE_FEATURE.md) — a SINGLETON, not attached to any card. Slot A
-// starts filled with the word the user navigated from; slot B is picked via an in-tab dictionary
-// search. Both slots are independently clearable (tap-to-arm, tap-again-to-confirm — see
-// CompareWorkspace) and re-fillable via the same search, so either can end up empty. `comparison`
-// caches the last-fetched AI paragraph for the CURRENT (slotA, slotB) pair so switching to another
-// entry tab and back doesn't lose it; it's cleared whenever either slot changes (a new pair).
-//
-// The slot/comparison half of this tab IS `CompareState` — the exact shape the shared
-// CompareWorkspace renders from — so the eip tab and the compare sheet (CompareSheet) drive one
-// component from one contract instead of two parallel shapes.
-export interface CompareEipTab extends CompareState {
-    kind: "compare";
-    id: "compare";
-    toneColor: string;
-}
-
-export type EipTab = EntryEipTab | CompareEipTab;
 
 interface UseEipTabsOptions {
     // Language every drill-in lookup is scoped to. Optional: omitted, the server falls
@@ -83,27 +68,14 @@ function pickToneColor(used: Set<string>): string {
     return pool[Math.floor(Math.random() * pool.length)];
 }
 
-function buildEntryTab(entry: VocabEntry, usedColors: Set<string>): EntryEipTab {
+function buildEntryTab(entry: VocabEntry, usedColors: Set<string>): EipTab {
     return {
-        kind: "entry",
         id: entry.entryKey,
         entry,
         breakdownItems: getBreakdownItems(entry),
         toneColor: pickToneColor(usedColors),
         selectedSubTab: 0,
         selectedSenseIndex: resolveSelectedSenseIndex(entry),
-    };
-}
-
-function buildCompareTab(slotA: VocabEntry, usedColors: Set<string>): CompareEipTab {
-    return {
-        kind: "compare",
-        id: "compare",
-        toneColor: pickToneColor(usedColors),
-        slotA,
-        slotB: null,
-        comparison: null,
-        comparisonParts: null,
     };
 }
 
@@ -146,51 +118,11 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
     // next card, or another card's info button on acp).
     const openForRoot = useCallback((entry: VocabEntry) => {
         const root = tabs[0];
-        if (root?.kind === "entry" && root.id === entry.entryKey) return;
+        if (root?.id === entry.entryKey) return;
         latestRequestRef.current = null;
         setTabs([buildEntryTab(entry, new Set())]);
         setTrailShown(false);
     }, [tabs]);
-
-    // Compare crumb (docs/WORD_COMPARE_FEATURE.md) — a SINGLETON pushed from the word-tools
-    // Compare button, not attached to any card. Opening Compare while a Compare crumb is already
-    // on the stack follows the trail's pop rule: everything above it is popped, slot A is refilled
-    // with the new source word, and slot B is CLEARED (decided — the old pair is no longer what
-    // the user asked about).
-    const openCompareTab = useCallback((entry: VocabEntry) => {
-        latestRequestRef.current = null;
-        setTabs(prev => {
-            const existingIdx = prev.findIndex(t => t.kind === "compare");
-            if (existingIdx !== -1) {
-                return prev.slice(0, existingIdx + 1).map((t, i) =>
-                    i === existingIdx ? { ...(t as CompareEipTab), slotA: entry, slotB: null, comparison: null, comparisonParts: null } : t
-                );
-            }
-
-            // Cap check before pushing, same rule as openForEntryKey.
-            if (prev.length >= MAX_EIP_TABS) {
-                setOverflowSignal(n => n + 1);
-                return prev;
-            }
-
-            const usedColors = new Set(prev.map(t => t.toneColor));
-            setTrailShown(true);
-            return [...prev, buildCompareTab(entry, usedColors)];
-        });
-    }, []);
-
-    // Compare tab is a singleton (kind: "compare"), so a slot / the fetched result are updated in
-    // place by kind rather than by index. Either slot can be set/cleared (docs/WORD_COMPARE_FEATURE.md
-    // — CompareWorkspace's tap-to-arm/tap-to-confirm delete, or picking a new word via search);
-    // changing either slot invalidates the cached comparison for the old pair.
-    const setCompareSlot = useCallback((slot: "A" | "B", entry: VocabEntry | null) => {
-        const key = slot === "A" ? "slotA" : "slotB";
-        setTabs(prev => prev.map(t => t.kind === "compare" ? { ...t, [key]: entry, comparison: null, comparisonParts: null } : t));
-    }, []);
-
-    const setCompareResult = useCallback((comparison: string | null, comparisonParts: LongDefinitionPart[] | null = null) => {
-        setTabs(prev => prev.map(t => t.kind === "compare" ? { ...t, comparison, comparisonParts } : t));
-    }, []);
 
     // Pop the stack down to `index`, making that crumb the showing word. Also cancels an
     // in-flight drill-in, so a lookup that lands after the pop cannot push onto the trail
@@ -202,7 +134,7 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
 
     const openForEntryKey = useCallback(async (entryKey: string) => {
         // Already on the stack (the showing word, or one below it): pop back to it.
-        const existingIdx = tabs.findIndex(t => t.kind === "entry" && t.id === entryKey);
+        const existingIdx = tabs.findIndex(t => t.id === entryKey);
         if (existingIdx !== -1) {
             popTo(existingIdx);
             return;
@@ -224,7 +156,7 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
                 // Re-check against the stack as it is NOW (a double tap during the fetch, or
                 // a lookup whose canonical entryKey differs from the tapped text): a word
                 // already on the stack is popped back to, never pushed twice.
-                const dupeIdx = prev.findIndex(t => t.kind === "entry" && t.id === adapted.entryKey);
+                const dupeIdx = prev.findIndex(t => t.id === adapted.entryKey);
                 if (dupeIdx !== -1) return prev.slice(0, dupeIdx + 1);
                 const usedColors = new Set(prev.map(t => t.toneColor));
                 setTrailShown(true);
@@ -251,14 +183,14 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
     // round-trips back through here as the same index, so this is a no-op for it.)
     const syncEntry = useCallback((entry: VocabEntry) => {
         setTabs(prev => prev.map(t =>
-            t.kind === "entry" && t.id === entry.entryKey
+            t.id === entry.entryKey
                 ? { ...t, entry, selectedSenseIndex: resolveSelectedSenseIndex(entry) }
                 : t
         ));
     }, []);
 
     const setActiveSubTab = useCallback((subTab: number) => {
-        setTabs(prev => prev.map((t, i) => (i === activeIndex && t.kind === "entry") ? { ...t, selectedSubTab: subTab } : t));
+        setTabs(prev => prev.map((t, i) => i === activeIndex ? { ...t, selectedSubTab: subTab } : t));
     }, [activeIndex]);
 
     // Escape (via onCloseX): pop the showing (top) crumb — back one word. Returns true when that was the
@@ -284,9 +216,6 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
         openForRoot,
         openForEntryKey,
         syncEntry,
-        openCompareTab,
-        setCompareSlot,
-        setCompareResult,
         popTo,
         setActiveSubTab,
         pop,

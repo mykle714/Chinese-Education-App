@@ -29,6 +29,11 @@ import { TextController } from '../controllers/TextController.js';
 import { StoryDAL } from './implementations/StoryDAL.js';
 import { StoryService } from '../services/StoryService.js';
 import { StoryController } from '../controllers/StoryController.js';
+import { VoiceSessionDAL } from './implementations/VoiceSessionDAL.js';
+import { VoiceSessionService } from '../services/voice/VoiceSessionService.js';
+import { VoiceSessionController } from '../controllers/VoiceSessionController.js';
+import { GoogleChirpStt } from '../services/voice/stt/GoogleChirpStt.js';
+import { VoiceTTS } from '../services/voice/VoiceTTS.js';
 import { SentenceExplanationDAL } from './implementations/SentenceExplanationDAL.js';
 import { SentenceExplanationService } from '../services/SentenceExplanationService.js';
 import { SentenceExplanationController } from '../controllers/SentenceExplanationController.js';
@@ -77,6 +82,9 @@ import { TTSController } from '../controllers/TTSController.js';
 import { CategoryPromotionDAL } from './implementations/CategoryPromotionDAL.js';
 import { VelocityController } from '../controllers/VelocityController.js';
 import { FriendshipDAL } from './implementations/FriendshipDAL.js';
+import { SentenceTilesDAL } from './implementations/SentenceTilesDAL.js';
+import { SentenceTilesService } from '../services/SentenceTilesService.js';
+import { SentenceTilesController } from '../controllers/SentenceTilesController.js';
 import { ArenaDAL } from './implementations/ArenaDAL.js';
 import { FriendsService } from '../services/FriendsService.js';
 import { ArenaService } from '../services/ArenaService.js';
@@ -258,6 +266,14 @@ const storyController = new StoryController(storyService);
 const sentenceExplanationDAL = new SentenceExplanationDAL();
 const sentenceExplanationService = new SentenceExplanationService(sentenceExplanationDAL, dictionaryDAL, vocabEntryDAL, starterPacksService);
 const sentenceExplanationController = new SentenceExplanationController(sentenceExplanationService);
+// Voice Assistant (migration 202, docs/VOICE_ASSISTANT.md). Constructed after
+// starterPacksService (it borrows estimateLevel for the learner profile + speaking rate);
+// dictionaryDAL segments transcript lines for cpcd. Not flag-gated, per the DI rule above.
+const voiceSessionDAL = new VoiceSessionDAL();
+const voiceSessionService = new VoiceSessionService(
+  voiceSessionDAL, dictionaryDAL, starterPacksService, new GoogleChirpStt(), new VoiceTTS()
+);
+const voiceSessionController = new VoiceSessionController(voiceSessionService);
 const validationController = new ValidationController(validationService);
 const starterPacksController = new StarterPacksController(starterPacksService, provisionalCardService, cardAudioService);
 const gamesController = new GamesController(gameAssetService, gameProgressService);
@@ -311,6 +327,11 @@ const arenaController = new ArenaController(arenaService);
 const weatherService = new WeatherService(arenaDAL);
 const weatherController = new WeatherController(weatherService);
 const studyChallengeController = new StudyChallengeController(studyChallengeService);
+// Sentence Tiles (migration 204, docs/SENTENCE_TILES_GAME.md): friendshipDAL checks the pair are
+// friends, dictionaryDAL supplies each tile word's pinyin + dd, userDAL the feature-tester gate.
+const sentenceTilesDAL = new SentenceTilesDAL();
+const sentenceTilesService = new SentenceTilesService(sentenceTilesDAL, friendshipDAL, dictionaryDAL, userDAL);
+const sentenceTilesController = new SentenceTilesController(sentenceTilesService);
 
 export {
   focusModeService,
@@ -344,6 +365,9 @@ export {
   storyDAL,
   storyService,
   storyController,
+  voiceSessionDAL,
+  voiceSessionService,
+  voiceSessionController,
   sentenceExplanationController,
   validationController,
   starterPacksController,
@@ -393,6 +417,9 @@ export {
   studyChallengeDAL,
   studyChallengeService,
   studyChallengeController,
+  sentenceTilesDAL,
+  sentenceTilesService,
+  sentenceTilesController,
   userProfileService,
   userProfileController,
 };

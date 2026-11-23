@@ -21,7 +21,7 @@ import {
   STORY_CHOICE_LABEL_MAX_LENGTH,
   STORY_ENDING_TITLE_MAX_LENGTH,
   STORY_PASSAGE_NAME_MAX_LENGTH,
-  computeStoryDifficulty,
+  computeStoryCommonality,
   storyPublishWarnings,
   type StoryListResponse,
   type StoryPlayResponse,
@@ -75,7 +75,8 @@ const isUuid = (value: unknown): value is string => typeof value === 'string' &&
  *   • GRAPH INTEGRITY. A choice's target and a story's start passage must be passages
  *     of the SAME story (not expressible as an FK). The start passage cannot be
  *     deleted — pick another start first — so a story never silently loses its entry.
- *   • DIFFICULTY is computed on publish (§ 6.2a): see computeDifficulty.
+ *   • COMMONALITY is computed on publish (§ 6.2a): see computeCommonality. (It replaced
+ *     an HSK difficulty level on 2026-11-21, when word difficulty stopped being shown.)
  *
  * Referenced by: server/controllers/StoryController.ts, server/dal/setup.ts,
  * server/__tests__/stories.test.ts.
@@ -279,14 +280,29 @@ export class StoryService {
     await this.storyDAL.deletePassage(passageId);
   }
 
-  /** Publish (or re-publish): stamp publishedAt, recompute difficulty, return the warnings. */
+  /** Publish (or re-publish): stamp publishedAt, recompute commonality, return the warnings. */
   async publish(userId: string, storyId: string): Promise<StoryPublishResponse> {
     const story = await this.requireOwnStory(userId, storyId);
     const passages = await this.storyDAL.listPassages(story.id);
     const warnings = storyPublishWarnings({ startPassageId: story.startPassageId, passages });
-    const difficulty = await this.computeDifficulty(passages, story.language);
-    const publishedAt = await this.storyDAL.publish(story.id, difficulty);
-    return { publishedAt, difficulty, warnings };
+    const commonality = await this.computeCommonality(passages, story.language);
+    const publishedAt = await this.storyDAL.publish(story.id, commonality);
+    return { publishedAt, commonality, warnings };
+  }
+
+  /**
+   * Recompute one story's commonality in place, without re-publishing (publishedAt is
+   * untouched). No author check: called only by the backfill script
+   * (server/scripts/backfill/cyoa/backfill-story-commonality.ts), never by a route.
+   * Returns the stored value; null when the story does not exist or has no scored word.
+   */
+  async recomputeCommonality(storyId: string): Promise<number | null> {
+    const story = await this.storyDAL.findStory(storyId);
+    if (!story) return null;
+    const passages = await this.storyDAL.listPassages(story.id);
+    const commonality = await this.computeCommonality(passages, story.language);
+    await this.storyDAL.setCommonality(story.id, commonality);
+    return commonality;
   }
 
   /** Hide from learners. Their progress and endings found are kept (§ 6.3). */
@@ -416,13 +432,13 @@ export class StoryService {
   }
 
   /**
-   * The story's HSK level on publish (§ 6.2a). Every passage and choice label is split
+   * The story's commonality on publish (§ 6.2a). Every passage and choice label is split
    * into Han runs and segmented with the server gsa (the same `segmentWithDict` the
-   * Reader title and Sentence Explain use); each DISTINCT word takes the lowest
-   * `difficulty` among its det rows (a word with several readings is as easy as its
-   * easiest one); unleveled words drop out; computeStoryDifficulty applies the 90% rule.
+   * Reader title and Sentence Explain use); each DISTINCT word takes the HIGHEST
+   * `frequencyScore` among its det rows (a word with several readings is as common as its
+   * most common one); unscored words drop out; computeStoryCommonality applies the 90% rule.
    */
-  private async computeDifficulty(passages: StoryPassageRow[], language: string): Promise<number | null> {
+  private async computeCommonality(passages: StoryPassageRow[], language: string): Promise<number | null> {
     const texts = passages.flatMap((passage) => [passage.content, ...passage.choices.map((choice) => choice.label)]);
     const hanRuns = texts.flatMap((text) =>
       splitHanRuns(text).filter((run) => run.type === 'han').map((run) => run.value)
@@ -435,17 +451,17 @@ export class StoryService {
     const dictMap = buildDictMap(entries);
     const excludeSet = buildExcludeSet(entries);
 
-    const levelByWord = new Map<string, number | null>();
+    const scoreByWord = new Map<string, number | null>();
     for (const entry of entries) {
-      const level = typeof entry.difficulty === 'number' ? entry.difficulty : null;
-      const prior = levelByWord.get(entry.word1);
-      if (prior === undefined || (level !== null && (prior === null || level < prior))) {
-        levelByWord.set(entry.word1, level);
+      const score = typeof entry.frequencyScore === 'number' ? entry.frequencyScore : null;
+      const prior = scoreByWord.get(entry.word1);
+      if (prior === undefined || (score !== null && (prior === null || score > prior))) {
+        scoreByWord.set(entry.word1, score);
       }
     }
 
     const distinctWords = new Set(hanRuns.flatMap((run) => segmentWithDict(run, dictMap, excludeSet)));
-    return computeStoryDifficulty([...distinctWords].map((word) => levelByWord.get(word) ?? null));
+    return computeStoryCommonality([...distinctWords].map((word) => scoreByWord.get(word) ?? null));
   }
 
   /** Published, or the caller's own draft — otherwise "no longer available". */
@@ -488,7 +504,7 @@ export class StoryService {
         language: story.language,
         startPassageId: story.startPassageId,
         publishedAt: story.publishedAt,
-        difficulty: story.difficulty,
+        commonality: story.commonality,
         updatedAt: story.updatedAt,
       },
       passages: passages.map((passage) => this.toPassageEdit(passage)),

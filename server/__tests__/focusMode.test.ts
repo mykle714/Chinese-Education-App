@@ -53,24 +53,33 @@ describe('the band fixtures', () => {
 });
 
 describe('selectFocusSet', () => {
-  it('fills the Study Mix quotas scaled to FOCUS_DAILY_CARDS when every band has supply', () => {
+  it('fills the Study Mix quotas scaled to FOCUS_DAILY_CARDS.core when every band has supply', () => {
     const cards = [...many('Unfamiliar', 30), ...many('Target', 30), ...many('Comfortable', 30), ...many('Mastered', 30)];
     const { ids, offCooldownTotal } = selectFocusSet(cards, NOW, 'core');
     expect(offCooldownTotal).toBe(120);
-    expect(ids).toHaveLength(FOCUS_DAILY_CARDS);
+    expect(ids).toHaveLength(FOCUS_DAILY_CARDS.core);
     const byId = new Map(cards.map((c) => [c.id, c]));
-    for (const quota of FOCUS_QUOTAS) {
+    for (const quota of FOCUS_QUOTAS.core) {
       const inBand = ids.filter((id) => barCategory(byId.get(id)!.typedMarkHistory, 'core') === quota.category);
       expect(inBand).toHaveLength(quota.count);
     }
+  });
+
+  it('caps the writing world at its own, smaller daily cap', () => {
+    expect(FOCUS_DAILY_CARDS.writing).toBeLessThan(FOCUS_DAILY_CARDS.core);
+    const quotaSum = FOCUS_QUOTAS.writing.reduce((sum, quota) => sum + quota.count, 0);
+    expect(quotaSum).toBe(FOCUS_DAILY_CARDS.writing);
+    const cards = [...many('Unfamiliar', 30), ...many('Target', 30), ...many('Comfortable', 30), ...many('Mastered', 30)];
+    const { ids } = selectFocusSet(cards, NOW, 'writing');
+    expect(ids).toHaveLength(FOCUS_DAILY_CARDS.writing);
   });
 
   it('borrows a short band\'s shortfall from the others', () => {
     // No Mastered or Comfortable at all: their 9 slots go to Target, then Unfamiliar.
     const cards = [...many('Unfamiliar', 30), ...many('Target', 30)];
     const { ids } = selectFocusSet(cards, NOW, 'core');
-    expect(ids).toHaveLength(FOCUS_DAILY_CARDS);
-    expect(new Set(ids).size).toBe(FOCUS_DAILY_CARDS);
+    expect(ids).toHaveLength(FOCUS_DAILY_CARDS.core);
+    expect(new Set(ids).size).toBe(FOCUS_DAILY_CARDS.core);
   });
 
   it('never picks a cooling card, and does not count it as off cooldown', () => {
@@ -111,9 +120,10 @@ class FakeFocusDAL implements IFocusModeDAL {
   }
   async listWorldCards() { return [...this.cards.values()]; }
   async countWorldCards() { return this.cards.size; }
-  async listCardsByIds(_u: string, _l: string, ids: number[]) {
+  async listCardsByIds(_u: string, _l: string, _w: MasteryWorldId, ids: number[]) {
     return ids.map((id) => this.cards.get(id)).filter((c): c is FocusCardRow => !!c);
   }
+  async materializeWritingIds(_u: string, ids: number[]) { return ids; }
 }
 
 function setup(cards: FocusCardRow[], focused: MasteryWorldId[] = ['core']) {
@@ -134,7 +144,7 @@ describe('FocusModeService.resolveWorld', () => {
   it('takes the day\'s snapshot on first use and serves it unchanged on later calls', async () => {
     const { service, dal } = setup(many('Target', 60));
     const first = await service.resolveWorld('u', 'zh', 'core');
-    expect(first.active && first.ids).toHaveLength(FOCUS_DAILY_CARDS);
+    expect(first.active && first.ids).toHaveLength(FOCUS_DAILY_CARDS.core);
     expect(dal.snapshots.get('core')?.streakDate).toBe('2026-10-20');
     const second = await service.resolveWorld('u', 'zh', 'core');
     expect(second).toEqual(first);
@@ -154,7 +164,7 @@ describe('FocusModeService.resolveWorld', () => {
     if (!after.active) throw new Error('expected active');
     expect(after.ids).not.toContain(right);
     expect(after.ids).toContain(wrong);
-    expect(after.ids).toHaveLength(FOCUS_DAILY_CARDS - 1);
+    expect(after.ids).toHaveLength(FOCUS_DAILY_CARDS.core - 1);
   });
 
   it('keeps a card marked correct in setIds, so a break cannot serve it as outside', async () => {
@@ -169,7 +179,7 @@ describe('FocusModeService.resolveWorld', () => {
     if (!after.active) throw new Error('expected active');
     expect(after.ids).not.toContain(right);
     expect(after.setIds).toContain(right);
-    expect(after.setIds).toHaveLength(FOCUS_DAILY_CARDS);
+    expect(after.setIds).toHaveLength(FOCUS_DAILY_CARDS.core);
   });
 
   it('re-snapshots on a new streak day', async () => {
@@ -180,8 +190,8 @@ describe('FocusModeService.resolveWorld', () => {
     expect(dal.snapshots.get('core')?.streakDate).toBe('2026-10-21');
   });
 
-  it('switches focus off and queues the popup when fewer than FOCUS_DAILY_CARDS cards are off cooldown', async () => {
-    const { service, dal } = setup(many('Target', FOCUS_DAILY_CARDS - 1));
+  it('switches focus off and queues the popup when fewer than FOCUS_DAILY_CARDS.core cards are off cooldown', async () => {
+    const { service, dal } = setup(many('Target', FOCUS_DAILY_CARDS.core - 1));
     expect(await service.resolveWorld('u', 'zh', 'core')).toEqual({ active: false, ended: true });
     expect(dal.state.focusWorlds).toEqual([]);
     expect(dal.state.focusEndedNotices).toEqual(['core']);
@@ -192,7 +202,7 @@ describe('FocusModeService.getStatus / setFocus', () => {
   it('reports remaining counts for focused worlds and owed notices', async () => {
     const { service } = setup(many('Target', 60));
     const status = await service.getStatus('u', 'zh');
-    expect(status.worlds.core).toEqual({ on: true, remaining: FOCUS_DAILY_CARDS, breakCards: 60 });
+    expect(status.worlds.core).toEqual({ on: true, remaining: FOCUS_DAILY_CARDS.core, breakCards: 60 });
     expect(status.worlds.reading).toEqual({ on: false, remaining: null, breakCards: null });
     expect(status.endedNotices).toEqual([]);
   });
@@ -200,7 +210,7 @@ describe('FocusModeService.getStatus / setFocus', () => {
   it('breakCards counts the cards outside the set plus the remaining set', async () => {
     const { service } = setup(many('Target', 60));
     const status = await service.getStatus('u', 'zh');
-    expect(status.worlds.core).toEqual({ on: true, remaining: FOCUS_DAILY_CARDS, breakCards: 60 });
+    expect(status.worlds.core).toEqual({ on: true, remaining: FOCUS_DAILY_CARDS.core, breakCards: 60 });
   });
 
   it('turning a world back on clears its owed notice', async () => {

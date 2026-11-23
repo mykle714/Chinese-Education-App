@@ -1,9 +1,10 @@
 import { Box, ButtonBase, Typography } from "@mui/material";
 import Icon from "../../components/Icon";
 import TonedPronunciation from "../../components/TonedPronunciation";
-import { COLORS, RAMP } from "../../theme/colors";
+import { COLORS } from "../../theme/colors";
 import { LEADING, SIZE } from "../../theme/scale";
 import type { SuperpositionWord } from "../../api/superposition";
+import { FINISHED_INK } from "./constants";
 
 /** The per-character check's size (px). Its space is always reserved, so the pinyin never jumps. */
 const CHAR_CHECK_PX = 14;
@@ -23,7 +24,7 @@ function syllableChecks(word: SuperpositionWord, finishedChars: ReadonlySet<stri
                 className={`superposition-hints__char-check${finished ? " superposition-hints__char-check--finished" : ""}`}
                 name="check_circle"
                 size={CHAR_CHECK_PX}
-                color={RAMP.grn.mark}
+                color={FINISHED_INK}
                 fill={1}
                 sx={{ visibility: finished ? "visible" : "hidden" }}
             />
@@ -75,7 +76,7 @@ const SuperpositionHints: React.FC<SuperpositionHintsProps> = ({ words, finished
                 >
                     {finished && (
                         // Pinned to the column's corner, so finishing a word does not shift its text.
-                        <Icon className="superposition-hints__finished-check" name="check_circle" size={18} color={RAMP.grn.mark} fill={1} sx={{ position: "absolute", top: 4, right: 0 }} />
+                        <Icon className="superposition-hints__finished-check" name="check_circle" size={18} color={FINISHED_INK} fill={1} sx={{ position: "absolute", top: 4, right: 0 }} />
                     )}
                     {word.pinyin && (
                         <TonedPronunciation

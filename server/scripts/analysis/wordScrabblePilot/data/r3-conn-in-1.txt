@@ -1,0 +1,211 @@
+一	numeral,adverb,adjective	one
+一下	numeral	a bit
+一个	numeral	a
+一月	noun	January
+一次	numeral,adjective	once
+一点	numeral,noun	a bit
+七	numeral	seven
+万	numeral	ten thousand
+三	numeral	three
+三十	numeral	thirty
+三月	noun	March
+上	verb,noun,adjective,particle	to go up
+上午	noun	morning
+下	verb,classifier	down
+下午	noun	afternoon
+下次见	interjection	see you next time
+不	adverb,particle	not
+不好	adjective	no good
+不客气	interjection,adjective	you're welcome
+不是	verb,noun	is not
+不用客气	interjection	you're welcome
+不能	verb	cannot
+不要	adverb	don't!
+东	noun	east
+东西	noun	thing
+个	classifier	classifier
+中	noun,verb,interjection	middle
+中国	noun	China
+中国人	noun	Chinese person
+中文	noun	Chinese language
+九	numeral	nine
+也	adverb,particle	also
+书	noun,verb	book
+买	verb	to buy
+了	particle,verb,adjective	to understand
+事	noun	thing
+事情	noun	thing
+二	numeral,adjective	two
+二十	numeral	twenty
+二月	noun	February
+五	numeral	five
+五十	numeral	fifty
+五月	noun	May
+人	noun	person
+什么	pronoun	what?
+今天	noun,adverb	today
+他	pronoun	he
+他们	pronoun	they
+以后	noun	after
+会	verb,noun	can
+住	verb	to live
+你	pronoun	you
+你好	interjection	hello
+做	verb	to do
+儿子	noun	son
+元	classifier,noun	Chinese yuan
+先	adverb	first
+先生	noun	mister (Mr.)
+八	numeral	eight
+八十	numeral	eighty
+八月	noun	August
+六	numeral	six
+再见	interjection,verb	goodbye
+写	verb	to write
+冷	adjective	cold
+几个	numeral	a few
+几点	noun	what time?
+出	verb,classifier	to go out
+别	adverb,verb	don't ...!
+别客气	interjection	don't mention it
+到	verb,preposition	to arrive
+前	noun,adjective	front
+前面	noun	in front
+包	noun,verb,classifier	bag
+北	noun	north
+北京	noun	Beijing
+医生	noun	doctor
+医院	noun	hospital
+十	numeral	ten
+十一	numeral,noun	eleven
+十一月	noun	November
+十三	numeral	thirteen
+十二	numeral	twelve
+十二月	noun	December
+十五	numeral	fifteen
+十八	numeral	eighteen
+十四	numeral	fourteen
+十月	noun	October
+半	numeral,adjective,adverb	half
+南	noun	south
+去	verb,particle	to go
+去年	noun	last year
+发	verb,noun,classifier	to send out
+口	noun,classifier	mouth
+叫	verb,preposition	to call
+可以	verb,adjective	can
+右	noun	right side
+号	noun,classifier	day of a month
+吃	verb	to eat
+吃饭	verb	to have a meal
+同学	noun	classmate
+名	noun,adjective	name
+名字	noun	name
+后	noun	behind
+吗	particle	question particle
+吧	particle	...right?
+听	verb,noun,classifier	to listen to
+听见	verb	to hear
+和	conjunction,preposition,verb	and
+哪	pronoun,particle	which
+哪个	pronoun	which
+哪儿	pronoun	where?
+哪里	pronoun,interjection	where?
+唱歌	verb	to sing a song
+喜欢	verb	to like
+喝	verb,interjection	to drink
+四	numeral	four
+四十	numeral	forty
+四月	noun	April
+回	verb,classifier,noun	time
+回来	verb	to come back
+国	noun	country
+在	verb,preposition,adverb	to be at
+在家	verb	to be at home
+地方	noun	place
+坐	verb	to sit
+外	noun	outside
+多	adjective,adverb,numeral	many
+多少	pronoun,noun,adverb	how many?
+大	adjective,adverb,noun	big
+大家	pronoun,noun	everyone
+天	noun	sky
+天气	noun	weather
+太	adverb	too (much)
+太好了	interjection,adjective	very good
+头	noun,classifier	head
+头发	noun	hair (on the head)
+女	noun	female
+她	pronoun	she
+好	adjective,verb,adverb,interjection,particle	good
+好吃	adjective,verb	tasty
+妈妈	noun	mother
+妹妹	noun	younger sister
+字	noun	character
+学	verb	to learn
+学习	verb,noun	to study
+学校	noun	school
+学生	noun	student
+孩子	noun	child
+它	pronoun	it
+家	noun,classifier	home
+家里	noun	home
+对	preposition,adjective,verb,classifier	correct
+对不起	interjection,verb	I'm sorry
+小	adjective	small
+小心	verb,adjective	to be careful
+小时	noun	hour
+少	adjective,verb	few
+就	adverb,verb,preposition,conjunction	just
+山	noun	mountain
+左	noun,adjective	left-hand side
+年	noun	year
+床	noun,classifier	bed
+开	verb	to open
+开始	verb,noun	to begin
+张	classifier,verb	classifier: sheet
+很	adverb	very
+心	noun	heart
+快	adjective,adverb	quick
+快乐	adjective,noun	happy
+怎么	pronoun,adverb	how?
+想	verb	to think (about)
+慢	adjective	slow
+我	pronoun	I
+我们	pronoun	we
+房子	noun	house
+房间	noun	room
+手	noun	hand
+打	verb,preposition	to hit
+新	adjective,adverb	new
+新年快乐	interjection	Happy New Year!
+日	noun	day
+日本	noun	Japan
+日本人	noun	Japanese person
+早	adjective,adverb,noun,interjection	early
+早上	noun	early morning
+时	noun	time
+时候	noun	time
+明天	noun,adverb	tomorrow
+明年	noun	next year
+星期	noun	week
+星期天	noun	Sunday
+春天	noun	spring (season)
+昨天	noun,adverb	yesterday
+是	verb,adjective,adverb	to be
+是不是	verb,adverb	is or isn't
+晚	noun,adjective	evening
+晚上	noun	evening
+月	noun	moon
+有	verb	to have
+有没有	verb,adverb	do you have?
+朋友	noun	friend
+本	classifier,adverb	(bound form) root
+来	verb,particle	to come
+树	noun,verb	tree
+桌子	noun	table
+椅子	noun	chair
+比	verb,preposition,noun	to compare
+水	noun,adjective	water
+汉字	noun	Chinese character(s)
+汉语	noun	Chinese language

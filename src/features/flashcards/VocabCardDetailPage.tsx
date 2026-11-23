@@ -4,7 +4,7 @@ import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { lensFromSearch } from "./collectionRef";
 import {
     Box, Alert,
-    Slide, Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
+    Button, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
 } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { useNotificationFor } from "../../components/notifications/useNotify";
@@ -30,10 +30,11 @@ import { cardStockVars } from "./card/cardStock";
 import { useTier2Look } from "../../timeOfDay/useTier2Look";
 import { useCardIconEditor } from "../../cardIcons/editor/useCardIconEditor";
 import CardIconCanvas from "../../cardIcons/editor/CardIconCanvas";
+import CardEditPanel from "../../cardIcons/editor/CardEditPanel";
 import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "../../cardIcons/editor/CardEditToolbar";
 import MasteryWindow from "../../components/mastery/MasteryWindow";
 import WordToolsRail from "../../components/WordToolsRail";
-import { useCompareSheet } from "../../components/CompareSheet";
+import { useCompareSheet } from "./compare/useCompareSheet";
 import { HeaderIconButton } from "../../components/PageHeader";
 import SheetPill from "../../components/SheetPill";
 import EipSheet from "./FlashcardsLearnPage/EipSheet";
@@ -137,17 +138,16 @@ const VocabCardDetailPage: React.FC = () => {
     const [selectedSenseIndex, setSelectedSenseIndex] = useState(0);
     useEffect(() => { setSelectedSenseIndex(entry ? resolveSelectedSenseIndex(entry) : 0); }, [entry?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // "Compare", from the word-tools rail above the card and from the eip entry header —
-    // raises the compare SHEET over this page with the word in slot A (see
-    // docs/WORD_COMPARE_FEATURE.md). It used to navigate to a standalone /compare page,
-    // which took the card being compared FROM off the screen; the sheet leaves it behind
-    // the panel and drags to full height when the learner wants the whole screen.
-    //
-    // Depth 1 while the eip is up, so the compare sheet and its scrim paint ABOVE the
-    // info sheet rather than behind it — this is the app's first stacked SheetPanel.
-    // The flp is the one surface that does NOT mount this: it has an entry-tab strip, so
-    // Compare is a tab there (useEipTabs).
-    const { openCompare, compareSheet } = useCompareSheet({ depth: infoOpen ? 1 : 0 });
+    // "Compare", from the word-tools rail above the card — raises the Compare panel
+    // (compare/CompareSheet, docs/WORD_COMPARE_FEATURE.md) over this page with the word in
+    // slot A. Compare never stacks over the eip (owner's call 2026-11-21): an open eip
+    // closes first, so the panel always opens at depth 0. (It stacked at depth 1 over the
+    // eip until then — the app's first stacked SheetPanel.)
+    const { openCompare, compareSheet } = useCompareSheet();
+    const handleCompare = useCallback((target: VocabEntry) => {
+        setInfoOpen(false);
+        openCompare(target);
+    }, [openCompare]);
 
     // The flashcard icon editor (fie) — the same toolbar/canvas flp opens on its
     // back face. There's no "next card" here (single-card page), so nextEntry is
@@ -244,15 +244,17 @@ const VocabCardDetailPage: React.FC = () => {
     const heroCardRef = useRef<HTMLDivElement | null>(null);
 
     // ── Edit-toolbar reservation ──────────────────────────────────────────────
-    // The edit toolbar is an absolute overlay at the top of ContentArea, so it takes no flow
-    // height and would otherwise paint over the top of the column. The column reserves exactly
+    // The edit toolbar lives in CardEditPanel — a sheet portaled to the frame and pinned over
+    // the page header — so it takes no flow height and would otherwise paint over the top of
+    // the column. The column reserves exactly
     // what the toolbar's PRIMARY ROW intrudes past the top of its content — the same hook, and
     // the same "only as much as it actually intrudes" rule, the flp gives its card slot.
     //
     // Two deliberate choices make the cdp behave the way the surface is designed:
     //  - **The BASIC row is what gets cleared, and it is cleared always** (`enabled` is plain
-    //    `editMode`): opening the editor pushes the column down so the single row sits above
-    //    the word-tools rail rather than on it.
+    //    `editMode`): if the single row would reach the word-tools rail, the column is pushed
+    //    down so the row sits above it. Since the panel starts at the frame top (over the
+    //    header), the row usually ends inside the header band and the push is 0.
     //  - **The ADVANCED rows are NOT cleared.** They are sized to land on the word-tools rail
     //    (`Write it` / `Compare`) — covering it is the intent, so advanced mode must not push
     //    the page down a second time. The primary row's bottom edge doesn't move when the
@@ -462,69 +464,59 @@ const VocabCardDetailPage: React.FC = () => {
                         <Alert className="vocab-card-detail__error-alert" severity="error">{error}</Alert>
                     ) : entry ? (
                         <>
-                            {/* Floating edit toolbar — the same fie (flashcard icon editor)
-                                toolbar flp uses. Overlays the top of ContentArea (flush against
-                                the header above, spanning full width) instead of sitting in
-                                normal flow, so opening it never shifts the badges/hero card/boxes
-                                down. Matches flp's own overlay treatment. See docs/CARD_ICON_LAYOUT.md. */}
-                            <Slide
-                                in={editMode}
-                                direction="down"
-                                timeout={CARD_EDIT_ANIM_MS}
-                                easing={CARD_EDIT_ANIM_EASING}
-                                mountOnEnter
-                                unmountOnExit
-                            >
-                                <Box ref={toolbarRef} sx={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 20 }}>
-                                    <CardEditToolbar
-                                        advMode={advMode}
-                                        count={advDraft.length}
-                                        layout={advDraft}
-                                        hasSelection={selectedIcon !== null || selectedText !== null}
-                                        selectionKind={selectedText !== null ? "text" : selectedIcon !== null ? "icon" : null}
-                                        canUndo={advHistory.length > 0}
-                                        canRedo={advFuture.length > 0}
-                                        onChangeIcon={() => setIconSearchOpen(true)}
-                                        onAddIcon={() => setIconSearchOpen(true)}
-                                        onToggleAdv={() => setAdvMode((v) => !v)}
-                                        onUndo={undoAdv}
-                                        onRedo={redoAdv}
-                                        onDeleteSelected={handleDeleteSelected}
-                                        onDuplicate={handleDuplicateSelected}
-                                        onAlign={handleAlign}
-                                        onMirror={handleMirror}
-                                        onToggleLock={handleToggleLock}
-                                        selectedLocked={selectedLocked}
-                                        onReorder={handleReorder}
-                                        onReorderStart={pushAdvHistory}
-                                        onToggleLockAt={handleToggleLockAt}
-                                        onSelectIcon={(i) => selectTarget({ kind: "icon", index: i })}
-                                        selectedIndex={selectedIcon}
-                                        snapMove={snapMove}
-                                        snapRotate={snapRotate}
-                                        snapResize={snapResize}
-                                        onToggleSnapMove={handleToggleSnapMove}
-                                        onToggleSnapRotate={handleToggleSnapRotate}
-                                        onToggleSnapResize={handleToggleSnapResize}
-                                        onNudgeMove={handleNudgeMove}
-                                        onRotateStep={handleRotateStep}
-                                        onResizeStep={handleResizeStep}
-                                        foreignLabel={entry.entryKey}
-                                        englishLabel={resolveDisplayDefinition(entry, selectedSenseIndex)}
-                                        textForeign={textForeign}
-                                        textEnglish={textEnglish}
-                                        onSetTextForeign={setTextForeign}
-                                        onSetTextEnglish={setTextEnglish}
-                                        cardColor={cardColor}
-                                        onSetCardColor={setCardColor}
-                                        canReset={canReset}
-                                        onReset={() => setResetConfirmOpen(true)}
-                                        onSave={handleSaveLayout}
-                                        onCancel={exitEdit}
-                                        saving={savingLayout}
-                                    />
-                                </Box>
-                            </Slide>
+                            {/* The Customize panel — the same fie (flashcard icon editor) panel the
+                                flp uses: an eip-style white sheet that drops down over the header
+                                (CardEditPanel portals it to the frame), taking no flow height. See
+                                docs/CARD_ICON_LAYOUT.md § "The Customize panel". */}
+                            <CardEditPanel open={editMode} ref={toolbarRef}>
+                                <CardEditToolbar
+                                    advMode={advMode}
+                                    count={advDraft.length}
+                                    layout={advDraft}
+                                    hasSelection={selectedIcon !== null || selectedText !== null}
+                                    selectionKind={selectedText !== null ? "text" : selectedIcon !== null ? "icon" : null}
+                                    canUndo={advHistory.length > 0}
+                                    canRedo={advFuture.length > 0}
+                                    onChangeIcon={() => setIconSearchOpen(true)}
+                                    onAddIcon={() => setIconSearchOpen(true)}
+                                    onToggleAdv={() => setAdvMode((v) => !v)}
+                                    onUndo={undoAdv}
+                                    onRedo={redoAdv}
+                                    onDeleteSelected={handleDeleteSelected}
+                                    onDuplicate={handleDuplicateSelected}
+                                    onAlign={handleAlign}
+                                    onMirror={handleMirror}
+                                    onToggleLock={handleToggleLock}
+                                    selectedLocked={selectedLocked}
+                                    onReorder={handleReorder}
+                                    onReorderStart={pushAdvHistory}
+                                    onToggleLockAt={handleToggleLockAt}
+                                    onSelectIcon={(i) => selectTarget({ kind: "icon", index: i })}
+                                    selectedIndex={selectedIcon}
+                                    snapMove={snapMove}
+                                    snapRotate={snapRotate}
+                                    snapResize={snapResize}
+                                    onToggleSnapMove={handleToggleSnapMove}
+                                    onToggleSnapRotate={handleToggleSnapRotate}
+                                    onToggleSnapResize={handleToggleSnapResize}
+                                    onNudgeMove={handleNudgeMove}
+                                    onRotateStep={handleRotateStep}
+                                    onResizeStep={handleResizeStep}
+                                    foreignLabel={entry.entryKey}
+                                    englishLabel={resolveDisplayDefinition(entry, selectedSenseIndex)}
+                                    textForeign={textForeign}
+                                    textEnglish={textEnglish}
+                                    onSetTextForeign={setTextForeign}
+                                    onSetTextEnglish={setTextEnglish}
+                                    cardColor={cardColor}
+                                    onSetCardColor={setCardColor}
+                                    canReset={canReset}
+                                    onReset={() => setResetConfirmOpen(true)}
+                                    onSave={handleSaveLayout}
+                                    onCancel={exitEdit}
+                                    saving={savingLayout}
+                                />
+                            </CardEditPanel>
 
                             {/* WORD TOOLS — `Write it`, `Compare` and `Customize`, on their
                                 own rail above the card and outside its boundary — the same
@@ -532,8 +524,11 @@ const VocabCardDetailPage: React.FC = () => {
                             <WordToolsRail
                                 className="vocab-card-detail__word-tools"
                                 entry={entry}
-                                onCompare={openCompare}
+                                onCompare={handleCompare}
                                 onCustomize={handleCustomize}
+                                // Greyed + inert while the icon editor is open — the same
+                                // treatment as this page's More Info pill. `Write it` stays live.
+                                disabled={editMode}
                             />
 
                             {/* Hero card — the same size/style as the flp (learn page)

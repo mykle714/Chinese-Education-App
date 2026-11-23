@@ -11,6 +11,7 @@ tower" → "The session".
 | Gesture hook | `src/features/flashcards/FlashcardsLearnPage/useCardDrag.ts` → `useCardDrag`, `classifyRelease` | Tracks a press in refs and document listeners, classifies the lift-off, runs the flip and the locks |
 | Thresholds | `src/features/flashcards/constants.ts` → `CARD_TAP_SLOP`, `CARD_FLICK_MIN_VELOCITY`, `CARD_FLICK_MIN_DISTANCE`, `CARD_FLICK_WINDOW_MS`, `CARD_DISMISS_THRESHOLD_VW`, `CARD_DRAG_SENSITIVITY`, `CARD_FLY_OUT_MS`, `LAST_CARD_RETURN_MS` | The numbers |
 | Loop state | `src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts` → `CardSlot`, `FlyOut` (`returnsAlone`), `handleCardDismiss`, `deepEntry` | Slot rotation, fly-out arming and timing |
+| Undo | `useWorkingLoop.ts` → `runUndo`, `handleUndoLastMark`, `serverUndoChainRef`; `src/features/flashcards/types.ts` → `LastMarkUndoSnapshot`; `TowerStudyHeader.tsx` | Undo lights up at the swipe; local restore, then server revert (§ "Undo") |
 | Render | `src/features/flashcards/FlashcardsLearnPage/FlashCardSection.tsx` → `roleOf`, `flyArmed`, `TOWER_FLY_RIGHT_KEYFRAMES`, `TOWER_TUCK_KEYFRAMES`, `LAST_CARD_RETURN_KEYFRAMES`, `LAST_CARD_TURN_AT`, `LAST_CARD_LEAVING_KEYFRAMES` / `LAST_CARD_ARRIVING_KEYFRAMES`; `styled.ts` → `LastCardLabel` | The three slots, the fly-out animations, the last card's return |
 | Page | `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx` → the "TTS narration" effects | Narration is not cancelled by a flip |
 
@@ -73,8 +74,8 @@ like it had done nothing. Instead:
 The whole move takes `LAST_CARD_RETURN_MS` (800). The loop's fly-out timer waits that long
 instead of `CARD_FLY_OUT_MS`. The front slot is hidden and takes no taps for the whole
 move, so the flying copy is the only card on screen; when the fly-out ends the front takes
-over at the same pose. `currentIndex` does not move in a one-card loop, so useCardDrag's
-per-card reset never fires: the loop calls `cardDragRef.resetCard()` once the fly-out is
+over at the same pose. The front card's id does not change (it is the same card), so
+useCardDrag's per-card reset never fires: the loop calls `cardDragRef.resetCard()` once the fly-out is
 armed, and the page's bridge also wipes a writing card's graded attempt.
 
 A **correct** mark on the loop's only card also advances onto the same card, and whether
@@ -82,8 +83,13 @@ it goes for good is not known until the mark's reply: a replacement card, or not
 loop is empty and the out-of-ready-cards card comes up). Until the reply,
 `useWorkingLoop.ts` → `frontVacated` is set and the front is not drawn
 (`FlashCardSection.tsx` → `hiddenForVacated`), so the card behind it, the
-out-of-ready-cards backing card, shows while the swiped card flies off. A suppressed or
-failed mark puts the same card back. The stack also stays mounted while a fly-out runs
+out-of-ready-cards backing card, shows while the swiped card flies off. A replacement
+lands in the same front slot (index 0); its new id resets the flip (see "Per-card reset"
+below), and `handleCardDismiss` (`replacesFront`) gives it its own Side 1 language rather
+than the passed card's. A failed request
+puts the same card back; a suppressed mark (the server refused it, e.g. the card is
+cooling) takes the card out of the loop, like a pass with no replacement
+(`useWorkingLoop.ts` → `handleCardDismiss`). The stack also stays mounted while a fly-out runs
 with an empty loop (`currentEntry || flyOut`), and the flying slot lifts above the
 out-of-ready-cards card (z-index 5) if that card comes up mid-flight, so the card is
 never cut off mid-flight.
@@ -92,6 +98,27 @@ The label stays on the front while that card is alone (`nextEntry === null`). It
 the next dismiss, or as soon as a refill puts a card behind it. It is hidden while
 "Tap to flip" holds the same spot in the top band. When a game break is due, the plain tuck
 plays instead, because the break's card comes up on top.
+
+## Per-card reset
+
+`useCardDrag.ts` → `useCardDrag` (`resetKey`, `resetCard`, `restoreFlipped`);
+`FlashcardsLearnPage.tsx` → `frontCardId`; `useWorkingLoop.ts` → `CardDragControls`.
+
+Every per-card reset keys on the **front card's id** (`frontCardId`), never on its position
+in the loop (`currentIndex`): the flip, the "has flipped" swipe gate, the hints, an
+in-progress press, the eip (closed, tabs dropped) and the writing-practice draft. A position
+can stay put while the card under it is swapped — a one-card loop's correct swipe puts the
+replacement at index 0 again, and it arrived flipped (2026-11-22) — and it can move while
+the card stays: a removal behind the front (a suppressed mark winding its card out)
+re-anchors the index, which un-flipped the card being studied and closed its eip.
+
+The flip itself is scoped to the id it was made on (`isFlipped` reads false for any other
+card), so even the one render between a card change and the reset effect never shows a
+stale flip. Two cases bring the SAME id back and so call `resetCard` explicitly: the last
+card's incorrect return (`FlyOut.returnsAlone`) and a re-deal (`dealLoop`), which may open on
+the card already showing. Undo calls `restoreFlipped(cardId)`, which survives the reset
+effect for that one card; when the restored card is already the one showing, no effect is
+coming, so `restoreFlipped` clears its marker itself.
 
 ## Release classification
 
@@ -139,6 +166,38 @@ time at commit. On a phone its first visible frame landed 68–278 ms later, wit
 already mostly off-screen, and a fixed timer counted from the swipe then cut the rest
 short. It was not clipping: every clipping container around the card spans the full
 screen width.
+
+## Undo
+
+The header's undo button (`TowerStudyHeader`) reverts the last swipe. It lights up **the
+moment the card is swiped**, not when the mark's reply arrives.
+
+- **Snapshot at the swipe.** `handleCardDismiss` stores a `LastMarkUndoSnapshot`
+  (`src/features/flashcards/types.ts`) at once: the pre-swipe loop, index and Side 1
+  languages, plus `markWritten`, a promise of the server's mark key
+  (`markTimestamp` + `displacedMarks`). That promise resolves to null when the server wrote
+  nothing (a suppressed mark, or a request that failed after its retries).
+- **Local restore first, server revert second.** `runUndo` puts the card back on screen
+  straight away (on Side 2, via `restoreFlipped`) and calls `onUndone`. Once
+  `markWritten` resolves, it posts `POST /api/flashcards/undoLastMark`, or sends nothing
+  if the key is null. A failed revert shows the error banner, and the card stays restored.
+- **A tap mid-fly-out is queued** (`undoQueued`). It runs the moment `isAnimating` drops,
+  because restoring mid-flight would fight the slot animation. The button is never
+  disabled for the fly-out. It is disabled only when there is no snapshot, in edit mode,
+  or while a game break / the out-of-ready-cards card locks it (`breakLocksUndo`).
+- **A late reply keeps its hands off.** A swipe undone before its reply lands has its
+  snapshot's `undone` flag set. The reply then skips every loop patch: no refill over the
+  restored card, no wind-down. In a one-card loop, `runUndo` also clears
+  `soleCardLeavingId`, so the restored card is not hidden as `frontVacated`.
+- **Marks wait for the revert** (`serverUndoChainRef`). The server reverts only a card's
+  newest mark on that track (`FlashcardMarkService` → `undoMark`,
+  `ERR_UNDO_TARGET_MISMATCH`), so a quick re-swipe of the restored card is held until the
+  revert lands.
+- **One level, and none for writing.** A new swipe replaces the snapshot. A writing mark
+  clears it, because writing results fan out onto other cards and cannot be undone.
+
+Code: `src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts` → `handleCardDismiss`,
+`runUndo`, `handleUndoLastMark`; `TowerStudyHeader.tsx`.
 
 ## History (why the gesture lives in refs)
 

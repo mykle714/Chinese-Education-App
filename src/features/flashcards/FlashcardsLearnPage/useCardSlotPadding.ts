@@ -25,8 +25,8 @@ import { cardSlotPadding, CARD_SLOT_BOTTOM_INSET_FALLBACK, type CardSlotPadding 
  * @param affordanceRef the More Info pill (null on a surface that has none)
  * @param topBandRef    an overlay band across the TOP of the slot — the flp's word-tools
  *                      rail (`.mobile-demo-word-tools-band`). The top pad clears it. Its
- *                      LAST non-zero height is kept while the rail is hidden (the
- *                      out-of-ready-cards card, the icon editor), so hiding the rail never
+ *                      LAST non-zero height is kept while the rail is hidden (no rail
+ *                      entry, the writing flp), so hiding the rail never
  *                      moves the card; `topBandFallback` stands in until it is first measured.
  * @param topBandFallback px, the band's height before its first measurement (0 = no band)
  */

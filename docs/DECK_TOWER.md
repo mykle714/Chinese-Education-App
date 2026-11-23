@@ -29,8 +29,8 @@ the floor's snow; the pawn wading and its channel; flakes falling in front of th
 
 Sub-document: [HINT_PAWN.md](./HINT_PAWN.md): the flp's **hint pawn**, a pawn on a tiny
 platform in the world's colour, in the session's bottom-left corner, which speaks the front
-card's hint (writing: the used-in words; main and reading: a wrong-streak study tip after
-3 misses in a row). Arrives on a session's first hint, can be swiped
+card's hint (main and reading: a wrong-streak study tip after 3 misses in a row; writing
+has no card hint since 2026-11-22 — its card names its source words itself). Arrives on a session's first hint, can be swiped
 away for the rest of the td visit (`useHintPawnVisit`), and has a per-device switch in Settings.
 
 Sub-document: [LAUNCH_SCREEN.md](./LAUNCH_SCREEN.md): the **launch screen**, the app
@@ -45,7 +45,7 @@ Sub-document: [FOCUS_MODE.md](./FOCUS_MODE.md) — the **focus lever** in each p
 left floor corner on screen (`IsoLever`, `useFocusLever`, `useLeverMotion`; layout
 `TOWER_LAYOUT.leverAt`, whose hatch is the pawns' second obstacle). It shows on the Learning
 deck once the world holds 80 off-cooldown cards (or focus is on), and switches the world to a
-daily cap of 30 (`FOCUS_DAILY_CARDS`). While focus is on, the world's ready counts — and so its Learning tower —
+daily cap of 30, or 15 on the writing world (`FOCUS_DAILY_CARDS[world]`). While focus is on, the world's ready counts — and so its Learning tower —
 cover only today's remaining focus set.
 
 Parent: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (sub-documents table).
@@ -101,7 +101,7 @@ Parent: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (sub-documents table).
 | Page logic | `src/features/deckTower/towerModes.ts` → `TOWER_MODES`, `bandTotal`; `DeckTowerPage` → `learningCount` | The Learning deck's study mode — Mix only (§ Study mode) |
 | Page logic | `src/features/deckTower/towerResizes.ts` → `TOWER_SHRINKS`, `TOWER_GROWS`, `GHOST_COLLAPSE`, `SKY_DROP`, `IMPACT_MS`; `useTowerResize.ts` → `useTowerResize`; `DeckTowerPage` → `startResize`, `resolveRecount` | The library of in-place tower shrinks and grows, and the per-world player the focus lever uses (§ Tower resizes) |
 | Page logic | `src/features/deckTower/usePopUpMotion.ts` → `usePopUpMotion`, `useTween` | The floor fixture's rise / sink / sky-fall tweens (the focus lever's `useLeverMotion` builds on it) (§ Floor fixtures) |
-| Data | `src/hooks/useFlpReadyCounts.ts` (once per bar: core, reading, writing; `GET /api/onDeck/flpReadyCounts`) + `src/hooks/useMasteredCounts.ts` + `src/features/flashcards/builtinCollections.ts` → `builtinCollectionCount` | Each world's figures, read through its own bar. **Learning** = the bar's cards that are OFF COOLDOWN (`flpReadyCountsByBand`, the flp's own readiness rule; the response is `{ counts, upcoming, focusOn }`), in all four utcm bands (`TOWER_MODES.mix.bands` summed by `bandTotal`); **Mastered** = the bar's whole Mastered total, cooling or not. Two different **Learning** counts are on td on purpose: the tower's Learning deck is off-cooldown cards in all four bands, while the cards page's Learning filter key (and the sort platform's low test) counts cooling cards too and leaves out Mastered (`builtinCollectionCount({ kind: "learn-now" })`). Fetched on open; a card coming off cooldown while the page is up joins the tower as its own sky drop (§ Cooldown releases). The reading and writing figures are fetched even with the goal off (the same choice `useMasteredCounts` makes) |
+| Data | `src/hooks/useFlpReadyCounts.ts` (once per bar: core, reading, writing; `GET /api/onDeck/flpReadyCounts`) + `src/hooks/useMasteredCounts.ts` + `src/features/flashcards/builtinCollections.ts` → `builtinCollectionCount` | Each world's figures, read through its own bar. **Learning** = the bar's cards that are OFF COOLDOWN (`flpReadyCountsByBand`, the flp's own readiness rule; the response is `{ counts, upcoming, focusOn }`), in all four utcm bands (`TOWER_MODES.mix.bands` summed by `bandTotal`); **Mastered** = the bar's whole Mastered total, cooling or not. Two different **Learning** counts are on td on purpose: the tower's Learning deck is off-cooldown cards in all four bands, while the cards page's Learning filter key (and the sort platform's low test) counts cooling cards too and leaves out Mastered (`builtinCollectionCount({ kind: "learn-now" })`). Fetched on open; a card coming off cooldown while the page is up joins the tower as its own sky drop (§ Cooldown releases). The reading and writing figures are fetched even with the goal off (the same choice `useMasteredCounts` makes). ⚠️ **The writing world's two towers count different units, on purpose** (owner, 2026-11-22): its Learning tower counts off-cooldown deck CHARACTERS (the writing deck, single characters of the learner's sorted words — WRITING_PRACTICE_REWORK.md § 3d), its Mastered tower sorted WORDS whose averaged writing bar is Mastered. Don't "fix" one to match the other |
 
 ## The scene
 
@@ -930,7 +930,10 @@ from:
   an object on the ground. Floor the tower hides is skipped too (`openFloorSpot`). A jagged white
   bolt comes down onto that spot in front of everything (`IsoLightningBolt`, ~0.5 s). It
   leaves a scorch decal under everything on the floor (`IsoBurnMark`, its shape seeded by
-  the strike id).
+  the strike id). A pawn's shadow is an opaque floor-tone patch, so the scorches are drawn
+  again inside it (`DeckTowerPlatform.tsx` → `renderBurns`, `floorDecalsShaded` → IsoPawn
+  `decals`), like the si print and the plate. Otherwise the shadow would wipe out a scorch as
+  the pawn walks over it.
 - **The pawn.** Each live pawn reports its ground point every frame (`floorSpot`, null while
   it is not on the floor). A strike within `STRIKE_HIT_RADIUS` (0.8) of a pawn shocks it: it
   freezes for 1 s while it flickers ink ↔ white, jitters and throws white sparks. A smoke
@@ -989,6 +992,11 @@ The tower refetches every 30 min while mounted and when a tab returns after long
 that (`useTowerWeather`, keyed on `user?.id`, never on `token`). Its FIRST read shares the
 request the app-level prefetch started as soon as the user was known (`useWeatherPrefetch`
 → `fetchWeatherShared`; [LAUNCH_SCREEN.md](./LAUNCH_SCREEN.md) § Weather prefetch).
+The last real answer is remembered across mounts (`useTowerWeather.ts` → `lastAnswer`, per
+user): td unmounts on every footer-tab switch, and a remount starts from that answer (and
+counts as `settled`) rather than from "no weather", so coming back never draws a clear sky
+that then fades to the real one. The mount's refetch still runs and changes the sky only if
+the weather actually changed.
 
 **The sky fades.** A change of main's sky colour that is not a world pan (the weather
 arriving or changing, the clock moving through a twilight) eases over `SKY_FADE_MS` (10 s)
@@ -1045,6 +1053,7 @@ a tap's concern: it settles on page entry (`SnowResetChip` re-settles it now, TO
 `TesterInlineContext`, `useTesterInline`; `TesterChipRow.tsx`; `LightningStrikeChips.tsx`;
 `SnowResetChip.tsx`; `BalloonSpawnChip.tsx` ("🎈 Balloon": sends one red balloon across now, whatever the weather — ISO_ART_FRAMEWORK.md § IsoBalloon → "Tester spawn");
 `ShootingStarChip.tsx` ("☄️ Meteor": fires one burst of shooting stars now, whatever the time of day — § Time of day → "Shooting stars");
+`LoaderPreviewChip.tsx` ("⏳ Loader": a toggle that holds `PawnLoader` up, with no delay, until tapped again — § "Loading feedback");
 `testerChipStyle.ts` → `testerChipSx`, `TESTER_ROW_SX`, `TESTER_GROUP_SX`.
 
 Feature testers (`users.isFeatureTester` + the Settings testing switch) see the tester
@@ -1055,7 +1064,7 @@ each:
 |---|---|
 | `TesterSharedRow name="sky"` | `TimeOfDayToggle` │ `AuroraToggle` |
 | own row | `WeatherToggle` |
-| `TesterSharedRow name="actions"` | `LightningStrikeChips` │ `SnowResetChip` │ `BalloonSpawnChip` │ `ShootingStarChip` │ `BankingAlwaysPlayToggle` |
+| `TesterSharedRow name="actions"` | `LightningStrikeChips` │ `SnowResetChip` │ `BalloonSpawnChip` │ `ShootingStarChip` │ `LoaderPreviewChip` │ `BankingAlwaysPlayToggle` |
 | own row | `ForcedBreakPicker` (one chip per break game, so its length varies) |
 
 - **Group vs row.** A chip group renders as a full row (`TESTER_ROW_SX`: page gutter +
@@ -1082,6 +1091,7 @@ each:
   | `TimeOfDayToggle` | the sky colour fades (`SKY_FADE_MS`, 10 s) | `snapSky` for the render carrying the change (`DeckTowerPage` → `timeOfDayPinChanged`, `useJustChanged.ts`) |
   | `WeatherToggle` | the sky fade; clouds drift in one by one | `snapSky` (`weatherPinTapped`) + an instant cloud fill (§ Weather → "Tester toggle") |
   | `BalloonSpawnChip` | the balloon drifted in from off screen | it starts partway across (ISO_ART_FRAMEWORK.md § IsoBalloon → "Tester spawn") |
+  | `LoaderPreviewChip` | PawnLoader's 400 ms delay before it shows | mounted with `delayMs={0}` |
   | `AuroraToggle`, `LightningStrikeChips`, `ShootingStarChip`, `SnowResetChip` | nothing — already immediate | — |
 
   A mid-sky start still fades in over `FADE_MS` (1.6 s, `cloudDriftMotion.ts`), so it appears
@@ -1232,8 +1242,8 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
   is narrated when the visit starts. A climb-out PARKS the session again with its working
   loop kept; what belonged to the visit is reset on that edge (FlashcardsLearnPage's
   parking effect): undo is cleared (the tower was reconciled, so undoing would put back a
-  card already counted), the sort offer is re-armed, the game-break counter starts over
-  (`useGameBreak` → `reset`), the eip closes, and a card flipped but not yet marked is
+  card already counted), the sort offer is re-armed, any game break in progress is dropped
+  (`useGameBreak` → `reset`; the count toward the next break persists, [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 1), the eip closes, and a card flipped but not yet marked is
   turned back to Side 1 (`useCardDrag` → `resetCard`; a writing card's graded attempt is
   wiped too, `useWritingFlashcard` → `resetAttempt`) — a visit never opens flipped. The lent words reviewed stay on the
   offer's list across visits. A session whose deal is older than `PARKED_LOOP_FRESH_MS`
@@ -1334,8 +1344,9 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
   was set back up to the loop's size (`afterTowerEmptied`), and a dry session climbed out by
   itself (`DRY_CLIMB_DELAY_MS`); both are gone. The count stays exact because the flp now deals
   only off-cooldown cards before it lends — the same cards the tower counts. A correct mark
-  comes off at the swipe, even one the server later drops on cooldown (rare now: only a card
-  marked on another surface mid-visit); the climb-out reconcile corrects it.
+  comes off at the swipe, even one the server later drops on cooldown (rare now: a card marked on another surface
+  mid-visit). The card then leaves the loop, so it comes off once and does not come back
+  (`useWorkingLoop.ts` → `handleCardDismiss`); the climb-out reconcile corrects it.
 - **The platform fades** (`useTowerStudy` → `platformOpacity`;
   `DeckTowerPlatform` `fadeOpacity`, `keepDeck`). Every session is studied on the bare sky.
   The studied world's platform — the slab, the pawns, the plate, the lever, but NOT the
@@ -1367,7 +1378,7 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
   landed on the platform's floor and its light top-edge bevel with no contrast. Nothing else
   sits on the card's top edge (the `•••` card-options rail and the card-note strip were
   deleted 2026-11-05), so the band is the labels' alone.
-- **The climb** (back arrow, a tap off the card, or the sort offer's "Leave anyway" — a dry session no longer climbs out by itself, § Running out of ready cards). A tap off the card is Back: a press that starts and ends, without travelling, on the session's bare space round the card — `FlashcardsLearnPage` → `handleTowerOffCardTap`, matched against `TOWER_OFF_CARD_SELECTOR` (a whitelist of the content area's empty layout boxes, so the card and every control are excluded); off during an icon edit and once a game break leaves the stack (its card is a card, so a tap off that works the same; `stackIsCards`). Like the back arrow it goes through `handleBack`, so the sort offer still gets its turn. The dive
+- **The climb** (back arrow, or the sort offer's "Leave anyway" — a dry session no longer climbs out by itself, § Running out of ready cards). The back arrow is the ONLY way out: a tap on the bare space round the card does nothing (it was Back until 2026-11-21, `handleTowerOffCardTap`, removed so a stray tap can't end a study). The dive
   in reverse (`CLIMB_MS` 480; a climb that cuts a dive short flies back from where it
   had got to), after the count card is back on (`covering`, above; skipped at 0 cards — there is
   no count card to put back). The tower header
@@ -1480,6 +1491,25 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
   - **No SVG filter over the session**: the night wash's `feColorMatrix` filter was cut
     (§ Time of day → "The wash").
 
+## Loading feedback
+
+`src/features/deckTower/PawnLoader.tsx` (`PawnLoader`), `src/features/deckTower/iso/pawnFigure.ts`
+(`pawnFigure`, `REST_POSE`).
+
+`PawnLoader` is td's generic loading mark: a 72 px white disc centred on the viewport, outlined
+by `COLORS.border`, with the resting pawn in ink at its centre. A 3 px ink runner line with a
+fading tail (a conic gradient masked to a ring, capped by a round dot at its head) laps the rim
+once a second. It is a fixed, `pointer-events: none` overlay with `role="status"`, portalled to
+`document.body` so a transformed ancestor cannot pull it off centre. Nothing is
+drawn for the first `delayMs` (default 400 ms), so fast loads never flash it. After that it fades
+in. It keeps spinning under prefers-reduced-motion, because it is the only sign that work is
+still going on.
+
+It lives in the feature rather than `src/components/` because it draws through the iso kit's
+`pawnFigure`, and `components/` may not import from `features/` (FRONTEND_LAYERING.md).
+
+**Status:** the component is built, but no loading flow uses it yet. Feature testers can hold it up with the "⏳ Loader" chip (`LoaderPreviewChip`, § "Feature-tester rows").
+
 ## Running out of ready cards
 
 `server/services/OnDeckVocabService.ts` (`canLendProvisional`, `getDistributedWorkingLoop`,
@@ -1493,7 +1523,7 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
 `ReadyOutCardLayer.tsx` (`ReadyOutKind`, the copy, `backing`, `look`),
 `FlashCardSection.tsx` (`readyOutCard`, `readyOutBacking`, `readyOutLook`),
 `gameBreak/interimCardPlate.ts` (the "Got it!" plate),
-`useTowerStudy.ts` (`onMarked` / `onUndone` with `lent`; `focusedWorlds` → `FlpTowerHost.focused`).
+`useTowerStudy.ts` (`onMarked` / `onUndone` with `lent`; `focusedWorlds` → `FlpTowerHost.focused`; `readyBandCounts` → `FlpTowerHost.readyBandCounts`, read by the hint pawn's deck-review line — docs/HINT_PAWN.md § Deck review).
 
 The tower is studied **to the bottom**. The flp serves the learner's own **off-cooldown**
 cards and nothing else until they are spent — so every right swipe takes one off the tower,
@@ -1526,10 +1556,13 @@ announced by a card in the stack:
   then carries on with lent words. Off-cooldown cards still come first: a card coming off
   cooldown mid-visit rejoins the loop through the ordinary refill before any lent card.
 - **`done`** — nothing to deal even with the switch on: a focused world (it never lends —
-  [FOCUS_MODE.md](./FOCUS_MODE.md)), or a dictionary with nothing left to lend. "Done for the
+  [FOCUS_MODE.md](./FOCUS_MODE.md)), the writing world (it never lends either: its deck is
+  the characters of the learner's own words — WRITING_PRACTICE_REWORK.md § 3d), or a
+  dictionary with nothing left to lend. "Done for the
   day!" — title only, no subtext — celebrated by a one-shot confetti burst
   (`src/components/ConfettiBurst.tsx`) that plays as the card turns `done`. It stays put; the
-  learner leaves with Back or a tap off the card. A focused world never sees the `lend` card.
+  learner leaves with the back arrow. A session that never lends (`FlashcardsLearnPage` →
+  `neverLends`: focused, or the writing world) never sees the `lend` card.
 - **The card behind the last card** (`readyOutBacking`, ReadyOutCardLayer `backing`). While
   the loop holds one card there is no word behind it, so the card that comes next is drawn
   there: under every slot (z-index 0, first in the DOM), static, no touches, no confetti. Its

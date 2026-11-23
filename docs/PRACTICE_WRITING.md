@@ -1,7 +1,7 @@
 # Practice Writing (Character Writing-Practice Drill)
 
 Reference for the **"Practice Writing Me"** feature: a drill where the user draws a
-Chinese character by finger/mouse across four assistance levels, the strokes are
+Chinese character by finger/mouse across eight assistance levels, the strokes are
 recognized, and each level cleared earns a star. This doc covers the **UX, state,
 and interaction logic** of the practice surface. The **recognition path** itself
 (canonical `Ink` stroke format, the Google/HanziLookup backends, the
@@ -100,8 +100,10 @@ doc and the code use (renamed 2026-10-04, display only — `WRITING_LEVELS[].nam
 dots — gold for cleared levels, ink ring on the current one) replaced the four-tab bar.
 
 **Assist button** (absolutely positioned under the panel, so showing / hiding it never
-shifts the panel): the level's `button` label — Replay / Show / Next — with a live `Ns`
-cooldown. Level 8 shows **Retry** once the active character's clock has run out (single
+shifts the panel): the level's `button` label — Show / Next / Flash — with a live `Ns`
+cooldown; a press-capped button (Flash: `button.uses: 1`, one look per panel open) greys out
+and reads **Used** once spent. Text + disabled state come from `useLevelGuide` →
+`assistLabel` / `assistDisabled`. Level 8 shows **Retry** once the active character's clock has run out (single
 character: after the automatic Verify), which wipes every character's ink and clock.
 
 **Level 8 (Timed).** `useStrokeClock` runs one clock per character; the panel shows a
@@ -167,6 +169,18 @@ button is a deliberate look and is NOT cut short — `blockedAttempt` returns `f
 and the press is swallowed. `useLevelGuide` tells the two apart with
 `entryFlashRef`, set only by `enter`.
 
+### Flash (level 6): one look per panel open
+Flash opens **blank**. Its **Flash** button shows the whole outline for **0.5s**
+(`LEVEL_BEHAVIOR.flash.flashMs`), with drawing left free, and can be pressed **once per
+panel open** (`button.uses: 1`): `useLevelGuide` counts presses since `enter`, and both
+`enter` and `leave` reset the count, so reopening a slot (popup 2×2 grid) or the editor
+(writing flp cell, Writing Grid) re-arms it. Decided 2026-11-22 over a once-per-character
+cap, knowingly leaving the reopen loophole. Because the level's on-entry guide is `none`,
+the editors gate `WritingStage`'s `showGuide` on `levelHasGuide(mode)` rather than
+`guide !== "none"`, so the Hanzi Writer instance is mounted (and its data loaded) before
+the press. Code: `src/components/handwriting/levelBehavior.ts` → `LEVEL_BEHAVIOR.flash`,
+`levelHasGuide`, `USED_LABEL`; `useLevelGuide.ts` → `press`, `assistLabel`.
+
 ---
 
 ### Guide fade (Step Through + Memorize only)
@@ -184,7 +198,8 @@ through `WritingStage` (`guideFadeIn` / `guideFadeOut`) by the editing hosts:
 
 Everything else is **instant**: a canvas that starts with the guide (mount, a level
 change, a new character — even on Step Through, whose entry flash is drawn, not faded
-in), the Thirds / Quarters region cycle (a plain `regionClip` swap), the post-Verify
+in), the Sections region cycle (a plain `regionClip` swap), Flash's 0.5s look (a fade
+would eat most of it), the post-Verify
 reveal (the popup turns `guideFadeIn` off while `verifyRevealed`), and every read-only
 preview (grid slots, writing flp cells, Writing Grid cells pass no fade flags).
 
@@ -261,7 +276,8 @@ with or without writing in the slot (the ink draws on top):
 - **Snap / Step Through** → the full outline (static). Snap's next-stroke
   animation is an editor-only cue; its snapped ink paints as printed shapes
   (`LevelPreview.snap`).
-- **Thirds / Quarters** → only the **first region** (the wedge clockwise from the top-left corner), clipped as in the editor.
+- **Sections** → only the **first region** (the ⅓ window clockwise from the top-left corner), clipped as in the editor.
+- **Flash** → no outline (it opens blank; its one look is a button press).
 - **Memorize / Blank / Timed** → no outline. **Memorize is the one exception to "first see"**
   (2026-10-04): its editor opens on the outline, but that's the **study phase**. The learner
   enters it deliberately by opening the slot, and their first stroke ends it. Previewing it

@@ -3,10 +3,10 @@ import { Box } from "@mui/material";
 import { Lock, TouchApp } from "@mui/icons-material";
 import WritingStage from "../../../components/handwriting/WritingStage";
 import ResultStamp from "../../../components/handwriting/ResultStamp";
-import { levelPreview, WRITING_FOCUS_SIZE } from "../../../components/handwriting/levelBehavior";
+import { levelPreview, previewShowsWholeCharacter, WRITING_FOCUS_SIZE } from "../../../components/handwriting/levelBehavior";
 import type { Ink } from "../../../components/handwriting/types";
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from "../../../utils/definitionUtils";
-import { WRITING_LEVELS, WRITING_MAX_CHARS } from "../../../../server/contracts/writingLevels";
+import { WRITING_LEVELS } from "../../../../server/contracts/writingLevels";
 import type { VocabEntry } from "../../../types";
 import { COLORS, DATA_TYPE } from "../../../theme";
 import { SIZE } from "../../../theme/scale";
@@ -16,6 +16,7 @@ import GlossText from "../../../components/GlossText";
 import { iconImageUrl } from "../../../cardIcons/cardIconLayout";
 import type { LookalikeMatch } from "../../../components/handwriting/lookalikes";
 import LookalikeNotice from "./LookalikeNotice";
+import WritingSourceWords from "./WritingSourceWords";
 
 /**
  * WritingCardFace — the CONTENT of one face of a writing-flp card
@@ -23,29 +24,34 @@ import LookalikeNotice from "./LookalikeNotice";
  * stack, flip, fly-out — is the ordinary flp card (FlashCardSection's `writingFace`);
  * this fills a face edge to edge (`CardFaceSide.fill`).
  *
- *   FRONT  a header row — level · tone-coloured pinyin · dd stacked on the left, the
- *          card's icon on the right (`headerIconId`) — then the character grid (one cell
- *          per character, 2 per row). Every word, 1–4 characters, gets cells of the
- *          4-character size (`useFourCharCellSize`), so cell size never hints at word
- *          length and the ink scale is the same on every card. Then a "Tap the card to submit" line at the bottom
- *          (the tap itself is the host's `handleCardClick`). A submit tap with an empty
- *          cell wiggles the card and flashes every empty cell (`flashNonce`). An EMPTY or written cell
- *          previews what the editor will first show at this level (`levelPreview`):
- *          the outline for Snap / Trace / Step Through, the first region for
- *          Thirds / Quarters, nothing for Memorize / Blank / Timed (Memorize's outline is
- *          the editor's study phase, never previewed).
- *   BACK   the same layout; each cell shows the learner's ink over the WHOLE outline
- *          with its ✓ / ✗, and the bottom line says "Tap the card to continue". When a
- *          wrong cell was read as a listed look-alike (`lookalike`, 1–2 character words
- *          only) LookalikeNotice sits at the BOTTOM of the card's content box — it reaches
- *          down through the blank bottom line (`NOTICE_REACH_PX`); the row of cells stays
- *          centred unless the notice would reach it, and then moves up only by the overlap
- *          (`writing-card-face__notice-slot`). The bottom line is left blank — its height
- *          kept, so the grid area, and with it the cell size, matches the front. Any move happens across the flip (the
- *          back is its own face), so the learner never sees the cells jump.
+ * The writing flp deals SINGLE CHARACTERS only (since 2026-11-22; the writing deck,
+ * dal/shared/writingDeck.ts), so a face has exactly one cell.
  *
- * Pure presentation: every state and handler is the host's (useWritingFlashcard). A cell
- * tap stops propagation so it never reaches the card's own tap (the dismiss).
+ *   FRONT  a header row — level · tone-coloured pinyin · dd stacked on the left, the
+ *          card's icon on the right (`headerIconId`) — then the "From your words" strip
+ *          (WritingSourceWords: up to 3 of the learner's words containing the character,
+ *          masked, with "See all"), then the one cell, as large as the space left allows
+ *          (`useCellSize`). Then a "Tap the card to submit" line at the bottom (the tap
+ *          itself is the host's `handleCardClick`). A submit tap with the cell empty
+ *          wiggles the card and flashes the cell (`flashNonce`). The cell previews what
+ *          the editor will first show at this level (`levelPreview`): the outline for
+ *          Walk-through / Trace / Step-through, the first region for Sections,
+ *          nothing for Memorize / Flash / Blank / Timed (Memorize's outline is the editor's study
+ *          phase, never previewed).
+ *   BACK   the same layout; the cell shows the learner's ink over the WHOLE outline with
+ *          its ✓ / ✗, and the bottom line says "Tap the card to continue". When the ink
+ *          was read as a listed look-alike (`lookalike`) LookalikeNotice sits at the
+ *          BOTTOM of the card's content box — it reaches down through the blank bottom
+ *          line (`NOTICE_REACH_PX`) — and the cell shrinks to the old 2×2 cell size to
+ *          make room (`useCellSize(true)`: half the area, the notice taking the other
+ *          half). The bottom line is left blank, its height kept. The size change happens
+ *          across the flip (the back is its own face), so the learner never sees the cell
+ *          jump.
+ *
+ * Pure presentation: every state and handler is the host's (useWritingFlashcard). The
+ * per-character arrays (`inks`, `locked`, `results`) are the attempt's shape, shared with
+ * the mark's `perChar`; on this card they hold one entry. A cell tap stops propagation so
+ * it never reaches the card's own tap (the dismiss).
  */
 export interface WritingCardFaceProps {
     entry: VocabEntry;
@@ -75,18 +81,31 @@ export interface WritingCardFaceProps {
 export default function WritingCardFace({
     entry, side, level, inks, locked, results, checking, interactive, onOpenCell, onInspectCell, flashNonce = 0, lookalike = null,
 }: WritingCardFaceProps) {
-    const chars = [...entry.entryKey];
+    const character = entry.entryKey;
     const spec = WRITING_LEVELS[level - 1];
     const preview = levelPreview(spec.mode);
     const back = side === "back";
     const pronunciation = resolveDisplayPronunciation(entry);
     const iconId = headerIconId(entry);
-    const { gridRef, cellPx, areaPx } = useFourCharCellSize();
-    // A look-alike notice (back face, 1–2 characters) takes the 2×2 block's empty second
-    // row, bottom-aligned; the single row of cells moves up only if it has to.
-    // Without a notice the row stays centred, as on the front.
-    const notice = back && chars.length <= 2 && lookalike ? lookalike : null;
-    const blockWidth = cellPx * 2 + CELL_GAP;
+    // A look-alike notice (back face only) takes the bottom half of the grid area,
+    // bottom-aligned; the cell moves up only if it has to.
+    const notice = back && lookalike ? lookalike : null;
+    const { gridRef, cellPx, areaPx } = useCellSize(notice !== null);
+    // The notice's width: the old 2×2 block's (two cells and a gap).
+    const noticeWidth = cellPx * 2 + CELL_GAP;
+    // Source words mask the character unless the level already previews all of it
+    // (levels 1–3), where a ? would hide nothing.
+    const maskChar = previewShowsWholeCharacter(spec.mode) ? undefined : character;
+
+    const result = back && results ? (results[0] ? "correct" : "wrong") : null;
+    const canOpen = interactive && !back && !locked[0] && !checking;
+    const canInspect = interactive && back;
+    const ink = inks[0] ?? [];
+    // Back face: the whole outline behind the ink, every level (the grading reveal).
+    // Front face: the level's first-look preview.
+    const showGuide = back || preview.guide;
+    // The cell the submit gate is waiting on (useWritingFlashcard.allFilled).
+    const flash = !back && interactive && flashNonce > 0 && ink.length === 0 && !locked[0];
 
     return (
         <Box
@@ -149,10 +168,11 @@ export default function WritingCardFace({
                 )}
             </Box>
 
-            {/* The grid AREA fills the space between header and footer and is measured as
-                if it held the 2×2 (4-character) layout; the cells inside are always that
-                size, laid out 2 per row (0→TL, 1→TR, 2→BL, 3→BR, as in the popup) and
-                centred as a block. */}
+            {/* Which of the learner's words the character is from (renders nothing when none). */}
+            <WritingSourceWords words={entry.writingSourceWords ?? []} maskChar={maskChar} interactive={interactive} />
+
+            {/* The grid AREA fills the space between the strip and the footer line; the one
+                cell inside is as large as it allows (useCellSize), centred. */}
             <Box ref={gridRef} className="writing-card-face__grid-area" sx={{ flex: 1, minHeight: 0, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", py: `${GRID_AREA_PAD_Y}px` }}>
             <Box
                 className="writing-card-face__block"
@@ -161,103 +181,79 @@ export default function WritingCardFace({
                     flexDirection: "column",
                     alignItems: "center",
                     // With a notice the block fills the grid area's height: a spacer above
-                    // the cells and the notice slot below split the free space equally, so
-                    // the row stays centred in the grid area. The slot also reaches
+                    // the cell and the notice slot below split the free space equally, so
+                    // the cell stays centred in the grid area. The slot also reaches
                     // NOTICE_REACH_PX past the area's bottom (negative margin, offset by an
                     // equal flex-basis so the split stays even), pinning the notice to the
                     // bottom of the card. The slot can't shrink below the notice (flex
                     // min-height: auto), so a tall notice takes its height from the TOP
-                    // spacer — the row moves up only by the overlap, never further.
+                    // spacer — the cell moves up only by the overlap, never further.
                     alignSelf: notice ? "stretch" : undefined,
                 }}
             >
             {notice && <Box className="writing-card-face__notice-spacer" sx={{ flex: "1 1 0" }} />}
-            <Box
-                className="writing-card-face__grid"
-                sx={{
-                    display: "grid",
-                    gridTemplateColumns: `repeat(${Math.min(chars.length, 2)}, ${cellPx}px)`,
-                    gridAutoRows: `${cellPx}px`,
-                    gap: `${CELL_GAP}px`,
+            <CellBox
+                px={cellPx}
+                className={`writing-card-face__cell${result ? ` writing-card-face__cell--${result}` : ""}`}
+                tappable={canOpen || canInspect}
+                // Verdict = the corner ✓ / ✗ icon only; the ground stays white.
+                bg={COLORS.white}
+                flash={flash}
+                onTap={(el) => {
+                    if (canInspect) onInspectCell?.(0);
+                    else if (canOpen) onOpenCell?.(0, el);
                 }}
             >
-                {chars.map((ch, i) => {
-                    const result = back && results ? (results[i] ? "correct" : "wrong") : null;
-                    const canOpen = interactive && !back && !locked[i] && !checking;
-                    const canInspect = interactive && back;
-                    const ink = inks[i] ?? [];
-                    // Back face: the whole outline behind the ink, every level (the grading
-                    // reveal). Front face: the level's first-look preview.
-                    const showGuide = back || preview.guide;
-                    // The cells the submit gate is waiting on (useWritingFlashcard.allFilled).
-                    const flash = !back && interactive && flashNonce > 0 && ink.length === 0 && !locked[i];
-                    return (
-                        <CellBox
-                            key={`${side}-${i}`}
-                            px={cellPx}
-                            className={`writing-card-face__cell${result ? ` writing-card-face__cell--${result}` : ""}`}
-                            tappable={canOpen || canInspect}
-                            // Verdict = the corner ✓ / ✗ icon only; the ground stays white.
-                            bg={COLORS.white}
-                            flash={flash}
-                            onTap={(el) => {
-                                if (canInspect) onInspectCell?.(i);
-                                else if (canOpen) onOpenCell?.(i, el);
+                {(px) => (
+                    <>
+                        <Box
+                            sx={{
+                                position: "absolute",
+                                top: 0,
+                                left: 0,
+                                width: WRITING_FOCUS_SIZE,
+                                height: WRITING_FOCUS_SIZE,
+                                transform: `scale(${px / WRITING_FOCUS_SIZE})`,
+                                transformOrigin: "top left",
+                                pointerEvents: "none",
                             }}
                         >
-                            {(px) => (
-                                <>
-                                    <Box
-                                        sx={{
-                                            position: "absolute",
-                                            top: 0,
-                                            left: 0,
-                                            width: WRITING_FOCUS_SIZE,
-                                            height: WRITING_FOCUS_SIZE,
-                                            transform: `scale(${px / WRITING_FOCUS_SIZE})`,
-                                            transformOrigin: "top left",
-                                            pointerEvents: "none",
-                                        }}
-                                    >
-                                        <WritingStage
-                                            key={`${side}-${i}-${ink.length}`}
-                                            character={ch}
-                                            size={WRITING_FOCUS_SIZE}
-                                            drawable={false}
-                                            showGuide={showGuide}
-                                            guideVisible={showGuide}
-                                            loopAnimation={!back && interactive && preview.loop}
-                                            regionClip={back ? undefined : preview.regionClip}
-                                            snap={preview.snap}
-                                            initialInk={ink}
-                                            result="idle"
-                                        />
-                                    </Box>
-                                    {!back && locked[i] && (
-                                        <Lock className="writing-card-face__cell-locked" sx={{ position: "absolute", top: 6, left: 6, fontSize: 16, color: COLORS.textFaint }} />
-                                    )}
-                                    {result && (
-                                        // Delayed by the flip so the stamp lands on a face the learner can see.
-                                        <ResultStamp className="writing-card-face__result" result={result} size={24} inset={6} delayMs={TOWER_CARD_FLIP_MS} />
-                                    )}
-                                </>
-                            )}
-                        </CellBox>
-                    );
-                })}
-            </Box>
+                            <WritingStage
+                                key={`${side}-${ink.length}`}
+                                character={character}
+                                size={WRITING_FOCUS_SIZE}
+                                drawable={false}
+                                showGuide={showGuide}
+                                guideVisible={showGuide}
+                                loopAnimation={!back && interactive && preview.loop}
+                                regionClip={back ? undefined : preview.regionClip}
+                                snap={preview.snap}
+                                initialInk={ink}
+                                result="idle"
+                            />
+                        </Box>
+                        {!back && locked[0] && (
+                            <Lock className="writing-card-face__cell-locked" sx={{ position: "absolute", top: 6, left: 6, fontSize: 16, color: COLORS.textFaint }} />
+                        )}
+                        {result && (
+                            // Delayed by the flip so the stamp lands on a face the learner can see.
+                            <ResultStamp className="writing-card-face__result" result={result} size={24} inset={6} delayMs={TOWER_CARD_FLIP_MS} />
+                        )}
+                    </>
+                )}
+            </CellBox>
             {notice && cellPx > 0 && (
-                <Box className="writing-card-face__notice-slot" sx={{ flex: `1 1 ${NOTICE_REACH_PX}px`, mb: `${-NOTICE_REACH_PX}px`, width: blockWidth, display: "flex", flexDirection: "column", justifyContent: "flex-end", pt: `${CELL_GAP}px` }}>
-                    <LookalikeNotice match={notice} width={blockWidth} height={cellPx} tellWidth={Math.round(areaPx * NOTICE_TELL_WIDTH_FRACTION)} delayMs={TOWER_CARD_FLIP_MS} />
+                <Box className="writing-card-face__notice-slot" sx={{ flex: `1 1 ${NOTICE_REACH_PX}px`, mb: `${-NOTICE_REACH_PX}px`, width: noticeWidth, display: "flex", flexDirection: "column", justifyContent: "flex-end", pt: `${CELL_GAP}px` }}>
+                    <LookalikeNotice match={notice} width={noticeWidth} height={cellPx} tellWidth={Math.round(areaPx * NOTICE_TELL_WIDTH_FRACTION)} delayMs={TOWER_CARD_FLIP_MS} />
                 </Box>
             )}
             </Box>
             </Box>
 
             {/* The bottom hint line. The card itself is the submit/continue target
-                (useWritingFlashcard.handleCardClick); cells stop their own taps. A look-alike
+                (useWritingFlashcard.handleCardClick); the cell stops its own taps. A look-alike
                 notice replaces it: the row stays (empty, the notice drawn over it) so the grid
-                area — and with it the cell size — matches the front face. */}
+                area keeps its height. */}
             <Box className="writing-card-face__hint" sx={{ fontSize: SIZE.caption, color: COLORS.textSecondary, minHeight: HINT_ROW_PX, display: "flex", alignItems: "center", gap: 0.5 }}>
                 {!notice && (
                     <>
@@ -270,7 +266,7 @@ export default function WritingCardFace({
     );
 }
 
-/** Gap between grid cells, px — also subtracted when sizing the 2×2 cell. */
+/** Gap between the cell and the look-alike notice, px — also subtracted when sizing the cell beside one. */
 const CELL_GAP = 12;
 /** Vertical gap between the face's rows (header, grid area, hint line), px. */
 const FACE_ROW_GAP = 8;
@@ -314,26 +310,27 @@ function headerIconId(entry: VocabEntry): string | null {
 }
 
 /**
- * Measures the grid area and returns the side of one cell of the 2×2 layout — the
- * 4-character word's cell (WRITING_MAX_CHARS) — so 1-, 2- and 3-character words use the
- * very same size rather than growing to fill the space. The cell is as large as BOTH
- * axes allow for two cells plus one gap.
+ * Measures the grid area and returns the side of the card's one cell: as large as both
+ * axes allow. Beside a look-alike notice (`withNotice`, back face only) the cell takes
+ * half the height instead — the notice the other half, reaching through the blank hint
+ * row (`NOTICE_REACH_PX`) — which is exactly the old 2×2 layout's cell, so the notice
+ * keeps the proportions it was designed at (LookalikeNotice sizes its glyphs off it).
  */
-function useFourCharCellSize() {
+function useCellSize(withNotice: boolean) {
     const gridRef = useRef<HTMLDivElement | null>(null);
     const [cellPx, setCellPx] = useState(0);
     // The grid area's content width — the card's inner width. LookalikeNotice sizes its
-    // tell text off it (NOTICE_TELL_WIDTH_FRACTION) rather than off the narrower 2×2 block.
+    // tell text off it (NOTICE_TELL_WIDTH_FRACTION).
     const [areaPx, setAreaPx] = useState(0);
     useEffect(() => {
         const el = gridRef.current;
         if (!el) return;
-        // WRITING_MAX_CHARS (4) characters in a square grid: 2 cells per row, 2 rows.
-        const perAxis = Math.ceil(Math.sqrt(WRITING_MAX_CHARS));
         const measure = () => {
             const style = getComputedStyle(el);
             const h = el.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
-            const fit = (len: number) => (len - CELL_GAP * (perAxis - 1)) / perAxis;
+            // Beside a notice: the 2×2 cell on both axes, so the notice (two cells and a
+            // gap wide) fits the card's width too.
+            const fit = (len: number) => (withNotice ? (len - CELL_GAP) / 2 : len);
             setCellPx(Math.max(0, Math.floor(Math.min(fit(el.clientWidth), fit(h)))));
             setAreaPx(el.clientWidth);
         };
@@ -341,7 +338,7 @@ function useFourCharCellSize() {
         ro.observe(el);
         measure();
         return () => ro.disconnect();
-    }, []);
+    }, [withNotice]);
     return { gridRef, cellPx, areaPx };
 }
 

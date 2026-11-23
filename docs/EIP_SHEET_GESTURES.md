@@ -12,8 +12,8 @@ optional tab strip). It hosts a *body* that exposes `{root, scroll}` through a
 `scroll` is the element whose `scrollTop` decides resize-vs-scroll, and which the
 browser pans natively in `scroll` mode (so it needs `touch-action: pan-y` +
 `overscroll-behavior: contain` — see "Gesture mode lock"). Current bodies:
-`InfoCardPanelBody` (eip), `CompareWorkspace` (the eip Compare tab AND the standalone
-compare sheet, `src/components/CompareSheet.tsx`), and the own bodies of `AccountSheet`,
+`InfoCardPanelBody` (eip), `CompareShelfBody` (the Compare panel,
+`src/features/flashcards/compare/CompareSheet.tsx`), and the own bodies of `AccountSheet`,
 `SkippedCardsSheet` and `NotebookWordPickerSheet`. A former one,
 `SettingsPanelBody` (the flp settings sheet), was deleted on 2026-08-28 when the
 last of its rows moved out — see [AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md).
@@ -29,11 +29,13 @@ a dictionary word is shown: there is no read-only dictionary card page (deleted 
 | Host | `EipSheet` props that differ |
 |---|---|
 | acp (`AddCardsPage.tsx`) | `depth` 1 while its skipped-cards sheet is open |
-| saved-card cdp (`VocabCardDetailPage.tsx`) | `showSynonymsRelated`, `showLearning`, `learningSkipsRoot` (the Add key is hidden on the root — the saved card itself — and appears on drilled-in words); no `showWordTools` (its rail sits above the hero card, and its Compare raises `CompareSheet` via `useCompareSheet`) |
+| saved-card cdp (`VocabCardDetailPage.tsx`) | `showSynonymsRelated`, `showLearning`, `learningSkipsRoot` (the Add key is hidden on the root — the saved card itself — and appears on drilled-in words); no `showWordTools` (its rail sits above the hero card; its Compare closes the eip and raises the Compare panel via `useCompareSheet`) |
 | Dictionary page (`DictionaryPage.tsx`) | `showSynonymsRelated`, `showWordTools`, `showLearning`, `defaultHeightRatio` 0.8 | Everything on this
-page applies to all of them, and to the compare sheet, which is a plain `SheetPanel`
-host of its own ([WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md)) — the first one
-to use `depth` for real, stacking over the cdp's eip.
+page applies to all of them, and to the Compare panel, a `SheetPanel` host of its own that
+reuses the eip's chrome — `EipUpperPanel`, `EipShelf`, the palette
+([WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md) § Layout). With `showWordTools`, `EipSheet`
+also owns that panel: the rail's Compare closes the eip and opens it (`EipSheet.tsx` →
+`handleCompare`); Compare never stacks over an eip.
 
 **The eip always shows pinyin (2026-10-04).** It is reference info, so `InfoCardSection`,
 `InfoCardPanelBody` and `InfoCardTabContent` take **no `showPinyin` prop** — a study
@@ -44,7 +46,7 @@ it was off on the flp (the flp's own chip was later removed entirely, 2026-10-18
 gap, which `InfoCardSection` → `useMissingPinyinWarning` reports with a deduped
 `console.warn` (a zh entry whose `resolveDisplayPronunciation` is empty). A host whose
 entries genuinely have no pinyin must pass `missingPinyinReason="<why>"`; **no host passes
-it today**. Spanish entries and the Compare tab never warn.
+it today**. Spanish entries never warn.
 
 **A host no longer supplies a positioned parent (2026-08-30).** Both the scrim *and* the
 sheet are portaled to the frame-level host (see "The scrim covers the screen"), so
@@ -194,7 +196,8 @@ imperative").
 > **The eip does not use it (2026-10-29).** `InfoCardSection` passes no `title` and
 > `showClose={false}`: the eip draws its own title row and close control (a down caret, not
 > a ✕) in its UPPER panel, and the title row telescopes in only toward max — see **§ Telescope** below. Everything in
-> this section still holds for every OTHER titled sheet (decks, compare, notebook). The
+> this section still holds for every OTHER titled sheet (skipped cards, notebook). The Compare
+> panel is like the eip: it draws its title in `EipUpperPanel` and passes no `title`. The
 > account sheet also has no `title`: see **§ Page-style sheet header**.
 
 The **`title`** prop supplies it; it is a real `PageHeader` (`size="node"`), not a
@@ -213,7 +216,7 @@ had.
 **It is present at every height (2026-09-05).** It used to be *merge* chrome — clipped to
 zero by the slot and interpolated in over the last `MERGE_ZONE_PX`, so a panel only said
 what it was once it had become the whole screen — with a `headerMode="always"` opt-out for
-sheets whose body had no title row of its own (the compare sheet). Every call site wanted
+sheets whose body had no title row of its own (the compare sheet of the time). Every call site wanted
 the header at every height in the end, so the opt-out became the only mode and the prop is
 gone. What this bought, beyond a panel that names itself at 60% height: the ✕ **stops
 moving**. Three things went with the change —
@@ -236,9 +239,8 @@ and the tab strip: the top edge is where a hand reaches to pull a sheet back dow
 before that binding only the 44px pill above it responded. `useDrag`'s `filterTaps` is
 what keeps the ✕ inside it tappable.
 
-Titles, one per host: the eip's **"More Info"** / **"Compare"** is drawn by its own upper
-panel (§ Telescope), not through this prop; `CompareSheet` passes **"Compare"**,
-`SkippedCardsSheet` **"Skipped Cards"**, `NotebookWordPickerSheet` **"Choose a word"**, and
+Titles, one per host: the eip's **"More Info"** and the Compare panel's **"Compare"** are drawn
+by their upper panel (§ Telescope), not through this prop; `SkippedCardsSheet` **"Skipped Cards"**, `NotebookWordPickerSheet` **"Choose a word"**, and
 `AccountSheet` its selected tab's label. A panel with no `title` has no header and therefore no ✕ — it still grows to
 full height, it just has no way out but a downward drag. Nothing ships in that state.
 
@@ -253,8 +255,8 @@ not".
 and it does that precisely while the learner is reading a definition — which *is* study
 time. So the eip panels on flp, acp and the cdp pass `showMinutePoints`, and the
 indicator survives at every panel height. **Pull-up dictionary flows never show it**
-(2026-10-06): `CompareSheet` and the Writing Notebook's `NotebookWordPickerSheet` omit the
-prop. That changes only the indicator, not earning — the host page's own `PageHeader`
+(2026-10-06): the Compare panel (`CompareSheet` → `EipUpperPanel` without `showMinutePoints`)
+and the Writing Notebook's `NotebookWordPickerSheet` omit it. That changes only the indicator, not earning — the host page's own `PageHeader`
 stays mounted under the sheet and its `useMinutePoints` tick keeps accruing. Only the **root** panel draws it (`depth === 0`):
 a stacked child covers its parent completely, so a second flame would be one indicator
 behind another, and a third `useMinutePoints` tick.
@@ -287,7 +289,6 @@ LAST crumb, and the trail always reads as the path from the root to it.
 | Escape (desktop) | pop the top (back one word); popping the root closes the panel |
 | Swipe right on the first sub-tab (Definitions) | pop the top (back one word); at the root it only rubber-bands — § Swiping past the first sub-tab goes back one word |
 | Down caret (⌄) | close the panel; the stack is kept (it outlives the panel — below) |
-| Open Compare with a Compare crumb already on the stack | pop down to it, refill slot A, clear slot B |
 
 Any pop also cancels an in-flight drill-in lookup, so a fetch that lands after the learner
 walked back cannot push onto the trail they left. A popped crumb's state (sub-tab, sense
@@ -296,7 +297,7 @@ word's last sub-tab.
 
 Code: `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` → `useEipTabs`
 (`activeIndex` is derived as `tabs.length - 1`, never set), `popTo`, `pop`,
-`openForEntryKey`, `openCompareTab`; `EipTabStrip.tsx` (crumb tap → `popTo`); the hosts'
+`openForEntryKey`; `EipTabStrip.tsx` (crumb tap → `popTo`); the hosts'
 `onCloseX` (`EipSheet.tsx`, `FlashcardsLearnPage.tsx` → `pop`).
 
 ### The trail scrolls, holds up to 50 words, and outlives the panel
@@ -304,7 +305,7 @@ Code: `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` → `useEipTab
 **Its row is always present** — it carries the down caret, the speaker and the Add key (hosts passing `showLearning`)
 (§ Telescope) — but the **crumbs are hidden until the learner first navigates to another
 word**: a panel opened on a word shows an empty trail slot, not a lone crumb repeating the
-headword. The first push (a drill-in, or Compare) latches the crumbs on for that trail's
+headword. The first push (a drill-in) latches the crumbs on for that trail's
 life, so walking back to the root still shows the root crumb; only a new root
 (`openForRoot`, `clear`) resets it. Code: `useEipTabs` → `trailShown`, passed to
 `EipTabStrip` as `showCrumbs` by `EipSheet.tsx` and `FlashcardsLearnPage.tsx`; the strip keeps
@@ -334,7 +335,7 @@ Three rules, all changed on **2026-09-06**:
   needed to bring the pill inside the row is scrolled). ⛔ It scrolls the pill row's OWN
   `scrollLeft` (`EipTabStrip.tsx` → `scrollActiveIntoView`), never `scrollIntoView`: that
   scrolls every scrollable ancestor too, and during the open slide (§ Open slide) the pill
-  is below the frame — opening Compare scrolled the phone frame itself, which is
+  is below the frame — opening Compare (then a crumb) scrolled the phone frame itself, which is
   `overflow: hidden` and so stayed shifted (fixed 2026-10-30). The same rule holds for
   anything inside a sheet: no `scrollIntoView`, and `focus({ preventScroll: true })`.
 
@@ -377,7 +378,7 @@ measured by a ResizeObserver, never in the per-frame write — `measureTelescope
 sheet opens, BOTH panels grow from 0 together; pulled toward max, the upper panel grows
 again to reveal "More Info" and the flame. The frame clips and bottom-anchors its content
 (`justify-content: flex-end`), so a short frame shows the header first and the title row
-is the last thing revealed. A content change (a two-line gloss, the Compare tab) re-places
+is the last thing revealed. A content change (a two-line gloss, a Compare slot filling) re-places
 the frame at the current height.
 
 **Close is a down caret (⌄), shown at every height (2026-10-29).** It replaces the ✕
@@ -418,8 +419,8 @@ the caret's ink and the first crumb's ink. Toward max the cluster slides left by
   `EIP_PANEL_GUTTER`. (The box ran edge to edge so a swiped sense list clipped at the screen;
   the gloss has been one wrapping dd since 2026-11-05, so nothing swipes in it now.) A multi-character keycap pushes the gloss right; the
   trail does not move.
-- The cluster keeps its width on Compare, which has no speaker, so the trail does not jump
-  when the learner moves between a word and a Compare crumb.
+- The cluster keeps its width when there is no speaker (the Compare panel, which reuses
+  this band), so the row's geometry is the same on both sheets.
 - The speaker speaks the showing word. It is the eip's only speaker: `EipEntryHeader` has
   no speaker/Learning action stack (and always draws an md cpcd).
 
@@ -560,7 +561,7 @@ a word that is not (including a lent `'provisional'` card) shows `+ Add`; after 
 as `✓ Added!` (still tappable to remove) while that word is showing, and the next load
 re-evaluates it and the key disappears. The hook re-loads on any entry change: walking the
 trail away and back, or closing and reopening the eip (the hook is fed `null` while the panel
-is closed or on the Compare tab). The flp root, the card being studied, is a working-loop
+is closed). The flp root, the card being studied, is a working-loop
 entry with no `discoverable` field, so the hook is inert there (`available` false) and the key
 shows only on drilled-in words. A failed add/remove raises the flp's own
 `flp-eip__learning-error-snackbar`. (An earlier add-only "+" on the flp was removed 2026-10-29;
@@ -740,7 +741,8 @@ No row changes size:
   up **every vertical gap below the title row**: `TRAIL_TOP_PAD` (10, title → trail),
   the trail row's slack around its 30px buttons (`TRAIL_ROW_SLACK`, 3 above and 3 below:
   the row is 36px), `HEADER_GAP` (6, trail → entry header) and `HEADER_BOTTOM_PAD` (17,
-  entry header → shelf), 39px in all. Compare has no entry header, so it gives up 16px.
+  entry header → shelf), 39px in all. The Compare panel's header row is its word keycaps, so it
+  gives up the same 39px.
   Lips are not spacing and stay: the headword keycap's 4px bottom margin, and, when the
   Add key is present, the trail row's bottom slack, which its lip hangs into;
 - `writeTelescope` shrinks the frame by `S = rubberBand(raw, squeezable)` (the iOS
@@ -943,12 +945,11 @@ has a word **below** the showing one, a right-swipe on Definitions follows the f
 like a swipe toward a real neighbour (no rubber-band), and a release past the commit
 threshold pops the showing word. It is the same `popTo(activeIndex − 1)` as tapping the
 previous crumb, so that word comes back on its **remembered** sub-tab, and the entry
-pager slides it in from the left. If it was a Compare crumb, CompareWorkspace shows.
+pager slides it in from the left.
 
 There is deliberately **no forward counterpart**: the trail is a stack (§ The trail is a
 breadcrumb stack), so nothing sits after the showing word, and a left-swipe on the last
 sub-tab still rubber-bands. At the root the host passes no handler, so both ends rubber-band.
-The Compare crumb has no sub-tab track, so a swipe on it does nothing.
 
 On release the hook clears its inline transform before calling the handler. The pop's
 entry-jump effect (`InfoCardPanelBody`) pins the track for the new word in the same
@@ -1143,8 +1144,9 @@ Code: `src/components/OverlayScrollbar.tsx` → `OverlayScrollbar`,
 - `src/components/CPCDRow.tsx` — `tapToCopy` (the header copy gesture) and
   `src/components/CpcdPopup.tsx` — the shared caption card it confirms with
 - `src/utils/copyToClipboard.ts` — clipboard write with the non-secure-context fallback
-- `src/components/CompareWorkspace.tsx` — the other sheet body;
-  `src/components/CompareSheet.tsx` — the host that pairs it with a `SheetPanel` off the flp
+- `src/features/flashcards/compare/CompareSheet.tsx` — the Compare panel: `EipUpperPanel` +
+  `EipShelf` (`FlashcardsLearnPage/EipShelf.tsx`, shared with `InfoCardSection`) +
+  `CompareShelfBody`, its sheet body
 - `src/pages/AccountSheet.tsx`, `src/features/discover/SkippedCardsSheet.tsx`,
   `src/features/flashcards/writingNotebook/NotebookWordPickerSheet.tsx` — the other
   MODAL hosts. Persistent mode has no callers

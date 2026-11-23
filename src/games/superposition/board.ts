@@ -39,7 +39,13 @@ export interface TileLock {
     charIndex: number;
 }
 
-/** A tile: one or more strokes of a character. `z` is its place in the pile order: higher is on top. */
+/**
+ * A tile: one or more strokes of a character. `z` is its place in the pile order: higher is on top.
+ *
+ * A tile is either IN THE TRAY (the band of mini slots under the grid, where every tile is
+ * dealt) or ON THE BOARD at (x, y). A tray tile's x, y and z mean nothing: it is in no pile and
+ * no stack (`stackKey` gives it a key of its own), and `tilesAt` never finds it.
+ */
 export interface Tile {
     id: number;
     /** The outlines to draw. */
@@ -53,6 +59,10 @@ export interface Tile {
     z: number;
     /** Set once the tile is part of a finished, fused stack; null while it is loose. */
     lock: TileLock | null;
+    /** Resting in its tray slot rather than on the board. A locked tile never is. */
+    inTray: boolean;
+    /** Its tray slot, 0..n-1: fixed for the run, so a returned tile always goes home to the same well. */
+    slot: number;
 }
 
 const COMPARE_POINTS = 24;
@@ -107,66 +117,75 @@ export function buildTiles(characters: readonly BoardCharacter[], toleranceUnits
         y: 0,
         z: 0,
         lock: null,
+        inTray: true,
+        slot: id,
     }));
 }
 
-/** Where a deal may put tiles, in grid units. */
-export interface SpawnZone {
-    /** Clear space kept from every edge. */
-    marginUnits: number;
-    /** The top rows to keep clear as well, for what is drawn there. */
-    topUnits: number;
-    /** How far tile positions spread, on each axis, inside the bunch. */
-    spreadUnits: number;
+/**
+ * Deal every tile into the tray, in shuffled slot order. The order is the deal's one secret:
+ * slots grouped by character would give the stacks away. Slots stay fixed for the run.
+ */
+export function dealToTray(tiles: readonly Tile[], random: () => number = Math.random): Tile[] {
+    const order = tiles.map((tile) => ({ id: tile.id, key: random() })).sort((a, b) => a.key - b.key);
+    const slotOf = new Map(order.map(({ id }, slot) => [id, slot]));
+    return tiles.map((tile) => ({ ...tile, inTray: true, slot: slotOf.get(tile.id)!, lock: null }));
 }
 
 /**
- * Deal tiles in a tight bunch at the bottom centre of a cols × rows grid, in a random pile
- * order. Tiles overlap freely, but a position that would start as a stack is re-rolled: a
- * stack must be the player's move. A board too small for the zone gets what fits, and a tile
- * always stays on it.
+ * Put a loose tile back in its tray slot. A locked tile is refused (same array back): a
+ * finished character stands for the run, so it cannot be taken apart into the tray.
  */
-export function scatterTiles(
-    tiles: readonly Tile[],
-    cols: number,
-    rows: number,
-    tileUnits: number,
-    { marginUnits, topUnits, spreadUnits }: SpawnZone,
-    random: () => number = Math.random
-): Tile[] {
-    // The positions an axis allows before the bunch narrows them.
-    const axisRange = (gridSize: number, leadUnits: number) => {
-        const last = Math.max(0, gridSize - tileUnits);
-        const inset = Math.min(marginUnits, Math.floor(last / 2));
-        const high = last - inset;
-        return { low: Math.min(Math.max(leadUnits, inset), high), high };
-    };
-    const across = axisRange(cols, 0);
-    const down = axisRange(rows, topUnits);
-    const middle = Math.round((across.low + across.high) / 2);
-    const fromX = Math.max(across.low, middle - Math.floor(spreadUnits / 2));
-    const toX = Math.min(across.high, middle + Math.ceil(spreadUnits / 2));
-    const fromY = Math.max(down.low, down.high - spreadUnits);
-    const roll = (from: number, to: number) => from + Math.floor(random() * (to - from + 1));
-    const order = tiles.map((tile) => ({ tile, key: random() })).sort((a, b) => a.key - b.key);
-    const taken = new Set<string>();
-    return order.map(({ tile }, z) => {
-        let x = 0;
-        let y = 0;
-        for (let attempt = 0; attempt < 64; attempt++) {
-            x = roll(fromX, toX);
-            y = roll(fromY, down.high);
-            if (!taken.has(`${x},${y}`)) break;
+export function sendToTray(tiles: Tile[], tileId: number): Tile[] {
+    const tile = tiles.find((candidate) => candidate.id === tileId);
+    if (!tile || tile.lock || tile.inTray) return tiles;
+    return tiles.map((candidate) => (candidate.id === tileId ? { ...candidate, inTray: true } : candidate));
+}
+
+/** The grid a tap-placed tray tile may land on, in grid units. */
+export interface PlacementZone {
+    cols: number;
+    rows: number;
+    tileUnits: number;
+    /** Rows kept clear at the top (the word info), when the board has room. */
+    topUnits: number;
+    /** Clear space kept from the other edges, when the board has room. */
+    marginUnits: number;
+}
+
+/**
+ * Where a tapped tray tile lands: the position nearest the board's bottom centre (the edge
+ * next to the tray, so the tile appears where the finger already is) whose box overlaps no
+ * board tile. A full board settles for the nearest position no tile sits on EXACTLY, so a
+ * tap never builds a stack: stacking stays a drop the learner makes.
+ */
+export function placementSpot(tiles: readonly Tile[], { cols, rows, tileUnits, topUnits, marginUnits }: PlacementZone): { x: number; y: number } {
+    const lastX = Math.max(0, cols - tileUnits);
+    const lastY = Math.max(0, rows - tileUnits);
+    const insetX = Math.min(marginUnits, Math.floor(lastX / 2));
+    const highY = lastY - Math.min(marginUnits, Math.floor(lastY / 2));
+    const lowY = Math.min(Math.max(topUnits, 0), highY);
+    const target = { x: Math.round(lastX / 2), y: highY };
+    const onBoard = tiles.filter((tile) => !tile.inTray);
+    let clear: { x: number; y: number; d: number } | null = null;
+    let unstacked: { x: number; y: number; d: number } | null = null;
+    for (let y = lowY; y <= highY; y++) {
+        for (let x = insetX; x <= lastX - insetX; x++) {
+            const d = Math.hypot(x - target.x, y - target.y);
+            const overlaps = onBoard.some((tile) => Math.abs(tile.x - x) < tileUnits && Math.abs(tile.y - y) < tileUnits);
+            if (!overlaps && (!clear || d < clear.d)) clear = { x, y, d };
+            const exact = onBoard.some((tile) => tile.x === x && tile.y === y);
+            if (!exact && (!unstacked || d < unstacked.d)) unstacked = { x, y, d };
         }
-        taken.add(`${x},${y}`);
-        return { ...tile, x, y, z };
-    });
+    }
+    const spot = clear ?? unstacked ?? target;
+    return { x: spot.x, y: spot.y };
 }
 
 /** Every tile whose box holds the grid point, topmost first. */
 export function tilesAt(tiles: readonly Tile[], x: number, y: number, tileUnits: number): Tile[] {
     return tiles
-        .filter((tile) => x >= tile.x && x < tile.x + tileUnits && y >= tile.y && y < tile.y + tileUnits)
+        .filter((tile) => !tile.inTray && x >= tile.x && x < tile.x + tileUnits && y >= tile.y && y < tile.y + tileUnits)
         .sort((a, b) => b.z - a.z);
 }
 
@@ -212,7 +231,7 @@ function stackFillsCharacter(stack: readonly Tile[], charIndex: number, groupCou
 /**
  * The loose stacks that now finish a character: `${x},${y}` → the character index.
  *
- * Only loose tiles are judged. A locked stack is already finished, and a loose tile lying on
+ * Only loose tiles on the board are judged. A locked stack is already finished, and a loose tile lying on
  * its cell neither joins it nor spoils it. Every tile still counts towards its character's
  * size, or the rest of a character would read as a whole one.
  */
@@ -221,7 +240,8 @@ export function completedStacks(tiles: readonly Tile[]): Map<string, number> {
     const groupCounts: number[] = [];
     for (const tile of tiles) {
         groupCounts[tile.source.charIndex] = (groupCounts[tile.source.charIndex] ?? 0) + 1;
-        if (tile.lock) continue;
+        // A tray tile is in no stack: it still counts towards its character's size, above.
+        if (tile.lock || tile.inTray) continue;
         const key = stackKey(tile);
         stacks.set(key, [...(stacks.get(key) ?? []), tile]);
     }
@@ -233,7 +253,12 @@ export function completedStacks(tiles: readonly Tile[]): Map<string, number> {
     return done;
 }
 
-export const stackKey = (tile: Pick<Tile, "x" | "y">): string => `${tile.x},${tile.y}`;
+/**
+ * The cell a tile's stack is keyed on. A tray tile gets a key of its own, so it never stacks:
+ * not with another tray tile, and not with a board tile that happens to share its stale x, y.
+ */
+export const stackKey = (tile: Pick<Tile, "x" | "y" | "inTray" | "id">): string =>
+    tile.inTray ? `tray:${tile.id}` : `${tile.x},${tile.y}`;
 
 /**
  * Fuse every loose stack that now finishes a character. Run on a drop, the one moment a
@@ -256,16 +281,17 @@ export function lockFinishedStacks(tiles: Tile[]): Tile[] {
 
 /**
  * Move a tile — with its whole locked stack, if it has one — to (x, y) and onto the top of
- * the pile. The moved tiles keep their order among themselves, and z stays a compact 0..n-1.
- * Returns the same array when nothing moved.
+ * the pile. A tray tile moved this way leaves the tray for the board. The moved tiles keep
+ * their order among themselves, and z stays a compact 0..n-1. Returns the same array when
+ * nothing moved.
  */
 export function moveTile(tiles: Tile[], tileId: number, x: number, y: number): Tile[] {
     const moved = tiles.find((tile) => tile.id === tileId);
-    if (!moved || (moved.x === x && moved.y === y)) return tiles;
+    if (!moved || (!moved.inTray && moved.x === x && moved.y === y)) return tiles;
     const moving = (tile: Tile) => (moved.lock ? tile.lock?.id === moved.lock.id : tile.id === moved.id);
     const order = [...tiles].sort((a, b) => a.z - b.z);
     const z = new Map([...order.filter((tile) => !moving(tile)), ...order.filter(moving)].map((tile, index) => [tile.id, index]));
-    return tiles.map((tile) => (moving(tile) ? { ...tile, x, y, z: z.get(tile.id)! } : { ...tile, z: z.get(tile.id)! }));
+    return tiles.map((tile) => (moving(tile) ? { ...tile, x, y, z: z.get(tile.id)!, inTray: false } : { ...tile, z: z.get(tile.id)! }));
 }
 
 /**
@@ -292,7 +318,7 @@ function belongTogether(a: Tile, b: Tile): boolean {
 
 /**
  * Two tiles the hint should point at: they belong in one stack and are not in one yet.
- * Locked tiles never qualify. Two loose tiles lying alone are preferred (a locked stack on the
+ * Locked tiles never qualify. A tray tile counts as lying alone (its `stackKey` is its own). Two loose tiles lying alone are preferred (a locked stack on the
  * same cell does not count against "alone"). When no such
  * pair exists (say, one tile left to add to a partial stack) any unfinished tile counts, so a
  * hint is only unavailable when no two tiles are left to join. Returns tile ids, or null.

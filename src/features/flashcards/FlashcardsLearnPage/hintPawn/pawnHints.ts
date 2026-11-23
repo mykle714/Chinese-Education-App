@@ -1,8 +1,6 @@
-import type { UsedInItem, VocabEntry } from "../../../../types";
+import type { VocabEntry } from "../../../../types";
 import type { FlpWorld } from "../../../../../server/contracts/studyMode";
-import { previewShowsWholeCharacter } from "../../../../components/handwriting/levelBehavior";
-import { modeOfLevel, writingLevelForMastery } from "../../../../../server/contracts/writingLevels";
-import { USED_IN_LINES, WRONG_STREAK_LINES, type WrongStreakCondition } from "./pawnHintLines";
+import { DECK_REVIEW_LINES, WRONG_STREAK_LINES, type WrongStreakCondition } from "./pawnHintLines";
 import { WORLD_MARK_TYPES } from "../../../../../server/contracts/mastery";
 import type { TypedMarkHistory } from "../../../../../server/contracts/wire";
 import { getBreakdownItems } from "../../../../utils/breakdownUtils";
@@ -15,8 +13,12 @@ import { getBreakdownItems } from "../../../../utils/breakdownUtils";
  * A hint is a discriminated union so each world can add its own kind without touching
  * the pawn: add a variant here, its entry in `PAWN_BUBBLE_VARIANT`, a case in
  * `pawnHintFor`, and a case in PawnHintBody.
- * Writing has `used-in`; main (core) and reading have `wrong-streak`, a study tip shown only
- * on a card whose last `WRONG_STREAK_LENGTH` marks in the world were all wrong. A card with
+ * Main (core) and reading have `wrong-streak`, a study tip shown only on a card whose last
+ * `WRONG_STREAK_LENGTH` marks in the world were all wrong. Writing has no card hint of its
+ * own: its used-in hint was dropped on 2026-11-22, when the writing card started naming
+ * the words its character comes from itself (WritingSourceWords.tsx). Every world
+ * also has `deck-review`, a session-level line said on a dive's first card when most of the
+ * deck is review (Comfortable + Mastered); it outranks the card's own hint. A card with
  * no hint returns null and the pawn says nothing (it is mounted in every world, owner's
  * call 2026-11-08).
  *
@@ -25,9 +27,6 @@ import { getBreakdownItems } from "../../../../utils/breakdownUtils";
  * Depended on by: FlashcardsLearnPage.tsx (`pawnHintFor`), hintPawn/HintPawn.tsx,
  * hintPawn/PawnHintBody.tsx, src/__tests__/wrongStreakHint.test.ts.
  */
-
-/** Most used-in words shown — matches the server's writingUsedIn limit (decided 2026-10-04). */
-const MAX_USED_IN_WORDS = 2;
 
 interface PawnHintBase {
     /**
@@ -46,21 +45,6 @@ interface PawnHintBase {
 }
 
 /**
- * The writing world's used-in hint (moved here from the card-edge bubbles,
- * WritingUsedInBubbles, deleted 2026-11-08): words that contain the card's character.
- */
-export interface UsedInPawnHint extends PawnHintBase {
-    kind: "used-in";
-    items: UsedInItem[];
-    /**
-     * The card's character, drawn as ? wherever it appears in a word — or undefined at
-     * levels 1–3 (Snap / Trace / Step Through), whose card front already previews the
-     * whole character, so masking it would hide nothing (decided 2026-10-04).
-     */
-    maskChar: string | undefined;
-}
-
-/**
  * Main and reading's wrong-streak hint: the learner keeps getting this card wrong, so the
  * pawn suggests a way to study it (WRONG_STREAK_LINES). Just a line, no extra content.
  */
@@ -68,7 +52,16 @@ export interface WrongStreakPawnHint extends PawnHintBase {
     kind: "wrong-streak";
 }
 
-export type PawnHint = UsedInPawnHint | WrongStreakPawnHint;
+/**
+ * Every world's deck-review hint (owner, 2026-11-21): most of the deck this dive studies is
+ * Comfortable + Mastered cards, so the pawn reassures the learner (DECK_REVIEW_LINES). Said
+ * on the dive's first card only, and ahead of that card's own hint. Just a line.
+ */
+export interface DeckReviewPawnHint extends PawnHintBase {
+    kind: "deck-review";
+}
+
+export type PawnHint = WrongStreakPawnHint | DeckReviewPawnHint;
 
 /**
  * The two dialogue-box variants (owner, 2026-11-08; docs/HINT_PAWN.md § "Bubble variants").
@@ -79,7 +72,8 @@ export type PawnHint = UsedInPawnHint | WrongStreakPawnHint;
  *          a safety net), so the words below it are never pushed off the bubble's bottom;
  *          the dismiss cue sits in the words' row, taking its width from the words rather
  *          than from the line. Every line of a cpcd kind must fit on one line
- *          (pawnHintLines.ts → `CPCD_LINE_MAX_CHARS`).
+ *          (pawnHintLines.ts → `CPCD_LINE_MAX_CHARS`). No kind uses it today (the
+ *          writing world's used-in hint, its one user, was removed 2026-11-22).
  */
 export type PawnBubbleVariant = "text" | "cpcd";
 
@@ -88,9 +82,45 @@ export type PawnBubbleVariant = "text" | "cpcd";
  * type-checks.
  */
 export const PAWN_BUBBLE_VARIANT: Record<PawnHint["kind"], PawnBubbleVariant> = {
-    "used-in": "cpcd",
     "wrong-streak": "text",
+    "deck-review": "text",
 };
+
+/**
+ * The bands that count as REVIEW for the deck-review hint. Bands not listed here
+ * (Unfamiliar, Target) are the learning side.
+ */
+const REVIEW_BANDS = ["Comfortable", "Mastered"] as const;
+/** The four utcm bands the deck is made of (towerModes.ts → `TOWER_MODES.mix.bands`). */
+const DECK_BANDS = ["Unfamiliar", "Target", "Comfortable", "Mastered"] as const;
+
+/**
+ * The smallest deck the deck-review line is said for, in ready cards across all four bands
+ * (owner, 2026-11-21). A small deck that happens to be mostly review is not worth the line.
+ */
+export const DECK_REVIEW_MIN_CARDS = 40;
+
+/**
+ * Whether most of a deck is review cards: the deck holds at least `DECK_REVIEW_MIN_CARDS`
+ * ready cards, and Comfortable + Mastered make up STRICTLY more than half of the four bands
+ * (owner, 2026-11-21: "the majority"). `counts` is the world's off-cooldown cards per band —
+ * useFlpReadyCounts' `counts`, the figure the Learning tower stands at (passed in as
+ * `FlpTowerHost.readyBandCounts`).
+ */
+export function isReviewHeavyDeck(counts: Readonly<Record<string, number>> | undefined): boolean {
+    if (!counts) return false;
+    const sum = (bands: readonly string[]) => bands.reduce((total, band) => total + (counts[band] || 0), 0);
+    const total = sum(DECK_BANDS);
+    return total >= DECK_REVIEW_MIN_CARDS && sum(REVIEW_BANDS) * 2 > total;
+}
+
+/**
+ * The deck-review hint for one dive. `diveKey` names the dive (useDeckReviewHint), so each
+ * dive's line is a fresh bubble, and re-renders keep the same one.
+ */
+function deckReviewHint(diveKey: string): DeckReviewPawnHint {
+    return { kind: "deck-review", key: `deck-review|${diveKey}`, lines: DECK_REVIEW_LINES };
+}
 
 /** How many newest marks in a row must be wrong for the wrong-streak hint (owner, 2026-11-08). */
 export const WRONG_STREAK_LENGTH = 3;
@@ -141,31 +171,17 @@ function wrongStreakHint(world: FlpWorld, entry: VocabEntry): WrongStreakPawnHin
 }
 
 /**
- * The writing card's used-in hint, or null when it has no words.
- *
- * Data: `entry.writingUsedIn` (OnDeckVocabService.enrichMultipleWithUsedIn, writing bar only, from
- * VocabEntryDAL.findWritingUsedInForCharacters) — the learner's sorted words first, then
- * dictionary words at frequencyScore 4–5; single-character zh cards only.
+ * The hint for the front card in `world`, or null when the pawn has nothing to say.
+ * `deckReviewKey` (useDeckReviewHint): set while the front card is a review-heavy dive's
+ * first card, and then the deck-review line wins over the card's own hint.
  */
-function usedInHint(entry: VocabEntry): UsedInPawnHint | null {
-    const items = (entry.writingUsedIn ?? []).slice(0, MAX_USED_IN_WORDS);
-    if (items.length === 0) return null;
-    const level = writingLevelForMastery(entry.writingMastery ?? 0);
-    return {
-        kind: "used-in",
-        key: `used-in|${entry.id}`,
-        lines: USED_IN_LINES,
-        items,
-        maskChar: previewShowsWholeCharacter(modeOfLevel(level)) ? undefined : entry.entryKey,
-    };
-}
-
-/** The hint for the front card in `world`, or null when the pawn has nothing to say. */
-export function pawnHintFor(world: FlpWorld, entry: VocabEntry | null): PawnHint | null {
+export function pawnHintFor(world: FlpWorld, entry: VocabEntry | null, deckReviewKey?: string | null): PawnHint | null {
     if (!entry) return null;
+    if (deckReviewKey) return deckReviewHint(deckReviewKey);
     switch (world) {
         case "writing":
-            return usedInHint(entry);
+            // The card names its source words itself (WritingSourceWords.tsx).
+            return null;
         case "core":
         case "reading":
             return wrongStreakHint(world, entry);

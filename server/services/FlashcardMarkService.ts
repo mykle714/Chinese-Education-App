@@ -388,7 +388,8 @@ export class FlashcardMarkService {
    * `applyMark`'s transaction with the card's row already locked.
    *
    * SINGLE CHARACTER — the card IS the character: the usual cooldown gate, then the
-   * anti-farming gate (`writingMarkCounts`: level > its mastery), then one ordinary mark.
+   * anti-farming gate (`writingMarkCounts`: level > its mastery, or the top level),
+   * then one ordinary mark.
    *
    * MULTI-CHARACTER WORD —
    *   1. lock (creating hidden provisional rows as needed) every character's own

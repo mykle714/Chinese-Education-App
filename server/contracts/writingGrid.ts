@@ -35,9 +35,16 @@ export interface WritingGridCharacter {
    */
   definition: string | null;
   /**
-   * The cell's row is a card the learner holds, not a hidden provisional one. A correct,
-   * recorded mark on it takes that card off a Deck Tower; a mark on a hidden row never
-   * does, because the tower never counted it (docs/FLP_GAME_BREAKS.md § 6).
+   * The character is in the learner's WRITING DECK: it comes from one of their sorted
+   * words (server/dal/shared/writingDeck.ts), whether its own row is sorted or hidden. A
+   * correct, recorded mark on it is a break clear: the card leaves the writing flp's loop
+   * and comes off the writing tower (docs/FLP_GAME_BREAKS.md § 4a, § 6). False for a
+   * character reached only through a lent word, which the tower never counted.
+   *
+   * Until 2026-11-22 this meant "the row is sorted". That stopped matching the writing
+   * deck, whose characters are mostly hidden rows: a break marked them without clearing
+   * them, and they repeated in the loop on cooldown (docs/WRITING_PRACTICE_REWORK.md § 4).
+   * Set by: server/dal/implementations/WritingGridDAL.ts → `findCandidateCharacters`.
    */
   ownCard: boolean;
   /** A focused break's cell from outside today's set, so it was never on the tower. */

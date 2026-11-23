@@ -452,7 +452,7 @@ is not a saved card is shown only in the eip sheet; the read-only dictionary cdp
 - Scrolling page: **hero flashcard** (editable icon layout) + mastery window. Loads a vet
   row by id; editable (icon-editor toolbar + delete). Delete is one tap, no confirmation, and
   non-destructive: `handleDelete` calls `removeFromLibrary`, demoting the card to
-  `'provisional'` (history kept; PROVISIONAL_CARDS.md), then goes Back (`navigate(-1)`,
+  `'tracked'` (history kept, never lent; PROVISIONAL_CARDS.md § "Tracked rows"), then goes Back (`navigate(-1)`,
   or `/` when deep-linked with no history entry). Reached from td's cards page, so
   the **Flashcards** tab stays active; it wears the slab footer, the Tier 2 ground
   (`useTier2Look`) and prints its hero card on the tower card stock (`cardStockVars`,
@@ -462,7 +462,7 @@ is not a saved card is shown only in the eip sheet; the read-only dictionary cdp
   `InfoCardPanelBody`), the same sheet acp and the Dictionary page raise, with its own
   `useEipTabs` word trail. Props: `showSynonymsRelated`, `showLearning`, `learningSkipsRoot`;
   no `showWordTools` — the word-tools rail (`WordToolsRail`) sits above the hero card, and its
-  Compare raises `CompareSheet` (`useCompareSheet`). See EIP_SHEET_GESTURES.md § Mount sites.
+  Compare closes the eip and raises the Compare panel (`useCompareSheet`). See EIP_SHEET_GESTURES.md § Mount sites.
 - **Drill-ins push a crumb.** Breakdown rows (`BreakdownRow`), single-char **Used In** rows and
   example-sentence segments open the tapped word as a new crumb on the trail in the same sheet
   — the flp's behaviour (EIP_SHEET_GESTURES.md § The trail is a breadcrumb stack). The cdp
@@ -479,10 +479,10 @@ whichever word is showing on the trail.
 
 - **Not in Learning** → `+ Add`. Tap → `addToLibrary`.
 - **In Learning** (bucket `'library'`) → `✓ Added!`. Tap → `removeFromLibrary`, **no
-  confirmation**: removal demotes the row to `'provisional'` rather than deleting it, so marks
+  confirmation**: removal demotes the row to `'tracked'` rather than deleting it, so marks
   survive and a re-add promotes it back in place (PROVISIONAL_CARDS.md).
-- Membership comes from `GET /api/vocabEntries/libraryStatus` (a `'provisional'` row
-  or no row = not in). Until it arrives nothing renders, so an added word never flashes
+- Membership comes from `GET /api/vocabEntries/libraryStatus` (a hidden `'provisional'` /
+  `'tracked'` row or no row = not in). Until it arrives nothing renders, so an added word never flashes
   "+". It is stored with its `entryKey`, so moving to another word refetches. A
   failed status fetch falls back to "+" (adding is idempotent). A host that already
   knows the answer passes it as `useLearningToggle`'s `seedInLibrary` and the control
@@ -503,15 +503,16 @@ whichever word is showing on the trail.
 `learningSkipsRoot`); `src/utils/vocabApi.ts` (`getLibraryStatus`,
 `removeFromLibrary`, `addToLibrary`); `server/services/VocabEntryService.ts`
 (`getLibraryStatus`, `removeFromLibrary`); `server/dal/implementations/VocabEntryDAL.ts`
-(`findBucketRowByUserAndKey`, `demoteLibraryRowToProvisional`).
+(`findBucketRowByUserAndKey`, `demoteLibraryRowToTracked`).
 
 - **Dictionary page eip** (`/dictionary`, `DictionaryPage` → `EipSheet`) — not a cdp, but
   where a dictionary result lands (2026-10-10): `handleEntryClick` looks the word up
   (`lookupVocabEntry`), seeds `useEipTabs.openForRoot` (on the hit's `matchedSense` when
   there is one) and raises the shared `EipSheet`. Every link inside — breakdown / used-in
-  rows, example and long-definition segments, Compare — opens as an eip crumb in the word
-  trail, never a page. Props: `showSynonymsRelated`, `showWordTools` (`Write it` · `Compare`
-  under the synonyms, Compare opening the eip's own Compare tab) and `showLearning`.
+  rows, example and long-definition segments — opens as an eip crumb in the word trail,
+  never a page. Props: `showSynonymsRelated`, `showWordTools` (`Write it` · `Compare` under
+  the synonyms; Compare closes the eip and raises the Compare panel —
+  docs/WORD_COMPARE_FEATURE.md) and `showLearning`.
 
 ### Narration on entry: none (removed 2026-08-19)
 

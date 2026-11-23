@@ -21,6 +21,11 @@ import { parseWeatherOverride, pinnedWeather, type WeatherOverride } from "./tow
  *   - `settled`: false only while the setting is on and the FIRST answer (ok, not ok, or a
  *     network failure) has not come back — so a reader that must not act on "no weather
  *     yet" can wait (the aurora's clear-sky roll, towerAurora.ts). Off or pinned = settled.
+ *   - The last real answer outlives the page (`lastAnswer`, module scope): td unmounts
+ *     whenever the learner switches tabs, and a remount that started from "no weather"
+ *     drew a clear sky and then FADED to the cloudy one when the refetch landed. A remount
+ *     for the same user now starts from the remembered weather (and `settled`), and the
+ *     refetch only changes the sky if the weather actually changed.
  *   - Feature testers can pin one WMO look (WeatherToggle → towerWeather.ts `WEATHER_PINS`),
  *     stored per device like the time-of-day pin. `pinTaps` counts the tester's taps, so the
  *     page can show a tapped pin INSTANTLY (sky colour snaps, clouds fill mid-sky) while
@@ -35,6 +40,20 @@ import { parseWeatherOverride, pinnedWeather, type WeatherOverride } from "./tow
 const REFRESH_MS = 30 * 60_000;
 
 const OVERRIDE_KEY = "deckTower.weatherOverride";
+
+/**
+ * The last real (unpinned) answer, kept across mounts so a remounted td draws the weather it
+ * last knew instead of starting clear (see the header). Keyed by user so a sign-in as someone
+ * else never inherits the previous account's sky. `weather` null = the last answer was "no
+ * weather" (not ok / no location), which is still an answer.
+ */
+let lastAnswer: { userId: string; weather: WeatherNow | null } | null = null;
+
+/** The remembered answer for this user, or undefined when there is none to start from. */
+function rememberedFor(userId: string | undefined, enabled: boolean): { weather: WeatherNow | null } | undefined {
+    if (!enabled || userId === undefined || lastAnswer === null || lastAnswer.userId !== userId) return undefined;
+    return lastAnswer;
+}
 
 function readOverride(): WeatherOverride {
     try {
@@ -55,9 +74,11 @@ export function useTowerWeather(allowOverride: boolean): {
     const { user } = useAuth();
     const userId = user?.id;
     const enabled = useWeatherEffectsEnabled();
-    const [real, setReal] = useState<WeatherNow | null>(null);
+    // Seeded from the remembered answer so a remount does not flash clear (see the header).
+    const [real, setReal] = useState<WeatherNow | null>(() => rememberedFor(userId, enabled)?.weather ?? null);
     // Whether the current load cycle has had its first answer (see `settled` in the header).
-    const [answered, setAnswered] = useState(false);
+    // A remembered answer counts: the launch cover / aurora need not wait on the refetch.
+    const [answered, setAnswered] = useState(() => rememberedFor(userId, enabled) !== undefined);
     const [override, setOverrideState] = useState<WeatherOverride>(readOverride);
     const [pinTaps, setPinTaps] = useState(0);
 
@@ -70,7 +91,11 @@ export function useTowerWeather(allowOverride: boolean): {
             setAnswered(true);
             return;
         }
-        setAnswered(false);
+        // Start this cycle from the remembered answer when there is one for this user (a
+        // remount, or the setting turned back on); otherwise wait for the first answer.
+        const remembered = rememberedFor(userId, enabled);
+        setReal(remembered?.weather ?? null);
+        setAnswered(remembered !== undefined);
         let cancelled = false;
         // The FIRST read takes the shared request (fetchWeatherShared), which the app-level
         // prefetch (useWeatherPrefetch) has usually already started; refreshes ask afresh.
@@ -81,8 +106,11 @@ export function useTowerWeather(allowOverride: boolean): {
             first = false;
             request
                 .then((res) => {
+                    const next = res.status === "ok" ? res.weather : null;
+                    // Remember even when this mount has gone: the next td mount starts from it.
+                    lastAnswer = { userId, weather: next };
                     if (cancelled) return;
-                    setReal(res.status === "ok" ? res.weather : null);
+                    setReal(next);
                     setAnswered(true);
                 })
                 .catch(() => {

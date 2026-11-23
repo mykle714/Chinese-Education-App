@@ -1,6 +1,6 @@
 import { IUsageStatsDAL } from '../interfaces/IUsageStatsDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
-import { VET_PHYSICAL_TABLES, vetProvisionalClause, vetSortedClause } from '../shared/vetTable.js';
+import { VET_PHYSICAL_TABLES, vetHiddenClause, vetSortedClause } from '../shared/vetTable.js';
 import type {
   UsageDay,
   UsageFeatureRow,
@@ -183,11 +183,11 @@ export class UsageStatsDAL implements IUsageStatsDAL {
 
   async getRecentUsers(since: string, until: string, limit: number): Promise<UsageUserRow[]> {
     // Sorted = every bucket a learner can sort a card INTO (library or skip), i.e.
-    // anything but a lent provisional row. Bucketed by "createdAt": a lent card later
+    // anything but a hidden row (lent 'provisional' or 'tracked', migration 203). Bucketed by "createdAt": a lent card later
     // promoted in place keeps its lend-time createdAt, so it counts on the lend day.
     const sortedUnion = VET_PHYSICAL_TABLES.map(
       (t) => `SELECT ve."userId" FROM ${t} ve
-              WHERE NOT (${vetProvisionalClause('ve')})
+              WHERE NOT (${vetHiddenClause('ve')})
                 AND ve."createdAt" >= $1::date AND ve."createdAt" < $2::date + 1`
     ).join(' UNION ALL ');
 

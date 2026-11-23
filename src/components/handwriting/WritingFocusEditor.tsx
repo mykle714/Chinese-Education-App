@@ -5,7 +5,7 @@ import WritingPanel, { WritingPanelLevelLabel, type WritingPanelHandle } from ".
 import { WRITING_PANEL_ACTION_SX } from "./writingPanelStyles";
 import { useLevelGuide } from "./useLevelGuide";
 import { useStrokeClock } from "./useStrokeClock";
-import { guideFades, regionClipPath, WRITING_FOCUS_SIZE } from "./levelBehavior";
+import { guideFades, levelHasGuide, regionClipPath, WRITING_FOCUS_SIZE } from "./levelBehavior";
 import type { Ink, WritingCanvasHandle } from "./types";
 import { WRITING_LEVELS } from "../../../server/contracts/writingLevels";
 import { COLORS } from "../../theme";
@@ -135,10 +135,10 @@ export default function WritingFocusEditor({ char, pinyin, level, initialInk, on
                                 variant="contained"
                                 disableElevation
                                 onClick={guide.press}
-                                disabled={guide.cooldownSec > 0}
+                                disabled={guide.assistDisabled}
                                 sx={WRITING_PANEL_ACTION_SX}
                             >
-                                {guide.cooldownSec > 0 ? `${guide.cooldownSec}s` : behavior.button.label}
+                                {guide.assistLabel}
                             </Button>
                         )
                     }
@@ -148,7 +148,7 @@ export default function WritingFocusEditor({ char, pinyin, level, initialInk, on
                         character={char}
                         size={CANVAS_SIZE}
                         drawable
-                        showGuide={behavior.guide !== "none"}
+                        showGuide={levelHasGuide(spec.mode)}
                         guideVisible={guide.outlineVisible}
                         loopAnimation={behavior.animation === "loop"}
                         snap={behavior.snap}

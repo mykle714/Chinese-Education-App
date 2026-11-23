@@ -106,6 +106,13 @@ describe('writing level rules', () => {
   it('counts a mark only when level > mastery', () => {
     expect(writingMarkCounts(1, 0)).toBe(true);
     expect(writingMarkCounts(3, 3)).toBe(false);
+    expect(writingMarkCounts(7, 8)).toBe(false);
+  });
+  it('always counts the top level, so a Mastered character (m = 8) can be marked', () => {
+    expect(writingMarkCounts(8, 7)).toBe(true);
+    expect(writingMarkCounts(8, 8)).toBe(true);
+    // The flp deals every mastery at a level that passes the gate.
+    for (let m = 0; m <= 8; m++) expect(writingMarkCounts(writingLevelForMastery(m), m)).toBe(true);
   });
   it('averages characters, skipping clock-only marks', () => {
     const correct = { timestamp: 't', isCorrect: true };

@@ -44,7 +44,7 @@ function EipTabStrip({ tabs, activeIndex, onSelect, showCrumbs = true }: EipTabS
     // ⛔ NOT `scrollIntoView`. That scrolls EVERY scrollable ancestor to reveal the pill —
     // `block: "nearest"` included, whenever the pill is off-screen vertically. During the
     // sheet's open slide (SheetPanel "Entry slide") the whole sheet is still below the
-    // frame, so opening Compare (which pushes a second crumb) scrolled the phone frame
+    // frame, so opening Compare (then a crumb of its own) scrolled the phone frame
     // itself; the frame is `overflow: hidden`, so nothing ever scrolled it back and the app
     // stayed shifted (2026-10-30). Only the pill row's own scrollLeft is moved here.
     //
@@ -121,7 +121,7 @@ function EipTabStrip({ tabs, activeIndex, onSelect, showCrumbs = true }: EipTabS
                                 onClick={() => onSelect(i)}
                                 className={`eip-entry-tab eip-entry-tab--${i === activeIndex ? "active" : "inactive"}`}
                             >
-                                {tab.kind === "compare" ? "Compare" : tab.entry.entryKey}
+                                {tab.entry.entryKey}
                             </EipEntryTab>
                         </Fragment>
                     ))}

@@ -18,7 +18,7 @@ export interface SuperpositionCharacter {
   char: string;
   /** Its single-character vet row (created hidden/provisional when missing) — the row a finished stack marks. */
   cardId: number;
-  /** That row is a card the learner holds, not a hidden provisional one. See `WritingGridCharacter.ownCard`. */
+  /** The character is in the learner's writing deck (sorted or hidden row), so a clear counts. See `WritingGridCharacter.ownCard`. */
   ownCard: boolean;
   /** A focused break's character from outside today's set: it was never on the tower. */
   outsideFocus?: boolean;

@@ -202,8 +202,8 @@ An hourly Postgres cron on the PPE server. For each **(user, language)** balance
 ### Character Breakdown Feature
 → See [docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md](./docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md)
 
-### Word Compare (eip Compare tab)
-→ See [docs/WORD_COMPARE_FEATURE.md](./docs/WORD_COMPARE_FEATURE.md) — **DESIGN**: a singleton entry tab in the eip tab strip (not attached to a card) with two xl-cpcd slots; slot B fills via a mini dictionary search, then `POST /api/dictionary/compare` returns an AI paragraph on the pair's difference, cached in `word_comparison_cache` (migration 105) under the shared `dictionary_ai_usage` daily cap.
+### Word Compare (the Compare panel)
+→ See [docs/WORD_COMPARE_FEATURE.md](./docs/WORD_COMPARE_FEATURE.md) — **BUILT**: a standalone sheet (`features/flashcards/compare/CompareSheet`, not an eip tab since 2026-11-21; pressing Compare closes any open eip) in the eip's band + shelf layout — two xl-cpcd word keycaps in the tinted band, the mini dictionary search (the Dictionary page's look) and the AI paragraph in the white shelf; `POST /api/dictionary/compare` returns it, cached in `word_comparison_cache` (migration 105) under the shared `dictionary_ai_usage` daily cap.
 
 ### User Document Feature
 → See [docs/USER_DOCUMENT_FEATURE_SUMMARY.md](./docs/USER_DOCUMENT_FEATURE_SUMMARY.md)
@@ -276,7 +276,7 @@ so the progress survives.
 → See [docs/STUDY_CHALLENGE.md](./docs/STUDY_CHALLENGE.md) — **PHASE 1 BUILT** (async; the "DESIGN/DRAFT" this line used to claim was stale, and the set is **9** words, not 10 — `CHALLENGE_WORD_COUNT`): a Monday-issued, Friday-played challenge between two friends — the same-word vs different-word variants, the 04:00-local week boundaries, the nine words join both players' cards on accept (no study deck since 2026-11-04), the `mastered-first` provisioning mode, the per-game contested/filler scoring contract, and results/no-contest. The **2026-09-01 shelf-system redesign** changed behaviour as well as looks: the opponent's rounds are now revealed per submitted round (reversing the anti-anchoring rule), issue/withdraw/accept became a sheet over the list (two routes deleted), View Challenge became two swipeable pages, and taunts arrived (migration 156). Live (synchronous) mode is deferred to phase 2.
 
 ### Voice Assistant (speech-to-speech tutor)
-→ See [docs/VOICE_ASSISTANT.md](./docs/VOICE_ASSISTANT.md) — **DESIGN, nothing built**: a hands-free spoken Chinglish tutor modeled on Claude's voice mode — a cascade (STT → Claude → TTS) over the app's first WebSocket, one free-talk mode, one fixed voice, no push-to-talk, saved cpcd transcripts (`voice_sessions` + `voice_turns`) where cards are added by tapping words. Voice never marks cards or earns minute points. Google for both speech stages (streaming Speech-to-Text; Chirp3-HD TTS with two voices, the learner's pick); Claude Opus 5.5 at low effort.
+→ See [docs/VOICE_ASSISTANT.md](./docs/VOICE_ASSISTANT.md) — **BUILT 2026-11-21, flag `voiceAssistant` OFF, not deployed** (migration 202): a hands-free spoken Chinglish tutor modeled on Claude's voice mode — a cascade (STT → Claude → TTS) over the app's first WebSocket, one free-talk mode, no push-to-talk, saved cpcd transcripts (`voice_sessions` + `voice_turns`) where cards are added by tapping words. Voice never marks cards or earns minute points. Google for both speech stages (streaming Speech-to-Text; Chirp3-HD TTS with two voices, the learner's pick); Claude Opus 5.5 at low effort.
 
 ### Practice Writing (character writing-practice drill)
 → See [docs/PRACTICE_WRITING.md](./docs/PRACTICE_WRITING.md) — the "Practice Writing Me" drill: four assistance levels (Trace / Step Through / Memorize / Test), the 2×2 grid for multi-char words, the generalized modal lockout + greyed-background step-back, Memorize's study-first lock (no-writing badge + Start-Writing pulse), top-1 grading, and completion stars.

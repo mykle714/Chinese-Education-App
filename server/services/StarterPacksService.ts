@@ -8,7 +8,7 @@ import { NotFoundError, ValidationError } from '../types/dal.js';
 import { SortPackRow } from '../types/sortPacks.js';
 import { SORT_BUCKET_CORE_POSITIVES } from '../utils/masteryCompute.js';
 import { sortSeedTypedMarkHistory } from '../contracts/cooldown.js';
-import { DISCOVER_SORT_BUCKETS, type DiscoverSortBucket } from '../contracts/wire.js';
+import { DISCOVER_SORT_BUCKETS, isHiddenBucket, type DiscoverSortBucket } from '../contracts/wire.js';
 import { LazyEnrichmentService } from './LazyEnrichmentService.js';
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../utils/definitions.js';
 
@@ -375,18 +375,19 @@ export class StarterPacksService {
       console.log(`[StarterPacks] Created VocabEntry id=${vocabEntryId} for entryKey=${dictEntry.word1}`);
     } else {
       vocabEntryId = existing.id;
-      // A row already exists. The interesting case is a PROVISIONAL row (migration
-      // 140): a temporary card a game handed the user, which they have now chosen to
-      // keep. Promote it IN PLACE — flip the bucket and touch nothing else — so every
+      // A row already exists. The interesting case is a HIDDEN row — a lent
+      // 'provisional' card (migration 140) a game handed the user, or a 'tracked' row
+      // (migration 203: a character row, or a card they once removed) — which they have
+      // now chosen to keep. Promote it IN PLACE — flip the bucket and touch nothing else — so every
       // mark they earned on it while it was temporary survives being sorted. That is
       // the whole reason provisional cards are real vet rows rather than an ephemeral
       // list: progress is never lost to sorting. See docs/PROVISIONAL_CARDS.md.
       //
       // An already-'library' row is left completely alone (re-sorting a card the user
       // already holds must not reset anything).
-      if (existing.starterPackBucket === 'provisional') {
+      if (isHiddenBucket(existing.starterPackBucket)) {
         await this.vocabEntryDAL.promoteRowToLibrary(vocabEntryId, dictEntry.language);
-        console.log(`[StarterPacks] Promoted provisional VocabEntry id=${vocabEntryId} to '${actualBucket}' for entryKey=${dictEntry.word1} (marks preserved)`);
+        console.log(`[StarterPacks] Promoted ${existing.starterPackBucket} VocabEntry id=${vocabEntryId} to '${actualBucket}' for entryKey=${dictEntry.word1} (marks preserved)`);
       } else {
         console.log(`[StarterPacks] VocabEntry already exists id=${vocabEntryId} for entryKey=${dictEntry.word1}`);
       }
@@ -477,7 +478,7 @@ export class StarterPacksService {
 
     const existing = await this.vocabEntryDAL.findBucketRowByUserAndKey(userId, entryKey, language, client);
     if (existing) {
-      if (existing.starterPackBucket === 'provisional') {
+      if (isHiddenBucket(existing.starterPackBucket)) {
         await this.vocabEntryDAL.promoteRowToLibrary(existing.id, language, client);
       }
       return existing.id;
@@ -527,10 +528,10 @@ export class StarterPacksService {
     }
 
     // Undo has TWO outcomes, because sorting can either CREATE a row or PROMOTE an
-    // existing provisional one (migration 140, docs/PROVISIONAL_CARDS.md):
-    //   - the row carries marks  → the user earned that progress in a game while the
-    //     card was provisional. Deleting would silently destroy it, so it is demoted
-    //     back to 'provisional': it leaves the deck, keeps its history, and discover
+    // existing hidden one (migrations 140/203, docs/PROVISIONAL_CARDS.md):
+    //   - the row carries marks  → the user earned that progress while the card was
+    //     hidden. Deleting would silently destroy it, so it is demoted to 'tracked':
+    //     it leaves the deck, keeps its history, is never lent back, and discover
     //     keeps offering it, so it can be re-sorted later with the progress intact.
     //   - the row has no marks   → nothing to preserve; it is deleted, so a mis-tap
     //     leaves no trace and the word returns to the normal fresh supply.
@@ -540,7 +541,7 @@ export class StarterPacksService {
       return { success: false, message: 'Card not found in sorted list' };
     }
     if (undone.demoted) {
-      console.log(`[StarterPacks] Undo demoted VocabEntry id=${undone.id} to 'provisional' (marks preserved) for entryKey=${word1}`);
+      console.log(`[StarterPacks] Undo demoted VocabEntry id=${undone.id} to 'tracked' (marks preserved) for entryKey=${word1}`);
     }
     return { success: true, message: 'Card undo successful', demoted: undone.demoted };
   }

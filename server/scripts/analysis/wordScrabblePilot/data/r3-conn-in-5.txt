@@ -1,0 +1,211 @@
+以内	noun	within
+以外	noun	apart from
+价格	noun	price
+价钱	noun	price
+份	measure word	portion
+优点	noun	advantage
+会不会	verb	can or cannot
+会议	noun	meeting
+传球	verb	to pass the ball
+伯伯	noun	uncle
+位置	noun	position
+低头	verb	to bow the head
+体	noun	body
+体育活动	noun	sporting activity
+作	verb,noun,adjective	to do
+便	adverb,conjunction	convenient
+保	verb	to protect
+保护	verb,noun	to protect
+信	noun,verb	letter
+信息	noun	information
+假	adjective,noun,verb,conjunction	fake
+假日	noun	a holiday
+假期	noun	vacation
+假的	adjective	fake
+健康	noun,adjective	health
+元旦	noun	New Year's Day
+光	noun,adjective,adverb	light
+兔子	noun	rabbit
+入	verb	to enter
+全世界	noun	entire world
+全家	noun	whole family
+全班	noun	the whole class
+八分之一	numeral	one eighth
+公主	noun	princess
+公交车	noun	town bus
+公共	adjective	public
+公司	noun	company
+公路	noun	highway
+公车	noun	bus
+关上	verb	to close (a door)
+关于	preposition	about
+关心	verb,noun	to care about
+关机	verb	to turn off
+关门	verb	to close a door
+兴趣	noun	interest
+养	verb	to raise (animals)
+内	noun	inside
+农村	noun	rural area
+农民	noun	farmer
+冰	noun,verb,adjective	ice
+冰水	noun	iced water
+冰箱	noun	refrigerator
+冲	verb,preposition,adjective	to rush
+冷天	noun	cold weather
+冷水	noun	cold water
+出口	noun,verb	an exit
+出国	verb	to go abroad
+出现	verb	to appear
+出生日期	noun	date of birth
+出租车	noun	taxi
+分为	verb	to divide into
+分开	verb	to separate
+分数	noun	score
+切	verb,adverb,interjection	to cut
+刮风	verb	to be windy
+到现在	adverb	up until now
+前一天	noun	the day before
+前天	noun	day before yesterday
+前头	noun	in front
+前年	noun	the year before last
+加上	verb,conjunction	to add
+加入	verb	to join
+动作	noun	action
+劳动节	noun	Labor Day
+包包	noun	bag or purse etc
+包子	noun	steamed stuffed bun
+北方	noun	north
+北部	noun	northern part
+区	noun	area
+医	noun,verb	medicine
+十万	numeral	hundred thousand
+十分	adverb	very
+十分之一	numeral	one tenth
+千克	classifier,noun	kilogram
+半个	numeral	half of something
+半夜	noun	middle of the night
+半天	noun	a long time
+单	noun,adjective,adverb	list
+单人	noun	one person
+单词	noun	word
+单身	adjective	single
+单车	noun	(coll.) bicycle
+南北	noun	north and south
+南方	noun	south
+南部	noun	southern part
+南面	noun	south side
+卡	noun,verb,adjective	(loanword) card
+卧室	noun	bedroom
+卫生	noun,adjective	hygiene
+卫生纸	noun	toilet paper
+卫生间	noun	toilet
+印度	noun	India
+原	adjective,noun	original
+原来	adverb,adjective	originally
+厨房	noun	kitchen
+友	noun	friend
+友好	adjective	friendly
+双	adjective,classifier	double
+反	verb,adjective,adverb	opposite
+反对	verb	to oppose
+发信	verb	to post a letter
+发热	verb	to have a fever
+发现	verb,noun	to discover
+发生	verb	to happen
+发短信	verb	to text
+发音	noun,verb	pronunciation
+取	verb	to take
+取消	verb	to cancel
+取钱	verb	to withdraw money
+受不了	verb,adjective	can't stand
+受伤	verb	injured
+变化	noun,verb	change
+变成	verb	to become
+变红	verb	to redden
+变老	verb	to grow old
+变黑	verb	to darken
+口水	noun	saliva
+可乐	noun,adjective	(loanword) cola
+可口可乐	noun	Coca-Cola
+可爱	adjective	cute
+台	classifier,noun	platform
+号码	noun	number
+司机	noun	driver
+吃不下	verb	can't eat any more
+各种	adjective	all kinds of
+合	verb,adjective	to close
+合作	verb	to cooperate
+同	adjective,preposition	same
+同意	verb	to agree
+同时	adverb	at the same time
+同班同学	noun	classmate
+后天	noun,adjective	day after tomorrow
+后年	noun	the year after next
+后来	adverb,adjective	afterwards
+向	preposition,verb,adverb,noun	towards
+向上	verb,adverb	upward
+向东	adverb	eastwards
+向北	adverb	northward
+向西	adverb	westward
+听不到	verb	can't hear
+听不见	verb	not be able to hear
+听力	noun	listening ability
+听清	verb	to hear clearly
+听话	adjective,verb	obedient
+听起来	verb	to sound like
+告	verb	to tell
+周天	noun	Sunday
+味	noun,classifier	taste
+味道	noun	taste
+命	noun,verb	life
+和好	verb	to become reconciled
+和平	noun,adjective	peace
+咖啡店	noun	café
+哪些	pronoun	which ones?
+商人	noun	businessman
+商场	noun	shopping mall
+啤酒	noun	beer (loanword)
+喜	verb,noun	to like
+喜爱	verb	to like
+嘴	noun	mouth
+嘴巴	noun	mouth
+嘴里	noun	in the mouth
+四分之一	numeral	one-quarter
+回信	verb,noun	to reply
+回国	verb	Return home
+回头	verb,adverb	later
+困难	adjective,noun	difficult
+国内	noun	domestic
+国外	noun	abroad
+国庆节	noun	National Day
+国旗	noun	flag (of a country)
+国王	noun	king
+图	noun,verb	picture
+图片	noun	picture
+圆	adjective,noun,verb,classifier	round
+土	noun,adjective	earth
+土地	noun	land
+土豆	noun	potato
+地上	noun	on the ground
+地图	noun	map
+地点	noun	place
+地球	noun	the earth
+地铁	noun	subway
+场	noun,classifier	venue
+城	noun	city
+城外	noun	outside of a city
+城市	noun	city
+声调	noun	tone
+外套	noun	coat
+外教	noun	foreign teacher
+外语	noun	foreign language
+多个	adjective	multiple
+多云	adjective	(meteorology) cloudy
+多年	noun	many years
+夜市	noun	night market
+夜里	noun	at night
+大事	noun	major event
+大人	noun	adult
+大口	noun	a big mouthful
+大城市	noun	major city
+大夫	noun	doctor

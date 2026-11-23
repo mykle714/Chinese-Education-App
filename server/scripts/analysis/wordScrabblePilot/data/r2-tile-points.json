@@ -1,0 +1,422 @@
+{
+"吗": {
+"usage": 0.92,
+"seen": 25,
+"points": 2
+},
+"这": {
+"usage": 0.92,
+"seen": 12,
+"points": 2
+},
+"对": {
+"usage": 0.91,
+"seen": 11,
+"points": 2
+},
+"你": {
+"usage": 0.9,
+"seen": 30,
+"points": 2
+},
+"我": {
+"usage": 0.9,
+"seen": 29,
+"points": 2
+},
+"在下面": {
+"usage": 0.88,
+"seen": 8,
+"points": 2
+},
+"吧": {
+"usage": 0.83,
+"seen": 12,
+"points": 2
+},
+"吃饭": {
+"usage": 0.83,
+"seen": 6,
+"points": 2
+},
+"了": {
+"usage": 0.82,
+"seen": 34,
+"points": 3
+},
+"不": {
+"usage": 0.82,
+"seen": 17,
+"points": 3
+},
+"是": {
+"usage": 0.82,
+"seen": 28,
+"points": 3
+},
+"他": {
+"usage": 0.82,
+"seen": 22,
+"points": 3
+},
+"好": {
+"usage": 0.81,
+"seen": 21,
+"points": 3
+},
+"有": {
+"usage": 0.78,
+"seen": 27,
+"points": 3
+},
+"开灯": {
+"usage": 0.73,
+"seen": 11,
+"points": 3
+},
+"我们": {
+"usage": 0.71,
+"seen": 14,
+"points": 4
+},
+"她": {
+"usage": 0.71,
+"seen": 17,
+"points": 4
+},
+"分开": {
+"usage": 0.7,
+"seen": 10,
+"points": 4
+},
+"也": {
+"usage": 0.69,
+"seen": 13,
+"points": 4
+},
+"都": {
+"usage": 0.67,
+"seen": 9,
+"points": 4
+},
+"知道": {
+"usage": 0.67,
+"seen": 9,
+"points": 4
+},
+"要": {
+"usage": 0.65,
+"seen": 17,
+"points": 4
+},
+"不太好": {
+"usage": 0.64,
+"seen": 14,
+"points": 4
+},
+"听": {
+"usage": 0.64,
+"seen": 14,
+"points": 4
+},
+"不对": {
+"usage": 0.64,
+"seen": 11,
+"points": 4
+},
+"电影票": {
+"usage": 0.64,
+"seen": 11,
+"points": 4
+},
+"去": {
+"usage": 0.62,
+"seen": 16,
+"points": 4
+},
+"在": {
+"usage": 0.61,
+"seen": 18,
+"points": 4
+},
+"的": {
+"usage": 0.55,
+"seen": 29,
+"points": 5
+},
+"什么": {
+"usage": 0.55,
+"seen": 11,
+"points": 5
+},
+"足球场": {
+"usage": 0.54,
+"seen": 13,
+"points": 5
+},
+"白菜": {
+"usage": 0.54,
+"seen": 13,
+"points": 5
+},
+"就": {
+"usage": 0.53,
+"seen": 15,
+"points": 5
+},
+"不会": {
+"usage": 0.53,
+"seen": 17,
+"points": 5
+},
+"医生": {
+"usage": 0.45,
+"seen": 11,
+"points": 6
+},
+"呢": {
+"usage": 0.44,
+"seen": 9,
+"points": 6
+},
+"作业": {
+"usage": 0.44,
+"seen": 16,
+"points": 6
+},
+"用力": {
+"usage": 0.43,
+"seen": 14,
+"points": 6
+},
+"很": {
+"usage": 0.42,
+"seen": 24,
+"points": 6
+},
+"能力": {
+"usage": 0.42,
+"seen": 12,
+"points": 6
+},
+"方便面": {
+"usage": 0.39,
+"seen": 18,
+"points": 7
+},
+"接到": {
+"usage": 0.36,
+"seen": 14,
+"points": 7
+},
+"小组": {
+"usage": 0.33,
+"seen": 12,
+"points": 7
+},
+"技术": {
+"usage": 0.33,
+"seen": 15,
+"points": 7
+},
+"想起来": {
+"usage": 0.33,
+"seen": 18,
+"points": 7
+},
+"旁边": {
+"usage": 0.31,
+"seen": 16,
+"points": 7
+},
+"印度": {
+"usage": 0.31,
+"seen": 13,
+"points": 7
+},
+"大海": {
+"usage": 0.29,
+"seen": 7,
+"points": 7
+},
+"洗发水": {
+"usage": 0.29,
+"seen": 14,
+"points": 7
+},
+"放": {
+"usage": 0.27,
+"seen": 11,
+"points": 8
+},
+"今年": {
+"usage": 0.27,
+"seen": 11,
+"points": 8
+},
+"出生日期": {
+"usage": 0.27,
+"seen": 11,
+"points": 8
+},
+"矿泉水": {
+"usage": 0.27,
+"seen": 15,
+"points": 8
+},
+"请": {
+"usage": 0.25,
+"seen": 20,
+"points": 8
+},
+"低": {
+"usage": 0.25,
+"seen": 20,
+"points": 8
+},
+"回头见": {
+"usage": 0.22,
+"seen": 9,
+"points": 8
+},
+"说明": {
+"usage": 0.21,
+"seen": 14,
+"points": 8
+},
+"但是": {
+"usage": 0.2,
+"seen": 10,
+"points": 8
+},
+"给": {
+"usage": 0.2,
+"seen": 10,
+"points": 8
+},
+"蓝": {
+"usage": 0.17,
+"seen": 12,
+"points": 9
+},
+"太": {
+"usage": 0.17,
+"seen": 12,
+"points": 9
+},
+"说出": {
+"usage": 0.12,
+"seen": 8,
+"points": 9
+},
+"本": {
+"usage": 0.11,
+"seen": 9,
+"points": 9
+},
+"着": {
+"usage": 0.11,
+"seen": 9,
+"points": 9
+},
+"张": {
+"usage": 0.1,
+"seen": 10,
+"points": 9
+},
+"个": {
+"usage": 0.09,
+"seen": 23,
+"points": 9
+},
+"白云": {
+"usage": 0.08,
+"seen": 12,
+"points": 9
+},
+"活": {
+"usage": 0.08,
+"seen": 12,
+"points": 9
+},
+"年轻": {
+"usage": 0.08,
+"seen": 12,
+"points": 9
+},
+"心里": {
+"usage": 0.08,
+"seen": 13,
+"points": 9
+},
+"龙": {
+"usage": 0.07,
+"seen": 14,
+"points": 9
+},
+"三": {
+"usage": 0.07,
+"seen": 15,
+"points": 9
+},
+"和": {
+"usage": 0.06,
+"seen": 16,
+"points": 9
+},
+"大小": {
+"usage": 0.06,
+"seen": 17,
+"points": 9
+},
+"一": {
+"usage": 0.04,
+"seen": 26,
+"points": 10
+},
+"从": {
+"usage": 0.0,
+"seen": 11,
+"points": 10
+},
+"中": {
+"usage": 0.0,
+"seen": 12,
+"points": 10
+},
+"两": {
+"usage": 0.0,
+"seen": 9,
+"points": 10
+},
+"当": {
+"usage": 0.0,
+"seen": 15,
+"points": 10
+},
+"市": {
+"usage": 0.0,
+"seen": 12,
+"points": 10
+},
+"鸡": {
+"usage": 0.0,
+"seen": 11,
+"points": 10
+},
+"身": {
+"usage": 0.0,
+"seen": 15,
+"points": 10
+},
+"困难": {
+"usage": 0.0,
+"seen": 7,
+"points": 10
+},
+"前一天": {
+"usage": 0.0,
+"seen": 11,
+"points": 10
+}
+}

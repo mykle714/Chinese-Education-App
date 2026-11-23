@@ -75,14 +75,26 @@ export interface IFocusModeDAL {
   ): Promise<FocusSnapshot>;
 
   /**
-   * Every SORTED card the world could deal (the writing world: 1–4-character Han words
-   * only, the writing flp's own rule), with what banding and cooling need.
+   * Every card the world could deal, with what banding and cooling need: the SORTED cards
+   * on core/reading; on writing the writing deck (dal/shared/writingDeck.ts) — single
+   * characters of sorted words, which may include VIRTUAL rows (negative ids, no vet row
+   * yet). A virtual id must go through `materializeWritingIds` before it is stored.
    */
   listWorldCards(userId: string, language: string, world: MasteryWorldId): Promise<FocusCardRow[]>;
 
   /** How many cards `listWorldCards` would return, without reading them. */
   countWorldCards(userId: string, language: string, world: MasteryWorldId): Promise<number>;
 
-  /** The same fields for exactly these ids (still SORTED — a card removed since is gone). */
-  listCardsByIds(userId: string, language: string, ids: number[]): Promise<FocusCardRow[]>;
+  /**
+   * The same fields for exactly these ids, still limited to the world's population (a
+   * card removed since is gone).
+   */
+  listCardsByIds(userId: string, language: string, world: MasteryWorldId, ids: number[]): Promise<FocusCardRow[]>;
+
+  /**
+   * Replace the virtual writing-deck ids (negative) in `ids` with real hidden character
+   * rows, creating them; real ids pass through, order kept (writingDeck.ts →
+   * `materializeWritingIds`).
+   */
+  materializeWritingIds(userId: string, ids: number[]): Promise<number[]>;
 }

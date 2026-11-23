@@ -59,16 +59,10 @@ interface Attempt {
 }
 
 /**
- * Words this long or shorter get the look-alike notice. Their cells fill only the TOP row
- * of the 2×2 block, and the notice takes the empty second row (WritingCardFace); a 3–4
- * character word has no free space, so it shows none (decided 2026-10-28).
- */
-const LOOKALIKE_MAX_CHARS = 2;
-
-/**
  * The look-alike notice for a graded attempt: the FIRST wrong cell (reading order) whose
  * ink was read as a listed look-alike of its character (lookalikes.ts). Null for an
- * ungraded attempt, a word over LOOKALIKE_MAX_CHARS, or no such cell.
+ * ungraded attempt or no such cell. (The writing flp deals single characters since
+ * 2026-11-22, so there is one cell; the loop stays general, as the attempt's arrays do.)
  *
  * The TARGET's pinyin is the card's own syllable for that character, not the table's:
  * lookalikes.ts holds one standalone reading per character, which is wrong for a
@@ -81,7 +75,7 @@ const LOOKALIKE_MAX_CHARS = 2;
  */
 function lookalikeFor(entry: VocabEntry, state: Attempt): LookalikeMatch | null {
     const chars = [...entry.entryKey];
-    if (!state.results || !state.recognized || chars.length > LOOKALIKE_MAX_CHARS) return null;
+    if (!state.results || !state.recognized) return null;
     for (let i = 0; i < chars.length; i++) {
         if (state.results[i]) continue;
         const match = findLookalike(chars[i], state.recognized[i]);

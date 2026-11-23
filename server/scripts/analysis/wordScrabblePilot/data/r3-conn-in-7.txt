@@ -1,0 +1,211 @@
+望	verb,preposition	to gaze afar
+木头	noun,adjective	wood
+本子	noun	notebook
+本星期	noun	this week
+本月	noun	this month
+机	noun	(bound form) machine
+机会	noun	opportunity
+机器	noun	machine
+条件	noun	condition
+来回	adverb,noun,verb	back and forth
+来自	verb	to come from
+极	adverb,noun	extremely
+果汁	noun	fruit juice
+柜子	noun	cupboard
+树叶	noun	tree leaves
+根	noun,classifier	root
+桃子	noun	peach
+梨	noun	pear
+梳子	noun	comb
+橘子	noun	tangerine
+橙子	noun	orange
+歌儿	noun	song
+歌手	noun	singer
+歌曲	noun	song
+正	adjective,adverb	straight
+正常	adjective	normal
+死	verb,adjective,adverb	to die
+比一比	verb	to make a comparison
+比如	conjunction	for example
+比如说	conjunction,adverb	for example
+比赛	noun,verb	match
+比起	preposition	compared with
+毛巾	noun	towel
+毛衣	noun	(wool) sweater
+民	noun	(bound form) the people
+民主	noun,adjective	democracy
+气	noun,verb	air
+气死	verb	to infuriate
+水平	noun,adjective	level
+江	noun	river
+沙拉	noun	(loanword) salad
+没了	verb	to cease to exist
+没想到	verb	didn't expect
+没意思	adjective	boring
+没有事	verb	nothing is up
+没有差别	verb	no difference
+没有意思	adjective	boring
+没用	adjective	useless
+没电	verb	dead (of batteries)
+没空儿	verb	having no time
+河	noun	river
+河边	noun	river bank
+油	noun,adjective,verb	oil
+油条	noun	fried dough stick
+法	noun	law
+法国人	noun	French person
+法文	noun	French language
+法语	noun	French (language)
+洗发水	noun	shampoo (liquid)
+洗头	verb	to wash one's hair
+洗澡	verb	to bathe
+洗衣	verb,noun	laundry
+活着	verb,adjective	alive
+流	verb,noun	to flow
+海水	noun	seawater
+海边	noun	seaside
+温度	noun	temperature
+湖	noun	lake
+满	adjective,verb,adverb	full
+满意	adjective,verb	satisfied
+满满	adjective	full
+满足	verb,adjective	to satisfy
+火锅	noun	hotpot
+炉	noun	stove
+炉子	noun	stove
+炒饭	noun,verb	fried rice
+点单	verb	to place an order
+点头	verb	to nod
+点菜	verb	to order dishes
+烟	noun,verb	smoke
+热情	adjective,noun	enthusiastic
+热气	noun	steam
+热水器	noun	water heater
+照	verb,preposition,noun	to shine
+照相	verb	to take a photograph
+照相机	noun	camera
+照镜子	verb	to look in a mirror
+爬山	verb	to hike
+片	classifier,noun,verb	thin piece
+牙	noun	tooth
+牙刷	noun	toothbrush
+牙膏	noun	toothpaste
+牛排	noun	steak
+牛肉	noun	beef
+牛肉面	noun	beef noodle soup
+特	adverb	special
+特别	adjective,adverb	special
+狗狗	noun	doggie
+猪	noun	pig
+猪肉	noun	pork
+王	noun,adjective	king or monarch
+环	noun,verb,classifier	ring
+现代	noun	modern times
+现金	noun	cash
+班上	noun	(in the) class
+班级	noun	school class
+班长	noun	class monitor
+球	noun	ball
+理发	verb	to get a haircut
+理想	noun,adjective	ideal
+理解	verb,noun	to understand
+瓜子	noun	melon seed
+生字	noun	new character
+生意	noun	business
+生日卡	noun	birthday card
+生气	verb,noun	to get angry
+生物	noun,adjective	living creature
+生词	noun	new word
+生词本	noun	vocabulary notebook
+用力	verb	to exert oneself
+用来	verb	to be used for
+电子书	noun	e-book
+电梯	noun	elevator
+电灯	noun	electric light
+电视台	noun	television station
+电视机	noun	television set
+电视节目	noun	television program
+电话卡	noun	telephone card
+男友	noun	boyfriend
+男女	noun	male and female
+留	verb	to stay
+留学	verb	to study abroad
+留学生	noun	overseas student
+病人	noun	patient
+白云	noun	white cloud
+白人	noun	white man or woman
+白开水	noun	plain boiled water
+白米饭	noun	cooked white rice
+白菜	noun	Chinese cabbage
+白酒	noun	baijiu
+百万	numeral	million
+百分之	numeral	percent
+百度	noun,verb	Baidu
+的话	particle	if
+皮包	noun	handbag
+皮球	noun	rubber ball
+盘	noun,classifier,verb	plate
+盘子	noun	plate
+目前	noun,adverb	currently
+直	adjective,adverb,verb	straight
+直到	preposition	until
+相信	verb	to believe
+相同	adjective	same
+相片	noun	photograph
+看上去	verb	it seems (that)
+看不清	verb	can't see clearly
+看出	verb	to see
+看得出	verb	can tell
+看得见	verb	can see
+看法	noun	view
+看球	verb,interjection	to watch a match
+看病	verb	to visit a doctor
+看起来	verb,particle	to seem
+真是	adverb	truly
+真正	adjective,adverb	real
+眼前	noun	before one's eyes
+眼皮	noun	eyelid
+眼镜	noun	eyeglasses
+着急	adjective,verb	to worry
+短信	noun	text message
+矮	adjective	(of a person) short
+石	noun,classifier	stone
+矿泉水	noun	mineral water
+社会	noun	society
+神	noun,adjective	god
+种	classifier,noun,verb	kind, type
+秒	noun	second
+空	noun,adjective,verb	empty
+立刻	adverb	immediately
+笑声	noun	laughter
+笔记	noun	notes
+笔记本	noun	notebook
+笨	adjective	stupid
+等一会	verb,adverb	Wait a moment!
+等一等	verb	wait a moment
+等等	particle,verb	et cetera
+算了	verb	forget about it
+管	verb,noun,preposition	to manage
+管理	verb,noun	to manage
+管理员	noun	manager
+篮球	noun	basketball
+粉红色	noun,adjective	pink
+粉色	noun,adjective	pink
+粥	noun	congee
+糖果	noun	candy
+系	noun,verb	department
+紧张	adjective	nervous
+红包	noun	red envelope
+红灯	noun	red light
+红绿灯	noun	traffic light
+红茶	noun	black tea
+红豆	noun	red bean
+红酒	noun	red wine
+约	verb,adverb,noun	approximately
+线	noun	line
+组	noun,classifier,verb	group
+经常	adverb,adjective	often
+经理	noun	manager
+经过	verb,noun	to pass
+绿树	noun	trees
+绿灯	noun	green light

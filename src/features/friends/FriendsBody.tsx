@@ -23,7 +23,7 @@ import { useSlideNavigate } from "../../hooks/useSlideNavigate";
 import { COLORS, RAMP, type RampHue } from "../../theme/colors";
 import { FONTS, DATA_TYPE } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
-import { friendErrorMessage, netMinutesLabel } from "./friendLabels";
+import { friendErrorMessage } from "./friendLabels";
 import { BAND_HUES } from "../../utils/categoryColors";
 import { messageSx, mutedTextSx, sectionHeadingSx } from "./friendStyles";
 
@@ -438,7 +438,10 @@ function FriendsBody() {
                                             name={entry.isCurrentUser ? `${displayName(entry)} (you)` : entry.name}
                                             username={entry.username}
                                             avatarIconId={entry.avatarIconId}
-                                            secondary={netMinutesLabel(entry.netMinutes, entry.language)}
+                                            // The handle, visible while collapsed (user, 2026-11-22). The balance +
+                                            // language badge it replaced live in the expanded detail
+                                            // (FireCount + flag-over-name title).
+                                            secondary={`@${entry.username}`}
                                             leading={<RankNumeral rank={entry.rank} />}
                                             leadingFill={rankFill(entry.rank)}
                                             // A friend's row expands in place (one at a time); tapping the

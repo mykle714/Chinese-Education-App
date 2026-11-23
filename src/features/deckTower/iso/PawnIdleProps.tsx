@@ -16,8 +16,9 @@ import { WEIGHT } from "../../../theme/scale";
  *   - sneeze: a white puff bursting out in front of the face on the snap (SNEEZE_SNAP_MS);
  *   - knit: two needles clicking in front of the chest, a scarf growing under them, and a
  *     yarn ball on the floor with its strand running up to the work.
- * The notes are ink glyphs on small white discs — the "!" bubble's white-and-ink (owner,
- * 2026-11-08). The Z's are bare, larger ink glyphs, free-floating (owner, 2026-11-08).
+ * Both are bare, free-floating ink glyphs with no disc behind them: the Z's (owner,
+ * 2026-11-08) and the notes (owner, 2026-11-22 — they used to sit on white discs).
+ * The Z's are the larger of the two.
  *
  * Drawn inside IsoPawn's head anchor, in its units (EMOTE_DRAW_SCALE per camera-facing
  * world unit; origin just over the head's top, y down). The anchor follows the BENT head for
@@ -38,8 +39,8 @@ const HEAD_TOP = EMOTE_GAP * EMOTE_DRAW_SCALE;
 const HEAD_R = HEAD_RADIUS * EMOTE_DRAW_SCALE;
 const HEAD_CY = HEAD_TOP + HEAD_R;
 
-/** A mark's white disc: the radius, in anchor units. */
-const MARK_DISC_R = 15;
+/** A sing note's font size, in anchor units — smaller than the smallest doze Z (DOZE_ZS). */
+const NOTE_SIZE = 20;
 
 /** The doze Z's: one starts every DOZE_Z_GAP_MS; each drifts up for DOZE_Z_DRIFT_MS. */
 const DOZE_Z_DRIFT_MS = 3000;
@@ -93,22 +94,6 @@ const IDLE_PROPS_CSS = `
 }
 `;
 
-/** An ink glyph on a white disc, centred on the origin. */
-const MarkDisc: React.FC<{ glyph: string; r?: number; white: string; ink: string }> = ({ glyph, r = MARK_DISC_R, white, ink }) => (
-    <>
-        <circle r={r} fill={white} />
-        <IsoText
-            fontSize={r * 1.25}
-            fontFamily={FONTS.cjk}
-            fontWeight={WEIGHT.bold}
-            textAnchor="middle"
-            fill={ink}
-        >
-            {glyph}
-        </IsoText>
-    </>
-);
-
 // ── Doze ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -149,12 +134,21 @@ const SING_NOTES = Array.from({ length: Math.floor((SING_MS - 1500) / 500) + 1 }
     x: i % 2 === 0 ? 0 : 10,
 }));
 
-const PawnSingNotes: React.FC<{ white: string; ink: string }> = ({ white, ink }) => (
+/** Bare ink glyphs, no disc behind them (owner, 2026-11-22), like the doze Z's. */
+const PawnSingNotes: React.FC<{ ink: string }> = ({ ink }) => (
     <g className="iso-pawn__sing-notes" transform={`translate(${HEAD_R * 0.9} ${HEAD_TOP - 4})`}>
         {SING_NOTES.map((n, i) => (
             <g key={i} transform={`translate(${n.x} 0)`}>
                 <g className="iso-pawn__idle-mark iso-pawn__idle-mark--note" style={{ animationDelay: `${n.delay}ms` }}>
-                    <MarkDisc glyph={n.glyph} white={white} ink={ink} />
+                    <IsoText
+                        fontSize={NOTE_SIZE}
+                        fontFamily={FONTS.cjk}
+                        fontWeight={WEIGHT.bold}
+                        textAnchor="middle"
+                        fill={ink}
+                    >
+                        {n.glyph}
+                    </IsoText>
                 </g>
             </g>
         ))}
@@ -281,7 +275,7 @@ const PawnIdleProps: React.FC<{ kind: PawnIdleKind; ending: boolean }> = ({ kind
         <g className={ending ? "iso-pawn__idle-props iso-pawn__idle-props--ending" : "iso-pawn__idle-props"}>
             <style>{IDLE_PROPS_CSS}</style>
             {kind === "doze" && <PawnDozeZs ink={palette.ink} />}
-            {kind === "sing" && <PawnSingNotes white={palette.white} ink={palette.ink} />}
+            {kind === "sing" && <PawnSingNotes ink={palette.ink} />}
             {kind === "sneeze" && <PawnSneezePuff white={palette.white} />}
             {kind === "knit" && <PawnKnitting white={palette.white} yarn={palette.yarn} />}
         </g>

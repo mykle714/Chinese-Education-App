@@ -156,7 +156,7 @@ export class VocabEntryController {
   }
 
   /**
-   * Remove a word from Learning by demoting its row to 'provisional' (never a delete;
+   * Remove a word from Learning by demoting its row to 'tracked' (never a delete;
    * see VocabEntryService.removeFromLibrary).
    * POST /api/vocabEntries/removeFromLibrary
    * Body: { entryKey, language }

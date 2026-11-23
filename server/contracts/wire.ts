@@ -1106,8 +1106,23 @@ export interface WordComparisonResult {
  * game or flp could meet its baseline (see CARD_BASELINES below). It is a real vet
  * row — it has an id and accepts marks — but the user never chose it, so it is
  * hidden from every "my cards" read until they sort it. See docs/PROVISIONAL_CARDS.md.
+ *
+ * 'tracked' (migration 203) is a hidden row that exists only to hold progress: a
+ * character row (writing marks, Writing Grid, the writing flp's deck) or a card the
+ * learner removed from Learning / un-sorted. Hidden exactly like 'provisional', but
+ * NEVER lent, so the client must not badge or count it as a lent card either.
+ * docs/PROVISIONAL_CARDS.md § "Tracked rows".
  */
-export type StarterPackBucket = 'library' | 'provisional';
+export type StarterPackBucket = 'library' | 'provisional' | 'tracked';
+
+/**
+ * Is this a HIDDEN bucket — a row that exists in vet but is not in the learner's deck
+ * (lent 'provisional' or 'tracked')? Sorting such a row promotes it in place. NOT the
+ * "is this lent?" question: only 'provisional' is lent (client `isProvisional`).
+ */
+export function isHiddenBucket(bucket: StarterPackBucket | string | null | undefined): boolean {
+  return bucket === 'provisional' || bucket === 'tracked';
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Card baselines (docs/PROVISIONAL_CARDS.md)
@@ -1827,12 +1842,13 @@ export interface VocabEntryBase {
   /** Single-char zh only: multi-char words containing this character. Computed at runtime. */
   usedIn?: UsedInItem[] | null;
   /**
-   * Writing-flp cards only (`?world=writing`), single-char zh: up to 2 words containing this
-   * character — the learner's own saved words first (no frequency gate), then everyday
-   * dictionary words (frequencyScore 4–5). Feeds the hint bubbles above the writing card —
-   * docs/WRITING_PRACTICE_REWORK.md § 3b. Absent on every other bar. Computed at runtime.
+   * Writing-flp cards only (`?world=writing`), single-char zh: EVERY sorted word of the
+   * learner's containing this character (any length, most frequent first) — the words the
+   * character is in the writing deck for. The card shows the first 3, its "See all"
+   * popover the rest — docs/WRITING_PRACTICE_REWORK.md § 3b. Absent on every other bar.
+   * Computed at runtime (VocabEntryDAL.findWritingSourceWordsForCharacters).
    */
-  writingUsedIn?: UsedInItem[] | null;
+  writingSourceWords?: UsedInItem[] | null;
   /**
    * Pre-warm result from TTSService.synthesize — false means synthesis failed and the
    * client should fall back to Web Speech. Absent means no prewarm ran (treat as true).

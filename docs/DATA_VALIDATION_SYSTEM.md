@@ -88,7 +88,7 @@ allow-list is `VALID_FIELDS` in `server/controllers/ValidationController.ts`.
 > (`src/utils/definitionUtils.ts`): a clustered word with a scored cluster →
 > `senseFrequencyScore` + that cluster's `sense` label; anything else (unclustered,
 > single-cluster, or a cluster whose scoring pass failed) → the entry-level
-> `frequencyScore`, exactly as before. Both carry the caption "Commonality" — the
+> `frequencyScore`, exactly as before. Both carry the caption "Usefulness" ("Commonality" until 2026-11-22) — the
 > learner never sees the distinction.
 
 Granularity is **per (entry, field, senseLabel)**: a user may validate an entry's example
@@ -282,7 +282,7 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
   `!entry.definitionsApproved`, so its inverse is exactly "already approved" — same
   signal that drives the AI-generated border/tint/badge). Wired from
   `FlashcardsLearnPage/InfoCardTabContent.tsx` (the eip Definition tab, passing
-  `entry.entryKey`/`entry.language`) — the only det-backed host. **Not** wired from `CompareWorkspace.tsx` — its
+  `entry.entryKey`/`entry.language`) — the only det-backed host. **Not** wired from the Compare panel (`features/flashcards/compare/CompareShelfBody.tsx`) — its
   `LongDefinitionDisplay` renders the AI word-comparison paragraph
   (docs/WORD_COMPARE_FEATURE.md), which has no backing det field at all.
 - **Meta-strip chips** (migration 132): `src/features/flashcards/MetaChipLabel.tsx`
@@ -416,7 +416,7 @@ the host palette's card fill in a 1px orange inset ring, 14px radius, no tint, w
 - `LongDefinitionDisplay.tsx` takes an `aiGenerated` prop; when true (i.e. the
   caller passes `!entry.definitionsApproved`) it wraps the rendered long definition.
   With the `aiCard` prop (`{ face, ink }` — the eip Definition tab passes
-  `useEipColors().card/.ink`) it draws the AI card; without it (CompareWorkspace) the
+  `useEipColors().card/.ink`) it draws the AI card; without it (the Compare panel's `CompareShelfBody`) the
   tinted surface + inline badge.
 - `DefinitionFacts.tsx`'s grouped all-unapproved block draws the AI card (below).
 - The **three meta-strip chips** in `DefinitionFacts.tsx` (the eip Definition tab) each get **only** `aiGeneratedSurfaceSx` (border/tint, no
@@ -427,11 +427,16 @@ the host palette's card fill in a 1px orange inset ring, 14px radius, no tint, w
 
   | Chip label | Value | Field | Flag |
   |---|---|---|---|
-  | **Difficulty** | six-triangle `DifficultyMeter` (every language) | `difficulty` | `difficultyApproved` |
   | **Parts of Speech** | `partsOfSpeech.join(', ')` | `partsOfSpeech` | `partsOfSpeechApproved` |
-  | **Commonality** | five-circle `CommonalityMeter`, no number | `frequencyScore` | `frequencyScoreApproved` |
+  | **Usefulness** | five-circle `CommonalityMeter`, no number | `frequencyScore` | `frequencyScoreApproved` |
 
-  The labels were previously "HSK"/"Level", "Type" and "Commonality". Since
+  A third chip, **Difficulty** (the six-triangle `DifficultyMeter`, field `difficulty`, flag
+  `difficultyApproved`), was removed 2026-11-21 with the meter: word difficulty is no longer
+  shown to anyone, validators included, so it cannot be validated in-app. The
+  `difficultyApproved` column and the `'difficulty'` field id are untouched, and existing
+  approvals stay (`validatedClause` still protects them from backfills).
+
+  The labels were previously "HSK"/"Level", "Type" and "Commonality" (renamed "Usefulness" 2026-11-22). Since
   2026-11-07 no value names HSK either: both measures are glyph meters
   (`src/components/ScoreMeters.tsx`), because `difficulty` is an AI estimate rather
   than an HSK-list lookup.

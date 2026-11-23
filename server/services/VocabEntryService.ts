@@ -94,8 +94,8 @@ export class VocabEntryService {
    *  - no row → INSERT with starterPackBucket='library' (an empty `typedMarkHistory`
    *    bands every bar at 'Unfamiliar', so no mastery state is written here)
    *  - row already in library → no-op
-   *  - row with any other bucket ('provisional' — lent, or removed from Learning —
-   *    or a stray NULL) → promoted to 'library' in place, marks kept (status='added').
+   *  - row with any other bucket ('provisional' — lent; 'tracked' — a character row
+   *    or a card removed from Learning; or a stray NULL) → promoted to 'library' in place, marks kept (status='added').
    *    ('skip' rows no longer occur in vet — skips live in discover_skips since
    *    migration 80.)
    *
@@ -130,15 +130,15 @@ export class VocabEntryService {
       return { status: 'already-in-library', vocabEntryId: existing.id };
     }
 
-    // Any non-library row — a provisional card (lent, or removed from Learning) or a
-    // stray NULL bucket — is promoted in place, keeping its marks.
+    // Any non-library row — lent ('provisional'), tracked (a character row or a removed
+    // card) or a stray NULL bucket — is promoted in place, keeping its marks.
     await this.vocabEntryDAL.promoteRowToLibrary(existing.id, language);
     return { status: 'added', vocabEntryId: existing.id };
   }
 
   /**
-   * Is this word in the user's Learning (bucket 'library')? A 'provisional' (lent or
-   * removed) row and no row at all both read as "not in". Drives the dictionary cdp's
+   * Is this word in the user's Learning (bucket 'library')? A hidden row (lent
+   * 'provisional' or 'tracked') and no row at all both read as "not in". Drives the dictionary cdp's
    * add/added toggle. Docs: docs/LEAF_NODE_PAGES.md § "Read-only dictionary cdp".
    */
   async getLibraryStatus(userId: string, entryKey: string, language: Language): Promise<{ inLibrary: boolean }> {
@@ -152,7 +152,7 @@ export class VocabEntryService {
 
   /**
    * Remove a word from Learning WITHOUT deleting it: the row is demoted to
-   * 'provisional', so its marks, decks and progress survive and addToLibrary's
+   * 'tracked' (hidden, never lent — migration 203), so its marks, decks and progress survive and addToLibrary's
    * non-library branch promotes it back in place. Because nothing is lost, the client
    * asks for no confirmation. Backs both the dictionary cdp's "Added" toggle and the
    * vet cdp's delete button — the only way a card leaves Learning (there is no hard
@@ -168,7 +168,7 @@ export class VocabEntryService {
     if (!trimmedKey) {
       throw new ValidationError('entryKey is required');
     }
-    const demoted = await this.vocabEntryDAL.demoteLibraryRowToProvisional(userId, trimmedKey, language);
+    const demoted = await this.vocabEntryDAL.demoteLibraryRowToTracked(userId, trimmedKey, language);
     return { status: demoted ? 'removed' : 'not-in-library' };
   }
 

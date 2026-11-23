@@ -15,7 +15,8 @@ import { useEipColors } from "./useEipPalette";
  *
  *   TITLE  "More Info" / "Compare" · flame      (a real leaf PageHeader; maximized only)
  *   TRAIL  speaker · the word trail · [Add key]
- *   HEADER the entry header (headword tile, gloss, sense chip) (`.ehd`; absent on Compare)
+ *   HEADER the entry header (headword tile, gloss, sense chip) (`.ehd`); on the Compare
+ *          panel, its two word keycaps (compare/CompareSlots)
  *
  * It is SheetPanel's TELESCOPE (SheetTelescopeHandle; docs/EIP_SHEET_GESTURES.md
  * § Telescope): the frame is a clipping box whose height SheetPanel writes from the sheet's
@@ -44,8 +45,9 @@ import { useEipColors } from "./useEipPalette";
  *
  * THE SPEAKER CLUSTER (2026-10-31) leads the trail row: the speaker is dead centre between
  * the caret and the trail. Toward max the cluster slides left until the speaker is under
- * the caret, and the trail moves with it. The cluster keeps its width on Compare, which has
- * no speaker, so the trail does not jump between crumbs.
+ * the caret, and the trail moves with it. The cluster keeps its width with no speaker (the
+ * Compare panel), so the row's geometry is the same on both hosts. (It used to keep the
+ * trail from jumping when the trail held a Compare crumb, until 2026-11-21.)
  *
  * THE TRAIL AND THE GLOSS SHARE BOUNDARIES (2026-10-31). At the open height both start at
  * the right edge of a one-character headword keycap and run off the screen's right edge
@@ -56,20 +58,22 @@ import { useEipColors } from "./useEipPalette";
  * speaker, the Add key and the trail words tappable). The trail row's own word list pans sideways
  * (`touch-action: pan-x`, EipTabStrip).
  *
- * Layer: feature component (src/features/flashcards). Depended on by: InfoCardSection.
+ * Layer: feature component (src/features/flashcards). Depended on by: InfoCardSection,
+ * compare/CompareSheet.
  * Docs: docs/EIP_SHEET_GESTURES.md § Telescope.
  */
 
 interface EipUpperPanelProps {
-    /** Panel title for the maximized row ("More Info", or "Compare" on the Compare tab). */
+    /** Panel title for the maximized row ("More Info" on the eip, "Compare" on the Compare panel). */
     title: string;
     /** The word trail (EipTabStrip). Optional: the saved-card cdp's sheet has no trail. */
     trail?: React.ReactNode;
-    /** The showing word's SpeakerButton, leading the trail row. Absent on Compare. */
+    /** The showing word's SpeakerButton, leading the trail row. Absent on the Compare panel. */
     speaker?: React.ReactNode;
     /** The Dictionary eip's Add key (EipAddKey), at the trail row's right end. */
     addKey?: React.ReactNode;
-    /** The entry header (EipEntryHeader). Absent on the Compare tab. */
+    /** The header row: the eip's entry header (EipEntryHeader), or the Compare panel's
+     *  word keycaps (CompareSlots). Optional — without one both header gaps drop out. */
     header?: React.ReactNode;
     /** The down caret's action — SheetPanel's `dismiss` (closes the whole panel). */
     onClose: () => void;
@@ -107,7 +111,7 @@ const HEADER_BOTTOM_PAD = 17;
 //                             shelf closes up on it (HEADER_BOTTOM_PAD)
 // The trail row keeps its 36px box: shifting the BOX by less than the shelf moves its
 // buttons, so its slack closes without the row (or anything in it) changing height.
-// On Compare there is no entry header, so both header gaps drop out. With an Add key the
+// With no header row, both header gaps drop out. With an Add key the
 // row's bottom slack stays: the key's lip hangs into it (the same reason the headword
 // keycap keeps its 4px margin).
 const squeezeShift = (px: number) => ({
@@ -148,7 +152,7 @@ const EipUpperPanel = forwardRef<SheetTelescopeHandle, EipUpperPanelProps>(funct
     // header only exists when there is one.
     // The three closable spans, top to bottom:
     //   above  title → the trail's buttons
-    //   below  the trail's buttons → the entry header (or the shelf, on Compare)
+    //   below  the trail's buttons → the header row (or the shelf, when there is none)
     //   bottom the entry header → the shelf
     const squeezeAbove = TRAIL_TOP_PAD + TRAIL_ROW_SLACK;
     const squeezeBelow = (addKey ? 0 : TRAIL_ROW_SLACK) + (header ? HEADER_GAP : 0);

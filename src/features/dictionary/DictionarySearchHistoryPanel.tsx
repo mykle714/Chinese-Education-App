@@ -17,7 +17,7 @@ import { Box, ButtonBase, Typography } from '@mui/material';
 import Icon from '../../components/Icon';
 import { SIZE, WEIGHT } from '../../theme';
 import type { Tier2Look } from '../../timeOfDay/tier2Look';
-import { DictionaryResultSlab, DictionarySlabLabel } from './DictionaryPageParts';
+import { DictionaryResultSlab, DictionarySlabLabel } from '../../components/dictionarySearch/DictionaryResultParts';
 import type { DictionaryHistoryEntry } from './dictionarySearchHistory';
 
 interface Props {

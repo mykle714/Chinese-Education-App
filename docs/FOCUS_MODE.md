@@ -1,4 +1,4 @@
-# Focus Mode — a daily cap of 30 cards per world
+# Focus Mode — a daily card cap per world (30; Writing 15)
 
 **Status:** deployed to PPE. Migration 176 applied (expand-only; shipped with a
 plain `/deploy`).
@@ -15,7 +15,7 @@ When a learner's pile of off-cooldown cards in one **world** (Main / Reading / W
 docs/CONSTRUCTS.md § "Worlds and bars") has grown overwhelming, a lever appears on that
 world's Deck Tower platform. Pulling it turns on **focus mode** for that world:
 
-* each streak day (04:00 local) the world serves **at most 30 cards**, a set pinned the first
+* each streak day (04:00 local) the world serves **at most 30 cards** (Writing: **15**), a set pinned the first
   time the day's cards are needed;
 * a card leaves the set for the rest of the day once it is **marked correct**. A wrong mark
   leaves it in play, so a missed card can be retried.
@@ -23,8 +23,8 @@ world's Deck Tower platform. Pulling it turns on **focus mode** for that world:
 | Rule | Value | Code |
 |---|---|---|
 | Lever appears | the world has **80** off-cooldown cards across **all four** utcm bands (U+T+C+M), or focus is already on | `FOCUS_LEVER_THRESHOLD`, `useFocusLever` |
-| Daily cap | **30** | `FOCUS_DAILY_CARDS` |
-| Auto-off | the day's snapshot finds **fewer than 30** off-cooldown cards | `FocusModeService.resolveWorld` |
+| Daily cap | **30** Main / Reading, **15** Writing (a writing rep — drawing every stroke — costs far more time) | `FOCUS_DAILY_CARDS[world]` |
+| Auto-off | the day's snapshot finds **fewer off-cooldown cards than the world's cap** (30, or 15 on Writing) | `FocusModeService.resolveWorld` |
 | Scope | per **(user, language, world)** | `user_languages."focusWorlds"` |
 
 **Why 80 counts all four bands:** U+T+C+M is what the learner sees as assigned to them, the
@@ -69,7 +69,7 @@ Rules:
 | `focus_daily_snapshots` | ONE row per (user, language, world): `streakDate` + `vetIds int[]`, overwritten by the first request of each new streak day |
 
 The snapshot is **pinned** because a live recompute would let a new card in every time one was
-marked out, and the 30 would never run out. `vetIds` has no FK (vet ids span two physical
+marked out, and the cap would never run out. `vetIds` has no FK (vet ids span two physical
 tables); a deleted card simply stops matching.
 
 The notice is a column, not a response field, because a snapshot (and so an auto-off) can be
@@ -77,23 +77,27 @@ taken by a background request no page is watching: Home's flp preload (`preloadF
 
 *Code: `server/dal/interfaces/IFocusModeDAL.ts`, `server/dal/implementations/FocusModeDAL.ts`.*
 
-## 3. Picking the daily 30
+## 3. Picking the daily set
 
-`FocusModeService` → `selectFocusSet` — the flp working loop's own logic, scaled from 10 to 30:
+`FocusModeService` → `selectFocusSet` — the flp working loop's own logic, scaled from 10 to the world's cap (30, or 15 on Writing):
 
-1. The world's sorted cards (writing world: 1–4-character Han words, the writing flp's rule),
+1. The world's sorted cards (writing world: the writing deck — single characters of the
+   learner's sorted words, hidden and virtual character rows included; a virtual one gets
+   its hidden row before the snapshot stores its id — `FocusModeDAL` → `worldSource`,
+   `materializeWritingIds`; WRITING_PRACTICE_REWORK.md § 3d),
    off cooldown on that world's bar, ranked as the flp's two-tier queue (`rankCardQueue`):
    marked in the last 30 days → longest-waiting first; the rest → easiest first (det
    `difficulty`, or `maxCharStrokeCount` on the writing world). The ease keys come from
    `DICT_JOIN` in `FocusModeDAL.listWorldCards`. See MASTERY_REWORK.md § 6 "Ordering".
-2. Band quotas: Study Mix's 1-2-2-5 ×3 → **3 Mastered / 6 Comfortable / 6 Unfamiliar /
-   15 Target** (`FOCUS_QUOTAS`, derived from `STUDY_MIX_QUOTAS`). Each scaled share is
+2. Band quotas: Study Mix's 1-2-2-5 scaled to the cap → at 30, **3 Mastered / 6 Comfortable /
+   6 Unfamiliar / 15 Target**; at 15 (Writing), **1 / 3 / 3 / 8** (`FOCUS_QUOTAS[world]`,
+   derived from `STUDY_MIX_QUOTAS` by `scaledQuotas`). Each scaled share is
    floored and the leftover slot(s) go to bands in `STUDY_MIX_FILL_ORDER` (Target first),
-   so the quotas always sum to `FOCUS_DAILY_CARDS`.
+   so the quotas always sum to `FOCUS_DAILY_CARDS[world]`.
 3. A short band's shortfall is borrowed in Mix's fill order, Target → Comfortable → Unfamiliar →
    Mastered (`STUDY_MIX_FILL_ORDER`, shared with the flp's `DEFAULT_LOOP_CONFIG`).
 
-No cooling cards and no lent cards: if fewer than 30 cards are off cooldown, focus switches
+No cooling cards and no lent cards: if fewer cards than the world's cap are off cooldown, focus switches
 itself off (§ 1) instead.
 
 **When:** lazily, by whichever focus-aware request comes first on a new streak day (§ 4) —
@@ -208,7 +212,7 @@ Search's raw fetch calls it itself).
   `DeckTowerPage` → `leverArgs`.
 * **Tap while off** → it pulls toward the viewer and "Turn on focus mode?" opens. *No* → it
   springs back. *Yes* → focus goes on and the lever **stays pulled**; the tower re-reads its
-  counts and **shrinks** to today's set (at most 30) with a shrink from the tower-resize
+  counts and **shrinks** to today's set (at most the world's cap) with a shrink from the tower-resize
   library — today, the ghost collapse ([DECK_TOWER.md](./DECK_TOWER.md) § Tower resizes).
 * **Tap while on** → "Turn off focus mode?". *Yes* → it springs back and, once the full counts
   are re-read, the tower **grows** back to the pile with a grow from the same library — today,
@@ -236,7 +240,7 @@ break in a tower session needs 7 (`src/games/flpBreak/wordSearchBreak.ts`).
 
 The language is always the account's selected one. Turning a world back on clears its owed
 notice. Turning focus off does **not** delete the day's snapshot, so switching off and on again
-the same day returns the same 30 rather than a fresh batch.
+the same day returns the same set rather than a fresh batch.
 
 *Code: `server/controllers/FocusModeController.ts`, `server/routes/focusModeRoutes.ts`,
 `src/api/focusMode.ts`. Tests: `server/__tests__/focusMode.test.ts`.*

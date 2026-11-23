@@ -4,7 +4,7 @@
  * this file holds what the page draws. GRID_UNIT_PX and TILE_UNITS are the two numbers to
  * tune: everything on the board derives from them.
  */
-import type { RampHue } from "../../theme/colors";
+import { RAMP, type RampHue } from "../../theme/colors";
 import type { SpeedTierLadder } from "../shared/runTiers";
 
 /** Registry id (also the personal-best game id and the mark's `surface`). */
@@ -21,6 +21,16 @@ export const SPEED_TIERS: SpeedTierLadder = {
 };
 /** Game surface hue: teal, the one game hue no other game wears. */
 export const GAME_HUE: RampHue = "tea";
+/**
+ * The game's inks, shared by the board tiles (`SuperpositionBoard`) and the tray minis
+ * (`SuperpositionTray`). Each stays clear of the stroke ink, the teal ground and the others.
+ * SELECTED_INK: the selected stroke, and the tray well a drop would send a tile home to.
+ * FINISHED_INK: a finished (locked) stack's outline, and the word-info checks.
+ * HINT_INK: a hinted tile's outline and stroke, on the board or in the tray.
+ */
+export const SELECTED_INK = RAMP.pur.mark;
+export const FINISHED_INK = RAMP.grn.mark;
+export const HINT_INK = RAMP.org.mark;
 
 /** The snapping grid's pitch (px). A tile's position is always a whole number of units. */
 export const GRID_UNIT_PX = 16;
@@ -28,10 +38,22 @@ export const GRID_UNIT_PX = 16;
 export const TILE_UNITS = 9;
 /** A stroke tile's side (px). */
 export const TILE_PX = TILE_UNITS * GRID_UNIT_PX;
-/** Clear grid units kept between a freshly dealt tile and every edge of the board. Drags may still reach the edge. */
-export const SPAWN_MARGIN_UNITS = 2;
-/** How far a deal's tile positions spread on each axis of the bottom-centre bunch. */
-export const SPAWN_SPREAD_UNITS = 6;
+/**
+ * Clear grid units kept between a tray tile placed by a TAP and the board's edges and word
+ * info (`board.ts` → `placementSpot`). Drags may still reach the edge.
+ */
+export const PLACE_MARGIN_UNITS = 2;
+/**
+ * The tray (`SuperpositionTray`, `tray.ts` → `trayLayout`): the band under the grid where every
+ * tile is dealt as a mini copy of itself, one slot each, in centred rows that wrap.
+ * MINI_TILE_PX is a fixed size rather than a fit-to-width one, so a mini stays readable on
+ * any board; the tray grows a row instead.
+ */
+export const MINI_TILE_PX = 40;
+/** The gap between two slots, across and down (px). */
+export const TRAY_GAP_PX = 8;
+/** The tray's inner padding on every side (px). */
+export const TRAY_PADDING_PX = 32;
 /** A tile's outline width (px). */
 export const TILE_OUTLINE_PX = 2;
 /** Pointer travel (px) before a press on the board becomes a drag rather than a tap. */

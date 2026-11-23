@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { VocabEntry } from "../types";
 import type { ReviewMark } from "../../server/contracts/wire";
 import { hasWrongStreak, pawnHintFor } from "../features/flashcards/FlashcardsLearnPage/hintPawn/pawnHints";
-import { CPCD_LINE_MAX_CHARS, USED_IN_LINES, WRONG_STREAK_LINES, splitHintKeywords } from "../features/flashcards/FlashcardsLearnPage/hintPawn/pawnHintLines";
+import { WRONG_STREAK_LINES, splitHintKeywords } from "../features/flashcards/FlashcardsLearnPage/hintPawn/pawnHintLines";
 
 // docs/HINT_PAWN.md § "Hints" → wrong-streak: main + reading, last 3 marks of the world's
 // tracks (merged by timestamp) all wrong.
@@ -66,14 +66,6 @@ describe("pawnHintFor wrong-streak", () => {
     it("never offers breakdown on a single character", () => {
         const single = entry({ entryKey: "朋", typedMarkHistory: streak, breakdown: { 朋: { definition: "friend" } } } as Partial<VocabEntry>);
         expect(eligibleIds(single)).not.toContain("breakdown");
-    });
-});
-
-// The cpcd dialogue-box variant forbids its line from wrapping (pawnHints.ts →
-// PAWN_BUBBLE_VARIANT), so every line of a cpcd kind must fit on one line.
-describe("cpcd-variant lines", () => {
-    it("every used-in line fits CPCD_LINE_MAX_CHARS", () => {
-        for (const line of USED_IN_LINES) expect(line.length, line).toBeLessThanOrEqual(CPCD_LINE_MAX_CHARS);
     });
 });
 

@@ -9,9 +9,8 @@
  *
  * The host drives `outlineVisible` (useLevelGuide's timers + assist button),
  * `loopAnimation` (Trace's persistent stroke-order demo), `loopStrokeIndex` (Snap:
- * only the next stroke to write, animated on repeat) and `regionClip` (Thirds /
- * Quarters: clip the outline to one centre wedge — `regionClipPath` in
- * levelBehavior.ts).
+ * only the next stroke to write, animated on repeat) and `regionClip` (Sections: clip
+ * the outline to one centre wedge — `regionClipPath` in levelBehavior.ts).
  *
  * Fading: Hanzi Writer's outline stays drawn once its data loads; visibility is
  * purely the container's opacity, so the outline, Trace's looping strokes and Snap's
@@ -20,7 +19,7 @@
  * Memorize: `fadeOut`, for the first stroke clearing the study guide). Everything else
  * is instant, and even with `fadeIn` a canvas that STARTS with the guide (mount, or a
  * redraw — another character, level via `resetKey`, or loop setting — whose target
- * shows it) is drawn at once. The Thirds / Quarters region cycle (`regionClip`) is a
+ * shows it) is drawn at once. The Sections region cycle (`regionClip`) is a
  * plain clip swap. A redraw whose target hides the guide waits out a running fade-out.
  * See docs/PRACTICE_WRITING.md ("Guide fade").
  */

@@ -2,7 +2,7 @@
  * focusMode.ts — focus mode's numbers and wire shapes, shared by server and client.
  *
  * Focus mode (docs/FOCUS_MODE.md) caps one world at a pinned daily set of up to
- * FOCUS_DAILY_CARDS cards, and drops a card from that set for the rest of the streak day
+ * FOCUS_DAILY_CARDS[world] cards, and drops a card from that set for the rest of the streak day
  * once it is marked correct. It is offered by a lever on the world's Deck Tower platform
  * once the world holds FOCUS_LEVER_THRESHOLD off-cooldown cards.
  *
@@ -17,8 +17,17 @@ import type { FlashcardCategory, MasteryWorldId, CardBaselineSurface } from './w
 import { CARD_BASELINES } from './wire.js';
 import { STUDY_MIX_QUOTAS, STUDY_MIX_FILL_ORDER, type BandQuota } from './studyMix.js';
 
-/** The most cards a focused world serves in one streak day. */
-export const FOCUS_DAILY_CARDS = 30;
+/**
+ * The most cards a focused world serves in one streak day, per world. Also the auto-off
+ * floor: a new day's snapshot that finds fewer off-cooldown cards than the world's cap
+ * switches focus off instead (FocusModeService.resolveWorld). Writing is capped lower
+ * because a writing rep (drawing every stroke) costs far more time than a recognition one.
+ */
+export const FOCUS_DAILY_CARDS: Readonly<Record<MasteryWorldId, number>> = {
+  core: 30,
+  reading: 30,
+  writing: 15,
+};
 
 /**
  * Off-cooldown cards (all four utcm bands) a world must hold before its lever appears.
@@ -28,30 +37,38 @@ export const FOCUS_DAILY_CARDS = 30;
 export const FOCUS_LEVER_THRESHOLD = 80;
 
 /**
- * The daily set's band quotas: Study Mix's 1-2-2-5 (per 10) scaled to the 30, i.e.
- * 3 Mastered / 6 Comfortable / 6 Unfamiliar / 15 Target. When the cap is not a multiple
- * of 10, each band's scaled share is floored and the slots that leaves over go one each to
- * the bands in STUDY_MIX_FILL_ORDER (Target first) — the same order a short band's
- * shortfall is borrowed in. Derived, never restated, so the snapshot keeps the flp's proportions if
- * the Mix shape or the cap ever changes; the quotas always sum to FOCUS_DAILY_CARDS.
+ * A world's daily-set band quotas: Study Mix's 1-2-2-5 (per 10) scaled to that world's cap —
+ * at 30, 3 Mastered / 6 Comfortable / 6 Unfamiliar / 15 Target; at 15, 1 / 3 / 3 / 8. When
+ * the cap is not a multiple of 10, each band's scaled share is floored and the slots that
+ * leaves over go one each to the bands in STUDY_MIX_FILL_ORDER (Target first) — the same
+ * order a short band's shortfall is borrowed in. Derived, never restated, so the snapshot
+ * keeps the flp's proportions if the Mix shape or a cap ever changes; the quotas always sum
+ * to FOCUS_DAILY_CARDS[world].
  */
-export const FOCUS_QUOTAS: readonly BandQuota[] = (() => {
+function scaledQuotas(cap: number): readonly BandQuota[] {
   const mixSize = STUDY_MIX_QUOTAS.reduce((sum, quota) => sum + quota.count, 0);
   const quotas = STUDY_MIX_QUOTAS.map((quota) => ({
     category: quota.category as FlashcardCategory,
-    count: Math.floor((quota.count * FOCUS_DAILY_CARDS) / mixSize),
+    count: Math.floor((quota.count * cap) / mixSize),
   }));
-  let leftover = FOCUS_DAILY_CARDS - quotas.reduce((sum, quota) => sum + quota.count, 0);
+  let leftover = cap - quotas.reduce((sum, quota) => sum + quota.count, 0);
   for (let i = 0; leftover > 0; i = (i + 1) % STUDY_MIX_FILL_ORDER.length, leftover -= 1) {
     const quota = quotas.find((q) => q.category === STUDY_MIX_FILL_ORDER[i]);
     if (quota) quota.count += 1;
   }
   return quotas;
-})();
+}
+
+/** Each world's daily-set band quotas (see scaledQuotas). */
+export const FOCUS_QUOTAS: Readonly<Record<MasteryWorldId, readonly BandQuota[]>> = {
+  core: scaledQuotas(FOCUS_DAILY_CARDS.core),
+  reading: scaledQuotas(FOCUS_DAILY_CARDS.reading),
+  writing: scaledQuotas(FOCUS_DAILY_CARDS.writing),
+};
 
 /**
  * Response header the server sets on any request during which it turned a world's focus
- * mode OFF by itself (the day's snapshot found fewer than FOCUS_DAILY_CARDS off-cooldown
+ * mode OFF by itself (the day's snapshot found fewer than FOCUS_DAILY_CARDS[world] off-cooldown
  * cards). Value: the comma-joined world ids. It is only a SIGNAL — the client reacts by
  * reading `GET /api/focus`, whose `endedNotices` is the durable source (a background
  * request may have missed the header entirely).

@@ -16,7 +16,9 @@
 > amount it intrudes (animated), and the slot's ordinary centering re-places the card in
 > what's left — so the card only moves when the toolbar would actually reach it (basic mode
 > keeps its single static row, inset 0, nothing moves). While editing the **More Info pill
-> stays drawn but greyed + inert**; it stays visible below the card. The toolbar drops in on enter and the
+> stays drawn but greyed + inert**; it stays visible below the card. The toolbar lives in the
+> **Customize panel** (`CardEditPanel`, an eip-style white sheet that drops down over the page
+> header from the top of the frame); the panel drops in on enter and the
 > advanced menu reveal-expands on the adv toggle.
 >
 > The white text-backdrop affordance (migration 83 `iconTextBackdrop`) has been
@@ -48,8 +50,8 @@ card surfaces:
 
 | Surface | Handler | Behaviour |
 |---|---|---|
-| flp (Deck Tower study session) | `FlashcardsLearnPage` → `handleCustomizeCard` | If the question face is up, the rail's capture-phase `onToolPress` (`revealAnswer`) flips the card first and the editor opens once the flip lands (`TOWER_CARD_FLIP_MS`), because `enterEdit` measures the answer face's text blocks and a mid-flip card measures edge-on. Ignored mid-animation; the delayed open is dropped if the front card changes during the wait. The rail is hidden while the editor is open and on the writing flp. |
-| cdp (`VocabCardDetailPage`) | `handleCustomize` | The hero card IS the answer face — opens immediately. A no-op while the editor is already open. |
+| flp (Deck Tower study session) | `FlashcardsLearnPage` → `handleCustomizeCard` | If the question face is up, the rail's capture-phase `onToolPress` (`revealAnswer`) flips the card first and the editor opens once the flip lands (`TOWER_CARD_FLIP_MS`), because `enterEdit` measures the answer face's text blocks and a mid-flip card measures edge-on. Ignored mid-animation; the delayed open is dropped if the front card changes during the wait. While the editor is open the rail stays drawn but **greyed + inert** (`disabled={editMode || railDisabled}`, the More Info pill's treatment); it is hidden only on the writing flp. |
+| cdp (`VocabCardDetailPage`) | `handleCustomize` | The hero card IS the answer face — opens immediately. While the editor is open the rail's `Compare` / `Customize` are greyed + inert (`disabled={editMode}`); `Write it` stays live. |
 | Dictionary page eip | — | No pill (no card to customize; its rail at the bottom of the definition tab omits `onCustomize`). |
 
 It used to sit behind a `•••` on the card's own top edge (`CardOpsRail`), which was deleted
@@ -354,9 +356,25 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
      the back** (`disabled={!isFlipped || editMode}`) and greyed out on the front,
      because the arrangement lives on the back face.
 
-2. **Floating edit toolbar** (`CardEditToolbar.tsx`) — rendered as an **absolute
-   overlay inside `ContentArea`** (which is `position: relative`), so the toolbar itself
-   does NOT change the card-slot's flow height. Instead, in **advanced** mode (when the
+2. **The Customize panel** (`src/cardIcons/editor/CardEditPanel.tsx`) hosting the **edit
+   toolbar** (`CardEditToolbar.tsx`). The panel is the eip turned upside down: a
+   `COLORS.white` sheet with **rounded bottom corners** (20px, the eip's radius) and a
+   downward shadow (`SHADOW.sheetDown`, `sheetUp` mirrored), pinned to the **very top of the
+   phone frame** — it covers the page header and the status-bar strip (padded by `SAFE_TOP`;
+   it claims the status-bar tint via `useThemeColor` while open). It is **static**: no
+   grabber, no drag — it only drops in and slides back up. It is **portaled to the frame**
+   (`useScreenOverlayHost`), because the header lives outside the page's `ContentArea` and an
+   in-place overlay could not paint over it; z-index 150 puts it above the footer (100) and
+   below every modal sheet/scrim (1200+) and MUI menu (1300), so the icon picker, the reset
+   confirm and the toolbar's portaled dropdowns still open over it. React events bubble
+   through the portal, so both hosts' outside-tap deselect (`closest(".card-edit-toolbar")`)
+   is unchanged. Both hosts mount the same panel: the flp and the cdp (the old flat
+   page-ground bar is gone from both).
+
+   Because the panel starts at the frame top instead of under the header, its bottom edge sits
+   a full header-height higher than the old bar's did, so the card-movement path below
+   (`useToolbarInset`) only fires on short screens in advanced mode. The panel takes no flow
+   height, so it does NOT change the card-slot's flow height. Instead, in **advanced** mode (when the
    toolbar grows to three rows) the card slot **reserves the band the toolbar intrudes into**:
    `DraggableCardContainer` takes a `toolbarInset` prop (px) that is added to its `pad.top`,
    **transitioned** so the card glides. Basic mode keeps the single static row, so the inset is
@@ -396,17 +414,17 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    primary row — as the band to clear (`clearSelector`), measured against ContentArea's top
    plus its own padding:
 
-   - **Basic mode pushes.** Opening the editor slides the column down so the single row sits
-     ABOVE the word-tools rail instead of on it. (`enabled` is plain `editMode`, not
-     `editMode && advMode`.)
+   - **Basic mode pushes only if it must.** If the single row would reach the word-tools
+     rail, the column slides down so the row sits ABOVE it. Since the panel starts at the frame
+     top (over the header), the row normally ends inside the header band and the push is 0.
+     (`enabled` is plain `editMode`, not `editMode && advMode`.)
    - **Advanced mode pushes no further.** The advanced rows are sized to land on the rail
      (`Write it` / `Compare`) — covering it is the intent. The primary row's bottom edge does
      not move when the menu opens (the toolbar is anchored at its top), so the reservation is
      identical in both modes and nothing shifts on the adv toggle.
 
-   Padding is safe for the toolbar itself: an absolutely positioned child is placed against the
-   **padding box**, so `top: 0` keeps it flush under the header while the column slides. On the
-   flp the rail is likewise unprotected — the toolbar overlays it in both modes there.
+   The panel is portaled to the frame, so the column's padding never moves it. On both
+   surfaces the rail stays visible but greyed + inert while editing (see the Entry point table).
 
    **Measurements discount the entry slide.** Rects include transforms and the toolbar enters
    under `<Slide>`, so a first measurement taken mid-animation would read a too-high bottom
@@ -439,8 +457,8 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
      the rail band's height + `CARD_SLOT_TOP_BAND_GAP` (12). The rail is not in the flex flow:
      it sits in `.mobile-demo-word-tools-band`, an absolute overlay across the top of
      `ContentArea` (FlashcardsLearnPage → `wordToolsBandRef`), measured via `offsetHeight` like
-     the pill. The band's LAST non-zero height is kept while the rail is hidden (icon editor,
-     out-of-ready-cards card), with `WORD_TOOLS_BAND_FALLBACK` (54) before its first
+     the pill. The band's LAST non-zero height is kept while the rail is hidden (no rail
+     entry, the writing flp), with `WORD_TOOLS_BAND_FALLBACK` (54) before its first
      measurement, so hiding the rail never moves the card. A width-bound card (vertical slack)
      is centred in the full slot, so it sits higher than it did below an in-flow rail;
      a height-bound one stops below the rail.
@@ -453,9 +471,10 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    advanced-rows reveal, and the card slot's toolbar inset all run at `CARD_EDIT_ANIM_MS = 300` with
    easing `CARD_EDIT_ANIM_EASING = cubic-bezier(0.22, 1, 0.36, 1)` (exported from
    `CardEditToolbar.tsx`), so they move in lockstep on **open AND close**:
-   - **Toolbar** — wrapped in MUI **`<Slide direction="down">`** in
-     `FlashcardsLearnPage.tsx` (`in={editMode}`, `mountOnEnter`/`unmountOnExit`): drops in
-     from behind the header on enter, slides back up on exit.
+   - **Panel** — `CardEditPanel` wraps its surface in MUI **`<Slide direction="down">`**
+     (`in={editMode}`, `mountOnEnter`/`unmountOnExit`): drops in from above the frame over the
+     header on enter, slides back up on exit. The frame host is resolved once and held
+     regardless of `open`, so closing never cuts the exit slide short.
    - **Advanced menu** — the merged wrapping flex-list menu is wrapped in MUI **`<Collapse>`**
      (`in={advMode}`, `unmountOnExit`): height-expands on adv-on, collapses up on adv-off.
      (The align/order dropdowns are portaled, so Collapse's height clipping doesn't affect
@@ -500,20 +519,21 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    at `DEFAULT_ICON_SCALE`, on top of the stack (`handlePickIcon`), so it lands exactly where the
    single default icon sits. And **one merged tool menu** drops
    in below — a single container (`card-edit-toolbar__adv-menu`) laid out as a **wrapping
-   flex list** (`display: flex; flexWrap: wrap`): each tool hugs its own content (`smallBtnSx`)
-   and items flow left-to-right, collecting onto the next line when a row overflows (no fixed
+   flex list** (`display: flex; flexWrap: wrap; justifyContent: center`): each tool hugs its own content (`smallBtnSx`)
+   and items flow left-to-right with each line centered, collecting onto the next line when a row overflows (no fixed
    columns / table widths). The align/order dropdowns are children of the list but portal /
    return null, so they take no slot.
 
-   **Both rows are painted in the page's own ground** (`COLORS.background` / `--paper`), not a
-   toggle-grey slab: the bar reads as part of the surface it drops onto, and the hairline under
-   each row is what keeps it legible against the page. Both fie surfaces sit on that ground
-   (the flp via `MobileDemoFrame`, the cdp via `MobileTabScreen`'s default `surfaceColor`), so
-   one token covers both — a third surface with a different ground would turn this into a prop.
+   **Both rows are unpainted** and sit on the panel's white surface; the panel's rounded
+   bottom edge and shadow separate it from the page. There is **no divider** between the
+   primary row and the advanced menu — the two read as one panel.
 
    **The spacing is deliberately tight** — `2px` between tools, `6px` at the row ends
    (`px: 0.75` on the container), `2px` of horizontal button padding (`smallBtnSx.px: 0.25`)
-   and a `1px` icon→label gap. Eleven labelled tools plus the count readout have to collect
+   and a `2px` icon→label gap (`smallBtnSx` also zeroes the theme's `gap: 7px` on every
+   MuiButton root, `src/contexts/ThemeContext.tsx`, which otherwise sits between icon and label
+   on top of the margin). Each wrapped line is **centered** (`justifyContent: center`), so a
+   short last line sits under the middle of the full one. Eleven labelled tools plus the count readout have to collect
    onto **two** lines at phone width; the earlier `3px` / `12px` / `4px` values spilled them
    onto a third. Tap targets are unaffected (buttons keep their `30px` height). Adding a
    twelfth tool means re-checking that the two-line fit still holds. The basic row is never
@@ -1275,7 +1295,7 @@ SnapConfig | null`, and `TextColors` (`{foreign,english}` of `TextColorMode =
 
 - **Editor module location** — the whole fie lives under **`src/cardIcons/editor/`**:
   `useCardIconEditor.ts` (all editor state + actions), `CardIconCanvas.tsx`,
-  `CardEditToolbar.tsx`, `CardIconOrderList.tsx`, `useToolbarMenus.ts`,
+  `CardEditPanel.tsx`, `CardEditToolbar.tsx`, `CardIconOrderList.tsx`, `useToolbarMenus.ts`,
   `toolbarDropdownSelector.ts`. It used to sit in
   `src/features/flashcards/FlashcardsLearnPage/`, but the editor is consumed by **two**
   pages (flp and the cdp `VocabCardDetailPage`), so owning it from one page's folder was

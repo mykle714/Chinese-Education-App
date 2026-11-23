@@ -59,7 +59,7 @@ of its hardest card: `MAX(det.difficulty)` over `"entryIds"`, computed at read t
 subquery against the per-language det table). Until 177 it was a hand-authored
 `level SMALLINT` column; deriving it means authors only pick cards and a `packOrder`,
 and a pack follows its cards automatically when a word's `difficulty` is re-assessed
-(`backfill-hsk-level.js`, the validator Difficulty chip). Consequences:
+(`backfill-hsk-level.js`; the validator Difficulty chip that could also change it was removed 2026-11-21). Consequences:
 - One higher-level card lifts the whole pack — `{春天(1), 夏天(2), 秋天(2), 冬天(2)}` is
   an L2 pack. To keep a pack at a lower level, swap the card, don't override the level.
 - `MAX` ignores NULL difficulty; a pack whose cards are **all** unlevelled derives NULL

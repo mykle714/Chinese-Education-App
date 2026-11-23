@@ -190,8 +190,8 @@ export const EnglishBlock: React.FC<{
     // trigger is ALWAYS out of flow, so the gloss centers and wraps as if it did not exist;
     // useSenseChipPlacement then places it beside or below the centered gloss.
     // See docs/CARD_ICON_LAYOUT.md "Movable text".
-    // When true, the picker's zh reading headings are replaced by neutral "-pinyin N-"
-    // labels. Used on the FRONT/question side, where the card shows only English and the
+    // When true, the picker's zh reading headings are replaced by black redaction bars
+    // (the same bars on every section). Used on the FRONT/question side, where the card shows only English and the
     // learner is supposed to produce the Chinese — a tone-colored pinyin heading in the
     // sense menu would hand them the pronunciation (and the tones) for free. The grouping
     // itself is still useful (it shows which senses share a reading), so only the label is

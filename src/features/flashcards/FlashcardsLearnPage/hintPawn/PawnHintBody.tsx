@@ -1,10 +1,9 @@
 import { Box } from "@mui/material";
-import ForeignText from "../../../../components/ForeignText";
 import DismissCue from "../../../../components/hintBubble/DismissCue";
 import { COLORS } from "../../../../theme";
 import { SIZE, WEIGHT } from "../../../../theme/scale";
-import { PAWN_BUBBLE_VARIANT, type PawnHint, type UsedInPawnHint } from "./pawnHints";
-import { splitHintKeywords } from "./pawnHintLines";
+import { PAWN_BUBBLE_VARIANT, type PawnHint } from "./pawnHints";
+import { splitHintKeywords, type HintBandName } from "./pawnHintLines";
 
 /**
  * PawnHintBody — the inside of the hint pawn's speech bubble: the hint's line, its
@@ -18,30 +17,26 @@ import { splitHintKeywords } from "./pawnHintLines";
  *          [ cpcd words, centred ....... ] [cue]     the cue takes width from the words row
  *
  * Kinds:
- *   used-in       (cpcd) up to 2 words side by side, each its word (the card's character
- *                 masked as ? unless the level previews it) with pinyin over it, and its dd
- *                 under it, truncated with an ellipsis. The cpcd is size "xs" (owner,
- *                 2026-11-08), one step below the card-edge bubbles' "sm".
  *   wrong-streak  (text) the line only (a study tip, main + reading).
+ *   deck-review   (text) the line only (every world; a review-heavy dive's first card).
  *
- * Every line goes through `HintLine`, which splits its `{keyword}` markup
- * (pawnHintLines.ts → `splitHintKeywords`): a word naming an app button is drawn in
- * `COLORS.keywordInk` (Red Salmon), braces dropped. A line without braces renders as is.
+ * Every line goes through `HintLine`, which splits its markup
+ * (pawnHintLines.ts → `splitHintKeywords`): a `{keyword}` naming an app button is drawn in
+ * `COLORS.keywordInk` (Red Salmon), and a `[Band]` name in its band's ink (`BAND_INK`),
+ * markup dropped. A line without markup renders as is.
  *
  * The cue is a soft introduction (`pawnDismissCue`, docs/SOFT_INTRODUCTION.md): HintPawn
  * passes `showDismissCue` from `useSoftIntro`. Graduated, the cue is not rendered at all, so
  * it takes no space — the text variant's line and the cpcd variant's words take its width.
  *
- * No word opens on its own: the eip is gated until submit on the writing flp. A tap anywhere
- * on the bubble closes it instead (HintPawn.tsx, `onSelect` → `closedKey`).
+ * The cpcd variant has no kind today (the writing world's used-in hint, its one user, was
+ * removed 2026-11-22); its layout stays for the next kind that lists words. A tap anywhere
+ * on the bubble closes it (HintPawn.tsx, `onSelect` → `closedKey`).
  *
  * Layer: flp page presentation (client). Pure render of the hint it is given.
  *
  * Depended on by: hintPawn/HintPawn.tsx. Docs: docs/HINT_PAWN.md.
  */
-
-/** Widest one used-in word's column may grow before its dd truncates, px. */
-const WORD_COLUMN_MAX = 112;
 
 /** This component's own padding on every side, px (MUI spacing 0.5). */
 const ROOT_PAD = 4;
@@ -76,12 +71,34 @@ function PawnDismissCue() {
     );
 }
 
-/** A hint line with its `{keyword}` runs drawn in Red Salmon (`COLORS.keywordInk`). */
+/**
+ * Each nameable band's text colour (owner, 2026-11-21: the band names in the deck-review line
+ * take their band's colour). Inks outside the ramp, since a ramp tier as text is too faint on
+ * the white bubble — theme/colors.ts § "In-copy utcm band names".
+ */
+const BAND_INK: Record<HintBandName, string> = {
+    Comfortable: COLORS.comfortableInk,
+    Mastered: COLORS.masteredInk,
+};
+
+/**
+ * A hint line with its `{keyword}` runs drawn in Red Salmon (`COLORS.keywordInk`) and its
+ * `[Band]` runs in their band's ink (`BAND_INK`).
+ */
 function HintLine({ line }: { line: string }) {
     return (
         <>
             {splitHintKeywords(line).map((run, i) =>
-                run.keyword ? (
+                run.band ? (
+                    <Box
+                        key={i}
+                        component="span"
+                        className={`pawn-hint-body__band pawn-hint-body__band--${run.band.toLowerCase()}`}
+                        sx={{ color: BAND_INK[run.band] }}
+                    >
+                        {run.text}
+                    </Box>
+                ) : run.keyword ? (
                     <Box key={i} component="span" className="pawn-hint-body__keyword" sx={{ color: COLORS.keywordInk }}>
                         {run.text}
                     </Box>
@@ -93,56 +110,10 @@ function HintLine({ line }: { line: string }) {
     );
 }
 
-/** The used-in kind's words: up to 2 xs cpcds with their dd, centred in the row's free width. */
-function UsedInWords({ hint }: { hint: UsedInPawnHint }) {
-    return (
-        <Box
-            className="pawn-hint-body__used-in"
-            sx={{ flex: 1, minWidth: 0, display: "flex", gap: 1.5, alignItems: "flex-start", justifyContent: "center" }}
-        >
-            {hint.items.map((item) => (
-                <Box
-                    key={item.entryKey}
-                    className="pawn-hint-body__used-in-word"
-                    sx={{ display: "flex", flexDirection: "column", alignItems: "center", maxWidth: WORD_COLUMN_MAX, minWidth: 0 }}
-                >
-                    <ForeignText
-                        className="pawn-hint-body__used-in-text"
-                        language="zh"
-                        text={item.entryKey}
-                        maskChar={hint.maskChar}
-                        pronunciation={item.pronunciation}
-                        showPinyin={!!item.pronunciation}
-                        size="xs"
-                    />
-                    {item.definition && (
-                        <Box
-                            className="pawn-hint-body__used-in-definition"
-                            sx={{
-                                maxWidth: "100%",
-                                px: 0.25,
-                                fontSize: SIZE.caption,
-                                color: COLORS.textSecondary,
-                                lineHeight: 1.3,
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                            }}
-                        >
-                            {item.definition}
-                        </Box>
-                    )}
-                </Box>
-            ))}
-        </Box>
-    );
-}
-
 /** The cpcd variant's content row, by kind (the row the dismiss cue shares). */
 function CpcdRowContent({ hint }: { hint: PawnHint }) {
+    // No cpcd kind exists today; a new one adds its case here.
     switch (hint.kind) {
-        case "used-in":
-            return <UsedInWords hint={hint} />;
         default:
             return null;
     }

@@ -55,8 +55,10 @@ export function tabAvailability(
 
     return {
         definition: !!(
+            // Difficulty no longer counts: it is hidden (DefinitionFacts, 2026-11-21).
+            // Commonality does, since DefinitionFacts renders it.
             longDefinition ||
-            currentEntry?.difficulty ||
+            currentEntry?.frequencyScore != null ||
             (currentEntry?.partsOfSpeech?.length ?? 0) > 0
         ),
         examples: !!currentEntry?.exampleSentences?.length,

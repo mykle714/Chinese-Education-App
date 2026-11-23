@@ -45,6 +45,13 @@ export interface FlpTowerHost {
      * parked host, which shows no cards.
      */
     focused?: boolean;
+    /**
+     * The world's OFF-COOLDOWN cards per utcm band (useFlpReadyCounts' `counts`, the figure
+     * the Learning tower stands at). Read at the start of a dive by the hint pawn's deck-review
+     * line (hintPawn/useDeckReviewHint.ts, docs/HINT_PAWN.md § "Deck review"). Absent on a
+     * parked host, and before the counts have loaded.
+     */
+    readyBandCounts?: Readonly<Record<string, number>>;
     /** The learner left the session (back arrow, or "Leave anyway" on the sort offer). */
     onExit: () => void;
     /**

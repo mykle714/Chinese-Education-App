@@ -8,7 +8,7 @@ import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../../uti
 import { ValidationError, NotFoundError, BulkResult, ITransaction, DALError } from '../../types/dal.js';
 import db from '../../db.js';
 import { DICT_COLS, DICT_JOIN } from '../shared/dictJoin.js';
-import { vetTableForLanguage, vetReadFrom, VET_PHYSICAL_TABLES, vetSortedClause, WRITING_MASTERY_SELECT } from '../shared/vetTable.js';
+import { vetTableForLanguage, vetReadFrom, VET_PHYSICAL_TABLES, vetSortedClause, WRITING_MASTERY_SELECT, VET_TRACKED_BUCKET } from '../shared/vetTable.js';
 
 /** One raw used-in row (findUsedInForCharacter and the batch used-in reads). */
 type UsedInRow = {
@@ -83,7 +83,7 @@ function usedInOrder(a: string): string {
  * only matters if `ch` is ever more than one character (`@>` alone ignores order and
  * adjacency). `col` must be `<alias>.word1` so the left side matches the index expression
  * `string_to_array(word1, NULL)`. Without the index this is still correct, just a scan.
- * Used by pass 2 of `usedInSql` and `writingUsedInSql`; docs/DEFERRED_WORK.md has the
+ * Used by pass 2 of `usedInSql`; docs/DEFERRED_WORK.md has the
  * measurements behind it.
  */
 function charsContainClause(col: string, ch: string): string {
@@ -171,77 +171,6 @@ function usedInSql(ch: string): string {
       -- 3–5 on the post-2026-08-28 axis); this also drops null-score rows, so an
       -- in-library word with no det score is filtered out too.
       WHERE m."frequencyScore" BETWEEN 3 AND 5
-      ORDER BY ${usedInOrder('m')}`;
-}
-
-/**
- * The writing-bar used-in query for ONE character (pass 1 ungated, pass 2 frequencyScore
- * 4–5, no outer gate) — see `findWritingUsedInForCharacters`. `ch` as in `usedInSql`.
- */
-function writingUsedInSql(ch: string): string {
-  return `
-      SELECT
-        m."vocabEntryId",
-        m."entryKey",
-        m.pronunciation,
-        m.definition,
-        m."definitionClusters",
-        m."selectedSense",
-        m."frequencyScore",
-        m.is_user
-      FROM (
-        -- Pass 1: the user's saved words (vet) containing the char. No frequency gate.
-        SELECT
-          ve.id AS "vocabEntryId",
-          ve."entryKey",
-          de.pronunciation,
-          de.definition,
-          de."definitionClusters",
-          ve."selectedSense",
-          de."frequencyScore",
-          1 AS is_user
-        FROM vocabentries_zh ve
-        LEFT JOIN LATERAL (
-          SELECT pronunciation, definitions->>0 AS definition, "definitionClusters", "frequencyScore"
-          FROM dictionaryentries_zh
-          WHERE word1 = ve."entryKey" AND language = ve.language
-          LIMIT 1
-        ) de ON true
-        WHERE ve."userId" = $1
-          AND ve.language = $2
-          AND ve."entryKey" <> ${ch}
-          AND position(${ch} IN ve."entryKey") > 0
-          AND char_length(ve."entryKey") <= 4
-          AND ${vetSortedClause()}
-
-        UNION ALL
-
-        -- Pass 2: everyday dictionary words (frequencyScore 4–5) containing the char,
-        -- excluding the user's sorted vet words (already offered by pass 1). The clusters
-        -- travel so the resolvers' default-sense branch picks the reading (see the same
-        -- note in findUsedInForCharacter).
-        SELECT
-          NULL::int AS "vocabEntryId",
-          d.word1 AS "entryKey",
-          d.pronunciation,
-          d.definitions->>0 AS definition,
-          d."definitionClusters",
-          NULL::text AS "selectedSense",
-          d."frequencyScore",
-          0 AS is_user
-        FROM dictionaryentries_zh d
-        WHERE d.language = $2
-          AND char_length(d.word1) > 1
-          AND char_length(d.word1) <= 4
-          AND d.word1 <> ${ch}
-          AND ${charsContainClause('d.word1', ch)}
-          AND d."frequencyScore" BETWEEN 4 AND 5
-          AND NOT EXISTS (
-            SELECT 1 FROM vocabentries_zh ve
-            WHERE ve."userId" = $1 AND ve.language = $2 AND ve."entryKey" = d.word1
-              AND ${vetSortedClause()}
-          )
-      ) m
       ORDER BY ${usedInOrder('m')}`;
 }
 
@@ -591,16 +520,17 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     const unique = [...new Set(chars)].filter((c) => [...c].length === 1);
     if (unique.length === 0) return [];
 
-    // Hidden component rows: the same INSERT shape as ProvisionalCardDAL.insertProvisional
-    // (a lent card), restricted to characters that have a det row so a row never points
-    // at nothing. ON CONFLICT keeps an existing row — library or provisional — as is.
+    // Hidden component rows in the TRACKED bucket (migration 203): they hold writing
+    // progress and must never be re-lent. Restricted to characters that have a det row so
+    // a row never points at nothing. ON CONFLICT keeps an existing row — in any bucket —
+    // as is (a lent character stays lent; a sorted one stays sorted).
     await client.query(
       `INSERT INTO vocabentries_zh ("userId", "entryKey", language, "starterPackBucket")
-       SELECT $1, ch, 'zh', 'provisional'
+       SELECT $1, ch, 'zh', $3
          FROM unnest($2::text[]) AS ch
         WHERE EXISTS (SELECT 1 FROM dictionaryentries_zh d WHERE d.word1 = ch)
        ON CONFLICT ("userId", "entryKey", language) DO NOTHING`,
-      [userId, unique]
+      [userId, unique, VET_TRACKED_BUCKET]
     );
     const result = await client.query(
       `SELECT id, "entryKey", "typedMarkHistory", "masteredAt"
@@ -792,8 +722,8 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     if (!language) throw new ValidationError('language is required');
 
     // One statement, so the "has marks?" check and the write cannot race a mark:
-    //   - the row carries marks → demote it to 'provisional' (progress kept; discover
-    //     treats provisional as unsorted, so the card is offered again);
+    //   - the row carries marks → demote it to 'tracked' (progress kept, never lent;
+    //     discover treats every hidden bucket as unsorted, so the card is offered again);
     //   - no marks             → delete it, so a mis-tap leaves no trace.
     // `typedMarkHistory` defaults to '{}' (migration 101) and every track is an array, so
     // "has marks" is "any track is non-empty".
@@ -811,7 +741,7 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
       ),
       demoted AS (
         UPDATE ${table} v
-        SET "starterPackBucket" = 'provisional'
+        SET "starterPackBucket" = '${VET_TRACKED_BUCKET}'
         FROM target
         WHERE v.id = target.id AND target."hasMarks"
         RETURNING v.id
@@ -831,22 +761,23 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   }
 
   // Docs: docs/PROVISIONAL_CARDS.md (demotion), docs/LEAF_NODE_PAGES.md § "Read-only dictionary cdp".
-  async demoteLibraryRowToProvisional(userId: string, entryKey: string, language: string): Promise<boolean> {
+  async demoteLibraryRowToTracked(userId: string, entryKey: string, language: string): Promise<boolean> {
     if (!userId) throw new ValidationError('userId is required');
     if (!entryKey) throw new ValidationError('entryKey is required');
     if (!language) throw new ValidationError('language is required');
 
-    // Guarded on the current bucket so a repeat tap (or a row that is already
-    // provisional) is a no-op rather than a write.
+    // Demotes to 'tracked' (migration 203), not 'provisional': the learner removed this
+    // word on purpose, so the lend path must never hand it back. Guarded on the current
+    // bucket so a repeat tap (or a row that is already hidden) is a no-op.
     const table = vetTableForLanguage(language);
     const result = await this.dbManager.executeQuery<{ id: number }>(async (client) => {
       return await client.query(
         `UPDATE ${table}
-            SET "starterPackBucket" = 'provisional'
+            SET "starterPackBucket" = $4
           WHERE "userId" = $1 AND "entryKey" = $2 AND language = $3
             AND "starterPackBucket" = 'library'
           RETURNING id`,
-        [userId, entryKey, language]
+        [userId, entryKey, language, VET_TRACKED_BUCKET]
       );
     });
     return result.recordset.length > 0;
@@ -1405,33 +1336,62 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   }
 
   /**
-   * The writing flp's variant of the used-in list, for EVERY single character in `chars`
-   * at once — same two passes as findUsedInForCharacter, different frequency gates:
-   *   - Pass 1 (`is_user = 1`): the user's own sorted vet words (≤4 chars) containing
-   *     the character, with NO frequencyScore gate — words the learner chose are not
-   *     vetted for commonality.
-   *   - Pass 2 (`is_user = 0`): dictionary words (2–4 chars) containing the character
-   *     that are not already in the user's sorted vet, gated to frequencyScore 4–5 —
-   *     stricter than the eip list's 3–5, so a dictionary word only fills a slot when
-   *     it is genuinely everyday.
-   * Up to `limit` per character, ordered by `usedInOrder`. Only the leading window is
-   * ever read (no offset — the hint is not paginated).
+   * The writing flp's SOURCE WORDS for every single character in `chars` at once: ALL of
+   * the learner's own sorted words containing the character (any length — idioms too —
+   * but not the character's own card), most frequent first (`frequencyScore DESC NULLS
+   * LAST`, then shortest, then `entryKey`). No dictionary words and no limit: the card
+   * shows the first 3 and its "See all" popover the rest, so the whole list travels with
+   * the card. These are the words that put the character in the writing deck
+   * (dal/shared/writingDeck.ts), so a deck character always has at least one — unless it
+   * is only in the deck as the learner's own 1-character card.
    *
-   * Powers the writing flp's used-in hint, spoken by the hint pawn (`VocabEntry.writingUsedIn`;
-   * client: hintPawn/pawnHints.ts → `pawnHintFor`, docs/HINT_PAWN.md).
+   * Feeds `VocabEntry.writingSourceWords` (client: FlashcardsLearnPage/WritingSourceWords).
    * Chinese-only. Keys of the result are the characters asked for; one with no words maps
    * to []. Non-single-character inputs are ignored.
    *
    * Referenced by: OnDeckVocabService.enrichMultipleWithUsedIn (writing bar only).
-   * Docs: docs/WRITING_PRACTICE_REWORK.md § 3b "Used-in hints".
+   * Docs: docs/WRITING_PRACTICE_REWORK.md § 3b "Source words".
    */
-  async findWritingUsedInForCharacters(
+  async findWritingSourceWordsForCharacters(
     userId: string,
     chars: string[],
-    language: string,
-    limit: number = 2
+    language: string
   ): Promise<Map<string, UsedInItem[]>> {
-    return this.runPerCharacterUsedIn(writingUsedInSql, userId, chars, language, limit);
+    const byChar = new Map<string, UsedInItem[]>();
+    if (language !== 'zh') return byChar;
+    const unique = [...new Set(chars.filter((c) => !!c && [...c].length === 1))];
+    if (unique.length === 0) return byChar;
+    for (const c of unique) byChar.set(c, []);
+
+    const result = await this.dbManager.executeQuery<UsedInRow & { forChar: string }>(async (client) =>
+      client.query(`
+        SELECT c.ch AS "forChar",
+               ve.id AS "vocabEntryId",
+               ve."entryKey",
+               de.pronunciation,
+               de.definition,
+               de."definitionClusters",
+               ve."selectedSense",
+               de."frequencyScore"
+          FROM unnest($2::text[]) AS c(ch)
+          JOIN vocabentries_zh ve
+            ON ve."userId" = $1
+           AND ve.language = 'zh'
+           AND ve."entryKey" <> c.ch
+           AND position(c.ch IN ve."entryKey") > 0
+           -- The learner's own words: the deck is built from sorted words only.
+           AND ${vetSortedClause()}
+          LEFT JOIN LATERAL (
+            SELECT pronunciation, definitions->>0 AS definition, "definitionClusters", "frequencyScore"
+              FROM dictionaryentries_zh
+             WHERE word1 = ve."entryKey" AND language = 'zh'
+             LIMIT 1
+          ) de ON true
+         ORDER BY c.ch, de."frequencyScore" DESC NULLS LAST, char_length(ve."entryKey") ASC, ve."entryKey" ASC
+      `, [userId, unique])
+    );
+    for (const row of result.recordset) byChar.get(row.forChar)?.push(toUsedInItem(row));
+    return byChar;
   }
 
   /**

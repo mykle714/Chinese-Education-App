@@ -371,7 +371,7 @@ switch left desktop rendering unchanged to within 0.004 em and moved only WebKit
   mixed-case prose with no single ink centre to measure.
 
 **Users of `IsoText`:** `IsoCard` (figure + caption), `IsoCardImprint` ("0" / "cards"),
-`IsoPawn` (the emote "!"), `PawnIdleProps` (mark discs, doze Z's), acp's `SortBins` →
+`IsoPawn` (the emote "!"), `PawnIdleProps` (sing notes, doze Z's), acp's `SortBins` →
 `NumberPrint`.
 
 ## Levitation
@@ -972,7 +972,7 @@ stretch cue, it starts only from a standstill; a stretch due at the same time go
 | Kind | Shape | Pose | Marks (`PawnIdleProps.tsx`) |
 |---|---|---|---|
 | `sneeze` | one-shot, `SNEEZE_MS` 1.6 s | two inhales, the head going back further each time, a quiver, then a fast snap forward — the spine folding (`arch` +22°) and the whole body tipping with it (`lean` +9°) — with a squash (`SNEEZE_SNAP_MS`), and a recovery | three white discs burst out in front of the face on the snap |
-| `sing` | one-shot, `SING_MS` 4.2 s | head tipped back (`arch` −8°), swaying side to side, breathing on the beat. The sway swings the head-back bend's DIRECTION ±70° round the facing, because a pose has one bend plane | ♪ / ♫ notes on white discs float up and right, swaying, one every 0.5 s |
+| `sing` | one-shot, `SING_MS` 4.2 s | head tipped back (`arch` −8°), swaying side to side, breathing on the beat. The sway swings the head-back bend's DIRECTION ±70° round the facing, because a pose has one bend plane | bare ink ♪ / ♫ notes float up and right, swaying, one every 0.5 s |
 | `doze` | lasting | the head droops forward (`arch` +13°) and the body sags, then slow sleeping breaths | big ink "Z"s (no disc, free-floating) drift up off the head, each bigger than the last — one every `DOZE_Z_GAP_MS` (2 s), each drifting for 3 s |
 | `knit` | lasting | looking down (`arch` +7°), the head bobbing on each needle click (`KNIT_CLICK_MS`) | two white needles crossing and clicking in front of the chest, a scarf (`ISO.yarn`, ribbed in a shade of it) growing from nothing for as long as it knits (`SCARF_RATE`, a long strip sliding out of a clip at the needles), down past the slab and off the bottom of the screen, a yarn ball on the floor screen-left of the feet with its strand up to the work |
 
@@ -984,7 +984,7 @@ stretch cue, it starts only from a standstill; a stretch due at the same time go
 - **Marks.** `usePawnMotion` mirrors what plays to React (`activeIdle` = `{ id, kind, ending }`,
   set on a change only, never per frame). IsoPawn mounts `PawnIdleProps` (keyed by id, so its
   CSS restarts) inside the head anchor, in `EMOTE_DRAW_SCALE` units, and fades it out while
-  `ending`. The notes are ink glyphs on white discs, the "!" bubble's family; the doze Z's are bare, larger ink glyphs. The
+  `ending`. The notes and the doze Z's are both bare ink glyphs, no disc (the Z's larger). The
   anchor follows the **bent** head during the idle (`pose.marksFollowHead`), so the marks come
   off a drooping or tipped-back head. The exception is knitting: its yarn ball sits on the
   floor and must not slide as the head bobs. The "!" never follows the bend. Reaching the chest
@@ -1388,7 +1388,10 @@ flat ink shapes (`useIsoPalette().ink`, so it is washed by time of day): a faint
 11-point star splash, and a darker wobbly core over it. Its outline is seeded, so a mark keeps
 its exact shape across remounts. `BURN_MARK_RADIUS` (0.95) is the farthest any part of a mark
 reaches from its centre. A caller keeps that much floor clear of objects (the Deck Tower:
-`towerLightning.ts` → `scorchFits`).
+`towerLightning.ts` → `scorchFits`). Like any floor decal it must also be passed in IsoPawn's `decals`
+(the Deck Tower: `DeckTowerPlatform.tsx` → `renderBurns`), or the pawn's opaque shadow paints
+it out. The same element works there unchanged: translucent ink over the shadow's tone reads
+as the scorch, darkened.
 
 ### openFloor.ts
 

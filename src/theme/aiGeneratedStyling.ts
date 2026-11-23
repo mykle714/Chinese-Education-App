@@ -8,7 +8,7 @@ import { COLORS } from './colors';
 // ExampleSentenceList left it on 2026-10-29 for the est-style AI card below
 // (`aiGeneratedCardSx`); the eip Definition tab followed on 2026-11-07 (DefinitionFacts'
 // grouped block + LongDefinitionDisplay's `aiCard`). Still on the tinted surface:
-// DefinitionFacts' per-field boxes, LongDefinitionDisplay without `aiCard` (CompareWorkspace),
+// DefinitionFacts' per-field boxes, LongDefinitionDisplay without `aiCard` (CompareShelfBody),
 // SynonymsRelatedSection. AiDictionaryEntryCard left it on 2026-11-15 for a plain
 // result-slab look (white by day, sparkle badge only).
 // The matching sparkle badge lives in src/components/AiGeneratedBadge.tsx

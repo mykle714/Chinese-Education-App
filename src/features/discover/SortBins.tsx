@@ -49,9 +49,12 @@ import { stripParentheses } from "../../utils/definitionUtils";
  *     of the last word sorted there, mapped flat onto the top layer (DeckFace). No count
  *     (user request 2026-11-09: "get rid of the count").
  *
- * While a card is held over one bin, that bin grows (ACTIVE_SCALE) and says its sentence
- * in a speech bubble rising from its top (SpeechBubble); a card dropped on it despawns at
- * once and the bin sets a new top card down on its deck (PLACE_DROP_PX).
+ * While a card is held over one bin, that bin grows (ACTIVE_SCALE), says its sentence in a
+ * speech bubble rising from its top (SpeechBubble), and shows the held card in iso — a
+ * ghost top card hovering PLACE_DROP_PX over its deck (HoverGhost), while the page fades
+ * the flat held card out (user request 2026-11-22). Let go there, and the flat card
+ * despawns and the ghost falls onto the deck from where it hovered
+ * (`.sort-bins__placed--from-hover`).
  *
  * The page hit-tests drops through `hitTesterRef` (SortBinsHitTester): the pointer is
  * mapped back onto the world floor and matched to the nearest platform, so the test
@@ -82,7 +85,11 @@ import { stripParentheses } from "../../utils/definitionUtils";
 export interface SortBinsHitTester {
     snapshot: () => void;
     binAt: (clientX: number, clientY: number) => string | null;
-    highlight: (binId: string | null) => void;
+    /**
+     * `card` is the held card: the active bin draws it as an iso ghost hovering over its
+     * deck (HoverGhost) while the page hides the flat card. Omitted/null = no ghost.
+     */
+    highlight: (binId: string | null, card?: DiscoverCard | null) => void;
 }
 
 export interface SortBinSpec {
@@ -326,6 +333,14 @@ const PLACE_MS = 320;
 const PLACE_DELAY_MS = 120;
 
 /**
+ * The hover ghost's crossfade (user request 2026-11-22): it fades in over the deck as the
+ * flat held card fades out (DraggableCard → HOVER_GHOST_FADE_MS, the same length), and
+ * back out when the card leaves the bin. Not when it is DROPPED: then the ghost becomes
+ * the falling top card with no fade.
+ */
+export const HOVER_GHOST_FADE_MS = 120;
+
+/**
  * The drop-target cue: the bin a held card is over grows by this much, so it is plain
  * which deck the card will land on. It settles back the moment the card is let go,
  * while the new top card is set down. Scaled about the bin's own box centre; the page's hit-test uses rects
@@ -344,9 +359,23 @@ const BIN_CSS = `
     100% { transform: translateY(0); }
 }
 .sort-bins__placed { animation: sort-bins-place ${PLACE_MS}ms cubic-bezier(0.3, 0.6, 0.4, 1) ${PLACE_DELAY_MS}ms both; }
+/* Dropped from the hover ghost: the card is already visible PLACE_DROP_PX up, so it just
+   falls — gravity's ease-in to the deck, then the same settle bounce — with no delay. */
+@keyframes sort-bins-place-from-hover {
+    0%   { transform: translateY(-${PLACE_DROP_PX}px); animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45); }
+    70%  { transform: translateY(0); animation-timing-function: ease-out; }
+    85%  { transform: translateY(-1.5px); animation-timing-function: ease-in; }
+    100% { transform: translateY(0); }
+}
+.sort-bins__placed--from-hover { animation: sort-bins-place-from-hover ${PLACE_MS}ms linear both; }
+/* The hover ghost: lifted PLACE_DROP_PX (the inner group), crossfading in and out. */
+.sort-bins__ghost-lift { transform: translateY(-${PLACE_DROP_PX}px); }
+@keyframes sort-bins-ghost-fade { from { opacity: 0; } to { opacity: 1; } }
+.sort-bins__ghost { animation: sort-bins-ghost-fade ${HOVER_GHOST_FADE_MS}ms ease-out both; pointer-events: none; }
+.sort-bins__ghost--leaving { animation: sort-bins-ghost-fade ${HOVER_GHOST_FADE_MS}ms ease-in reverse both; }
 /* Undo: the place animation BACKWARDS — the old top card lifts off and fades out. */
 .sort-bins__lifted { animation: sort-bins-place ${PLACE_MS}ms cubic-bezier(0.3, 0.6, 0.4, 1) reverse both; }
-@media (prefers-reduced-motion: reduce) { .sort-bins__placed, .sort-bins__lifted { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .sort-bins__placed, .sort-bins__placed--from-hover, .sort-bins__lifted, .sort-bins__ghost { animation: none; } }
 .sort-bins__bin {
     transform-box: fill-box;
     transform-origin: 50% 50%;
@@ -435,7 +464,13 @@ function layoutBubble(sentence: string, source: { x: number; y: number }): Bubbl
  * — the deck's top card when it has one (its back corner sits higher than the platform's),
  * else the bare platform's — so the bubble rises off the back edge without covering it.
  */
-function bubbleTipFor(count: number): { x: number; y: number } {
+function bubbleTipFor(count: number, ghost: boolean): { x: number; y: number } {
+    // With a hover ghost the bubble rises off the GHOST's back corner instead — one layer
+    // above the deck, lifted PLACE_DROP_PX — so the tail never covers the hovering card.
+    if (ghost) {
+        const back = proj.project(DECK.x, DECK.y, Math.min(count + 1, MAX_LAYERS) * LAYER_PITCH);
+        return { x: back.x, y: back.y - PLACE_DROP_PX };
+    }
     const shown = Math.min(count, MAX_LAYERS);
     const platformBack = proj.project(PLATFORM.x, PLATFORM.y, 0);
     if (shown === 0) return platformBack;
@@ -492,6 +527,8 @@ interface SortBinProps {
     /** The cards sorted into this bin this session, oldest first; the last is the top card. */
     cards: readonly DiscoverCard[];
     active: boolean;
+    /** The held card, while it is over THIS bin: drawn as the hover ghost. Null otherwise. */
+    hoverCard: DiscoverCard | null;
     look: SortLook;
 }
 
@@ -562,7 +599,7 @@ const TopCard: React.FC<{ card: DiscoverCard | undefined; layersShown: number }>
 );
 
 // Memoized: a highlight change re-renders only the bins whose `active` flipped.
-const SortBin = memo(function SortBin({ spec, number, cards, active, look }: SortBinProps) {
+const SortBin = memo(function SortBin({ spec, number, cards, active, hoverCard, look }: SortBinProps) {
     const count = cards.length;
     const shown = Math.min(count, MAX_LAYERS);
     // The platform takes the band colour through the tower's wash (SortLook.wash): the
@@ -589,15 +626,30 @@ const SortBin = memo(function SortBin({ spec, number, cards, active, look }: Sor
     // Any other fall (several at once) just redraws.
     const [lifted, setLifted] = useState<{ card: DiscoverCard; from: number } | null>(null);
     const [liftKey, setLiftKey] = useState(0);
+    // The HOVER GHOST (HoverGhost): the held card in iso over this bin's deck. Kept in
+    // state rather than read straight off `hoverCard` so it can fade back out after the
+    // card leaves (`leaving`); keyed by `ghostKey` so each arrival restarts the fade-in.
+    // `prevHoverCard` is last render's `hoverCard`: a drop clears the hover AND grows the
+    // deck in the same (batched) render, so a rise whose new top card is the card that
+    // was just hovering here is a drop FROM the ghost — the set-down then falls from the
+    // ghost's height (`placeFromHover`) and the ghost goes at once, with no fade.
+    const [ghost, setGhost] = useState<{ card: DiscoverCard; leaving: boolean } | null>(null);
+    const [ghostKey, setGhostKey] = useState(0);
+    const [prevHoverCard, setPrevHoverCard] = useState(hoverCard);
+    const [placeFromHover, setPlaceFromHover] = useState(false);
+    // No animation runs under reduced motion, so nothing would end a hold or a fade-out.
+    const animate = !prefersReducedMotion();
+    let droppedFromHover = false;
     if (cards !== prevCards) {
         const prevCount = prevCards.length;
         setPrevCards(cards);
-        // No animation runs under reduced motion, so nothing would end either hold.
-        const animate = !prefersReducedMotion();
         if (count > prevCount) {
+            droppedFromHover = prevHoverCard != null && cards[count - 1]?.id === prevHoverCard.id;
             setPlaceKey((k) => k + 1);
+            setPlaceFromHover(droppedFromHover);
             setPlacingFrom(animate ? prevCount : null);
             setLifted(null);
+            if (droppedFromHover) setGhost(null);
         } else if (count < prevCount) {
             // Undo mid-placement: drop the placement hold and lift the card off instead.
             setPlacingFrom(null);
@@ -606,6 +658,20 @@ const SortBin = memo(function SortBin({ spec, number, cards, active, look }: Sor
             setLifted(oneBack ? { card: prevCards[prevCount - 1], from: prevCount } : null);
         }
     }
+    if (hoverCard !== prevHoverCard) {
+        setPrevHoverCard(hoverCard);
+        if (hoverCard) {
+            // Arrived (or re-entered mid fade-out): a fresh fade-in.
+            setGhost({ card: hoverCard, leaving: false });
+            setGhostKey((k) => k + 1);
+        } else if (!droppedFromHover) {
+            // Left without dropping: fade the ghost back out.
+            setGhost((g) => (g && animate ? { ...g, leaving: true } : null));
+        }
+    }
+    const handleGhostEnd = (e: React.AnimationEvent<SVGGElement>) => {
+        if (e.target === e.currentTarget && ghost?.leaving) setGhost(null);
+    };
     const handlePlaceEnd = (e: React.AnimationEvent<SVGGElement>) => {
         if (e.target === e.currentTarget) setPlacingFrom(null);
     };
@@ -648,11 +714,23 @@ const SortBin = memo(function SortBin({ spec, number, cards, active, look }: Sor
                 {/* The top card and its face, set down together (PLACE_DROP_PX). */}
                 <g
                     key={placeKey}
-                    className={placeKey > 0 ? "sort-bins__top sort-bins__placed" : "sort-bins__top"}
+                    className={placeKey === 0 ? "sort-bins__top" : placeFromHover ? "sort-bins__top sort-bins__placed--from-hover" : "sort-bins__top sort-bins__placed"}
                     onAnimationEnd={handlePlaceEnd}
                 >
                     {shown > 0 && <TopCard card={cards[count - 1]} layersShown={shown} />}
                 </g>
+                {/* The held card, in iso, hovering where it will be set down from. */}
+                {ghost && (
+                    <g
+                        key={`ghost-${ghostKey}`}
+                        className={ghost.leaving ? "sort-bins__ghost sort-bins__ghost--leaving" : "sort-bins__ghost"}
+                        onAnimationEnd={handleGhostEnd}
+                    >
+                        <g className="sort-bins__ghost-lift">
+                            <TopCard card={ghost.card} layersShown={Math.min(count + 1, MAX_LAYERS)} />
+                        </g>
+                    </g>
+                )}
                 {/* Undo: the old top card lifting off the deck as it now stands. */}
                 {lifted && liftedShown > 0 && (
                     <g key={`lift-${liftKey}`} className="sort-bins__lifted" onAnimationEnd={handleLiftEnd}>
@@ -699,7 +777,9 @@ const SortBins: React.FC<SortBinsProps> = ({ bins, decks, look, hitTesterRef, cl
     const sceneRef = useRef<SVGGElement>(null);
     // The bin a held card is over (SortBinsHitTester → `highlight`). Local state, not a
     // prop, so a crossing re-renders this scene only.
-    const [activeBinId, setActiveBinId] = useState<string | null>(null);
+    // `card` is the held card, drawn as the active bin's hover ghost.
+    const [hover, setHover] = useState<{ binId: string | null; card: DiscoverCard | null }>({ binId: null, card: null });
+    const activeBinId = hover.binId;
     useUnitsPerScreenPx(sceneRef);
     const fontEpoch = useFontLoadEpoch();
     // The active bin's speech bubble: its sentence, its tail on the bin's top (which rises
@@ -710,10 +790,10 @@ const SortBins: React.FC<SortBinsProps> = ({ bins, decks, look, hitTesterRef, cl
     const bubble = useMemo(() => {
         const origin = LAYOUT.origins[activeIndex];
         if (!activeSpec || !origin) return null;
-        const tip = bubbleTipFor(activeCount);
+        const tip = bubbleTipFor(activeCount, hover.card != null);
         return layoutBubble(activeSpec.label, { x: origin.x + tip.x, y: origin.y + tip.y });
         // eslint-disable-next-line react-hooks/exhaustive-deps -- fontEpoch re-measures with the loaded font
-    }, [activeSpec, activeIndex, activeCount, fontEpoch]);
+    }, [activeSpec, activeIndex, activeCount, hover.card, fontEpoch]);
     // Where the bubble layer is portalled (BUBBLE_LAYER_Z), and the scene's user space →
     // the layer's user space, both read whenever a bubble appears or changes — so the
     // portalled bubble lands exactly where it would inside the scene. The host is looked
@@ -765,9 +845,12 @@ const SortBins: React.FC<SortBinsProps> = ({ bins, decks, look, hitTesterRef, cl
                 });
                 return best;
             },
-            // A stable setter; React bails out when the bin is unchanged, so the drag
-            // handler can call it on every move.
-            highlight: setActiveBinId,
+            // Stable; returns the previous state when nothing changed, so React bails out
+            // and the drag handler can call it on every move.
+            highlight: (binId, card) => {
+                const nextCard = binId ? card ?? null : null;
+                setHover((prev) => (prev.binId === binId && prev.card === nextCard ? prev : { binId, card: nextCard }));
+            },
         };
         return () => { hitTesterRef.current = null; };
     }, [hitTesterRef]);
@@ -795,6 +878,7 @@ const SortBins: React.FC<SortBinsProps> = ({ bins, decks, look, hitTesterRef, cl
                                     number={i + 1}
                                     cards={decks[spec.id] ?? NO_CARDS}
                                     active={activeBinId === spec.id}
+                                    hoverCard={activeBinId === spec.id ? hover.card : null}
                                     look={look}
                                 />
                             </g>

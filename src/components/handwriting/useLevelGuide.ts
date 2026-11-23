@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WritingMode } from "../../../server/contracts/writingLevels";
-import { LEVEL_BEHAVIOR, type LevelBehavior } from "./levelBehavior";
+import { LEVEL_BEHAVIOR, USED_LABEL, type LevelBehavior } from "./levelBehavior";
 
 /**
  * useLevelGuide — the guide / draw-lock / assist-button state machine for ONE
@@ -14,11 +14,14 @@ import { LEVEL_BEHAVIOR, type LevelBehavior } from "./levelBehavior";
  *
  * Outputs:
  *   outlineVisible — show the grey guide now
- *   regionIndex    — which region (levels 4/6: Thirds / Quarters) the guide is clipped to
+ *   regionIndex    — which region (level 4: Sections) the guide is clipped to
  *   drawLocked     — canvas refuses new strokes
  *   blocked        — Memorize's study-first lock (red "no writing" badge)
  *   loading        — a TIMED lock is running (corner spinner)
  *   cooldownSec    — assist-button cooldown, whole seconds remaining (0 = ready)
+ *   assistLabel    — the assist button's text: its label, the live cooldown ("4s"), or
+ *                    USED_LABEL once a `uses`-capped button is spent (null = no button)
+ *   assistDisabled — cooling down, or out of presses (Flash: one per panel open)
  *
  * Timers are held in refs and cleared on every enter/leave and on unmount, so a level
  * change can never leave a stale flash timer that unlocks the next level's canvas.
@@ -35,6 +38,14 @@ export function useLevelGuide(mode: WritingMode) {
   const [drawLocked, setDrawLocked] = useState(false);
   const [regionIndex, setRegionIndex] = useState(0);
   const [cooldownSec, setCooldownSec] = useState(0);
+  // Assist presses since this surface was entered, for a `uses`-capped button (Flash).
+  // State drives the label; the ref is what the stable `press` callback reads.
+  const [pressCount, setPressCount] = useState(0);
+  const pressCountRef = useRef(0);
+  const resetPresses = useCallback(() => {
+    pressCountRef.current = 0;
+    setPressCount(0);
+  }, []);
 
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // True while the flash running is the ON-ENTRY one (not an assist-button press).
@@ -91,8 +102,9 @@ export function useLevelGuide(mode: WritingMode) {
     clearTimers();
     const b = LEVEL_BEHAVIOR[modeRef.current];
     setCooldownSec(0);
+    resetPresses(); // a panel open re-arms a `uses`-capped button (Flash)
     setDrawLocked(false);
-    setRegionIndex(0); // levels 4/6 always open on the first (top-left) region
+    setRegionIndex(0); // level 4 always opens on the first (top-left) region
     switch (b.guide) {
       case "persistent":
         setOutlineVisible(true);
@@ -111,27 +123,34 @@ export function useLevelGuide(mode: WritingMode) {
       default:
         setOutlineVisible(false);
     }
-  }, [clearTimers, flash]);
+  }, [clearTimers, flash, resetPresses]);
 
   /** The surface is no longer being drawn on (collapsed / unmounted / level left). */
   const leave = useCallback(() => {
     clearTimers();
     setCooldownSec(0);
+    resetPresses();
     setDrawLocked(false);
     setOutlineVisible(false);
-  }, [clearTimers]);
+  }, [clearTimers, resetPresses]);
 
   /** The assist button was pressed. */
   const press = useCallback(() => {
     const m = modeRef.current;
     const b = LEVEL_BEHAVIOR[m];
     if (!b.button) return;
+    // Out of presses (Flash's one look) — the button is disabled, but guard anyway.
+    if (b.button.uses !== undefined && pressCountRef.current >= b.button.uses) return;
+    pressCountRef.current += 1;
+    setPressCount(pressCountRef.current);
     if (b.regions) {
-      setRegionIndex((i) => (i + 1) % (b.regions as number));
-      if (b.guide === "flash") flash(b.flashMs, b.lockWhileGuide);
-      else setOutlineVisible(true);
-    } else if (b.guide === "flash") {
-      // A Show press is a deliberate look: it is NOT cut short by a stroke.
+      // Slide the window one step (Sections: ⅙) clockwise, wrapping. The window stays up.
+      const { positions } = b.regions;
+      setRegionIndex((i) => (i + 1) % positions);
+      setOutlineVisible(true);
+    } else if (b.flashMs > 0) {
+      // Step-through's Show / Flash's one look. A press is a deliberate look: it is NOT
+      // cut short by a stroke (and on Flash, drawing is not locked at all).
       flash(b.flashMs, b.lockWhileGuide);
       entryFlashRef.current = false;
     }
@@ -139,6 +158,16 @@ export function useLevelGuide(mode: WritingMode) {
   }, [flash, startCooldown]);
 
   const blocked = behavior.guide === "study" && drawLocked;
+
+  const usesSpent = behavior.button?.uses !== undefined && pressCount >= behavior.button.uses;
+  const assistLabel = !behavior.button
+    ? null
+    : cooldownSec > 0
+      ? `${cooldownSec}s`
+      : usesSpent
+        ? USED_LABEL
+        : behavior.button.label;
+  const assistDisabled = cooldownSec > 0 || usesSpent;
 
   /**
    * A press landed on the locked canvas. Two locks treat that press AS the unlock —
@@ -175,6 +204,8 @@ export function useLevelGuide(mode: WritingMode) {
     // Spinner only for a timed lock (flash levels) — Memorize's lock is open-ended.
     loading: drawLocked && behavior.guide === "flash",
     cooldownSec,
+    assistLabel,
+    assistDisabled,
     enter,
     leave,
     press,

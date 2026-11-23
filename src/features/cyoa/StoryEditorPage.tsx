@@ -4,6 +4,7 @@ import { Box, Button, InputBase, Typography } from "@mui/material";
 import NodePageHeader from "../../components/NodePageHeader";
 import { HeaderIconButton } from "../../components/PageHeader";
 import Icon from "../../components/Icon";
+import { CommonalityMeter } from "../../components/ScoreMeters";
 import IconPickerDialog from "../../components/IconPickerDialog";
 import { usePageSlide } from "../../hooks/usePageSlide";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -230,10 +231,31 @@ function StoryEditorPage() {
                                 />
                             </Box>
 
+                            {/* A published story's commonality rides the status line as the
+                                same 5-circle meter the list card shows (§ 6.2a). */}
                             <Typography className="story-editor-story__status" sx={{ fontFamily: FONTS.sans, fontSize: SIZE.caption, color: look.muted, lineHeight: LEADING.normal }}>
-                                {published
-                                    ? `Published${story.difficulty !== null ? ` · HSK ${story.difficulty}` : ""} — edits go live right away.`
-                                    : "Draft — only you can see it."}
+                                {published ? (
+                                    <>
+                                        Published
+                                        {story.commonality !== null && (
+                                            <>
+                                                {" · "}
+                                                {/* The meter is inline-flex; the span centers it on the text line. */}
+                                                <Box component="span" className="story-editor-story__commonality" sx={{ display: "inline-flex", verticalAlign: "middle" }}>
+                                                    <CommonalityMeter
+                                                        className="story-editor-story__commonality-meter"
+                                                        score={story.commonality}
+                                                        filledColor={look.muted}
+                                                        emptyColor={look.muted}
+                                                    />
+                                                </Box>
+                                            </>
+                                        )}
+                                        {" — edits go live right away."}
+                                    </>
+                                ) : (
+                                    "Draft — only you can see it."
+                                )}
                             </Typography>
 
                             <Box className="story-editor-story__actions" sx={{ display: "flex", gap: 1 }}>

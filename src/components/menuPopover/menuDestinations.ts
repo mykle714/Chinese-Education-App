@@ -18,9 +18,9 @@ import type { RampHue } from "../../theme/colors";
  *     tool rather than as another destination, and so the main list keeps the same shape
  *     for every account.
  *
- * Every flag-gated row needs its flag (server/contracts/featureFlags.ts); for Community
- * and Arena this list is the ONLY navigational entry, so dropping the row is the whole client-side
- * entry gate (docs/FEATURE_FLAGS.md). A gated tool needs its grant (and its feature's flag,
+ * Every flag-gated row needs its flag (server/contracts/featureFlags.ts); for Community,
+ * Arena, the Voice Tutor and Sentence Tiles this list is the ONLY navigational entry, so dropping the row is
+ * the whole client-side entry gate (docs/FEATURE_FLAGS.md). A gated tool needs its grant (and its feature's flag,
  * if it has one). The grant says the account may use it; the flag says the feature exists.
  *
  * Hues are the destinations' existing identities (the ramp hue each wore as a bento
@@ -62,6 +62,12 @@ export function useMenuDestinations(): MenuDestinations {
         ...(isFeatureEnabled("cyoa")
             ? [routeDest("adventures", "/adventures", "Adventures", "auto_stories", "grn")]
             : []),
+        // Voice Tutor (docs/VOICE_ASSISTANT.md Q2) — its ONLY entry point. `pur` is also the
+        // voice pages' accent (features/voice/voiceStyles → VOICE_HUE). Reader is `pur` too;
+        // the owner's UX pass may give voice its own hue.
+        ...(isFeatureEnabled("voiceAssistant")
+            ? [routeDest("voice", "/voice", "Voice Tutor", "graphic_eq", "pur")]
+            : []),
         // `yel` is the hue Arena wore as a bento tile before it became a footer tab
         // (2026-11-04) — one feature, one hue. `emoji_events` is the icon it wore as a tab.
         ...(isFeatureEnabled("arena")
@@ -71,6 +77,12 @@ export function useMenuDestinations(): MenuDestinations {
         // in the AccountSheet's Friends tab (raised from the Deck Tower avatar).
         ...(isFeatureEnabled("community")
             ? [routeDest("community", "/community", "Community", "groups", "org")]
+            : []),
+        // Sentence Tiles (docs/SENTENCE_TILES_GAME.md) — its ONLY entry point. Testing phase: shown
+        // only with testing features on (the server refuses non-testers regardless). `moss` is a hue
+        // no other Menu row wears; the game's tiles and accents use it too (sentenceTilesStyles.ts).
+        ...(isFeatureEnabled("sentenceTiles") && testingFeatures
+            ? [routeDest("sentence-tiles", "/sentence-tiles", "Sentence Tiles", "grid_view", "moss")]
             : []),
     ];
 

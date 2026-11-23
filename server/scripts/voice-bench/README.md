@@ -1,9 +1,21 @@
-# Tutor voice check
+# Voice bench scripts
 
-One offline script, `tts-bench.ts`, that synthesizes test lines with ElevenLabs and Google voices
-and writes a listening report, used to choose the voice assistant's TTS
-([docs/VOICE_ASSISTANT.md](../../../docs/VOICE_ASSISTANT.md) § 5.3, Q17–Q20). Nothing here is imported
-by the app. Results are gitignored.
+Offline scripts for the voice tutor ([docs/VOICE_ASSISTANT.md](../../../docs/VOICE_ASSISTANT.md)).
+Nothing here is imported by the app. Results are gitignored.
+
+| Script | What it answers |
+|---|---|
+| `tts-bench.ts` | Which TTS voice reads tutor lines right (§ 5.3, Q17–Q20) — the listening report below |
+| `stt-stream-spike.ts` | Does Google STT v2 **stream** code-switched zh/en? Prints interim/final results and timings per (model, location, languages) config (§ 5.1). Env `PAD_SILENCE_MS` + `KEEP_OPEN=1` stream silence after the line instead of closing, to see when the model finalizes by itself |
+| `live-session-smoke.ts <userId> ["line" …]` | Drives one real `LiveVoiceSession` with synthesized learner speech: STT → Claude → TTS → DB → end card, with the latency lines of § 4.5. Writes a real session for that user. `VOICE_MODEL=…` tries another Claude model |
+
+On the dev box, run the two STT/session scripts with `DB_PORT=5433` (the Postgres container's
+host port) when the session script needs the database.
+
+## Tutor voice check (`tts-bench.ts`)
+
+Synthesizes test lines with ElevenLabs and Google voices and writes a listening report, used to
+choose the voice assistant's TTS.
 
 **Outcome (2026-11-18):** Google Chirp3-HD (Achird, Achernar) is the tutor's TTS. Three rounds:
 ElevenLabs models on one voice (`data/tts-lines.json`), tone accuracy across seven ElevenLabs takes
@@ -36,4 +48,4 @@ Open `report.html` in a browser; the audio files sit next to it.
 
 
 
-**Depends on / referenced by:** [docs/VOICE_ASSISTANT.md](../../../docs/VOICE_ASSISTANT.md) § 5.3, § 10, Q17–Q20; [docs/DEFERRED_WORK.md](../../../docs/DEFERRED_WORK.md) items 13, 56. `tts-bench.ts` imports `server/services/TTSService.ts` → `buildPinyinSsml`.
+**Depends on / referenced by:** [docs/VOICE_ASSISTANT.md](../../../docs/VOICE_ASSISTANT.md) § 4.5, § 5.1, § 5.3, § 10, Q17–Q20; [docs/DEFERRED_WORK.md](../../../docs/DEFERRED_WORK.md) items 13, 56. `tts-bench.ts` imports `server/services/TTSService.ts` → `buildPinyinSsml`; `live-session-smoke.ts` imports `server/dal/setup.ts` → `voiceSessionService` and `server/services/voice/LiveVoiceSession.ts`.

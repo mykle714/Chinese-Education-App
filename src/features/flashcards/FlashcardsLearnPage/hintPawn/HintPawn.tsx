@@ -71,8 +71,8 @@ import { useSoftIntro } from "../../../../softIntro/useSoftIntro";
  * The stage overlaps the card's bottom-left corner (the pawn's head), so it is
  * `pointer-events: none` except for the platform's own hit box and the pawn's tap target —
  * a swipe on the card corner still reaches the card. The bubble is a sibling of the stage:
- * it sits in the space below the card (from beside the stage to the right gutter), capped
- * to that space (useSpaceBelowCard) so it never overlaps the card, its tail pointing LEFT
+ * it sits in the space below the card (from beside the stage to the right gutter), centred
+ * vertically in that space and capped to it (useSpaceBelowCard) so it never overlaps the card, its tail pointing LEFT
  * at the pawn, over the More Info pill (z-index 3). The whole bubble is one tap target
  * (tap to dismiss), cued by a three-line "Tap / to / dismiss" in its bottom-right corner —
  * a soft introduction (`pawnDismissCue`, DismissCueSoftIntro below): after 49 arrivals over
@@ -184,24 +184,28 @@ const GUTTER = 10;
  * lower on the screen") — the slab now rests 4 px above the safe area's bottom.
  */
 const BASELINE_DROP = 20;
-/** The bubble's bottom edge, px above ContentArea's bottom (plus SAFE_BOTTOM) — below the pill's, so it covers it. */
-const BUBBLE_BOTTOM = 10;
 /** Gap between the stage's right edge and the bubble's tail tip, px. */
 const BUBBLE_GAP = 4;
-/** Clearance kept between the bubble's top and the card's bottom edge, px. */
-const BUBBLE_CARD_CLEARANCE = 6;
+/**
+ * The bubble is centred vertically in the band between the card's bottom edge and
+ * ContentArea's bottom (above SAFE_BOTTOM) (owner, 2026-11-21). This is the least space
+ * kept on EACH side of it — card side and screen side — px; a bubble taller than the band
+ * less twice this is capped (and clipped) to fit.
+ */
+const BUBBLE_BAND_INSET = 8;
 /** The bubble's left edge, px right of the stage's left edge. */
 const BUBBLE_LEFT_IN_STAGE = SCENE_BOX.width + BUBBLE_GAP + HINT_BUBBLE_TAIL_SIZE / 2;
 /**
  * Where the bubble's tail points: the pawn's HEAD centre (owner, 2026-11-08), in px from
- * the bubble body's bottom-left corner (y up). x: the pawn's x in the stage, less the
- * bubble's left. y: the stage sits BASELINE_DROP lower than the pill and the bubble
- * BUBBLE_BOTTOM up; the feet are `height − pawnY` up the stage, the head HEAD_CENTRE units
- * over them. Ignores the levitation bob (a few px).
+ * the bubble SLOT's bottom-left corner (y up) — the slot's bottom is ContentArea's bottom
+ * plus SAFE_BOTTOM. PawnBubbleTail measures where the (centred) body sits in the slot.
+ * x: the pawn's x in the stage, less the bubble's left. y: the stage's bottom is
+ * `24 − BASELINE_DROP` up; the feet are `height − pawnY` up the stage, the head HEAD_CENTRE
+ * units over them. Ignores the levitation bob (a few px).
  */
-const PAWN_HEAD_FROM_BUBBLE = {
+const PAWN_HEAD_FROM_SLOT = {
     x: SCENE_BOX.pawnX - BUBBLE_LEFT_IN_STAGE,
-    y: 24 - BASELINE_DROP - BUBBLE_BOTTOM + (SCENE_BOX.height - SCENE_BOX.pawnY) + HEAD_CENTRE * PROJ.heightUnit,
+    y: 24 - BASELINE_DROP + (SCENE_BOX.height - SCENE_BOX.pawnY) + HEAD_CENTRE * PROJ.heightUnit,
 };
 /**
  * The "ouch" bubble's tail tip (usePawnOuch, PawnOuchBubble): just off the head's outline,
@@ -501,7 +505,7 @@ export default function HintPawn({ world, hint, unseen, away, parked, contentRef
 
     return (
         <>
-            {/* The speech bubble, in the band below the card: from beside the stage to the right
+            {/* The speech bubble, centred in the band below the card: from beside the stage to the right
                 gutter, its tail pointing left at the pawn. Over the More Info pill (z-index 3) —
                 a tap closes it and uncovers the pill. A sibling of the stage, not inside it, so
                 it spans ContentArea's width; it stays put during a drag and pops on a throw. */}
@@ -515,7 +519,16 @@ export default function HintPawn({ world, hint, unseen, away, parked, contentRef
                             position: "absolute",
                             left: GUTTER + BUBBLE_LEFT_IN_STAGE,
                             right: GUTTER,
-                            bottom: `calc(${BUBBLE_BOTTOM}px + ${SAFE_BOTTOM})`,
+                            // The slot IS the band below the card (useSpaceBelowCard includes
+                            // the safe-area strip, so take it back off); the bubble is centred
+                            // in it, so it sits midway between the card and the bottom edge.
+                            bottom: SAFE_BOTTOM,
+                            height: `max(0px, calc(${spaceBelowCard}px - ${SAFE_BOTTOM}))`,
+                            boxSizing: "border-box",
+                            py: `${BUBBLE_BAND_INSET}px`,
+                            display: "flex",
+                            flexDirection: "column",
+                            justifyContent: "center",
                             zIndex: 3,
                             pointerEvents: "none",
                             visibility: unseen ? "hidden" : undefined,
@@ -541,10 +554,10 @@ export default function HintPawn({ world, hint, unseen, away, parked, contentRef
                                 // Capped to the space below the card, so it never overlaps it
                                 // (owner, 2026-11-08). The CONTENT box clips what doesn't fit —
                                 // not the body, whose overflow would cut its own tail off.
-                                maxHeight: `max(44px, calc(${spaceBelowCard - BUBBLE_BOTTOM - BUBBLE_CARD_CLEARANCE}px - ${SAFE_BOTTOM}))`,
+                                maxHeight: `max(44px, calc(${spaceBelowCard - 2 * BUBBLE_BAND_INSET}px - ${SAFE_BOTTOM}))`,
                             }}
                         >
-                            <PawnBubbleTail head={PAWN_HEAD_FROM_BUBBLE} />
+                            <PawnBubbleTail head={PAWN_HEAD_FROM_SLOT} anchorSelector=".hint-pawn__bubble-slot" />
                             <Box
                                 className="hint-pawn__bubble-content"
                                 sx={{ flex: 1, minWidth: 0, alignSelf: "stretch", display: "flex", flexDirection: "column", overflow: "hidden" }}

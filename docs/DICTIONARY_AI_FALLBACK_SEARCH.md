@@ -234,7 +234,7 @@ with **no id / no metadata** — it is **display-only**:
 - not add-to-library-able,
 - drawn as a plain rounded **result slab** (`AiDictionaryEntryCard` takes the page's time-of-day
   `look`: `look.surface` fill — white by day, slate at night — 18px corner, 1px `look.outline`,
-  matching `DictionaryPageParts` → `DictionaryResultSlab`). Its only AI marker is the orange
+  matching `src/components/dictionarySearch/DictionaryResultParts.tsx` → `DictionaryResultSlab`). Its only AI marker is the orange
   sparkle badge (`src/components/AiGeneratedBadge.tsx` → `AiGeneratedBadge`, label
   "AI SUGGESTION") in the app's **AI-provenance orange** (`COLORS.aiGenerated` = `#FF9E5A`,
   deliberately off-ramp so it is not confused with a mastery band — see SHELF_REDESIGN.md A1).

@@ -54,7 +54,7 @@ const SELECTOR_TABS = TAB_LABELS.map((label) => ({
 // Each pane is its own scroll region, so a tab keeps its scroll position. `pan-y`, NOT
 // `none`: SheetPanel picks resize-vs-scroll on a gesture's first committed move and
 // expresses "scroll" by NOT calling preventDefault, so the browser must be allowed to pan
-// natively (same note as CompareWorkspace / InfoCardPanelBody). The bottom padding clears
+// natively (same note as CompareShelfBody / InfoCardPanelBody). The bottom padding clears
 // the home indicator; the sheet covers the footer, so there is no footer to clear.
 const paneScrollSx = {
     height: "100%",

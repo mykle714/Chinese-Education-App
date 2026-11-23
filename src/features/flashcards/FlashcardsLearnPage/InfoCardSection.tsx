@@ -3,10 +3,7 @@ import { Box } from "@mui/material";
 import SheetPanel, { type SheetPanelHandle, type SheetTelescopeHandle } from "../../../components/sheet/SheetPanel";
 import type { LearningToggleState } from "../../../hooks/useLearningToggle";
 import InfoCardPanelBody, { type InfoCardPanelBodyHandle } from "./InfoCardPanelBody";
-import CompareWorkspace from "../../../components/CompareWorkspace";
 import type { VocabEntry, BreakdownItem, UsedInItem } from "../types";
-import type { CompareEipTab } from "./useEipTabs";
-import type { LongDefinitionPart } from "../../../types";
 import { resolveDisplayPronunciation } from "../../../utils/definitionUtils";
 import EipUpperPanel from "./EipUpperPanel";
 import { SpeakerButton } from "../../../components/SpeakerButton";
@@ -14,7 +11,7 @@ import EipEntryHeader from "./EipEntryHeader";
 import EipAddKey from "./EipAddKey";
 import { EipPaletteProvider } from "./EipPaletteContext";
 import { useEipPalette } from "./useEipPalette";
-import { InfoSheetGrabber } from "../../../components/sheet/sheetStyled";
+import EipShelf from "./EipShelf";
 
 interface InfoCardSectionProps {
     currentEntry: VocabEntry | null;
@@ -42,17 +39,6 @@ interface InfoCardSectionProps {
     // keeps that placement). Hosts: EipSheet (Dictionary page, saved-card cdp) and the flp
     // (add-only — it passes this only while `inLibraryOnLoad === false`).
     learning?: LearningToggleState;
-    // Compare tab (docs/WORD_COMPARE_FEATURE.md). `compareTab` set ⇒ the panel renders
-    // CompareWorkspace instead of InfoCardPanelBody's normal definition/examples/breakdown
-    // content — the Compare tab has no entry/breakdown/sub-tab of its own.
-    //
-    // There is no `onOpenCompare` here any more: the panel no longer OPENS the Compare
-    // tab, it only hosts it. The entry point is `WordToolsRail` on the page above the
-    // card (artboards 19–25), because comparing is something you do with the WORD and
-    // the panel is information-only. The flp still owns the tab itself.
-    compareTab?: CompareEipTab | null;
-    onSetCompareSlot?: (slot: "A" | "B", entry: VocabEntry | null) => void;
-    onCompareResult?: (comparison: string | null, comparisonParts?: LongDefinitionPart[] | null) => void;
     // The definitionClusters sense the panel is showing (docs/DEFINITION_CLUSTERS.md).
     // Owned by the host page's useEipTabs, seeded from the entry's persisted pick. The
     // header only DISPLAYS it (underlined in its sense list); picks happen on the card face.
@@ -66,8 +52,7 @@ interface InfoCardSectionProps {
     onCloseX?: () => boolean | void;
     // Back one word on the trail, fired by a right-swipe past the first sub-tab
     // (InfoCardPanelBody → useTabSwipeTrack `onSwipePastFirst`). Hosts pass it only while
-    // there IS a word below the showing one, so the root keeps its rubber-band edge. Not
-    // wired into the Compare crumb (CompareWorkspace has no sub-tab track).
+    // there IS a word below the showing one, so the root keeps its rubber-band edge.
     onSwipeBack?: () => void;
     // Draw the minute-points flame beside the ✕. True on every STUDY surface that mounts
     // this panel (flp, acp, cdp) — the panel covers the page header, flame included.
@@ -104,7 +89,7 @@ const warnedMissingPinyin = new Set<string>();
  * panel no longer takes a `showPinyin` flag, so the only way left is the entry resolving
  * to no pronunciation at all — a data/read-path gap (a host handing in a thin entry, a
  * det row missing `pronunciation`, a cluster reading the resolver rejected).
- * Silenced by the host's `missingPinyinReason`. Spanish (and the Compare tab) never warn.
+ * Silenced by the host's `missingPinyinReason`. Spanish never warns.
  */
 function useMissingPinyinWarning(
     entry: VocabEntry | null,
@@ -155,9 +140,6 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     onSpeakSentence,
     speakingKey,
     learning,
-    compareTab,
-    onSetCompareSlot,
-    onCompareResult,
     selectedSenseIndex,
     tabStrip,
     onCloseX,
@@ -169,7 +151,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
     definitionFooter,
     missingPinyinReason,
 }, ref) => {
-    useMissingPinyinWarning(compareTab ? null : currentEntry, selectedSenseIndex, !!missingPinyinReason);
+    useMissingPinyinWarning(currentEntry, selectedSenseIndex, !!missingPinyinReason);
     const panelRef = useRef<InfoCardPanelBodyHandle | null>(null);
     const slideRef = useRef<HTMLDivElement | null>(null);
     // The entry header lives in the UPPER panel now (EipUpperPanel), so the pager slide
@@ -243,7 +225,7 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
             // element is the ACTIVE tab's pane (each pane scrolls on its own),
             // and SheetPanel captures the scroll element once per bodyKey — so
             // every tab change must re-bind the scroll/resize coupling.
-            bodyKey={compareTab ? "compare" : `info-${selectedTab}`}
+            bodyKey={`info-${selectedTab}`}
             // With no ✕ on the eip, `onCloseX` now drives only the Escape key (desktop):
             // Escape pops the showing word, and closes the panel from the root.
             onCloseX={onCloseX}
@@ -270,18 +252,18 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                     // Named for the ENTRY POINT rather than the word on screen — the pill
                     // that opens it says "More Info", and the header right below already
                     // carries the headword.
-                    title={compareTab ? "Compare" : "More Info"}
+                    title="More Info"
                     trail={tabStrip}
                     // The speaker leads the trail row, beside the caret. The header below
                     // therefore gets no onSpeak (only the cdps' inline panels draw it there).
-                    speaker={!compareTab && currentEntry && onSpeak ? (
+                    speaker={currentEntry && onSpeak ? (
                         <SpeakerButton
                             onClick={() => onSpeak(currentEntry)}
                             isLoading={speakingKey === currentEntry.entryKey}
                         />
                     ) : undefined}
-                    addKey={learning && !compareTab ? <EipAddKey state={learning} /> : undefined}
-                    header={!compareTab && currentEntry ? (
+                    addKey={learning ? <EipAddKey state={learning} /> : undefined}
+                    header={currentEntry ? (
                         <Box ref={headerSlideRef} className="eip-entry-slide-header">
                             <EipEntryHeader
                                 entry={currentEntry}
@@ -301,32 +283,9 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                     showMinutePoints={showMinutePoints}
                     bindHeaderDrag={bindHeaderDrag}
                 />
-                {/* LOWER panel — the white SHELF (design `.tabw` + `.body`): rounded top,
-                    a solid 3px `edge` lip above it, its own small grabber, then the content
-                    tabs and the tab body. The sheet's ground shows in its corners. */}
-                <Box
-                    className="eip-shelf"
-                    sx={{
-                        display: "flex",
-                        flexDirection: "column",
-                        flex: 1,
-                        minHeight: 0,
-                        background: palette.shelf,
-                        borderRadius: "24px 24px 0 0",
-                        boxShadow: `0 -3px 0 ${palette.edge}`,
-                        paddingTop: "8px",
-                    }}
-                >
-                    <Box
-                        className="eip-shelf__drag-zone"
-                        {...bindHeaderDrag()}
-                        sx={{ display: "flex", justifyContent: "center", paddingBottom: "11px", touchAction: "none", flexShrink: 0 }}
-                    >
-                        <InfoSheetGrabber
-                            className="eip-shelf__grabber"
-                            style={{ width: 40, background: palette.shelfGrab }}
-                        />
-                    </Box>
+                {/* LOWER panel — the white SHELF (EipShelf, shared with the Compare panel):
+                    its grabber, then the content tabs and the tab body. */}
+                <EipShelf bindHeaderDrag={bindHeaderDrag}>
                     {/* Slide wrapper for the entry-tab pager (see the effect above).
                         Transparent to layout: it repeats the body's own flex sizing. */}
                     <Box
@@ -334,17 +293,6 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                         className="eip-entry-slide"
                         sx={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}
                     >
-                    {compareTab ? (
-                        <CompareWorkspace
-                            ref={panelRef}
-                            state={compareTab}
-                            onSetSlot={onSetCompareSlot ?? (() => {})}
-                            onResult={onCompareResult ?? (() => {})}
-                            showPinyin
-                            showPinyinColor={showPinyinColor}
-                            onSegmentOpen={onExampleSegmentClick}
-                        />
-                    ) : (
                         <InfoCardPanelBody
                             ref={panelRef}
                             currentEntry={currentEntry}
@@ -372,9 +320,8 @@ const InfoCardSection = forwardRef<InfoCardSectionHandle, InfoCardSectionProps>(
                             scrollTouchAction="pan-y"
                             headerDragBind={bindHeaderDrag}
                         />
-                    )}
                     </Box>
-                </Box>
+                </EipShelf>
                 </>
             )}
         </SheetPanel>

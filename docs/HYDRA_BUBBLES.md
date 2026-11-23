@@ -785,8 +785,8 @@ because a level-1 learner has nothing below them to draw an easier word from.
 **Last fallback:** when a tier's own level is exhausted, pull from **the next level up**.
 
 Levels are 1..6 for every language (`StarterPacksService`, `de."difficulty" BETWEEN 1
-AND 6`); the zh-facing label is "HSK n" and other languages read "Level n"
-(`src/features/discover/AddCardsPage.tsx`).
+AND 6`). The level is never shown to learners (acp's level pill and the eip's Difficulty
+meter were removed 2026-11-21).
 
 Two app-wide rules this leans on, both written up in docs/PROVISIONAL_CARDS.md:
 

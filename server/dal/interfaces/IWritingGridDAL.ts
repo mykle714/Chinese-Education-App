@@ -13,7 +13,11 @@ export interface WritingGridCharacterRow {
   selectedSense: string | null;
   /** The character's single-character vet row; null when the learner has none yet. */
   cardId: number | null;
-  /** That row is one of the learner's sorted cards (false: hidden provisional, or no row). */
+  /**
+   * The character is in the writing deck: at least one of the learner's SORTED words
+   * contains it (dal/shared/writingDeck.ts). Independent of its own row's bucket, and
+   * true even with no row yet. False only for a character reached through a lent word.
+   */
   ownCard: boolean;
   typedMarkHistory: TypedMarkHistory | null;
 }
@@ -58,7 +62,7 @@ export interface IWritingGridDAL {
 
   /**
    * Ensure each character has a single-character vet row, creating a hidden
-   * 'provisional' row where missing (the lent-card path). Returns char → row id.
+   * 'tracked' row where missing (migration 203; never lent). Returns char → row id.
    */
   ensureCharacterRows(userId: string, chars: string[]): Promise<Map<string, number>>;
 }

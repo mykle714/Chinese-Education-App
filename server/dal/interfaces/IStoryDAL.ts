@@ -7,7 +7,7 @@ import type { StoryListItem, StoryChoiceEdit } from '../../contracts/stories.js'
  * one read of users."isAuthor".
  *
  * NO POLICY HERE (docs/BACKEND_LAYERING.md § 2). Who may read a draft, who may write,
- * "same story" checks, publish warnings and the difficulty rule all live in
+ * "same story" checks, publish warnings and the commonality rule all live in
  * StoryService. The DAL refuses only input that would corrupt a row (missing ids).
  *
  * Every write takes an optional PoolClient so StoryService can enlist it in a
@@ -25,7 +25,8 @@ export interface StoryRow {
   authorUserId: string;
   startPassageId: string | null;
   publishedAt: string | null;
-  difficulty: number | null;
+  /** 1–5 on det `frequencyScore`'s scale, computed on publish (migration 200). */
+  commonality: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -64,8 +65,9 @@ export interface IStoryDAL {
   /**
    * The learner list (§ 6.2a): every PUBLISHED story of `language`, plus the viewer's
    * OWN drafts, each with the viewer's endings found / total / in-progress and the
-   * author's name. Easiest first, newest published first within a level; never-
-   * published drafts (no difficulty) last, newest created first.
+   * author's name. Most common first (`commonality` DESC — the easiest read), newest
+   * published first within a band; never-published drafts (no commonality) last, newest
+   * created first.
    */
   listForViewer(viewerId: string, language: string): Promise<StoryListItem[]>;
 
@@ -167,8 +169,18 @@ export interface IStoryDAL {
   /** Delete one passage; choices into it go targetless, progress on it cascades. */
   deletePassage(passageId: string): Promise<boolean>;
 
-  /** Set publishedAt = now() and the computed difficulty. Returns the new publishedAt. */
-  publish(storyId: string, difficulty: number | null): Promise<string>;
+  /** Set publishedAt = now() and the computed commonality. Returns the new publishedAt. */
+  publish(storyId: string, commonality: number | null): Promise<string>;
+
+  /**
+   * Set ONLY the commonality — publishedAt and updatedAt untouched, so a recompute does
+   * not reorder the list as a re-publish would. For the backfill script
+   * (server/scripts/backfill/cyoa/backfill-story-commonality.ts).
+   */
+  setCommonality(storyId: string, commonality: number | null): Promise<void>;
+
+  /** Ids of every published story (any language) — the backfill script's work list. */
+  listPublishedStoryIds(): Promise<string[]>;
 
   /** Set publishedAt = NULL. Progress and endings found are kept (§ 6.3). */
   unpublish(storyId: string): Promise<boolean>;

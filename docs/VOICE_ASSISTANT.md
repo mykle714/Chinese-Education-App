@@ -12,8 +12,12 @@ specific to this app:
 3. **Transcript-first.** Every session is saved as a tappable cpcd transcript. Cards are added
    from the transcript by the learner (a UI action), never by the assistant.
 
-**Status: DESIGN / DRAFT (2026-11-18). Nothing is built.** No tables, routes, flags or client
-code exist yet. The two tables in § 11 are approved; open questions are in § 13.
+**Status: BUILT end to end (2026-11-21), behind `FEATURE_FLAGS.voiceAssistant` — OFF.** Migration
+202, the `/api/voice/*` router + WebSocket, the turn loop, the `/voice` pages and the live sheet
+all exist and were verified on dev with synthesized speech (§ 10 "How it was verified"). It has
+not been tried in a real browser with a real microphone yet. **Not deployed** — see
+[VOICE_ASSISTANT_DEPLOY_RUNBOOK.md](./VOICE_ASSISTANT_DEPLOY_RUNBOOK.md). Measured latencies are
+in § 4.5; open questions (Q22–Q25) in § 13.
 
 **Decisions so far (owner, 2026-11-18):**
 - **Spec first, build nothing yet.** The goal is to *see free talk working*, then tune it.
@@ -46,13 +50,31 @@ code exist yet. The two tables in § 11 are approved; open questions are in § 1
 - **One tutor persona, two voices** (2026-11-18, Q14): the learner picks Google `cmn-CN-Chirp3-HD-Achird`
   (male) or `cmn-CN-Chirp3-HD-Achernar` (female). More voices later: DEFERRED_WORK.md item 56.
 
+**Code (built 2026-11-21) — server:**
+- `server/contracts/voice.ts` (wire protocol + REST shapes, shared with the client)
+- `server/routes/voiceRoutes.ts` → REST routes + `attachVoiceSocket`; `server/controllers/VoiceSessionController.ts`
+- `server/services/voice/VoiceSessionService.ts` (stateless: cap, profile, segmentation, persistence, transcripts)
+- `server/services/voice/LiveVoiceSession.ts` (the per-socket turn state machine, § 4.1)
+- `server/services/voice/endpointer.ts`, `sentenceChunker.ts`, `voicePrompt.ts`, `voiceTools.ts`, `voiceConfig.ts`, `VoiceTTS.ts`
+- `server/services/voice/stt/SpeechToTextProvider.ts` + `GoogleChirpStt.ts`
+- `server/dal/interfaces/IVoiceSessionDAL.ts` + `server/dal/implementations/VoiceSessionDAL.ts`; `database/migrations/202-create-voice-sessions.sql`
+- `server/services/anthropicClient.ts` → `getVoiceAiClient`; `server/middleware/allowedOrigins.ts` (shared with CORS)
+- Tests: `server/__tests__/voicePipeline.test.ts`. Bench scripts: `server/scripts/voice-bench/stt-stream-spike.ts`, `live-session-smoke.ts`
+
+**Code — client:** `src/api/voice.ts`, `src/api/voiceSocket.ts`, `src/api/http.ts` → `apiPostBlob`;
+`src/features/voice/` → `VoicePage`, `VoiceReviewPage`, `VoiceSessionSheet`, `VoiceOrb`,
+`VoiceTranscriptLine`, `VoiceEndCard`, `useVoiceSession`, `useTranscriptEip`, `useTutorVoice`,
+`micCapture`, `voicePlayback`, `voiceStyles`, `voicePaths`; `src/routes/routeMeta.ts` + `registry.ts`
+(`/voice`, `/voice/:sessionId`); `src/components/menuPopover/menuDestinations.ts` (the Voice Tutor row).
+
 **Depends on / references (existing code):**
 - `server/services/anthropicClient.ts` → `getAnthropicClient` (the shared client; § 6.4 proposes a separate key)
 - Google Cloud Speech-to-Text (streaming, § 5.1) and Text-to-Speech Chirp3-HD voices (§ 5.3), both on the same service account as `server/services/TTSService.ts` (`GOOGLE_APPLICATION_CREDENTIALS`). The Speech-to-Text API is enabled on that project (2026-11-18)
 - `server/scripts/voice-bench/tts-bench.ts` (the voice check: heteronyms, mixed lines, TTFB per model; § 5.3)
 - `src/services/tts/CloudTTSProvider.ts`, `src/hooks/useTTSSettings.ts` (playback sinks; [AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md)). The tutor's voice is its own setting, not the card narration voice (Q21)
-- `server/routes/vocabEntryRoutes.ts` → `/api/vocabEntries/addToLibrary` (the existing deip add path the transcript reuses; § 9)
-- `server/routes/dictionaryRoutes.ts` → `/api/dictionary/segment` (gsa; § 4.3)
+- The eip (`src/features/flashcards/FlashcardsLearnPage/EipSheet.tsx` + `useEipTabs`) and `src/hooks/useLearningToggle.ts` — the existing deip add path the transcript reuses (§ 9)
+- `server/dal/implementations/DictionaryDAL.ts` → `segmentTexts` (gsa over mixed zh/en text → `LongDefinitionPart[]`; § 4.3), rendered by `src/components/LongDefinitionDisplay.tsx`
+- `server/services/StarterPacksService.ts` → `estimateLevel` (profile level + speaking rate)
 - `server/contracts/featureFlags.ts` → `FEATURE_FLAGS` (§ 10)
 - `dictionary_ai_usage` daily cap pattern (`server/dal/implementations/DictionaryDAL.ts`), which § 11 deliberately does **not** copy
 
@@ -85,13 +107,13 @@ general-assistant persona. This is a **tutor**, and its scope is limited to lang
  ┌──────────── CLIENT (src/features/voice/) ────────────┐        ┌──────────────── SERVER ────────────────────┐
  │ mic → AudioWorklet (16 kHz PCM) → WS frames ─────────┼──────► │ voiceRoutes (WS upgrade, auth)             │
  │                                                      │        │   └ VoiceSessionController                 │
- │ local VAD (barge-in only) ─── "interrupt" msg ───────┼──────► │       └ VoiceSessionService (orchestrator) │
+ │ local VAD (barge-in only) ─── "interrupt" msg ───────┼──────► │       └ LiveVoiceSession (orchestrator)    │
  │                                                      │        │           ├ SpeechToTextProvider (stream)  │
  │ audio queue ◄── mp3/opus chunks + transcript events ◄┼─────── │           ├ Claude (stream + tools)        │
  │ orb state machine, transcript (cpcd)                 │        │           ├ VoiceTTS (sentence-chunked)    │
- └──────────────────────────────────────────────────────┘        │           └ VoiceToolExecutor (note_recast)│
+ └──────────────────────────────────────────────────────┘        │           └ voiceTools (note_recast)       │
                                                                  │                                            │
-                                                                 │       └ VoiceSessionDAL (transcripts, cap) │
+                                                                 │  VoiceSessionService → VoiceSessionDAL     │
                                                                  └────────────────────────────────────────────┘
 ```
 
@@ -111,40 +133,66 @@ gets its own section.
 
 | Component | Layer | Notes |
 |---|---|---|
-| `server/routes/voiceRoutes.ts` | Route | WebSocket upgrade on `/api/voice/session`. JWT checked during the upgrade handshake. **This is the app's first WebSocket** (decided, Q3) |
-| `server/controllers/VoiceSessionController.ts` | Controller | Parses frames, owns the socket lifecycle, and calls nothing but the service |
-| `server/services/voice/VoiceSessionService.ts` | Service | The per-session turn state machine (§ 4.1). Writes no SQL |
-| `server/services/voice/stt/SpeechToTextProvider.ts` (+ one impl) | Service adapter | Streaming STT behind an interface; the one impl is Google Speech-to-Text streaming recognition over gRPC (`@google-cloud/speech`, a new server dependency) (Q5) |
-| `server/services/voice/VoiceTTS.ts` | Service adapter | Sentence-chunked Google Chirp3-HD synthesis in the learner's chosen tutor voice. Reuses `TTSService`'s Google credentials but not its cache (§ 5.3) |
-| `server/services/voice/voiceTools.ts` | Service | The `note_recast` tool schema + `VoiceToolExecutor` (§ 7) |
-| `server/services/voice/voicePrompt.ts` | Service | Builds the system prompt + learner profile block (§ 6) |
-| `server/dal/implementations/VoiceSessionDAL.ts` | DAL | Transcripts, daily usage cap |
-| `src/features/voice/` | Client feature | `VoiceSessionSheet`, `useVoiceSession` (socket + state machine), `micCapture.ts` (AudioWorklet), `voicePlayback.ts` |
-| `src/api/voiceSocket.ts` | Client API | The one WS opener. It must take its auth from `authHeader()`-style storage and **not take a `token` parameter** (FRONTEND_LAYERING rule) |
+| `server/routes/voiceRoutes.ts` | Route | REST: `GET /api/voice/sessions`, `GET /api/voice/sessions/:id`, `POST /api/voice/speak`, `GET /api/voice/usage`. `attachVoiceSocket(server)` handles the HTTP upgrade on `/api/voice/session` (only that path; any other upgrade is refused). **This is the app's first WebSocket** (decided, Q3) |
+| `server/controllers/VoiceSessionController.ts` | Controller | Socket lifecycle + auth handshake (§ 3), REST handlers. Calls only the service |
+| `server/services/voice/VoiceSessionService.ts` | Service | Stateless half: availability, daily cap (§ 6.5), learner profile (§ 6.3), segmentation + card matching (§ 4.3), persistence, end card (§ 9.2), transcripts + replay (§ 9.3). Writes no SQL |
+| `server/services/voice/LiveVoiceSession.ts` | Service (orchestrator) | One per socket: the turn state machine (§ 4.1), Claude stream + tool loop, sentence → TTS pipeline, barge-in, timers. Persists through the service |
+| `server/services/voice/endpointer.ts` | Service (pure) | Energy VAD + endpointing with the filler / repeat holds (§ 4.2) |
+| `server/services/voice/sentenceChunker.ts` | Service (pure) | Deltas → speakable sentences; markdown stripper (§ 4.4) |
+| `server/services/voice/stt/SpeechToTextProvider.ts` (+ `GoogleChirpStt.ts`) | Service adapter | One stream per utterance behind an interface; the one impl is Google Speech-to-Text v2 streaming over gRPC (`@google-cloud/speech`) (Q5, § 5.1) |
+| `server/services/voice/VoiceTTS.ts` | Service adapter | Sentence-by-sentence Chirp3-HD in the learner's chosen voice; reuses `TTSService`'s Google credentials, not its cache (§ 5.3) |
+| `server/services/voice/voiceTools.ts` | Service | The `note_recast` tool schema + `parseRecastInput` validator (§ 7) |
+| `server/services/voice/voicePrompt.ts` | Service (pure) | System prompt, profile block, per-turn annotation, speaking rate (§ 6) |
+| `server/services/voice/voiceConfig.ts` | Service config | Every tuning knob, with the section it comes from |
+| `server/dal/implementations/VoiceSessionDAL.ts` | DAL | The two voice tables + the narrow card reads (profile, phrase hints, matching, words added) |
+| `src/features/voice/` | Client feature | Pages, the live sheet, the socket/state hook, mic capture (AudioWorklet), playback queue — file list at the top of this doc |
+| `src/api/voiceSocket.ts` | Client API | The one WS opener. Reads the token at call time from `authStorage`; **takes no `token` parameter** (FRONTEND_LAYERING rule) |
+| `src/api/voice.ts` | Client API | The REST calls, through `src/api/http.ts` |
 
 ---
 
 ## 3. The wire protocol (one WebSocket per session)
 
 Binary frames carry audio. Text frames carry JSON control events. Event names are camelCase.
+The contract is `server/contracts/voice.ts` (both halves import it).
+
+**Auth.** The socket opens unauthenticated; the first text frame must be `start` within 10 s.
+A browser WebSocket cannot set an Authorization header and a token in the URL would land in
+proxy logs, so `start` carries the live access token (read from `authStorage` at call time).
+The httpOnly access cookie on the upgrade is accepted as a fallback **only from an allowed
+Origin** (`server/middleware/allowedOrigins.ts`, the same list as CORS) — CORS does not cover a
+WebSocket handshake. The socket never re-authenticates, so a token refresh mid-session changes
+nothing. Close codes: `4401` unauthorized, `4001` daily cap, `1000` normal end.
 
 | Direction | Event | Payload |
 |---|---|---|
-| C→S | `start` | `{ language: 'zh' }` |
-| C→S | *(binary)* | 16 kHz mono PCM16, 20 ms frames |
+| C→S | `start` | `{ token, language: 'zh', voice: 'male' \| 'female', tz }` |
+| C→S | *(binary)* | 16 kHz mono PCM16, 20 ms frames (640 bytes) |
 | C→S | `interrupt` | barge-in detected locally; stop speaking |
-| C→S | `end` | user closed the sheet |
+| C→S | `setVoice` | `{ voice }` — the tutor-voice toggle; applies from the next sentence |
+| C→S | `playbackEnded` | `{ turnId }` — the client finished playing that reply; the server listens again (a server timer covers a client that never reports) |
+| C→S | `cardAdded` | `{ word }` — the learner added a transcript word; becomes a mid-conversation system message (§ 6.3) |
+| C→S | `end` | user tapped End |
+| S→C | `ready` | `{ sessionId, secondsRemaining }` |
 | S→C | `state` | `{ state: 'listening' \| 'thinking' \| 'speaking' }`, which drives the orb |
-| S→C | `userPartial` / `userFinal` | `{ text, segments? }`: live caption of the learner. `segments` = gsa output on the final transcript |
-| S→C | `assistantText` | `{ turnId, sentenceIndex, text, segments }`, sent just before that sentence's audio |
-| S→C | *(binary)* | audio chunk, prefixed with `turnId` + `sentenceIndex` so stale audio can be dropped after a barge-in |
-| S→C | `error` / `capReached` | terminal or soft errors |
+| S→C | `userPartial` / `userFinal` | partial: `{ text }`; final: `{ turnIndex, text, parts, lowConfidenceWords, matches }` (`parts` = gsa `LongDefinitionPart[]`) |
+| S→C | `assistantText` | `{ turnId, turnIndex, sentenceIndex, text, parts, matches }`, sent just before that sentence's audio |
+| S→C | `recast` | `{ turnIndex, recast }` — the reply's `note_recast` |
+| S→C | `turnEnd` | `{ turnId, interrupted }` |
+| S→C | *(binary)* | `[turnId u32 BE][sentenceIndex u32 BE][MP3]` — stale audio after a barge-in is dropped by `turnId` |
+| S→C | `ended` | `{ summary }` — the end-of-session card (§ 9.2) |
+| S→C | `error` | `{ code: 'capReached' \| 'unauthorized' \| 'unavailable' \| 'badRequest' \| 'internal', message, fatal }` |
+
+**REST** (`server/routes/voiceRoutes.ts`): `GET /api/voice/sessions` (list, newest first, only
+sessions with turns), `GET /api/voice/sessions/:id` (segmented transcript + current-card matches;
+404 for another learner's session), `POST /api/voice/speak { text ≤ 300, voice }` → `audio/mpeg`,
+`GET /api/voice/usage?tz=` → `{ available, reason, secondsUsed, secondsLimit }`.
 
 ---
 
 ## 4. The turn loop
 
-### 4.1 State machine (`VoiceSessionService`)
+### 4.1 State machine (`LiveVoiceSession`)
 
 ```
 LISTENING ──(endpoint)──► THINKING ──(first TTS chunk ready)──► SPEAKING ──(queue drained)──► LISTENING
@@ -155,6 +203,15 @@ LISTENING ──(endpoint)──► THINKING ──(first TTS chunk ready)──
 One `AbortController` per assistant turn. An `interrupt` aborts the Claude stream, clears the
 TTS queue, and bumps `turnId` so the client drops any audio already in flight.
 
+**Built as** `LiveVoiceSession`. While THINKING/SPEAKING the mic is treated as possible echo of
+the tutor: frames go only into a short ring buffer (`PRE_ROLL_MS` + 200 ms). The **client's**
+local VAD decides a real barge-in (`useVoiceSession` → `onMicLevel`: ~200 ms of loudness above
+`max(0.035, 4 × noise floor)`, ignoring the first 150 ms of each sentence) and sends `interrupt`;
+the server then replays the ring into a fresh utterance so the learner's first words survive.
+An interrupted reply is saved with what was actually SPOKEN and `interrupted = true`, and
+appended to the Claude history as that plain text. SPEAKING → LISTENING happens on the client's
+`playbackEnded`, or on a server timer at the estimated audio end + 1.5 s.
+
 ### 4.2 Endpointing ("are they done talking?")
 
 This is the single biggest factor in whether the assistant *feels* like Claude's voice mode.
@@ -163,8 +220,19 @@ This is the single biggest factor in whether the assistant *feels* like Claude's
   ~500 ms**. Learners pause in the middle of a sentence to search for a word, and cutting them
   off is the worst failure this feature can have. **Fixed** for everyone (decided 2026-11-18,
   Q7); tuned after hearing it work, not a user setting.
+- **Built as** a server-side energy VAD (`endpointer.ts`): a frame is voiced above
+  `max(VAD_MIN_RMS, 3 × noise floor)`; 120 ms of voice opens an utterance (with 400 ms of
+  pre-roll so the first syllable is not clipped); the silence timeout closes it, and the STT
+  stream is half-closed to force the final. **Why ours, not Google's:** the 2026-11-21 spike
+  measured chirp_3 finalizing on its own only ~1.8 s after the speaker stopped, with sparse
+  interim results (§ 5.1). Utterances with < 250 ms of voice are dropped as noise; one is capped
+  at 45 s.
 - **Hold on fillers.** If the partial transcript ends in a filler or connective (`那个…`,
-  `就是…`, `um`, `like`, `的`, `是`), extend the timeout by ~600 ms.
+  `这个…`, `就是…`, `然后…`, `是…`, `嗯/呃/额`, `um`, `like`, `and`, `so`…), extend the timeout by
+  ~600 ms. **`的`, `啊`, `那` were dropped from the list** at build time: they end complete
+  replies too (`好的`, `是啊`), so a hold on them would stretch every such turn. ⚠️ Chirp's
+  interims are sparse, so in practice a hold fires only when an interim happens to land in the
+  pause — the holds are weaker than designed.
 - **Hold on repeated words** (decided 2026-11-18). A word or syllable repeated at the end of
   the partial transcript (`我我…`, `那个那个…`, `the the`) signals a learner searching for the
   next word. Extend the timeout by the same ~600 ms.
@@ -188,7 +256,14 @@ This is the single biggest factor in whether the assistant *feels* like Claude's
   ~40 characters).
 - Each sentence is stripped of markdown, emitted as `assistantText`, and queued for TTS.
 - Sentence N+1 is synthesized while sentence N plays. This overlap is what keeps
-  time-to-first-audio low.
+  time-to-first-audio low. **Built as** each sentence's synthesis starting the moment it exists,
+  with an ordered promise chain doing the SENDING, so order is kept while synthesis overlaps.
+- **No continuation after `note_recast`** (found in the first live test, 2026-11-21): given a
+  second round after the tool result, the model re-explained the recast in English ("I added
+  two words…"). So once a reply has spoken anything, the tool result is appended to the history
+  and the turn ends; the tool result merges with the learner's next line. Only a reply that
+  called the tool before saying anything gets another round. The prompt also says to call the
+  tool once, after speaking, and say nothing after it.
 
 ### 4.5 Latency budget (target: the learner stops talking → first audio in **≤ 1.5 s**)
 
@@ -201,6 +276,20 @@ This is the single biggest factor in whether the assistant *feels* like Claude's
 
 The 900 ms endpoint dominates the budget, and it is a choice we make for learners' sake. If
 the total feels slow, adjust the endpoint first, not the model.
+
+**Measured 2026-11-21** (`server/scripts/voice-bench/live-session-smoke.ts`, synthesized learner
+speech paced in real time, dev box → Google + Anthropic):
+
+| Stage | Budget | Measured |
+|---|---|---|
+| Speech end → `userFinal` (endpoint + STT final) | ~1,050 ms | **~1,200–1,450 ms** |
+| Claude time to first token (Opus 5.5, low effort) | 300–600 ms | **~2,200–2,450 ms** |
+| First sentence's TTS (REST, Chirp3-HD) | ~250 ms | **~600 ms** |
+| **Speech end → first audio** | **≤ 1.5 s** | **~4.1–4.9 s** |
+
+Claude is the biggest share, not the endpoint. One run with `VOICE_MODEL=claude-sonnet-5-5`
+gave 0.8–2.0 s to first token and ~3.0–3.8 s speech-end → first audio — a data point, not a
+benchmark. Prompt caching works (`cacheRead` > 0 from turn 2). The model choice is open as Q22.
 
 ---
 
@@ -221,18 +310,25 @@ handle **zh-CN and en-US within one utterance**:
   `recognize`, one Chinglish line spoken by the Chirp3-HD tutor voice):** v1 returned
   "那个**歌service**"; `chirp_2` (us-central1, cmn-Hans-CN) and `chirp_3` (us, cmn-Hans-CN with or
   without en-US) all returned the line exactly. The audio was native-quality synthetic speech, so this
-  proves the setup and the code-switching, not learner-accent accuracy. Still to confirm in the
-  build: which of the two supports **streaming** with these settings.
+  proves the setup and the code-switching, not learner-accent accuracy. **Streaming confirmed
+  2026-11-21** (`server/scripts/voice-bench/stt-stream-spike.ts`): chirp_3 (`us`, both language
+  codes), chirp_3 (zh only) and chirp_2 (`us-central1`) all stream the code-switched line
+  exactly. Chosen: **chirp_3, `us`, `[cmn-Hans-CN, en-US]`** (`voiceConfig.ts`). Interim results
+  are sparse (one, near the end of a 6 s line); a half-closed stream finalizes in ~0.65 s at
+  real-time pacing; left open, chirp_3 finalizes by itself only ~1.8 s after the speech ends.
 - **Known risk.** Mixed-language accuracy is unmeasured. The adapter interface keeps the vendor
   swappable; if real transcripts are poor, the fallback is another vendor's adapter, compared on
   the same saved speech.
 - Supply **phrase hints** from the learner's Learning cards (the top ~200 by recency) through
-  Google's speech adaptation (phrase sets / boost), if the chosen model supports it. This biases
+  Google's speech adaptation (inline phrase set, boost 5). **chirp_3 accepts it** (verified
+  2026-11-21). This biases
   recognition toward the words they are trying to use, which is exactly where learner
   pronunciation is shakiest.
 - Keep the STT's per-word confidence where the model provides it. Low-confidence Chinese words are passed to Claude as
   `[?]` annotations (§ 6.3), so it can say "did you mean 商店 shāngdiàn?" instead of answering
-  a misheard sentence with confidence.
+  a misheard sentence with confidence. ⚠️ **chirp_3 rejects `enableWordConfidence`** (INVALID_ARGUMENT,
+  2026-11-21), so `GoogleChirpStt` starts with it off and this whole path — the `[?]` marks and
+  the transcript's "Not sure I heard" line — is plumbed but receives no data on this model (Q24).
 
 ### 5.2 Tones: the STT boundary throws them away
 
@@ -265,13 +361,17 @@ The assistant's replies are mostly Chinese, with English glosses for beginners.
   (`TTSService` → `buildPinyinSsml`) cannot be used; its accuracy is the model's own. If a
   misreading turns up later, the fallbacks are the tutor prompt avoiding that word, or Wavenet with
   hints built from gsa segmentation + det pinyin (correct by construction, but a flatter voice).
-- **Latency.** ~500 ms to first audio per sentence with the plain (non-streaming) REST call, inside
-  § 4.5's budget, against ~160 ms for ElevenLabs. Google also offers streaming synthesis for
+- **Latency.** ~500 ms to first audio per sentence assumed; **measured ~600 ms** (2026-11-21) for a
+  short sentence with the plain REST call, ~1 s for a longer one. Google also offers streaming synthesis for
   Chirp3-HD (gRPC); whether it is worth using is a build-time measurement.
 - **Mixed zh/en in one request.** Chirp3-HD read the mixed test line correctly in one voice, so the
   old plan to split sentences into Han/Latin runs with two voices stays dropped.
-- **Speaking rate** follows level: ~0.8× at HSK 1–2, rising to 1.0× at HSK 5+, via
-  `audioConfig.speakingRate` if Chirp3-HD honours it (to confirm at build time).
+- **Speaking rate** follows level: 0.8× at levels 1–2, 0.88× at 3, 0.94× at 4, 1.0× at 5+
+  (`voicePrompt.speakingRateForLevel`), via `audioConfig.speakingRate`. **Chirp3-HD honours it**
+  (2026-11-21: the 0.8× clip came out longer).
+- **Duration accounting.** Chirp3-HD's MP3 is CBR 32 kbps (MPEG-2 Layer III, 24 kHz, read from the
+  frame header), so `VoiceTTS.mp3DurationSeconds` computes each clip's length from its size; that
+  is what `voice_sessions.assistantSeconds` and the cap count.
 - **No caching.** Conversational sentences almost never repeat. The card `TTSService` cache is not
   used, and the tutor (Chirp3-HD) and the cards (Wavenet-A with pinyin hints) sound different. That
   is accepted.
@@ -308,6 +408,12 @@ The assistant's replies are mostly Chinese, with English glosses for beginners.
   `refusal`, speak a fixed, neutral line rather than nothing.
 - `max_tokens` around 1024. Spoken replies should be short. A reply that hits the cap is a
   prompt bug.
+- **Built with `@anthropic-ai/sdk` 0.77**, which predates the `fallbacks` / `role: "system"` /
+  top-level `cache_control` types, so `LiveVoiceSession.buildRequest` builds a plain object and
+  casts it (the SDK passes unknown body fields through). An SDK upgrade would let it be typed.
+- `VOICE_MODEL` in the env overrides the model for latency experiments on dev (`voiceConfig.ts`).
+- Each Claude round logs `ttft`, total time, input / cache-read / cache-write / output tokens and
+  `stop_reason` (`[voice] turn N round M: …`) — the § 6.4 rollout check.
 
 ### 6.2 System prompt (stable and cached; content is an initial draft, tuned after free talk works)
 
@@ -331,7 +437,8 @@ Contents, in this order (the order matters for the prefix cache):
   `[cards: 超市=learning, 菜=known; lowConfidence: 蔬菜]`.
 - **State changes in the middle of a session** (e.g. the learner added a card from the transcript)
   are injected as **mid-conversation `role: "system"` messages**, so the cached history prefix
-  is not invalidated.
+  is not invalidated. **Built for card adds:** the client sends `cardAdded`; the note is queued
+  and appended right after the learner's NEXT line (a system message must follow a user message).
 
 ### 6.4 Caching and keys
 
@@ -351,6 +458,10 @@ Contents, in this order (the order matters for the prefix cache):
 - A rough cost picture per 10-minute session (≈ 30 turns): Claude tokens are small thanks to
   caching. **STT and TTS seconds are probably the larger line items.** Measure on PPE before
   setting the cap (Q9).
+- **Built:** checked at `start` (`VoiceSessionService.openSession`, close `4001`) and after every
+  learner line and every reply (`LiveVoiceSession.capExceeded`). The number is a **placeholder,
+  30 minutes** (`DAILY_VOICE_SECONDS`) until Q9's measurement. The 04:00-local day is computed in
+  SQL from the `tz` the client sends (`VoiceSessionDAL.sumSecondsForDay`).
 
 ---
 
@@ -375,6 +486,15 @@ behaviour tuning, not part of getting free talk working.
 
 The goal is that every feature is one obvious tap away, not that it looks finished.
 
+**As built (2026-11-21):** Menu → **Voice Tutor** (`/voice`, a Tier 2 node page: Start talking,
+today's voice time, past conversations) → **Start talking** raises `VoiceSessionSheet`. The sheet
+is a full-height panel portaled to the phone frame (z 1150 — above the footer, below the eip's
+sheets so a tapped word's eip opens on top), not a `SheetPanel` (nothing about it is gestural).
+Orb hues: **purple / orange / teal** (`voiceStyles → ORB_HUE`). Transcript tinting is shown as
+**chips under the learner's line** (grey = known, orange = learning) rather than inline tint —
+the cpcd component has no per-word colour hook (Q25). Tutor-introduced words are purple chips
+under the "Better way to say it" line.
+
 - **`VoiceSessionSheet`**: a full-height sheet raised over the current page. The orb sits in
   the centre, with the transcript below it, and a bottom bar holding **End**, **Mute mic** and the tutor-voice toggle
   (male / female, Q21).
@@ -396,7 +516,9 @@ The goal is that every feature is one obvious tap away, not that it looks finish
   `user?.id`, **never `token`** (a token refresh during a 10-minute voice session would
   otherwise tear the socket down). The socket re-authenticates silently on reconnect.
 - **Permissions**: the first launch shows a one-screen explainer before the OS mic prompt. If
-  permission is denied, show a clear message with a link to settings.
+  permission is denied, show a clear message with a link to settings. **Built:** remembered in
+  `localStorage["voiceMicExplained"]`; after the first time, opening the sheet starts at once.
+  Denied → a message pointing at the browser's site settings + Try again.
 
 ---
 
@@ -418,7 +540,7 @@ Claude call.**
 | Block | Source |
 |---|---|
 | Duration, number of turns | `voice_sessions` timing |
-| Words added to cards | adds the learner made from the transcript during the session |
+| Words added to cards | **built as** the learner's sorted vet rows created between `startedAt` and the end (`VoiceSessionDAL.findWordsAddedBetween`) — so drill-in adds count too |
 | "Better ways to say it" (up to 5) | `note_recast` records: learner's line ↔ the better version |
 | Card words you used | the per-turn card matching of § 4.3 (`known` / `learning` hits) |
 | Buttons: **Review transcript** · **Done** | § 9.3 |
@@ -452,6 +574,23 @@ scrollable conversation:
 - **Before real users:** measure cost per minute and set the daily cap (Q9).
 - After it works: tune the tutor's behaviour (§ 5.4, § 6.2–6.3).
 - Register the sheet in [ACTIVE_DUTY_PAGES.md](./ACTIVE_DUTY_PAGES.md) once it has an entry point.
+  (Not yet: with the flag OFF, `/voice` is unreachable.)
+
+**Built (2026-11-21):** the flag gates `app.use(voiceRoutes)` AND `attachVoiceSocket(httpServer)`
+in `server/server.ts` (the socket is the second entry point), the two routes in
+`FLAGGED_OFF_PATHS`, and the Menu row. See [FEATURE_FLAGS.md](./FEATURE_FLAGS.md) § 2j.
+
+**How it was verified (dev, no browser):**
+- `server/__tests__/voicePipeline.test.ts` — endpointer, filler holds, sentence chunker, markdown
+  stripping, `note_recast` validation, prompt builders, MP3 duration.
+- `server/scripts/voice-bench/live-session-smoke.ts <userId>` — a real `LiveVoiceSession` fed
+  Chirp3-HD-synthesized Chinglish at real-time pace: STT → Claude → TTS → DB → end card, with
+  the latency lines of § 4.5.
+- A throwaway harness drove the real WebSocket (`attachVoiceSocket` on a spare port): a bad token
+  closes `4401`; a real session runs ready → transcript → three audio frames with correct headers
+  → `ended` → close 1000. The REST reads (list, transcript, usage, another user's session → 404)
+  were exercised through the service.
+- **Not yet:** a real microphone in a real browser (echo cancellation, barge-in, the AudioWorklet).
 
 ---
 
@@ -487,7 +626,8 @@ learner's *current* cards when a transcript opens, so it never goes stale.
 | The endpoint cuts learners off mid-thought | Long fixed timeout, filler + repeated-word holds (no push-to-talk fallback, so these must be right) |
 | Echo triggers barge-in on speakers | Browser AEC on; ignore VAD for the first ~150 ms of each assistant sentence |
 | Cost runaway (open mic) | Per-user daily minute cap; the session auto-ends after ~60 s with no speech |
-| First WebSocket in the stack: nginx, Docker and the PPE proxy need upgrade headers | `nginx.conf` needs `proxy_set_header Upgrade/Connection` for `/api/voice/`. **Needs a deploy runbook** when built |
+| First WebSocket in the stack: nginx, Docker and the PPE proxy need upgrade headers | The repo's `nginx.conf` already sets `Upgrade`/`Connection` on the whole `/api` block; Cloudflare proxies WebSockets by default. The live PPE conf is checked by [VOICE_ASSISTANT_DEPLOY_RUNBOOK.md](./VOICE_ASSISTANT_DEPLOY_RUNBOOK.md) V3 |
+| Cross-site WebSocket hijack via the auth cookie | Cookie auth is accepted only from an allowed Origin; the token normally rides in `start` |
 | The model drifts off-level | Hard known-word list in the profile; spot-check transcripts during beta |
 
 ---
@@ -515,3 +655,7 @@ learner's *current* cards when a transcript opens, so it never goes stale.
 19. ~~**The failed mixed line**~~ — **answered 2026-11-18: Chinese tone/reading errors, not the English.** Multilingual: 截止日期 → jià zhī rì qí. Flash: 截止日期 → jiè zhì rì qì, 是星期五 → shí xíng qi wù. Expected jié zhǐ rì qī, shì xīng qī wǔ. The two-voice split stays dropped.
 20. ~~**Tone errors in the tutor's voice**~~ — **answered 2026-11-18: switch to Google Chirp3-HD**, which read all 10 of the hardest test lines correctly without hints, where every ElevenLabs voice (with or without `language_code: "zh"`) made tone errors (§ 5.3).
 21. ~~**Where the tutor-voice choice is stored**~~ — **answered 2026-11-18: a separate tutor setting**, a male/female toggle in the voice sheet, saved in browser storage on its own key, independent of the card narration voice (`useTTSSettings`).
+22. **Model vs latency** — *open (2026-11-21).* Measured speech-end → first audio is ~4.1–4.9 s on Opus 5.5 at low effort, with Claude's ~2.2–2.4 s time to first token the largest share (§ 4.5). One Sonnet 5.5 run gave ~3.0–3.8 s. Keep Opus (Q8's default), try Sonnet 5.5, or first see how it feels with a real mic?
+23. **Menu row hue** — *open.* The Voice Tutor row uses `pur`, which the Reader row also wears. Keep, or give voice its own hue in the UX pass?
+24. **Low-confidence words** — *open.* chirp_3 does not report word confidence, so the `[?]` annotations and the "Not sure I heard" line never fire. Leave the plumbing for a future model, or remove it?
+25. **Known/learning tint** — *open.* Built as chips under the learner's line, because the cpcd has no per-word colour hook. Inline tint would mean adding one to `SegmentedSentenceDisplay` (shared with the est and long definitions). Chips are fine, or invest in inline?

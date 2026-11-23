@@ -77,7 +77,7 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
   /**
    * The writing fan-out's read (docs/WRITING_PRACTICE_REWORK.md § 3a): ensure every
    * character in `chars` has a single-character zh vet row for this user — creating a
-   * HIDDEN one (`starterPackBucket = 'provisional'`, the lent-card path) where the
+   * HIDDEN one (`starterPackBucket = 'tracked'`, migration 203 — never lent) where the
    * learner has none and the character has a det row — then return them all LOCKED
    * (`FOR UPDATE`), in `entryKey` order so two concurrent fan-outs sharing characters
    * always lock in the same order and cannot deadlock. A character with no det row
@@ -184,8 +184,8 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
     userId: string, entryKey: string, language: string, client?: PoolClient
   ): Promise<number | null>;
   /**
-   * Reverse a sort: DEMOTE the row to 'provisional' when it carries any marks (progress
-   * earned while it was a lent card survives), otherwise DELETE it. Atomic (one
+   * Reverse a sort: DEMOTE the row to 'tracked' when it carries any marks (progress
+   * earned while it was hidden survives; it is never lent back), otherwise DELETE it. Atomic (one
    * statement). Null when the user has no row for the word. Used by
    * StarterPacksService.undoSort. See docs/PROVISIONAL_CARDS.md.
    */
@@ -193,13 +193,13 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
     userId: string, entryKey: string, language: string
   ): Promise<{ id: number; demoted: boolean } | null>;
   /**
-   * Move a 'library' row back to 'provisional' — the non-destructive "remove from Learn
-   * Now". The row, its marks and its deck memberships are all kept; only the bucket
+   * Move a 'library' row to 'tracked' (hidden, never lent — migration 203) — the
+   * non-destructive "remove from Learning". The row, its marks and its deck memberships are all kept; only the bucket
    * changes, so every list read (vetSortedClause) stops seeing it and re-adding
    * promotes it in place with its progress intact. Returns true when a row was demoted,
    * false when there was no 'library' row to demote. See docs/PROVISIONAL_CARDS.md.
    */
-  demoteLibraryRowToProvisional(userId: string, entryKey: string, language: string): Promise<boolean>;
+  demoteLibraryRowToTracked(userId: string, entryKey: string, language: string): Promise<boolean>;
   countByUserIdAndLanguage(userId: string, language: string): Promise<number>;
 
   // Search and filtering
@@ -252,12 +252,14 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
     language: string,
     limit?: number
   ): Promise<Map<string, UsedInItem[]>>;
-  /** Writing-flp used-in bubbles per single character: pass 1 ungated + pass 2 at frequencyScore 4–5. */
-  findWritingUsedInForCharacters(
+  /**
+   * Writing-flp source words per single character: every sorted word of the learner's
+   * containing it (any length, not the character itself), most frequent first, no limit.
+   */
+  findWritingSourceWordsForCharacters(
     userId: string,
     chars: string[],
-    language: string,
-    limit?: number
+    language: string
   ): Promise<Map<string, UsedInItem[]>>;
 
   // Batch operations with progress tracking

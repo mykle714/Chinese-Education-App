@@ -163,6 +163,7 @@ export class OnDeckVocabService {
    *
    *   switch on, unrestricted          → lend
    *   switch off, or focused (FOCUS_MODE.md § 4) → never lend
+   *   the writing world (WRITING_PRACTICE_REWORK.md § 3d) → never lend
    *
    * Until 2026-11-04 this also took the loop's category list and refused when
    * Unfamiliar was not among them (a lent card bands Unfamiliar): that guarded the
@@ -170,7 +171,11 @@ export class OnDeckVocabService {
    * Every flp session now draws from all four bands, so only the scope matters. The
    * restricted cases also used to include `?collection=` and `?deck=` launches.
    */
-  private canLendProvisional(lend: boolean, collection?: CollectionFilter | null): boolean {
+  private canLendProvisional(lend: boolean, collection: CollectionFilter | null | undefined, world: MasteryWorldId): boolean {
+    // The WRITING deck is the characters of the learner's own words (dal/shared/writingDeck.ts,
+    // since 2026-11-22). A lent card is a dictionary word, never a deck character, so the
+    // writing flp never lends: running dry ends on "Done for the day!".
+    if (world === 'writing') return false;
     return lend && !collection;
   }
 
@@ -518,13 +523,13 @@ export class OnDeckVocabService {
   /**
    * For every single-character zh entry, attach up to 4 multi-char words containing the
    * character (user's vet first, then det fallback) as `usedIn`. On the WRITING bar also
-   * attach `writingUsedIn` — up to 2: saved words (ungated) then frequency-4–5 dictionary
-   * words — for the writing card's hint bubbles (docs/WRITING_PRACTICE_REWORK.md § 3).
-   * Multi-char and non-zh entries pass through: they use the precomputed `breakdown` map
-   * for the bt tab.
+   * attach `writingSourceWords` — every sorted word of the learner's containing the
+   * character, most frequent first — the words the writing card names as where the
+   * character comes from (docs/WRITING_PRACTICE_REWORK.md § 3b). Multi-char and non-zh
+   * entries pass through: they use the precomputed `breakdown` map for the bt tab.
    *
    * One query per list for the whole batch (`findUsedInForCharacters` /
-   * `findWritingUsedInForCharacters`), so a deal holds at most two pool clients here
+   * `findWritingSourceWordsForCharacters`), so a deal holds at most two pool clients here
    * rather than up to two per card (docs/DEFERRED_WORK.md, scaling table item 2).
    * Best-effort: a failed read ships the cards without the list.
    */
@@ -534,12 +539,12 @@ export class OnDeckVocabService {
     if (chars.length === 0) return entries;
 
     let usedInByChar: Map<string, UsedInItem[]>;
-    let writingByChar: Map<string, UsedInItem[]> | undefined;
+    let sourceWordsByChar: Map<string, UsedInItem[]> | undefined;
     try {
-      [usedInByChar, writingByChar] = await Promise.all([
+      [usedInByChar, sourceWordsByChar] = await Promise.all([
         this.vocabEntryDAL.findUsedInForCharacters(userId, chars, 'zh', 4),
         world === 'writing'
-          ? this.vocabEntryDAL.findWritingUsedInForCharacters(userId, chars, 'zh', 2)
+          ? this.vocabEntryDAL.findWritingSourceWordsForCharacters(userId, chars, 'zh')
           : Promise.resolve(undefined),
       ]);
     } catch (error) {
@@ -549,8 +554,8 @@ export class OnDeckVocabService {
     return entries.map(entry => {
       if (!isSingleZhChar(entry)) return entry;
       const usedIn = usedInByChar.get(entry.entryKey) ?? [];
-      const writingUsedIn = writingByChar?.get(entry.entryKey);
-      return writingUsedIn ? { ...entry, usedIn, writingUsedIn } : { ...entry, usedIn };
+      const writingSourceWords = sourceWordsByChar?.get(entry.entryKey);
+      return writingSourceWords ? { ...entry, usedIn, writingSourceWords } : { ...entry, usedIn };
     });
   }
 
@@ -822,10 +827,13 @@ export class OnDeckVocabService {
     //    on and its scope allows a lent card at all; otherwise there is no refill and
     //    the client's loop winds down. (A cooling card is never re-served — see the
     //    docblock.)
-    if (!winner && this.canLendProvisional(lend, collection)) {
+    if (!winner && this.canLendProvisional(lend, collection, world)) {
       winner = await serveLent();
     }
 
+    if (!winner) return null;
+    // Writing: a virtual deck character becomes a real hidden row before it is served.
+    if (world === 'writing') [winner] = await this.materializeWritingCards(userId, language, [winner]);
     if (!winner) return null;
 
     // Enrich only the chosen card (candidates were fetched un-enriched).
@@ -937,6 +945,25 @@ export class OnDeckVocabService {
         return take(ranked, limit, picked);
       },
     };
+  }
+
+  /**
+   * The writing deck's VIRTUAL cards among `cards` (negative ids — a character of the
+   * learner's words with no vet row yet, dal/shared/writingDeck.ts) replaced by real
+   * hidden character rows, created now, re-read so each carries its real id and the same
+   * fields as a candidate. Order kept; a list with no virtual card is returned as is.
+   *
+   * Called on exactly the cards a writing deal or refill SELECTS, never on the pool, so
+   * reads (the tower's counts) never write and only studied characters get rows.
+   * Docs: docs/WRITING_PRACTICE_REWORK.md § 3d.
+   */
+  private async materializeWritingCards(userId: string, language: string, cards: VocabEntry[]): Promise<VocabEntry[]> {
+    if (!cards.some((card) => card.id < 0)) return cards;
+    const ids = await this.onDeckVocabDAL.materializeWritingIds(userId, cards.map((card) => card.id));
+    const rows = await this.onDeckVocabDAL.findRowsByIds(userId, language, ids);
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    // A row that vanished between the insert and the read (a concurrent delete) is dropped.
+    return ids.map((id) => byId.get(id)).filter((row): row is VocabEntry => row !== undefined);
   }
 
   /**
@@ -1090,7 +1117,7 @@ export class OnDeckVocabService {
     }
 
     // 2. LEND — the learner is out of ready cards and has agreed to new words.
-    if (workingLoop.length < WORKING_LOOP_SIZE && this.canLendProvisional(lend, collection)) {
+    if (workingLoop.length < WORKING_LOOP_SIZE && this.canLendProvisional(lend, collection, world)) {
       const lent = await this.lendIntoLoop(
         userId, language, WORKING_LOOP_SIZE - workingLoop.length,
         workingLoop.map(c => c.id), now, collection, world
@@ -1098,13 +1125,19 @@ export class OnDeckVocabService {
       workingLoop.push(...lent);
     }
 
+    // Writing: a dealt character with no vet row yet (a VIRTUAL deck row) gets its hidden
+    // row now, so its mark has somewhere to land.
+    const dealt = world === 'writing'
+      ? await this.materializeWritingCards(userId, language, workingLoop)
+      : workingLoop;
+
     // Randomize play order. The ranking above chose WHICH cards are in the loop;
     // the order they're played in is deliberately not the ranking, so a session
     // doesn't march predictably from most- to least-recently-rested.
-    shuffleInPlace(workingLoop);
+    shuffleInPlace(dealt);
 
     // Run the three-stage enrichment pipeline, then add related words + single-char usedIn
-    const enriched = await this.enrichEntriesPipeline(workingLoop, language);
+    const enriched = await this.enrichEntriesPipeline(dealt, language);
     const withRelated = await this.enrichMultipleWithRelatedWords(userId, enriched);
     const withUsedIn = await this.enrichMultipleWithUsedIn(userId, withRelated, world);
 

@@ -105,7 +105,7 @@ interface SheetPanelProps {
     // element so SheetPanel can wire its resize/scroll coupling.
     bodyRef: React.RefObject<SheetPanelBodyHandle | null>;
     // Identity for whatever component is currently mounted inside `children`
-    // (e.g. "info" vs "compare"). SheetPanel is a single persistent instance
+    // (e.g. the eip's per-sub-tab "info-0" / "info-1"). SheetPanel is a single persistent instance
     // that can host different body components across its lifetime without
     // remounting itself, so a plain empty-deps effect can't tell the root/scroll
     // DOM nodes behind bodyRef changed. Bump this whenever the mounted body
@@ -757,7 +757,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // Escape = the ✕ (desktop). Only the most recently opened dismissible panel reacts
     // (see `escapeStack`), and a persistent panel never registers — it has no closed
     // state. Deliberately fires even while focus is in a text field inside the sheet
-    // (the Compare tab's search box): one press closes, as in most web modals.
+    // (the Compare panel's search box): one press closes, as in most web modals.
     // Skipped when:
     //   - the key is auto-repeating — holding Escape would otherwise strip the eip's
     //     whole word trail in a blink;
@@ -895,7 +895,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     }), []);
 
     // The telescope's content changes height (a gloss wrapping to two lines on the next
-    // word, the Compare tab swapping in): re-measure and re-place the frame at the CURRENT
+    // word, an xl word filling a Compare slot): re-measure and re-place the frame at the CURRENT
     // sheet height, so the bottom of the panel never drifts off the frame's bottom edge.
     useEffect(() => {
         const tel = telescopeRef?.current;
@@ -943,8 +943,8 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     );
 
     // Couple content scroll to sheet resize, for both wheel (desktop) and touch.
-    // Depends on bodyKey so that swapping the mounted body (e.g. info ↔ compare
-    // tab) re-binds these listeners to the new root/scroll nodes instead of
+    // Depends on bodyKey so that swapping the mounted body (e.g. the eip's sub-tab
+    // panes) re-binds these listeners to the new root/scroll nodes instead of
     // staying attached to the unmounted previous body.
     useEffect(() => {
         const root = bodyRef.current?.root ?? null;
@@ -1172,7 +1172,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // machinery above is all relative to `bottom: 0`), the body's SCROLL element gets
     // extra bottom padding equal to the inset — the scroll range grows by exactly the
     // covered band, so every row can be brought above the keyboard. The sheet itself
-    // never moves. Motivating case: the compare slot-B search (CompareWorkspace), whose
+    // never moves. Motivating case: the Compare panel's dictionary search (CompareShelfBody), whose
     // results run under the keyboard (also the old decks-sheet search, now deleted).
     //
     // Imperative, on the element behind bodyRef, so it applies to every body without
@@ -1206,7 +1206,7 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
     // `data-sheet-maximize-on-focus` animates the sheet to its max on focus, the same
     // snap a drag to the top would end in. The marker lives on the FIELD's side
     // (DictionaryWordSearch carries it), not as a SheetPanel prop, so every sheet that
-    // hosts a dictionary search — CompareSheet, the eip's Compare tab, the notebook's
+    // hosts a dictionary search — the Compare panel (CompareSheet), the notebook's
     // word picker — gets it without opting in, and a sheet's other inputs do not.
     //
     // A focusin, not the keyboard inset: it fires on the tap itself, so the sheet grows
@@ -1254,8 +1254,8 @@ const SheetPanel = forwardRef<SheetPanelHandle, SheetPanelProps>(({
 
     // The panel's permanent controls, in the order they read from the left: the flame
     // (study surfaces only) then the ✕, so the ✕ is the corner control on every panel.
-    // Only the ROOT panel carries the flame — a stacked child (the compare sheet raised
-    // from the eip) covers its parent completely, so a second flame would be one
+    // Only the ROOT panel carries the flame — a stacked child (e.g. an eip raised from
+    // acp's skipped-cards sheet) covers its parent completely, so a second flame would be one
     // indicator behind another, and a third `useMinutePoints` tick.
     const closeCluster = (
         <>

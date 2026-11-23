@@ -25,7 +25,7 @@ import { hueTones, plateButtonSx } from "./gameBreak/interimCardPlate";
  *   done — "Done for the day!": nothing more to deal (a focused world, which never lends,
  *          or a dictionary with nothing left to lend). Title only, celebrated with a
  *          confetti burst as it lands (ConfettiBurst). It stays put; the learner leaves
- *          with Back or a tap off the card.
+ *          with the back arrow.
  */
 export type ReadyOutKind = "pending" | "lend" | "done";
 
@@ -61,8 +61,8 @@ function prefersReducedMotion(): boolean {
  * while it is up). A swipe either way flies it off from where the finger let go; a tap
  * anywhere on it — "Got it!" included — throws it off (cardThrow.ts). `onGone` fires
  * when the flight ends.
- * `done` and `pending`: static. Taps on them do nothing, so the flp's tap-off-the-card
- * Back still works around them (FlashcardsLearnPage → `handleTowerOffCardTap`).
+ * `done` and `pending`: static. Taps on them do nothing; the learner leaves with the
+ * header's back arrow.
  *
  * `backing`: the same card drawn UNDER the stack instead of over it, behind the loop's
  * last card, so the learner sees what comes after it (FlashcardsLearnPage →

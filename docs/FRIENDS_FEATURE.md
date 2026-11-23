@@ -71,8 +71,12 @@ used to open was deleted 2026-11-13. The `actions` slot is unchanged.
 
 Tapping a friend's leaderboard row opens `src/features/friends/FriendExpandedDetail.tsx`
 inside that row (`FriendPersonRow`'s `detail` slot; `expanded` drives `aria-expanded`).
-**One row at a time** (`FriendsBody` → `expandedId` / `toggleFriendRow`); tapping the open
-row closes it; the viewer's own row stays inert. This replaced the `/users/:userId` profile
+**One row at a time** (`FriendsBody` → `expandedId` / `toggleFriendRow`); tapping
+**anywhere** in the open row — the person half, the rank section, the padding, or the
+expanded panel itself — closes it (`FriendPersonRow` → `rowCollapses` / `rowClick`, user
+2026-11-22). Opening still takes a tap on the person half. A real button inside `actions`
+stops the close from bubbling; the leaderboard's presentational `VelocityStat` does not.
+The viewer's own row stays inert. This replaced the `/users/:userId` profile
 page.
 
 **It animates open and closed**: `FriendPersonRow` wraps `detail` in an MUI `Collapse`
@@ -82,15 +86,14 @@ page.
 uses `columnGap` only) so a closed row is exactly as tall as an inert one. Opening one row
 while another is open animates both at once.
 
-It shows:
-1. The old page header's lines: email, and "Studying 🇨🇳 CN · friends since …" (avatar and
-   name are already on the row).
-2. **One** `LibraryShelfPanel` for the friend's **active language** (the language the
+It shows **one** `LibraryShelfPanel` for the friend's **active language** (the language the
    row is ranked in), unboxed (2026-11-14): the flag-over-name title, banked-minutes
    `FireCount` pinned in the panel's top-right corner, the four utcm spines, and the
    Velocity card directly under them. Every number is in the friend's language.
 
-Not shown, by decision: the Reading / Writing goal badges, any relationship control
+Not shown, by decision: the old page header's lines — the @handle (moved up into the
+row's always-visible subtitle, 2026-11-22) and "Studying 🇨🇳 CN · friends since …"
+(dropped 2026-11-22; the panel's flag title already names the language) — the Reading / Writing goal badges, any relationship control
 (unfriend is behind the Remove tile), the Study Challenge block toggle (dropped — see
 [DEFERRED_WORK.md](./DEFERRED_WORK.md)) and the community designs grid.
 
@@ -128,8 +131,7 @@ Shared pieces:
 * `friendStyles.ts` — shared `sx` fragments, and `friendsView.ts` — the view enum, its
   carousel order and the bodies' props type. Both live outside the components because
   this repo lints `react-refresh/only-export-components`.
-* `friendLabels.ts` — the leaderboard's `netMinutesLabel` /
-  `velocityUnitLabel`, and `friendErrorMessage`.
+* `friendLabels.ts` — `friendErrorMessage`.
 
 ### Friend codes (migration 187)
 
@@ -221,7 +223,7 @@ heading: it starts directly under the friend code card (`src/features/friends/Fr
 
 ```
 [2] (avatar)  Bob                            12
-              20h 40m · 🇪🇸 ES            velocity
+              @bob                        velocity
 ```
 
 * **Ranked metric — velocity**: the number and its "velocity" label are one
@@ -229,26 +231,19 @@ heading: it starts directly under the friend code card (`src/features/friends/Fr
   swings from 1 to 3 digits, which a shared edge makes look ragged. The row states
   no window; `windowDays` still ships on the response for any client that wants to
   label it, but this page no longer reads it.
-* **Subtitle — the balance as a DURATION** ("3w 2d 4h 10m"): a minute point is a
-  minute of study, and a duration sizes up at a glance where "32,650 minutes" does
-  not — which is the whole job of a column being compared down a list. Formatted by
-  the shared `src/utils/formatDuration.ts` (`weeks: true`). The figure is
-  `user_languages.totalMinutePoints`, the penalty-debited NET wallet
-  ([STREAK_EXPIRATION_CRON.md](./STREAK_EXPIRATION_CRON.md)), **not** the monotonic
-  `lifetimeMinutesEarned` — the two diverge for any learner who has ever been
-  penalised.
+* **Subtitle — the @handle** (`users.username`, 2026-11-22), so a collapsed row says
+  who someone is without opening it. It replaced the net-minutes balance + flag/region
+  badge ("20h 40m · 🇪🇸 ES"), which now lives only in the expanded detail (the panel's
+  `FireCount` and flag-over-name title). Consequence: the viewer's own row, which never
+  expands, no longer shows its balance here. `netMinutes` still ships on
+  `FriendLeaderboardEntry` but the board no longer reads it.
 * **Each person is scored in THEIR OWN selected language**, not the viewer's, and
   both numbers on a row share that language. Scoring everyone in the viewer's
   language would render a Spanish-only friend as a permanent 0 on a Chinese
-  viewer's board — "does nothing" rather than "studies something else". The row
-  therefore carries a **flag + region-code badge** ("🇪🇸 ES") rather than the
-  language's name — the row is a compact scoreboard line and the code identifies the
-  track in a third of the width. Both halves come from one source: `LANGUAGE_FLAGS`
-  holds the flag and `languageRegionCode()` DECODES it (a flag emoji is two Regional
-  Indicator Symbols, which map one-to-one onto A–Z), so the letters can never
-  disagree with the flag. It also degrades well: **Windows renders no flag glyph**
-  and shows the letters instead, so the badge reads "ES ES" at worst, never as
-  nothing.
+  viewer's board — "does nothing" rather than "studies something else". The
+  language is shown in the expanded detail's flag-over-name title (the name is
+  always printed because **Windows renders no flag glyph**); the collapsed row no
+  longer names it (2026-11-22).
 * Velocity counts only the bars **that person** pursues (`activeWorlds` on their own
   `readingGoal`/`writingGoal`), matching what their own Account page shows.
 * **The viewer is in the board**, marked `isCurrentUser`: the name is suffixed "(you)",

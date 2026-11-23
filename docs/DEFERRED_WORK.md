@@ -372,15 +372,15 @@ fallback.
 *Added 2026-10-10 (the feature is built and on PPE; it runs on the Deck Tower). Docs:
 [DAILY_MINUTE_BANKING.md](./DAILY_MINUTE_BANKING.md) § 3 and Q7.*
 
-**What.** The once-per-day td banking animation (flame swells, drains, embers fly into the
+**What.** The once-per-day td banking animation (flame drains, embers burst out and home into the
 avatar) plays for every learner, including those whose OS asks for reduced motion. The
-proposed fallback was to skip the swell and the ember flight and show only the end state
+proposed fallback was to skip the drain and the ember flight and show only the end state
 with a brief static avatar glow. Precedent for honoring the setting: `IWSceneIntroCard`.
 
 **Why deferred.** The owner chose to ignore the setting for the first build.
 
-**Cost to leave.** A learner sensitive to motion gets a large animation (up to ~5 s, 1.8×
-scale) once a day per language, on the Deck Tower (the footer's Flashcards tab).
+**Cost to leave.** A learner sensitive to motion gets a large animation (up to ~4.5 s, a spray of
+embers across the header) once a day per language, on the Deck Tower (the footer's Flashcards tab).
 
 **Trigger.** Any accessibility pass, or any feedback about motion from a learner.
 
@@ -512,8 +512,8 @@ study time**, not with open tabs.
 |---|---|---|---|
 | 0 | **No measurement yet.** PPE has `pg_stat_statements` (`docker-compose.ppe.yml`, `track=all`); dev's `docker-compose.yml` does not, so query cost cannot be profiled locally | Checked | Read the top queries by `total_exec_time` plus table row counts on PPE; add `pg_stat_statements` to the dev compose too |
 | 1 | **The replacement-card refill inside every mark.** `FlashcardMarkService.applyMark` → `OnDeckVocabService.getNextLibraryCardWithFallback` can call `fetchFlpCandidates` up to ~8 times. Each call is a whole-deck `DICT_JOIN` read filtered on `barCategoryExpr` (JSONB, unindexable), returning heavy JSONB columns, then the enrichment pipeline. About 15–30 SQL statements per correct swipe. (The working-loop deal had the same shape — five or more such reads per deal, ~0.7 s on a 400-card dev deck — and since 2026-11-08 reads its candidates once: `loadFlpDealPool`, ~0.25 s) | Inferred (call count from code shape); the deal measured | Read only the needed band; select narrow columns for ranking and fetch the winner's full row afterwards; a stored generated column + index for `compute_core_category` (it is IMMUTABLE) |
-| 2 | **Pre-warm stamps fan out per cold word.** The deal's enrichment no longer fans out: since 2026-11-09 related words, used-in and writing used-in are one query each per deal (`VocabEntryDAL.findRelatedBySharedCharactersForWords` / `findUsedInForCharacters` / `findWritingUsedInForCharacters`), and no caller holds an outer client (`OnDeckVocabDAL`). What remains: `CardAudioService.prewarm` takes one pool client per **freshly synthesized** card for its `ttsVoice` stamp, in parallel (a cache hit takes none). Only a deal full of never-heard words reaches ~10 at once; the pool is `max: 20` with a 2s connect timeout (`server/db-config.ts`) | Checked (`CardAudioService`) | Collect the misses and stamp them in one `UPDATE … FROM unnest(…)`, or drop the stamp — nothing reads `ttsVoice` |
-| 3 | ~~**Full scan per single-character card.**~~ **Closed 2026-11-09.** The used-in lists' pass 2 (`usedInSql` / `writingUsedInSql` in `VocabEntryDAL.ts`) now filters through `charsContainClause`, which the GIN expression index `idx_dictionaryentries_zh_word1_chars` (`string_to_array(word1, NULL)`, migration 186) serves | Measured on dev: 人 26 → 4 ms; a six-character batch ~150 → 6 ms; identical rows to the old `position` filter over the 200 commonest characters. `pg_trgm` was rejected: a trigram index cannot narrow a one-character pattern (35 ms, slower than the scan) | — |
+| 2 | **Pre-warm stamps fan out per cold word.** The deal's enrichment no longer fans out: since 2026-11-09 related words, used-in and the writing card's source words are one query each per deal (`VocabEntryDAL.findRelatedBySharedCharactersForWords` / `findUsedInForCharacters` / `findWritingSourceWordsForCharacters`), and no caller holds an outer client (`OnDeckVocabDAL`). What remains: `CardAudioService.prewarm` takes one pool client per **freshly synthesized** card for its `ttsVoice` stamp, in parallel (a cache hit takes none). Only a deal full of never-heard words reaches ~10 at once; the pool is `max: 20` with a 2s connect timeout (`server/db-config.ts`) | Checked (`CardAudioService`) | Collect the misses and stamp them in one `UPDATE … FROM unnest(…)`, or drop the stamp — nothing reads `ttsVoice` |
+| 3 | ~~**Full scan per single-character card.**~~ **Closed 2026-11-09.** The used-in lists' pass 2 (`usedInSql` in `VocabEntryDAL.ts`; its writing twin `writingUsedInSql` was removed 2026-11-22) now filters through `charsContainClause`, which the GIN expression index `idx_dictionaryentries_zh_word1_chars` (`string_to_array(word1, NULL)`, migration 186) serves | Measured on dev: 人 26 → 4 ms; a six-character batch ~150 → 6 ms; identical rows to the old `position` filter over the 200 commonest characters. `pg_trgm` was rejected: a trigram index cannot narrow a one-character pattern (35 ms, slower than the scan) | — |
 | 4 | **TTS pre-warm blocks the request on a cold word.** The pre-warm (`CardAudioService.prewarm`) awaits synthesis before the flp deal, game boards and acp refills respond. The cache now persists across deploys (the `cow_tts_cache` volume, `TTS_CACHE_DIR`), a hit is a single `fs.access` with no DB write (`TTSService.ensureCached`), and Google calls time out at 8 s (`GOOGLE_TTS_TIMEOUT_MS`). A word nobody has heard yet still costs one synchronous upstream call in the request | Checked | Longer term, a shared object store (see item 13); or pre-warm in the background and let the client's own request synthesize |
 | 5 | **API JSON is not compressed.** `nginx.conf` `gzip_types` leaves out `application/json` and `image/svg+xml`, and the server has no `compression` middleware. The worst case is `GET /api/onDeck/collectionCards`: a whole deck with no paging, enriched (substring extraction + `findMultipleByWord1` + greedy segmentation per example sentence) and sorted on the client | Checked (gzip); payload size inferred | Add both types to `gzip_types`; then consider paging or trimming fields for `collectionCards`. (`libraryCards` has the same shape but no caller, see item 35) |
 | 6 | **Dictionary search scans with a regex per row, twice.** `DictionaryDAL` search applies `STRIPPED_ALL_GLOSSES` (`regexp_replace(definitions::text, …) ~* …`) to every row, then repeats the WHERE in a separate `COUNT(*)`. In-code timings: 80–260 ms per term on dev. GET requests are not rate-limited | Inferred | Full-text or trigram index on a stored stripped-gloss column; drop or approximate the separate count; cache hot terms |
@@ -826,6 +826,16 @@ Doc: [DICTIONARY_AI_FALLBACK_SEARCH.md](./DICTIONARY_AI_FALLBACK_SEARCH.md).
 | **Cost of leaving it** | The dependency direction is broken in a shared folder, so the layering rule cannot be checked mechanically, and an flp-only change to the eip can break Adventures without touching it |
 | **Trigger** | The next change to the eip kit's file layout, or any lint rule that enforces the dependency direction |
 | **References** | [CYOA_FEATURE.md](./CYOA_FEATURE.md) § 4.2; [FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md); `src/reading/` |
+
+### 62. Remove the starter-packs manual-level (`mode: "manual"`) branch
+
+| | |
+|---|---|
+| **What** | `StarterPacksService.getNextPacks`'s `manual` parameter (pin to one level, no drift) and the `mode` query/body field `StarterPacksController` reads for `GET /api/starterPacks/:language` and `POST /api/starterPacks/nextPack`. No client sends it since acp's level pill was removed (2026-11-21) |
+| **Why deferred** | Server-side safe cleanup; it was kept out of the client-only change that removed the pill |
+| **Cost of leaving it** | A dead, still-tested code path that suggests the app has a manual level picker |
+| **Trigger** | The next change to `StarterPacksService`'s level walk |
+| **References** | [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) § 6.6; `server/services/StarterPacksService.ts` → `getNextPacks`; `src/features/discover/starterPacksApi.ts` |
 
 ## Recently closed
 

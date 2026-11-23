@@ -97,7 +97,7 @@ export const INFO_SPECIMENS: readonly InfoSpecimen[] = [
                     <Label>rank 12</Label>
                     <Label>1,284</Label>
                     <Label>4 senses</Label>
-                    <Label>commonality</Label>
+                    <Label>usefulness</Label>
                     <Label>×12 wins</Label>
                     <Label>00:42</Label>
                 </Box>

@@ -3,6 +3,7 @@ import { Box, Button, Typography } from "@mui/material";
 import NodePage from "../../components/NodePage";
 import { FooterSpacer } from "../../components/MobileFooter";
 import Icon from "../../components/Icon";
+import { CommonalityMeter } from "../../components/ScoreMeters";
 import { useAuth } from "../../AuthContext";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useSlideNavigate } from "../../hooks/useSlideNavigate";
@@ -24,13 +25,15 @@ import { storyEditPath, storyPlayPath } from "./adventuresPaths";
  * keeps the footer (Menu tab lit), slides in from the right — the `/reader` list's
  * archetype. Tier 2 time-of-day look (§ 3.7).
  *
- * The list is the server's order (StoryDAL.listForViewer: easiest first, then newest), as
+ * The list is the server's order (StoryDAL.listForViewer: most common first, then newest), as
  * a 2-column grid of flat 4:5 cards in the Reader grid's skin
  * (src/features/reader/ReaderDocumentGrid.tsx — mirrored, not imported, per
  * docs/FRONTEND_LAYERING.md). Each card shows:
  *   • the story's icon in a pastel tile (green ramp; `auto_stories` without an icon);
  *   • the title (two lines, then an ellipsis);
- *   • a meta line: "HSK n" and "Endings found / total";
+ *   • a meta line: the story's commonality as the 5-circle `CommonalityMeter` (the same
+ *     meter the eip draws for a word; § 6.2a — it replaced "HSK n" on 2026-11-21) and
+ *     "Endings found / total";
  *   • a corner chip: "Draft" (an author's unpublished story) or "In progress"
  *     (a saved resume point).
  * Tapping a card opens `/adventures/:id`, which resumes or starts the story — except an
@@ -166,10 +169,8 @@ function AdventureCard({ story, look, onOpen }: AdventureCardProps) {
     const isDraft = story.publishedAt === null;
     // A draft wins the corner: an author's own unpublished story is the more useful fact.
     const cornerLabel = isDraft ? "Draft" : story.inProgress ? "In progress" : null;
-    const meta = [
-        story.difficulty !== null ? `HSK ${story.difficulty}` : null,
-        story.endingsTotal > 0 ? `Endings ${story.endingsFound}/${story.endingsTotal}` : null,
-    ].filter(Boolean).join(" · ");
+    const endings = story.endingsTotal > 0 ? `Endings ${story.endingsFound}/${story.endingsTotal}` : null;
+    const hasCommonality = story.commonality !== null;
 
     return (
         <Box
@@ -253,10 +254,14 @@ function AdventureCard({ story, look, onOpen }: AdventureCardProps) {
             >
                 {story.title}
             </Typography>
-            {meta && (
+            {(hasCommonality || endings) && (
                 <Typography
+                    component="div"
                     className="adventures-card__meta"
                     sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "5px",
                         fontFamily: FONTS.sans,
                         fontSize: SIZE.caption,
                         color: look.muted,
@@ -264,11 +269,25 @@ function AdventureCard({ story, look, onOpen }: AdventureCardProps) {
                         marginTop: "-4px",
                         whiteSpace: "nowrap",
                         overflow: "hidden",
-                        textOverflow: "ellipsis",
                         maxWidth: "100%",
                     }}
                 >
-                    {meta}
+                    {/* Filled and empty circles both in the meta line's muted ink, as the
+                        eip draws them in its ink2 (DefinitionFacts). */}
+                    {story.commonality !== null && (
+                        <CommonalityMeter
+                            className="adventures-card__commonality-meter"
+                            score={story.commonality}
+                            filledColor={look.muted}
+                            emptyColor={look.muted}
+                        />
+                    )}
+                    {hasCommonality && endings && <span className="adventures-card__meta-separator">·</span>}
+                    {endings && (
+                        <Box component="span" className="adventures-card__endings" sx={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {endings}
+                        </Box>
+                    )}
                 </Typography>
             )}
         </Box>

@@ -7,11 +7,12 @@ import { useNotificationFor } from "../../../components/notifications/useNotify"
 import WordToolsRail from "../../../components/WordToolsRail";
 import { useLearningToggle, type LearningToggleState } from "../../../hooks/useLearningToggle";
 import type { Language, VocabEntry } from "../../../types";
+import { useCompareSheet } from "../compare/useCompareSheet";
 
 /**
  * The eip as a self-contained bottom sheet, for a host that has NO card faces of its own
  * to mirror (so `isFlipped` is always false) and needs nothing beyond the standard panel:
- * drill-in tabs, sense picks, Compare, minute points.
+ * drill-in tabs, sense picks, minute points — and the Compare panel its rail raises.
  *
  * The host owns `useEipTabs` (it seeds the root tab with `eip.openForRoot(entry)` BEFORE
  * flipping `open` true) and the open flag; this renders the panel only while `open`, so the
@@ -45,10 +46,10 @@ interface EipSheetProps {
     // treatment — InfoCardTabContent `showSynonymsRelated`). Dictionary page + saved-card cdp.
     showSynonymsRelated?: boolean;
     // Put the word-tools rail (`Write it` · `Compare`, WordToolsRail) at the very bottom
-    // of the definition tab, under the synonyms. Compare opens the eip's OWN Compare tab
-    // (useEipTabs.openCompareTab) rather than a separate sheet, so the comparison joins
-    // the word trail like any drill-in. Dictionary page only: a reference lookup has no
-    // card to hang the rail above.
+    // of the definition tab, under the synonyms. Compare CLOSES this eip and raises the
+    // Compare panel (compare/CompareSheet, owned here so it outlives the eip) — Compare
+    // never stacks over the eip (owner's call 2026-11-21). Dictionary page and Reader: a
+    // reference lookup has no card to hang the rail above.
     showWordTools?: boolean;
     // Put the Learning key (raised "Add" ⇄ "Added!", EipAddKey) in the sheet's trail row
     // at the right end of the trail row, tracking whichever entry tab is showing. Dictionary page + saved-card cdp. A
@@ -76,8 +77,14 @@ const EipSheet: React.FC<EipSheetProps> = ({
 }) => {
     const { settings: learnSettings } = useFlashcardLearnSettings();
     const active = eip.activeTab;
-    const entryTab = active?.kind === "entry" ? active : null;
-    const compareTab = active?.kind === "compare" ? active : null;
+    const entryTab = active;
+    // The Compare panel the rail raises. Owned HERE rather than by InfoCardSection because
+    // it must outlive the eip: Compare closes the eip, then opens at the eip's own depth.
+    const { openCompare, compareSheet } = useCompareSheet({ depth });
+    const handleCompare = (entry: VocabEntry) => {
+        onClose();
+        openCompare(entry);
+    };
     // Membership of the SHOWING word — re-fetched as the trail moves between words.
     // Fed `null` unless the host asked for it, which leaves the hook inert (no fetch).
     const learningShown = !!showLearning && !(learningSkipsRoot && eip.activeIndex === 0);
@@ -118,9 +125,6 @@ const EipSheet: React.FC<EipSheetProps> = ({
                     // the dd/reading resolvers fall back to the default — the same sense 0
                     // this used to pass explicitly.
                     selectedSenseIndex={entryTab?.entry.selectedSense ? entryTab.selectedSenseIndex : undefined}
-                    compareTab={compareTab}
-                    onSetCompareSlot={eip.setCompareSlot}
-                    onCompareResult={eip.setCompareResult}
                     entryTabId={active?.id}
                     entryTabIndex={eip.activeIndex}
                     tabStrip={
@@ -149,7 +153,7 @@ const EipSheet: React.FC<EipSheetProps> = ({
                         <WordToolsRail
                             className="eip-sheet__word-tools"
                             entry={entryTab.entry}
-                            onCompare={eip.openCompareTab}
+                            onCompare={handleCompare}
                             // The rail's default spacing is for sitting above a card; the
                             // tab's footer slot spaces it here.
                             sx={{ margin: "0 auto" }}
@@ -157,6 +161,7 @@ const EipSheet: React.FC<EipSheetProps> = ({
                     ) : undefined}
                 />
             )}
+            {compareSheet}
         </>
     );
 };

@@ -1,0 +1,207 @@
+绿色	noun,adjective	green
+缺点	noun	shortcoming
+网	noun	net
+网上	noun	online
+网球	noun	tennis
+羊	noun	sheep
+美元	noun	US dollar
+美女	noun	beautiful woman
+美好	adjective	beautiful
+美食	noun	culinary delicacy
+老人	noun	old man or woman
+老公	noun	(coll.) eunuch
+老大	noun,adverb	old age
+老实	adjective	honest
+老家	noun	native place
+老年	noun,adjective	old age
+老年人	noun	the elderly
+老是	adverb	always
+耳机	noun	headphones
+聊天	verb	to chat
+联系	verb,noun	to get in touch with
+背包	noun	knapsack
+胡子	noun	beard
+能力	noun	ability
+脏	adjective,verb	dirty
+脱衣服	verb	undress
+脸	noun	face
+自	preposition,adverb	oneself
+自动	adjective,adverb	automatic
+自然	noun,adjective,adverb	nature
+船	noun	boat
+节	noun,verb,classifier	seasonal festival
+节日	noun	festival
+节目	noun	TV program
+芒果	noun	(loanword) mango
+花时间	verb	to spend time
+花生	noun	peanut
+苦	adjective,verb,noun	bitter
+英	noun	British
+草地	noun	lawn
+草莓	noun	strawberry
+菜单	noun	menu
+菜市场	noun	food market
+蓝天	noun	blue sky
+蓝色	noun,adjective	blue (color)
+蔬菜	noun	vegetables
+虫子	noun	bug
+虽然	conjunction	although
+虾	noun	shrimp
+蛋糕	noun	cake
+血	noun	blood
+行为	noun	behavior
+行李	noun	luggage
+街上	noun	on the street
+街道	noun	street
+表现	verb,noun	performance
+衬衫	noun	shirt
+袜子	noun	socks
+西南	noun	southwest
+西方	noun	the West
+西班牙	noun	Spain
+西班牙人	noun	Spaniard
+西班牙语	noun	Spanish language
+西瓜	noun	watermelon
+西红柿	noun	tomato
+西边	noun	west side
+西面	noun	west side
+要是	conjunction	(coll.) if
+要有	verb	to need
+要求	verb,noun	to request
+角	noun,classifier	corner
+计算	verb,noun	to calculate
+计算机	noun	computer
+认真	adjective,verb	serious
+记不住	verb	can't remember
+记者	noun	reporter
+试	verb	to try
+试试看	verb	to give it a try
+语	noun,verb	language
+语文	noun	Chinese (subject)
+语言	noun	language
+说出	verb	to speak out
+说好	verb	to agree
+说明	verb,noun	to explain
+豆	noun	bean
+豆子	noun	bean
+豆腐	noun	tofu
+贴	verb,noun,classifier	to stick
+走出	verb	to walk out of
+走去	verb	to walk over (to)
+走开	verb	to walk away
+走过	verb	to walk past
+走进	verb	to enter
+起名	verb	to name
+起点	noun	starting point
+超市	noun	supermarket
+超级市场	noun	supermarket
+超过	verb	to exceed
+足球场	noun	soccer field
+足球赛	noun	soccer match
+足球队	noun	soccer team
+路上	adverb,noun	on the way
+身	noun,classifier	body
+身上	noun	on the body
+身子	noun	body
+身边	noun	at one's side
+身高	noun	(a person's) height
+转	verb,classifier	to turn
+轮	noun,classifier,verb	wheel
+轻	adjective,verb	light
+输	verb	to lose
+边儿	noun	side
+达	verb,adjective	to reach
+达到	verb	to reach
+过一会儿	adverb	after a while
+过年	verb	to spend New Year
+过生日	verb	to have a birthday
+过程	noun	process
+过马路	verb	to cross the street
+运	verb,noun	to transport
+运动场	noun	sports field
+运气	noun	luck (good or bad)
+进入	verb	to enter
+进步	verb,noun,adjective	to improve
+连	verb,adverb,preposition,noun	to connect
+选	verb	to choose
+通电话	verb	to phone somebody up
+通知	verb,noun	to notify
+通过	verb,preposition	to pass through
+逛街	verb	to window-shop
+道	noun,classifier	road
+道理	noun	reason
+邻居	noun	neighbor
+部	classifier,noun	part
+部分	noun	part
+酒	noun	alcoholic beverage
+酸	adjective,noun,verb	sour
+重	adjective,verb,classifier	heavy
+重新	adverb	again
+量体重	verb	to weigh oneself
+钥匙	noun	key
+钱包	noun	wallet
+铁	noun,adjective	iron (metal)
+铁路	noun	railway
+银	noun	silver
+银行	noun	bank
+锻炼	verb	to work out
+长发	noun	long hair
+长城	noun	the Great Wall
+长得	verb	to look (pretty, the same etc)
+长方形	noun	rectangle
+长江	noun	Yangtze River
+门前	noun	in front of the door
+门外	noun	outside the door
+门票	noun	admission ticket
+问好	verb	to say hello to
+问路	verb	to ask the way
+闻	verb	to smell
+闻到	verb	to smell
+队	noun,classifier	team
+阳台	noun	balcony
+阴	adjective,noun	overcast (weather)
+阴天	noun	cloudy day
+附近	noun	nearby
+院子	noun	courtyard
+除了	preposition	apart from
+难	adjective,noun	difficult
+难受	adjective,verb	to feel unwell
+难吃	adjective	unpalatable
+难看	adjective	ugly
+难过	adjective	to feel sad
+雨天	noun	rainy day
+雨衣	noun	raincoat
+雪人	noun	snowman
+青年	noun	youth
+青菜	noun	green vegetables
+面前	noun	in front of
+音	noun	sound
+音乐会	noun	concert
+音乐家	noun	musician
+飞机场	noun	airport
+飞机票	noun	air ticket
+食品	noun	food
+食堂	noun	cafeteria
+饭菜	noun	food
+饺子	noun	dumpling
+首先	adverb	first (of all)
+香	adjective,noun	fragrant
+香水	noun	perfume
+香港	noun	Hong Kong
+香蕉	noun	banana
+马上	adverb	immediately
+马路	noun	road
+高中	noun,verb	senior high school
+高中生	noun	high school student
+高声	adverb	loudly
+高速	adjective,noun	high speed
+高速公路	noun	expressway
+高铁	noun	high speed rail
+高高兴兴	adjective,adverb	in a good mood
+鬼	noun,adjective	ghost
+鸟儿	noun	bird
+鸡肉	noun	chicken meat
+黑人	noun	black person
+黑板	noun	blackboard
+黑色	noun,adjective	black
+龙	noun	Chinese dragon

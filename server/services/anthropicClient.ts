@@ -43,3 +43,39 @@ export function getDictAiClient(): Anthropic | null {
   dictAiClient = new Anthropic({ apiKey });
   return dictAiClient;
 }
+
+/**
+ * The VOICE TUTOR's client, keyed on its own `VOICE_AI_API_KEY` (docs/VOICE_ASSISTANT.md § 6.4)
+ * so voice spend shows up separately on the bill and can be cut off on its own. Missing key ⇒
+ * the voice tutor reports itself unavailable (VoiceSessionService.unavailableReason) instead
+ * of crashing startup.
+ *
+ * Caller: server/services/voice/VoiceSessionService.ts (→ LiveVoiceSession's Claude stream).
+ */
+let voiceAiClient: Anthropic | null = null;
+
+export function getVoiceAiClient(): Anthropic | null {
+  if (voiceAiClient) return voiceAiClient;
+  const apiKey = process.env.VOICE_AI_API_KEY;
+  if (!apiKey) return null;
+  voiceAiClient = new Anthropic({ apiKey });
+  return voiceAiClient;
+}
+
+/**
+ * The SENTENCE TILES judge's client, keyed on its own `SENTENCE_TILES_AI_API_KEY`
+ * (docs/SENTENCE_TILES_GAME.md § "Abuse protection") so judge spend is billed apart and can be
+ * cut off on its own by revoking one key. Missing key ⇒ plays that need a fresh verdict are
+ * refused with "judging is unavailable"; cached lines still play.
+ *
+ * Caller: server/services/sentenceTiles/sentenceJudge.ts → judgeLine.
+ */
+let sentenceTilesAiClient: Anthropic | null = null;
+
+export function getSentenceTilesAiClient(): Anthropic | null {
+  if (sentenceTilesAiClient) return sentenceTilesAiClient;
+  const apiKey = process.env.SENTENCE_TILES_AI_API_KEY;
+  if (!apiKey) return null;
+  sentenceTilesAiClient = new Anthropic({ apiKey });
+  return sentenceTilesAiClient;
+}

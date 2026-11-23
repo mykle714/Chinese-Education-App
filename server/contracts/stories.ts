@@ -6,12 +6,13 @@
  * no hand-kept mirror to drift):
  *   • the wire types of every `/api/stories` response and request body;
  *   • input caps the server enforces and the editor should respect;
- *   • `computeStoryDifficulty` — the 90%-coverage HSK level rule (§ 6.2a);
+ *   • `computeStoryCommonality` — the 90%-coverage commonality rule (§ 6.2a);
  *   • `storyPublishWarnings` — the publish checks (§ 6.3), so the editor can show the
  *     same list live that Publish returns.
  *
  * Tables: migration 196 (stories, story_passages, story_choices, story_progress,
- * story_endings_found, users."isAuthor"); migration 197 (story_passages.name).
+ * story_endings_found, users."isAuthor"); migration 197 (story_passages.name);
+ * migration 200 (stories."commonality", which replaced stories.difficulty).
  *
  * Referenced by: server/dal/interfaces/IStoryDAL.ts, server/dal/implementations/StoryDAL.ts,
  * server/services/StoryService.ts, server/controllers/StoryController.ts,
@@ -35,8 +36,8 @@ export const STORY_PASSAGE_NAME_MAX_LENGTH = 200;
 export const STORY_ENDING_TITLE_MAX_LENGTH = 200;
 /** Most passages in one story — a bound on volume, not a product limit. */
 export const STORY_MAX_PASSAGES = 500;
-/** Share of a story's distinct leveled words its level must cover (§ 6.2a). */
-export const STORY_DIFFICULTY_COVERAGE = 0.9;
+/** Share of a story's distinct scored words its commonality must cover (§ 6.2a). */
+export const STORY_COMMONALITY_COVERAGE = 0.9;
 
 // ── Learner wire types ────────────────────────────────────────────────────────
 
@@ -45,8 +46,11 @@ export interface StoryListItem {
   id: string;
   title: string;
   iconId: string | null;
-  /** HSK 1–6, computed on publish. Null for a never-published draft. */
-  difficulty: number | null;
+  /**
+   * Commonality 1–5 (5 = everyday, det `frequencyScore`'s scale), computed on publish.
+   * Null for a never-published draft, or a story none of whose words is scored.
+   */
+  commonality: number | null;
   authorName: string | null;
   /** Null = a draft (only ever returned to its own author). */
   publishedAt: string | null;
@@ -175,7 +179,7 @@ export interface StoryEditResponse {
     language: string;
     startPassageId: string | null;
     publishedAt: string | null;
-    difficulty: number | null;
+    commonality: number | null;
     updatedAt: string;
   };
   /** In the author-set order (`story_passages.position`, migration 199; new passages last). */
@@ -224,38 +228,41 @@ export interface StoryPassageSaveBody {
 /** `POST /api/stories/:id/publish` */
 export interface StoryPublishResponse {
   publishedAt: string;
-  difficulty: number | null;
+  commonality: number | null;
   warnings: StoryPublishWarning[];
 }
 
 // ── Pure rules ────────────────────────────────────────────────────────────────
 
 /**
- * A story's HSK level (§ 6.2a): the LOWEST level L such that at least 90% of the
- * story's distinct leveled words have a level ≤ L. Words with no level (names,
- * English, punctuation runs, words without a det `difficulty`) are left out, so a
- * story whose words are all unleveled gets null.
+ * A story's commonality (§ 6.2a): the HIGHEST commonality C (1–5, det `frequencyScore`'s
+ * scale, 5 = everyday) such that at least 90% of the story's distinct scored words have a
+ * score ≥ C — "90% of its words are at least this common". The mirror of the rule it
+ * replaced (2026-11-21: the lowest HSK level covering 90% of words), walked from the
+ * common end instead of the easy end. Words with no score (names, English, punctuation
+ * runs, words without a det `frequencyScore`) are left out, so a story none of whose words
+ * is scored gets null.
  *
- * `levels` holds one entry per DISTINCT word — the caller dedupes, so a word repeated
+ * `scores` holds one entry per DISTINCT word — the caller dedupes, so a word repeated
  * twenty times counts once.
  */
-export function computeStoryDifficulty(
-  levels: Array<number | null | undefined>,
-  coverage: number = STORY_DIFFICULTY_COVERAGE
+export function computeStoryCommonality(
+  scores: Array<number | null | undefined>,
+  coverage: number = STORY_COMMONALITY_COVERAGE
 ): number | null {
-  const leveled = levels.filter(
-    (level): level is number => typeof level === 'number' && level >= 1 && level <= 6
+  const scored = scores.filter(
+    (score): score is number => typeof score === 'number' && score >= 1 && score <= 5
   );
-  if (leveled.length === 0) return null;
-  const needed = Math.ceil(leveled.length * coverage);
-  const counts = [0, 0, 0, 0, 0, 0];
-  for (const level of leveled) counts[Math.round(level) - 1]++;
+  if (scored.length === 0) return null;
+  const needed = Math.ceil(scored.length * coverage);
+  const counts = [0, 0, 0, 0, 0];
+  for (const score of scored) counts[Math.round(score) - 1]++;
   let covered = 0;
-  for (let level = 1; level <= 6; level++) {
-    covered += counts[level - 1];
-    if (covered >= needed) return level;
+  for (let score = 5; score >= 1; score--) {
+    covered += counts[score - 1];
+    if (covered >= needed) return score;
   }
-  return 6;
+  return 1;
 }
 
 /** The minimum a graph needs for the publish checks. */

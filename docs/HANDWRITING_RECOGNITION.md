@@ -352,7 +352,7 @@ dependency (consistent with the offline-fallback stance of the recognition layer
 | Integration (fallback) | HanziLookupJS adapter (client fallback) | *not yet built* |
 
 Hard-clear call sites (`clearWritingDraft()`): `FlashcardsLearnPage.tsx` (on
-`currentIndex` change = mark-a-card, + unmount), `VocabCardDetailPage.tsx` (unmount).
+`frontCardId` change = mark-a-card, + unmount), `VocabCardDetailPage.tsx` (unmount).
 
 ## Verification notes (reference)
 

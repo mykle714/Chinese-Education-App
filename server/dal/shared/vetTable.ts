@@ -6,7 +6,6 @@ import {
   masteredCollectionWorld,
   type MasteryWorldId,
 } from '../../contracts/wire.js';
-import { WRITING_MAX_CHARS } from '../../contracts/writingLevels.js';
 
 // Resolve the per-language `vocabentries` table (vet) name from a language code.
 // User vocab is split per language family (mirroring the det split, see CLAUDE.md):
@@ -45,16 +44,24 @@ export const VET_PHYSICAL_TABLES = ['vocabentries_zh', 'vocabentries_es'] as con
 // Bucket visibility (migration 140, docs/PROVISIONAL_CARDS.md)
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// A vet row is in one of two meaningful buckets, and EVERY vet read has to pick
+// A vet row is in one of three meaningful buckets, and EVERY vet read has to pick
 // which of them it means. Getting this wrong is silent: a sorted-only read that
 // forgets the filter starts leaking auto-granted cards into the user's deck, and a
 // playable read that uses the strict filter refuses to hand a game the very cards
 // that were just provisioned for it.
 //
 //   'library'     — the user deliberately sorted this card into Learning. Theirs.
-//   'provisional' — the server auto-granted it so a game/flp could reach its
-//                   baseline. A real row that accepts marks, but not the user's
-//                   card until they sort it.
+//   'provisional' — the server LENT it so a game/flp could reach its baseline. A
+//                   real row that accepts marks, but not the user's card until they
+//                   sort it. The lend path re-lends these (findHeldProvisional).
+//   'tracked'     — a hidden row that only holds progress (migration 203): character
+//                   rows (writing marks, Writing Grid, the writing deck) and cards the
+//                   learner removed from Learning or un-sorted. Hidden like a lent
+//                   row, but NEVER lent — lending targets new users and must not hand
+//                   back a bare character or a word the learner rejected.
+//
+// Writers: only ProvisionalCardDAL.insertProvisional writes 'provisional'. Every
+// other "give me a hidden row" path writes VET_TRACKED_BUCKET.
 //
 // Rule of thumb: if the query answers "what is in MY deck?" (search, library lists,
 // counts shown as deck size, the community feed, reading-highlight ownership,
@@ -74,7 +81,7 @@ export function vetSortedClause(alias = 've'): string {
 }
 
 /**
- * The user's sorted deck PLUS any provisional cards outstanding.
+ * The user's sorted deck PLUS every hidden row (lent 'provisional' and 'tracked').
  *
  * ⚠️ NOT A CARD-SELECTION CLAUSE (2026-08-20). It used to be the one every game and
  * flp pool used, on the theory that a lent card is fine for one round. It is not: a
@@ -87,14 +94,28 @@ export function vetSortedClause(alias = 've'): string {
  * What remains is supply that is not card selection: Speed Reading's distractor
  * CHARACTERS, which decorate a round rather than being studied in it, and which a
  * near-empty deck must still be able to produce. See docs/PROVISIONAL_CARDS.md § 4b.
+ * 'tracked' is included because character rows were 'provisional' before migration
+ * 203 and are exactly the distractor supply this exists for.
  */
 export function vetPlayableClause(alias = 've'): string {
-  return `${alias}."starterPackBucket" IN ('library', 'provisional')`;
+  return `${alias}."starterPackBucket" IN ('library', 'provisional', 'tracked')`;
 }
 
-/** Matches only the auto-granted temporary cards. */
+/** Matches only the LENT cards (not tracked rows). The lend path's own predicate. */
 export function vetProvisionalClause(alias = 've'): string {
   return `${alias}."starterPackBucket" = 'provisional'`;
+}
+
+/**
+ * The bucket a hidden progress-only row is written into (migration 203). A constant
+ * rather than a literal at each writer so "who writes tracked rows" is one grep.
+ * Docs: docs/PROVISIONAL_CARDS.md § "Tracked rows".
+ */
+export const VET_TRACKED_BUCKET = 'tracked';
+
+/** Every hidden bucket — lent or tracked — i.e. a row that sorting would promote. */
+export function vetHiddenClause(alias = 've'): string {
+  return `${alias}."starterPackBucket" IN ('provisional', 'tracked')`;
 }
 
 // In-query utcm category (migration 143, docs/MASTERY_REWORK.md). The `category`
@@ -177,13 +198,6 @@ export function writingMasteryExpr(alias = 've'): string {
   return `compute_writing_mastery(${alias}."userId", ${alias}."entryKey", ${alias}."typedMarkHistory")`;
 }
 export const WRITING_MASTERY_SELECT = `${writingMasteryExpr()} AS "writingMastery"`;
-
-/**
- * The words a WRITING flp can deal (docs/WRITING_PRACTICE_REWORK.md § 3): 1–4 Han
- * characters (`WRITING_MAX_CHARS`), the practice surface's 2×2 limit. Alias `ve`.
- */
-export const WRITING_FLP_WORD_CLAUSE =
-  `AND char_length(ve."entryKey") BETWEEN 1 AND ${WRITING_MAX_CHARS} AND ve."entryKey" ~ '^[\u3400-\u9fff]+$'`;
 
 /**
  * WHERE fragment for "this card is Mastered in the given bar" — the membership test

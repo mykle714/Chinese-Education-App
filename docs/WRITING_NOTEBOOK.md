@@ -144,9 +144,13 @@ Code: `src/features/flashcards/writingNotebook/` → `WritingNotebookPage`, `Not
 
 `NotebookWordPickerSheet` — a modal `SheetPanel` hosting `DictionaryWordSearch`
 (`src/components/DictionaryWordSearch.tsx`), which is **the same mini dictionary search the
-compare sheet uses**: it was extracted from `CompareWorkspace` when the notebook arrived, so
-there is one selector, not two. The sheet's title ("Choose a word") is its only label: the
-search's own caps heading is dropped (`heading={null}`). Results are filtered to `isNotebookWord` (all-Han, one to
+Compare panel uses**: it was extracted from Compare's old `CompareWorkspace` when the notebook
+arrived, so there is one selector, not two. Since 2026-11-21 it is the Dictionary page's search
+(the 50px field and format placeholder, labelled result slabs, infinite scroll, the no-results
+well — no Ask AI, no history; docs/WORD_COMPARE_FEATURE.md § The search). The picker passes the
+light shelf look (`eipShelfLook(EIP_LIGHT_PALETTE)`: its sheet is white in every theme) and its
+body as the infinite-scroll root (`.notebook-word-picker`). The sheet's title ("Choose a word")
+is its only label — the search has no heading of its own. Results are filtered to `isNotebookWord` (all-Han, one to
 four characters — the server's own rule). Picking a word unmounts the sheet and opens that word's
 sheet (`POST /sheets/open`, which also makes it the word the page reopens on).
 Focusing its search field grows the sheet to full height as the keyboard rises (shared

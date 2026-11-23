@@ -27,8 +27,10 @@ const OVERLAP_GAP = 8;
  * is the card slot's top padding) and the cdp (`VocabCardDetailPage`, where it is the content
  * column's). See docs/CARD_ICON_LAYOUT.md.
  *
- * The toolbar is an absolute overlay at the top of its page's `ContentArea`, so it takes no
- * flow height; without a reservation it paints over whatever is beneath it. Rather than MOVING
+ * The toolbar lives in `CardEditPanel` — an eip-style sheet portaled to the phone frame and
+ * pinned to its very top, over the page header — so it takes no flow height; without a
+ * reservation it paints over whatever is beneath it. Because it starts at the frame top, its
+ * bottom edge usually stays inside the header band plus whitespace and the inset is 0. Rather than MOVING
  * the content by a fixed amount, we shrink the box from the top by exactly the amount the
  * toolbar intrudes and let the surface's ordinary layout re-place its contents. Consequences:
  *
@@ -39,7 +41,7 @@ const OVERLAP_GAP = 8;
  *
  * @param enabled       only measure while advanced edit mode is active
  * @param targetRef     the box the toolbar must clear (flp: the card slot; cdp: the hero card)
- * @param toolbarRef    the advanced toolbar wrapper (absolute at ContentArea top:0)
+ * @param toolbarRef    the CardEditPanel surface (absolute at the frame's top:0)
  * @param targetTopPad  px inside the target, above the content that must be cleared (flp: the
  *                      card slot's top padding; cdp: 0, the hero card IS the content)
  * @param clearSelector optional CSS selector for the PART of the toolbar whose bottom edge has

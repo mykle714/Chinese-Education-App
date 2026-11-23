@@ -82,6 +82,12 @@ const PAGE_COMPONENTS: Record<string, RouteComponent> = {
   "/adventures/:id": lazy(() => import("../features/cyoa/StoryPlayPage")),
   "/adventures/:id/edit": lazy(() => import("../features/cyoa/StoryEditorPage")),
   "/adventures/:id/edit/:passageId": lazy(() => import("../features/cyoa/PassageEditorPage")),
+  // Voice Tutor (docs/VOICE_ASSISTANT.md § 8–9), behind the `voiceAssistant` flag.
+  "/voice": lazy(() => import("../features/voice/VoicePage")),
+  "/voice/:sessionId": lazy(() => import("../features/voice/VoiceReviewPage")),
+  // Sentence Tiles (docs/SENTENCE_TILES_GAME.md), behind the `sentenceTiles` flag.
+  "/sentence-tiles": lazy(() => import("../features/sentenceTiles/SentenceTilesPage")),
+  "/sentence-tiles/:gameId": lazy(() => import("../features/sentenceTiles/SentenceTilesGamePage")),
   "/flashcards/writing/notebook": lazy(() => import("../features/flashcards/writingNotebook/WritingNotebookPage")),
   "/reader/:id": lazy(() => import("../features/reader/ReaderDocumentPage")),
   "/flashcards/card/:id": lazy(() => import("../features/flashcards/VocabCardDetailPage")),

@@ -4,8 +4,9 @@
  *
  * Pinned: a stack finishes only with exactly a character's strokes at one exact position, a
  * lookalike swap still finishes, a finished stack locks and then moves, selects and stays
- * finished as one, the tap cycle walks and wraps like the icon editor's, and no tile starts
- * stacked.
+ * finished as one, the tap cycle walks and wraps like the icon editor's, every tile is dealt
+ * into the tray, a tray tile is in no stack or pile, only a loose tile goes back to the tray,
+ * and a tap-placed tile never lands as a stack.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -18,7 +19,9 @@ import {
   moveTile,
   nextTapSelection,
   pickHintPair,
-  scatterTiles,
+  dealToTray,
+  placementSpot,
+  sendToTray,
   snapToGrid,
   tilesAt,
   type BoardCharacter,
@@ -37,7 +40,7 @@ const characters: BoardCharacter[] = [
 /** Characters of ≤ SINGLE_STROKE_MAX strokes keep every stroke on its own tile. */
 const tiles = () => buildTiles(characters, 64);
 const place = (all: Tile[], positions: [number, number][]) =>
-  all.map((tile, i) => ({ ...tile, x: positions[i][0], y: positions[i][1], z: i }));
+  all.map((tile, i) => ({ ...tile, x: positions[i][0], y: positions[i][1], z: i, inTray: false }));
 
 describe('completedStacks', () => {
   it('finishes a stack holding exactly the character at one position', () => {
@@ -335,35 +338,60 @@ describe('selection', () => {
   });
 });
 
-describe('scatterTiles', () => {
-  const many = Array.from({ length: 16 }, (_, i) => ({ ...tiles()[0], id: i }));
-  const zone = { marginUnits: 1, topUnits: 0, spreadUnits: 12 };
-
-  it('bunches tiles at the bottom centre, each at its own position', () => {
-    const placed = scatterTiles(many, 48, 60, 4, zone);
-    expect(new Set(placed.map((t) => `${t.x},${t.y}`)).size).toBe(16);
-    expect(placed.every((t) => t.x >= 16 && t.x <= 28 && t.y >= 43 && t.y <= 55)).toBe(true);
+describe('the tray', () => {
+  it('deals every tile into the tray, one shuffled slot each', () => {
+    const dealt = dealToTray(tiles(), () => 0.5);
+    expect(dealt.every((t) => t.inTray && t.lock === null)).toBe(true);
+    expect(new Set(dealt.map((t) => t.slot))).toEqual(new Set([0, 1, 2]));
+    const keys = [0.9, 0.1, 0.5];
+    const shuffled = dealToTray(tiles(), () => keys.shift()!);
+    expect(shuffled.map((t) => t.slot)).toEqual([2, 0, 1]);
   });
 
-  it('lets tiles overlap at an offset', () => {
-    const placed = scatterTiles(many, 48, 60, 4, zone);
-    const overlaps = placed.some((a) =>
-      placed.some((b) => a !== b && Math.abs(a.x - b.x) < 4 && Math.abs(a.y - b.y) < 4)
-    );
-    expect(overlaps).toBe(true);
+  it('keeps tray tiles out of every stack and pile, even at a board tile\'s cell', () => {
+    const [a, b, c] = dealToTray(tiles());
+    const all = [{ ...a, x: 2, y: 2, inTray: false }, { ...b, x: 2, y: 2 }, c];
+    expect(completedStacks(all).size).toBe(0);
+    expect(tilesAt(all, 3, 3, 4).map((t) => t.id)).toEqual([a.id]);
   });
 
-  it('stays clear of the edges and the top rows on a cramped board', () => {
-    const placed = scatterTiles(many, 12, 16, 4, { ...zone, topUnits: 5 });
-    expect(placed.every((t) => t.x >= 1 && t.x + 4 <= 11 && t.y >= 5 && t.y + 4 <= 15)).toBe(true);
+  it('takes a tray tile onto the board when it is moved, even to 0,0', () => {
+    const dealt = dealToTray(tiles());
+    const moved = moveTile(dealt, 1, 0, 0);
+    expect(moved.find((t) => t.id === 1)).toMatchObject({ inTray: false, x: 0, y: 0, z: 2 });
   });
 
-  it('keeps the tile on the board when the zone leaves no room', () => {
-    const [crowded] = scatterTiles(many.slice(0, 1), 12, 12, 4, { ...zone, topUnits: 40 });
-    expect(crowded.y + 4).toBeLessThanOrEqual(12);
-    const [tiny] = scatterTiles(many.slice(0, 1), 5, 4, 4, zone);
-    expect(tiny.x + 4).toBeLessThanOrEqual(5);
-    expect(tiny.y).toBe(0);
+  it('sends a loose tile home and refuses a locked one', () => {
+    const board = place(tiles(), [[0, 0], [5, 5], [9, 9]]);
+    const home = sendToTray(board, 1);
+    expect(home.find((t) => t.id === 1)!.inTray).toBe(true);
+    const locked = lockFinishedStacks(place(tiles(), [[3, 3], [3, 3], [9, 9]]));
+    expect(sendToTray(locked, 0)).toBe(locked);
+  });
+
+  it('lets the hint point at tray tiles, which lie alone', () => {
+    expect(pickHintPair(dealToTray(tiles()), () => 0)).toEqual([0, 1]);
+  });
+});
+
+describe('placementSpot', () => {
+  const zone = { cols: 30, rows: 40, tileUnits: 4, topUnits: 0, marginUnits: 1 };
+
+  it('lands at the bottom centre on an empty board', () => {
+    expect(placementSpot(dealToTray(tiles()), zone)).toEqual({ x: 13, y: 35 });
+  });
+
+  it('steps clear of a board tile in the way', () => {
+    const all = place(tiles(), [[13, 35], [0, 0], [0, 0]]).map((t, i) => (i > 0 ? { ...t, inTray: true } : t));
+    const spot = placementSpot(all, zone);
+    expect(Math.abs(spot.x - 13) >= 4 || Math.abs(spot.y - 35) >= 4).toBe(true);
+  });
+
+  it('never lands exactly on a tile when the board is full', () => {
+    const cramped = { cols: 5, rows: 5, tileUnits: 4, topUnits: 0, marginUnits: 0 };
+    const all = place(tiles(), [[0, 1], [1, 1], [0, 0]]).map((t, i) => (i === 2 ? { ...t, inTray: true } : t));
+    const spot = placementSpot(all, cramped);
+    expect(all.filter((t) => !t.inTray).some((t) => t.x === spot.x && t.y === spot.y)).toBe(false);
   });
 });
 

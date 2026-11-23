@@ -31,13 +31,13 @@ export type FocusResolution =
 
 /**
  * Pick a focused world's daily set (docs/FOCUS_MODE.md § 3): the flp's Study Mix shape
- * scaled to FOCUS_DAILY_CARDS (FOCUS_QUOTAS), each band drawn from its off-cooldown cards
+ * scaled to the world's cap, FOCUS_DAILY_CARDS[world] (FOCUS_QUOTAS[world]), each band drawn from its off-cooldown cards
  * in working-loop order (`rankCardQueue`: marked in the last 30 days longest-waiting
  * first, then the rest easiest first), the shortfall borrowed
  * across bands in STUDY_MIX_FILL_ORDER — the same fill the flp working loop does for 10.
  *
  * Returns the chosen ids and how many off-cooldown cards there were in all; the caller
- * switches focus off when that total is below FOCUS_DAILY_CARDS. Pure, so it is tested
+ * switches focus off when that total is below FOCUS_DAILY_CARDS[world]. Pure, so it is tested
  * without a database.
  */
 export function selectFocusSet(
@@ -46,6 +46,7 @@ export function selectFocusSet(
   world: MasteryWorldId
 ): { ids: number[]; offCooldownTotal: number } {
   const ranked = rankCardQueue([...cards], now, { world }).map(({ card }) => card);
+  const cap = FOCUS_DAILY_CARDS[world];
 
   // Ranked order is kept inside each band, so "take the first n" is "take the n the
   // queue would serve next".
@@ -61,7 +62,7 @@ export function selectFocusSet(
   const taken = new Set<number>();
   const take = (band: string, limit: number) => {
     for (const card of byBand.get(band) ?? []) {
-      if (picked.length >= FOCUS_DAILY_CARDS || limit <= 0) return;
+      if (picked.length >= cap || limit <= 0) return;
       if (taken.has(card.id)) continue;
       taken.add(card.id);
       picked.push(card.id);
@@ -69,8 +70,8 @@ export function selectFocusSet(
     }
   };
 
-  for (const quota of FOCUS_QUOTAS) take(quota.category, quota.count);
-  for (const band of STUDY_MIX_FILL_ORDER) take(band, FOCUS_DAILY_CARDS - picked.length);
+  for (const quota of FOCUS_QUOTAS[world]) take(quota.category, quota.count);
+  for (const band of STUDY_MIX_FILL_ORDER) take(band, cap - picked.length);
 
   return { ids: picked, offCooldownTotal: ranked.length };
 }
@@ -121,16 +122,23 @@ export class FocusModeService {
       const { ids, offCooldownTotal } = selectFocusSet(cards, now, world);
       // The learner has worked their way back to a manageable pile: switch focus off and
       // queue the popup rather than serve a set smaller than the cap.
-      if (offCooldownTotal < FOCUS_DAILY_CARDS) {
+      if (offCooldownTotal < FOCUS_DAILY_CARDS[world]) {
         await this.focusModeDAL.endWithNotice(userId, language, world);
         return { active: false, ended: true };
       }
-      snapshot = await this.focusModeDAL.claimSnapshot(userId, language, world, today, ids);
+      // The writing deck lists characters the learner has no vet row for yet as VIRTUAL
+      // (negative) ids; a snapshot stores real vet ids, so those rows are created now —
+      // hidden provisional rows, exactly as a writing deal does (dal/shared/writingDeck.ts).
+      // A no-op on the other worlds, whose ids are all real.
+      const storedIds = world === 'writing'
+        ? await this.focusModeDAL.materializeWritingIds(userId, ids)
+        : ids;
+      snapshot = await this.focusModeDAL.claimSnapshot(userId, language, world, today, storedIds);
     }
 
     // Re-read the set's rows on every call: a card's "marked correct today" state changes
     // with every mark, so it is never cached.
-    const rows = await this.focusModeDAL.listCardsByIds(userId, language, snapshot.vetIds);
+    const rows = await this.focusModeDAL.listCardsByIds(userId, language, world, snapshot.vetIds);
     const doneToday = new Set(
       rows.filter((row) => markedCorrectToday(row, world, today, tz)).map((row) => row.id)
     );

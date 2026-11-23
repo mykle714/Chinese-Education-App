@@ -53,12 +53,12 @@ interface LongDefinitionDisplayProps {
   // Opt-in to the est-style AI CARD (aiGeneratedCardSx + the hanging 'tag' badge) instead
   // of the tinted surface + inline badge: the host palette's card fill and ink. Only read
   // when aiGenerated. The eip Definition tab passes it (useEipColors().card / .ink);
-  // CompareWorkspace doesn't, so its comparison paragraph keeps the tinted surface.
+  // CompareShelfBody (the Compare panel) doesn't, so its comparison paragraph keeps the tinted surface.
   aiCard?: { face: string; ink: string };
   // Entry identity for the inline validator Approve/Flag buttons (field is always
   // 'definitions' here — see docs/DATA_VALIDATION_SYSTEM.md). Both must be provided
   // to show the buttons; omit for surfaces with no single backing det entry (e.g.
-  // CompareWorkspace's AI comparison paragraph, which has no validation field at all).
+  // the Compare panel's AI comparison paragraph (CompareShelfBody), which has no validation field at all).
   word1?: string;
   language?: Language;
 }

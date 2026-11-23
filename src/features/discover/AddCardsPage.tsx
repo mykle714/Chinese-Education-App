@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, memo, type ReactNode
 import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { readExit } from "../../games/runtime/gameExit";
 import { readDashLaunch } from "../../utils/pageTransition";
-import { Box, Typography, ButtonBase, CircularProgress, Menu, MenuItem } from "@mui/material";
+import { Box, Typography, ButtonBase, CircularProgress } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import { styled, keyframes } from "@mui/material/styles";
 import { useDrag } from "@use-gesture/react";
@@ -10,17 +10,16 @@ import { useSpring, animated } from "@react-spring/web";
 import NodePage from "../../components/NodePage";
 import { SLAB_FOOTER_TOTAL_CLEARANCE, SLAB_FOOTER_TOTAL_HEIGHT } from "../../components/MobileFooter";
 import { setFooterCastShadow } from "../../components/footerCastShadow";
-import { CommonalityMeter, DifficultyMeter } from "../../components/ScoreMeters";
-import { difficultyAriaLabel } from "../../components/scoreMeterScale";
+import { CommonalityMeter } from "../../components/ScoreMeters";
 import EipSheet from "../flashcards/FlashcardsLearnPage/EipSheet";
 import SkippedCardsSheet from "./SkippedCardsSheet";
-import SortBins, { SORT_BINS_ASPECT_RATIO, SORT_BINS_CLUSTER_WIDTH_FRACTION, SORT_BINS_HEADROOM_WIDTH_FRACTION, type SortBinSpec, type SortBinsHitTester } from "./SortBins";
+import SortBins, { HOVER_GHOST_FADE_MS, SORT_BINS_ASPECT_RATIO, SORT_BINS_CLUSTER_WIDTH_FRACTION, SORT_BINS_HEADROOM_WIDTH_FRACTION, type SortBinSpec, type SortBinsHitTester } from "./SortBins";
 import { sortLookAt, type SortLook } from "./sortTimeOfDay";
 import { useTowerWeather } from "../deckTower/useTowerWeather";
 import { weatherDaySky } from "../deckTower/weatherSky";
 import { TOWER_TYPE_SX } from "../deckTower/towerType";
 import { useDayClock } from "../../timeOfDay/useDayClock";
-import { DIFFICULTY_LEVELS, MIN_DIFFICULTY_LEVEL, MAX_DIFFICULTY_LEVEL } from "./difficultyLevels";
+import { MIN_DIFFICULTY_LEVEL, MAX_DIFFICULTY_LEVEL } from "./difficultyLevels";
 import Icon from "../../components/Icon";
 import { useLongPress } from "../../hooks/useLongPress";
 import { useThemeColor } from "../../hooks/useThemeColor";
@@ -39,7 +38,6 @@ import { useAuth } from "../../AuthContext";
 import { useTestingFeatures } from "../../hooks/useTestingFeatures";
 import { useTTS } from "../../hooks/useTTS";
 import AudioModeChip from "../../components/AudioModeChip";
-import { useSoftIntro } from "../../softIntro/useSoftIntro";
 import { COLORS } from "../../theme/colors";
 import ShootingStars from "../deckTower/ShootingStars";
 import StarField from "../deckTower/StarField";
@@ -50,7 +48,7 @@ import type { SortBucket } from "./starterPacksApi";
 import { FONTS } from "../../theme/fonts";
 import { keycapPressSx } from "../../theme/keycapPress";
 import { roundedEdgeFilletDown, roundedEdgeRimLightTop } from "../../theme/roundedEdge";
-import { SIZE, WEIGHT, TRACKING } from "../../theme/scale";
+import { SIZE, WEIGHT } from "../../theme/scale";
 import MiniCard from "../../components/MiniCard";
 import { MINI_CARD_DIMENSIONS, type MiniCardSize } from "../../components/miniCardFace";
 import { SORTED_STOCK, SORTED_PRINT_OPACITY, cardStockShadow, sortCardStockSx, CARD_LEVITATE_MS, cardLevitateKeyframes, LEVITATE_PHASES_MS } from "./sortCardStock";
@@ -71,9 +69,9 @@ import { countedSessionSorts } from "./deckFillNotices";
 const MAX_CARDS_PER_PACK = 4;
 const UNDO_DEPTH = MAX_CARDS_PER_PACK;
 
-// Manual HSK/difficulty dropdown levels: DIFFICULTY_LEVELS (./difficultyLevels.ts).
-// `selectedLevel === null` is the dropdown's
-// extra "auto" entry (the adaptive target the client tracks itself).
+// Leveling is always the client-tracked adaptive target (autoLevelRef). The manual level
+// pill (a 1–6 difficulty meter + dropdown) was removed 2026-11-21: word difficulty is no
+// longer shown to learners anywhere, but it still drives this leveling invisibly.
 
 // Holding the Skip button this long opens the hidden skipped-cards sheet (§5.1a).
 // Deliberately long: the gesture is undiscoverable by design, and a tap must never
@@ -227,8 +225,7 @@ const BinsScene = styled(Box)({
 });
 
 // The toolbar's inset from the bins area's top, px (SortToolbar `top`) — with the key
-// height it puts the prompt's box under the toolbar. (The "Difficulty" caption under the
-// pill is absolutely placed, so it takes no room below.) Zero since 2026-11-14: the toolbar sits flush
+// height it puts the prompt's box under the toolbar. Zero since 2026-11-14: the toolbar sits flush
 // against the content's top edge and PageHeader's shared bottom padding
 // (`HEADER_PAD_BOTTOM_PX`, 14px) supplies the gap under the header — it was 12px when
 // the header had no bottom padding, and the two stacked read as too far down.
@@ -599,7 +596,7 @@ const CardDeckHeader = styled(Box)({
 // Display copy only, deliberately separate from the backfill's FREQUENCY_SCORE_LABELS
 // (server/scripts/backfill/shared/lib/frequencyLabels.js): those feed the Spanish
 // scoring prompt and are too long for a ~100px card slot. Sort page only for now —
-// the eip/cdp meters still read "Commonality". See docs/SORT_CARDS_REQUIREMENTS.md.
+// the eip/cdp meters read "Usefulness". See docs/SORT_CARDS_REQUIREMENTS.md.
 // Every multi-word label carries an explicit "\n" so it always stacks on two lines
 // (rendered via `white-space: pre`); single-word labels stay on one line.
 const COMMONALITY_TIER_LABELS: Record<number, string> = {
@@ -629,33 +626,6 @@ const CommonalityTierLabel = styled(Typography)({
     fontWeight: WEIGHT.semibold,
     lineHeight: TIER_LABEL_LINE_HEIGHT,
     whiteSpace: "pre",
-});
-
-// The level pill's soft-introduction caption (si `sortDifficultyCaption`,
-// docs/SOFT_INTRODUCTION.md): "DIFFICULTY" for a learner's first visits, then gone.
-// Drawn like the Deck Tower's sort-platform si print ("ADD MORE / CARDS →",
-// DeckTowerPlatform → `FIXTURE_PRINT`): bold caps in the cjk face, the look's full ink
-// (white by day, as the print's washed white). It sits UNDER the pill, centred on it
-// (back under it by user request 2026-11-14; 2026-11-09 → 11-14 it sat left of the pill
-// as "DIFFICULTY →"). Absolutely placed so it takes no room: the toolbar keeps its
-// height and the rating prompt's top padding (TOOLBAR_KEY_HEIGHT_PX) stays correct.
-// 9px — two steps below the type scale's smallest (SIZE.micro, 11px) and below the shelf
-// overline (components/primitives/Label → `Label`, 10px); no token this small exists —
-// it matches the Settings page's 9px uppercase tags (made smaller twice by user request
-// 2026-10-29: 11 → 10 → 9).
-const LevelCaption = styled(Typography)({
-    position: "absolute",
-    top: "calc(100% + 9px)",
-    left: "50%",
-    transform: "translateX(-50%)",
-    fontFamily: FONTS.cjk,
-    fontSize: 9,
-    fontWeight: WEIGHT.bold,
-    letterSpacing: TRACKING.caps,
-    textTransform: "uppercase",
-    lineHeight: 1,
-    whiteSpace: "nowrap",
-    pointerEvents: "none",
 });
 
 // The on-deck card IS the app's mini preview card (src/components/MiniCard.tsx) — the
@@ -818,7 +788,8 @@ const DraggableCard = memo(function DraggableCard({ card, size, locked, sorted, 
     /** Read at mount only: pop the card back into its crater (Undo re-showing it). */
     settleIn?: boolean;
     onCheckCollision: (clientX: number, clientY: number) => string | null;
-    onHighlight: (bucketId: string | null) => void;
+    /** `card` is handed on so the bin can draw it as its iso hover ghost (SortBins → HoverGhost). */
+    onHighlight: (bucketId: string | null, card?: DiscoverCard | null) => void;
     /**
      * Dropped on a bucket: the page sorts the card (`handleSortCard`), which unmounts it.
      */
@@ -889,33 +860,41 @@ const DraggableCard = memo(function DraggableCard({ card, size, locked, sorted, 
             }
             if (first) onFirstDrag();
             if (down) {
-                // Held: track the finger/cursor 1:1 (immediate) at the one pickup lift. The
-                // card itself never changes over a bucket; the page grows the target bin
-                // (onHighlight → SortBins' `highlight`). Re-issuing the same target every move is
-                // a no-op: SortBins' state setter bails out on an unchanged bin.
+                // Held: track the finger/cursor 1:1 (immediate) at the one pickup lift. Over a
+                // bucket, the target bin grows and draws THIS card in iso, hovering over its
+                // deck where a drop sets it down from (onHighlight → SortBins' `highlight`,
+                // the hover ghost), while the flat card here crossfades out (user request
+                // 2026-11-22). Re-issuing the same target every move is a no-op: SortBins'
+                // state setter bails out on an unchanged bin, and the opacity spring is
+                // already heading for the same value.
                 const overBucket = onCheckCollision(px, py);
                 api.start({ x: mx, y: my, scale: HELD_CARD_SCALE, immediate: true });
                 // The shadow eases out from under the card as it rises (not a snap).
                 api.start({ lift: 1, config: { tension: 400, friction: 30 } });
-                onHighlight(overBucket);
+                api.start({ opacity: overBucket ? 0 : 1, config: { duration: HOVER_GHOST_FADE_MS } });
+                onHighlight(overBucket, card);
                 return;
             }
             // Released.
             const bucketId = onCheckCollision(px, py);
             if (bucketId) {
                 // Successful drop: hand off to the page. It resolves the card at once —
-                // this card unmounts (despawns) where it was let go, leaving its crater,
-                // and a completed pack can start sliding out THIS frame. The only motion
-                // is the bin's own: its count ticks and it sets the new top card down on
-                // its deck (SortBins `sort-bins__placed`). There is no fall to the bin
+                // this card (already faded out over the bin) unmounts where it was let go,
+                // leaving its crater, and a completed pack can start sliding out THIS frame.
+                // The only motion is the bin's own: its hover ghost falls onto the deck
+                // (SortBins `sort-bins__placed--from-hover`). onHighlight(null) and onDrop
+                // land in ONE batched render, which is how the bin tells a drop from the
+                // ghost apart from the card simply leaving. There is no fall to the bin
                 // (removed by user request 2026-10-29). Deliberately never springs x/y back to the tray origin — that made the
                 // card visibly fly home as it committed (the old "snap-back" bug).
                 onHighlight(null);
                 onDrop(card.id, bucketId);
             } else {
-                // Missed the buckets: spring back to the resting tray slot, clean.
+                // Missed the buckets: spring back to the resting tray slot, clean (and back to
+                // full opacity, in case a last move faded it over a bin's edge).
                 onHighlight(null);
                 api.start({ x: 0, y: 0, scale: 1, lift: hoveredRef.current ? HOVER_LIFT : 0 });
+                api.start({ opacity: 1, config: { duration: HOVER_GHOST_FADE_MS } });
             }
         },
         { filterTaps: true }
@@ -1082,11 +1061,6 @@ const AddCardsPage: React.FC = () => {
     const [exhausted, setExhausted] = useState(false);
     const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
     const [loading, setLoading] = useState(true);
-    // Manual HSK/difficulty override from the level dropdown; null = "auto" (the
-    // client-tracked adaptive target below). Not persisted — reverts to auto on
-    // reload, matching the request-scoped nature of a "show me level N" session.
-    const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
-    const [levelMenuAnchor, setLevelMenuAnchor] = useState<HTMLElement | null>(null);
 
     // Session decks — the cards the learner has sorted into each bin on THIS visit, oldest
     // first, drawn as the bins' decks (SortBins): one layer per card, the last card's
@@ -1171,20 +1145,14 @@ const AddCardsPage: React.FC = () => {
         return () => setFooterCastShadow(null);
     }, [look.groundShadow]);
 
-    // The level pill's "Difficulty" caption, shown for a learner's first visits only.
-    const difficultyCaption = useSoftIntro("sortDifficultyCaption");
-
-    // Pack queue: (re)fetched on mount AND whenever the level dropdown changes — a
-    // level switch is allowed to replace the on-deck pack (docs/SORT_CARDS_REQUIREMENTS.md
-    // §6.5), so it re-runs the same initial-fill fetch rather than patching the
-    // existing queue. Auto's request level is whatever the client is already tracking
-    // (autoLevelRef) — null only on the very first call this session, which asks the
-    // server for a cold-start seed.
+    // Pack queue: fetched on mount (and on a language / set-mode change). The request
+    // level is whatever the client is already tracking (autoLevelRef) — null only on the
+    // very first call this session, which asks the server for a cold-start seed.
     useEffect(() => {
         const fetchPacks = async () => {
             setLoading(true);
-            // A level switch starts a fresh on-deck session: undo history and resolved
-            // markers from the previous level/queue no longer refer to anything the new
+            // A refetch starts a fresh on-deck session: undo history and resolved
+            // markers from the previous queue no longer refer to anything the new
             // queue holds, so carrying them over would let Undo resurrect a stale pack.
             doneRef.current = {};
             setDone({});
@@ -1211,19 +1179,12 @@ const AddCardsPage: React.FC = () => {
                     return;
                 }
 
-                const requestLevel = selectedLevel != null ? selectedLevel : autoLevelRef.current;
-                const data = await fetchStarterPacks(
-                    language as Language,
-                    requestLevel,
-                    selectedLevel != null,
-                );
+                const data = await fetchStarterPacks(language as Language, autoLevelRef.current);
                 setQueue(data.packs);
                 setExhausted(data.exhausted);
-                // Only auto ever needs to learn the level from the server — the
-                // cold-start seed. A manual pin's level is already known locally
-                // (selectedLevel), and re-echoes of an already-tracked auto level
-                // are harmless no-ops.
-                if (selectedLevel == null && typeof data.level === "number") autoLevelRef.current = data.level;
+                // The server echoes the level it served: the cold-start seed on the first
+                // call; re-echoes of an already-tracked level are harmless no-ops.
+                if (typeof data.level === "number") autoLevelRef.current = data.level;
             } catch (error) {
                 console.error("Error fetching packs:", error);
             } finally {
@@ -1235,7 +1196,7 @@ const AddCardsPage: React.FC = () => {
     // session (wiping undo history + resolved markers). See CLAUDE.md "Never
     // reload on token refresh". (The effect now satisfies the exhaustive-deps rule on
     // its own — starterPacksApi reads the token at call time.)
-    }, [language, isAuthenticated, selectedLevel, setMode, setWords]);
+    }, [language, isAuthenticated, setMode, setWords]);
 
     const currentPack = queue[0];
     // "dock" entrance stagger (docs/SORT_CARDS_REQUIREMENTS.md §4.1 "Pack entrance"):
@@ -1256,14 +1217,6 @@ const AddCardsPage: React.FC = () => {
         return delays;
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPack?.packKey]);
-
-    // The pill shows the six-triangle difficulty meter once the user has pinned a level
-    // via the dropdown, or the word "Auto" — the adaptive target moves per-pack and
-    // fluctuates too much to show live (docs §6), so it is never rendered as a meter.
-    // (Was an "HSK 3" text label until 2026-11-07.)
-    const levelPillContent = selectedLevel != null
-        ? <DifficultyMeter className="add-cards__level-meter" score={selectedLevel} filledColor={look.keyInk} emptyColor={look.keyInk} />
-        : "Auto";
 
     // Apply one card's effect on its bin's session deck: a sort puts `card` on top, an
     // undo takes the card with `card.id` back off (its LAST occurrence — the newest).
@@ -1307,12 +1260,13 @@ const AddCardsPage: React.FC = () => {
         []
     );
 
-    // The bin a held card is over grows and says its sentence (SortBins → ACTIVE_SCALE,
-    // SpeechBubble); it settles back the moment the card is let go. Handed straight to
+    // The bin a held card is over grows, says its sentence and shows the card in iso
+    // hovering over its deck (SortBins → ACTIVE_SCALE, SpeechBubble, the hover ghost); it
+    // settles back the moment the card is let go. Handed straight to
     // SortBins' own state — page state here re-rendered this whole page on every
     // platform crossing, which lagged a quick sweep over the bins.
-    const highlightBucket = useCallback((bucketId: string | null) => {
-        binHitTesterRef.current?.highlight(bucketId);
+    const highlightBucket = useCallback((bucketId: string | null, card?: DiscoverCard | null) => {
+        binHitTesterRef.current?.highlight(bucketId, card);
     }, []);
 
     // Prime the audio sinks from this gesture. Deliberately NOT guarded by a
@@ -1540,12 +1494,11 @@ const AddCardsPage: React.FC = () => {
             // synchronously from the completing pack's signal BEFORE calling advancePack,
             // so a downgrade/upgrade is reflected in THIS replenish request already
             // (docs §6: "set to sortPackLevel±1", never a stale increment).
-            const requestLevel = selectedLevel != null ? selectedLevel : autoLevelRef.current;
+            const requestLevel = autoLevelRef.current;
             const data = await fetchNextPack({
                 language: language as Language,
                 excludePackKeys: rest.map((p) => p.packKey),
                 level: requestLevel,
-                manual: selectedLevel != null,
             });
             setExhausted(data.exhausted);
             if (data.nextPack) {
@@ -1573,7 +1526,7 @@ const AddCardsPage: React.FC = () => {
             // transient network blips instead of leaving the user with an empty queue.
             if (attempt < 1) setTimeout(() => advancePack(completedKey, { attempt: attempt + 1 }), 800);
         }
-    }, [queue, language, selectedLevel, setMode]);
+    }, [queue, language, setMode]);
 
     // SET MODE EXIT.
     //
@@ -1698,11 +1651,11 @@ const AddCardsPage: React.FC = () => {
         };
         const lastInPack = isPackComplete(pack);
 
-        // Update the auto target (if active) as soon as the pack completes, BEFORE the
+        // Update the auto target as soon as the pack completes, BEFORE the
         // network round-trip — advancePack must see the new target immediately so the
         // very next replenish request already reflects it (only the pack already queued
         // behind this one lags by one card, per docs §6).
-        if (lastInPack && selectedLevel == null) applyPackSignal(pack);
+        if (lastInPack) applyPackSignal(pack);
 
         const sorted = sortCard({
             cardId,
@@ -1719,7 +1672,7 @@ const AddCardsPage: React.FC = () => {
         } catch (error) {
             console.error("Error sorting card:", error);
         }
-    }, [currentPack, pushUndo, markResolved, adjustTally, isPackComplete, selectedLevel, applyPackSignal, advancePack, language]);
+    }, [currentPack, pushUndo, markResolved, adjustTally, isPackComplete, applyPackSignal, advancePack, language]);
 
     // Skip the whole on-deck pack: defer every remaining unsorted card at once.
     const handleSkipPack = useCallback(async () => {
@@ -1990,32 +1943,13 @@ const AddCardsPage: React.FC = () => {
                         />
                     </BinsScene>
 
-                    {/* Level pill · undo · skip — top-right over the bins (the artboard's
-                        `.tb`). Skip is de-emphasized (§5.1): a small keycap, not a drag
+                    {/* Undo · skip — top-right over the bins (the artboard's `.tb`; the
+                        level pill that led it was removed 2026-11-21). Skip is de-emphasized (§5.1): a small keycap, not a drag
                         bin; it defers every remaining unsorted card of the pack on deck. */}
                     <SortToolbar
                         className="add-cards__toolbar"
                         sx={CHROME_ENTRANCE_SX.toolbar}
                     >
-                        <Box className="add-cards__level-control" sx={{ position: "relative", display: "flex" }}>
-                            <ButtonBase
-                                className="add-cards__level-dropdown"
-                                onClick={(e) => setLevelMenuAnchor(e.currentTarget)}
-                                aria-haspopup="menu"
-                                aria-expanded={Boolean(levelMenuAnchor)}
-                                sx={{ ...keycapSx(look), fontWeight: WEIGHT.bold, borderRadius: 999, height: TOOLBAR_KEY_HEIGHT_PX, pl: "10px", pr: "4px", gap: "1px" }}
-                            >
-                                {levelPillContent}
-                                <Icon name="keyboard_arrow_down" size={18} color={look.keyInk} />
-                            </ButtonBase>
-                            {/* si `sortDifficultyCaption`: names the pill from under it for
-                                a learner's first 7 visits over 7 days, then retires. */}
-                            {difficultyCaption === "intro" && (
-                                <LevelCaption className="add-cards__level-caption" sx={{ color: look.ink }}>
-                                    Difficulty
-                                </LevelCaption>
-                            )}
-                        </Box>
                         <ButtonBase
                             className="add-cards__undo-button"
                             onClick={handleUndo}
@@ -2045,31 +1979,6 @@ const AddCardsPage: React.FC = () => {
                             )}
                         </ButtonBase>
                     </SortToolbar>
-                    <Menu
-                        className="add-cards__level-menu"
-                        anchorEl={levelMenuAnchor}
-                        open={Boolean(levelMenuAnchor)}
-                        onClose={() => setLevelMenuAnchor(null)}
-                    >
-                        <MenuItem
-                            className="add-cards__level-menu-item"
-                            selected={selectedLevel == null}
-                            onClick={() => { setSelectedLevel(null); setLevelMenuAnchor(null); }}
-                        >
-                            Auto
-                        </MenuItem>
-                        {DIFFICULTY_LEVELS.map((lvl) => (
-                            <MenuItem
-                                className="add-cards__level-menu-item"
-                                key={lvl}
-                                selected={selectedLevel === lvl}
-                                onClick={() => { setSelectedLevel(lvl); setLevelMenuAnchor(null); }}
-                                aria-label={difficultyAriaLabel(lvl)}
-                            >
-                                <DifficultyMeter className="add-cards__level-menu-meter" score={lvl} filledColor={COLORS.onSurface} emptyColor={COLORS.onSurface} />
-                            </MenuItem>
-                        ))}
-                    </Menu>
                 </BinsArea>
 
                 {/* On-deck: up to 4 levitating cards (compact faces when the pack won't fit at regular). A

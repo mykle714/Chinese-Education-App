@@ -101,8 +101,8 @@ const SMOOTH_STEP_LIMIT_PCT = ((INK_TOP_PCT - INK_BOTTOM_PCT) / 60) * 1.6;
  * ── THE DAILY BANKING RUN (td only) ──────────────────────────────────────────────────
  * Under DeckTowerPage's `DailyBankingProvider`, the first td visit of a streak day plays a
  * banking run (docs/DAILY_MINUTE_BANKING.md): while a frame is live the badge draws the
- * RUN's count, fill and scale instead of its own — yesterday's figure on a full flame,
- * swelling, then draining to today's figure while embers leave for the avatar. The
+ * RUN's count and fill instead of its own — yesterday's figure on a full flame, draining
+ * to 0 while embers leave for the avatar, then counting up to today's figure. The
  * badge also registers itself as the embers' `flame` anchor. Outside the provider the
  * frame is always null and none of this applies.
  */
@@ -153,7 +153,7 @@ const MinutePointsFireBadge: React.FC = () => {
     if (banking) {
         // The run's frame replaces the live readout wholesale. Always orange (the run
         // only plays on the off-study hp), always a gauge (the fill IS the drain), never
-        // the point-landing pulse (the run's own scale is the motion).
+        // the point-landing pulse (the drain and the embers are the motion).
         const bankingFillPct = banking.fillLevel <= 0
             ? 0
             : INK_BOTTOM_PCT + banking.fillLevel * (INK_TOP_PCT - INK_BOTTOM_PCT);
@@ -161,9 +161,7 @@ const MinutePointsFireBadge: React.FC = () => {
             <Box
                 className="minute-points-fire-badge minute-points-fire-badge--banking"
                 ref={flameAnchorRef}
-                sx={{ display: "inline-flex", transformOrigin: "center", willChange: "transform" }}
-                // Per-frame value in `style`, not `sx` — sx would mint a CSS class per frame.
-                style={{ transform: `scale(${banking.flameScale})` }}
+                sx={{ display: "inline-flex" }}
             >
                 <FireCount
                     value={banking.displayCount}

@@ -21,8 +21,9 @@ Mini-games that reinforce vocabulary and character learning.
 > built (Match Speed and Word Search)**: [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md). A break-capable
 > game is split into a page + an embeddable Stage (§ "Routes" below; § 6 there).
 >
-> **In design, not built:** a sentence-building tile game with Chinese word tiles on a
-> panning crossword-style board — [SENTENCE_TILES_GAME.md](./SENTENCE_TILES_GAME.md).
+> **Not a game in this registry, but related:** Sentence Tiles, a two-player correspondence
+> word-tile game judged by AI, is its own flagged feature (`sentenceTiles`, testers only) with
+> pages under `/sentence-tiles` — [SENTENCE_TILES_GAME.md](./SENTENCE_TILES_GAME.md).
 
 ## Status
 
@@ -904,7 +905,7 @@ Speed and Writing Grid showed 3·2·1·Go, four steps).
 | Match Speed | the pool is dealt (`phase: "countdown"`) | the board is `frozen`; the stopwatch starts at `"playing"` |
 | Writing Grid | the deal lands (`phase: "countdown"`) | read-only Phase 1; `startStopwatch` on release |
 | Word Search | `startBoard` / `restoreBoard` (`counting`) | the clock is started then paused; `counting` feeds `clockPaused` and the challenge round's `paused` |
-| Superposition | the tiles are scattered (`handleMeasured`) | `running` is false: no stopwatch, no hint |
+| Superposition | the board (grid + tray) has measured itself (`handleMeasured`) | `running` is false: no stopwatch, no hint |
 | Speed Reading | the first round is built (`counting`) | `counting` feeds `clockPaused` (the origin shift un-bills it); no pick, no narration of round 1 |
 | Memory Map | the first `playing` render, once per break | `useActiveRunClock` waits; the first prompt's word waits |
 

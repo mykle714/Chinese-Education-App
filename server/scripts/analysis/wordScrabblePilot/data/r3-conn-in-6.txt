@@ -1,0 +1,211 @@
+大学生	noun	university student
+大小	noun	size
+大河	noun	large river
+大白菜	noun	Chinese cabbage
+大米	noun	(husked) rice
+大约	adverb	approximately
+大路	noun	avenue
+大门	noun	gate
+大雨	noun	heavy rain
+大风	noun	gale
+天上	noun	the sky
+天黑	verb,noun	to get dark
+太太	noun	wife
+失望	adjective,verb	disappointed
+头上	noun	overhead
+头疼	adjective,noun	headache
+女士	noun	lady
+女子	noun	woman
+女生	noun	female student
+女装	noun	women's clothes
+好事	noun,adjective	good deed
+好处	noun	benefit
+好好儿	adverb,adjective	well
+好心	noun	kindness
+好用	adjective	easy to use
+好起来	verb	to get better
+好运	noun	good luck
+如	conjunction,verb	as
+如果	conjunction	if
+存钱	verb	to save money
+季节	noun	season
+学会	verb,noun	to learn
+学到	verb	to learn (something)
+学期	noun	semester
+学费	noun	tuition fee
+安全带	noun	seat belt
+安排	verb,noun	to arrange
+官员	noun	official
+定	verb,adverb	to fix
+宝宝	noun	baby
+实在	adverb,adjective	really
+实现	verb	to achieve
+实用	adjective,verb	practical
+客	noun,classifier	guest
+客人	noun	guest
+客厅	noun	living room
+室友	noun	roommate
+家乡	noun	hometown
+家长	noun	parent
+宾馆	noun	hotel
+对话	noun,verb	conversation
+对面	noun,adverb	across (the street)
+小事	noun	trivial matter
+小刀	noun	knife
+小区	noun	housing estate
+小吃	noun	snack
+小岛	noun	isle
+小树	noun	small tree
+小河	noun	stream
+小组	noun	group
+小船	noun	boat
+小说	noun	novel
+小路	noun	lane
+小雨	noun	light rain
+小面包	noun	bread roll
+小鸟	noun	small bird
+小鸡	noun	chick
+尽快	adverb	as soon as possible
+层	classifier,noun	layer
+岛	noun	island
+工	noun	work
+工作人员	noun	staff member
+工作日	noun	workday
+工作时间	noun	working hours
+工资	noun	wages
+巧克力	noun	chocolate (loanword)
+差	adjective,verb	inferior
+差不多	adverb,adjective	almost
+巴士	noun	bus (loanword)
+市	noun	city
+市民	noun	city resident
+布	noun,verb	cloth
+带上	verb	to take along
+带去	verb	to take along
+带回	verb	to bring back
+带来	verb	to bring
+带走	verb	to take away
+平	adjective,verb	flat
+平安	adjective	safe and sound
+平日	noun,adverb	ordinarily
+平时	noun,adverb	ordinarily
+年底	noun	the end of the year
+年轻	adjective	young
+广告	noun,verb	advertisement
+广场	noun	public square
+应	verb	should
+底下	noun	below
+度	noun,classifier,verb	degree
+度假	verb	to go on holidays
+座	classifier,noun	seat
+座位	noun	seat
+建立	verb	to establish
+开会	verb	to hold a meeting
+开关	noun,verb	power switch
+开学	verb,noun	to start school
+开水	noun	boiled water
+开饭	verb	to serve a meal
+弹琴	verb	to play the lute
+强	adjective,verb	strong
+当地	noun,adjective	local
+得到	verb	to get
+微信	noun	WeChat
+德国人	noun	German person
+德语	noun	German (language)
+心情	noun	mood
+急	adjective,verb	urgent
+总	adverb,adjective	always
+总共	adverb	altogether
+总是	adverb	always
+想出	verb	to come up with
+想到	verb	to think of
+想家	verb	homesick
+想想看	verb	to think about it
+想法	noun,verb	opinion
+想起	verb	to think of
+想起来	verb	to remember
+意大利面	noun	pasta
+意见	noun	opinion
+感	verb,noun	to feel
+感到	verb	to feel
+感动	verb,adjective	to move (somebody)
+成	verb,adjective,classifier	to become
+成为	verb	to become
+成绩	noun	grades
+成长	verb,noun	to grow
+房	noun,classifier	house
+手包	noun	handbag
+手套	noun	glove
+手拉手	verb,adverb	to join hands
+手指	noun	finger
+手指头	noun	finger
+手纸	noun	toilet paper
+打不过	verb	to be no match for
+打包	verb	to pack
+打印	verb	to print
+打印机	noun	printer
+打字	verb	to type
+打工	verb	to work odd jobs
+打球	verb	to play ball
+打算	verb,noun	to plan
+打车	verb	to take a taxi
+打针	verb	to give an injection
+技术	noun	technology
+护士	noun	nurse
+报	noun,verb	newspaper
+报名	verb	to sign up
+报告	noun,verb	report
+担心	verb,adjective	to worry
+拍照	verb	to take a picture
+指	verb,noun	finger
+排	verb,noun,classifier	a row
+接下来	adverb,verb	next
+接人	verb	to meet a person
+接到	verb	to receive
+提到	verb	to mention
+提前	verb,adverb	ahead of schedule
+提高	verb	to improve
+收	verb	to receive
+收到	verb	to receive
+收音机	noun	radio
+改	verb	to change
+改变	verb,noun	to change
+放下	verb	to put down
+放假	verb	to have a vacation
+放心	verb,adjective	to be at ease
+放进	verb	to put into
+故事	noun	story
+教师	noun	teacher
+教育	noun,verb	education
+数数	verb	to count
+文件	noun	document
+文化	noun	culture
+新西兰	noun	New Zealand
+新闻	noun	news
+方	noun,adjective,classifier	square
+方便面	noun	instant noodles
+方式	noun	way
+方面	noun	respect
+旗	noun	flag
+无法	verb	unable to
+日出	noun	sunrise
+日期	noun	date
+日记	noun	diary
+时代	noun	era
+明星	noun	star
+普通人	noun	ordinary person
+普通话	noun	Mandarin Chinese
+晴天	noun	sunny day
+最近	adverb,adjective,noun	recently
+有一次	adverb	once
+有了	interjection,verb	I've got a solution!
+有事	verb	to be busy
+有些人	pronoun	some people
+有可能	adverb,adjective	possible
+有名	adjective	famous
+有意义	adjective,verb	meaningful
+有病	verb,adjective	to be ill
+有空	verb	to be free
+有趣	adjective	interesting
+有道理	adjective	to make sense
+有钱	adjective	wealthy

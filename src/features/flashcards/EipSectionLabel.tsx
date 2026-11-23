@@ -9,7 +9,7 @@ import { FC_FONT } from "./constants";
  * muted ink. Every title in the tab uses it, so they cannot drift apart (owner's call
  * 2026-11-07):
  *   • "Other Translations" — EipSenseList
- *   • "Commonality" / "Difficulty" — MetaChipLabel (DefinitionFacts)
+ *   • "Usefulness" — MetaChipLabel (DefinitionFacts)
  *   • "Synonyms" / "Related Words" — InfoCardTabContent's `renderLabel` for SynonymsRelatedSection
  *
  * Mirrors the `.shelfhd` caption's size/weight/tracking (`Label`) rather than inventing

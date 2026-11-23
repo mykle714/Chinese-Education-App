@@ -504,7 +504,7 @@ export function resolveSearchRowView(
 
 /**
  * **The commonality resolver — the sense-aware twin of `resolveDisplayDefinition`, for
- * the 1–5 conversation-frequency score the eip/cdp show as "Commonality".**
+ * the 1–5 conversation-frequency score the eip/cdp show as "Usefulness".**
  *
  * A word-level `frequencyScore` is a lie for a polyseme: 干 "to do" comes up constantly
  * (5) while 干 "shield" is effectively never spoken (1). Each cluster is therefore scored

@@ -1,6 +1,7 @@
 import { COLORS } from "../../../theme/colors";
 import { mixHex } from "../../../theme/shadeHex";
 import type { ThemeMode } from "../../../contexts/ThemeContext";
+import type { Tier2Look } from "../../../timeOfDay/tier2Look";
 
 /**
  * eipPalette.ts — the eip's colours for the app's colour THEME (Settings → Theme, the
@@ -145,4 +146,38 @@ export const EIP_LIGHT_PALETTE = LIGHT_PALETTE;
 /** The eip's palette for a theme: the dark palette for Dark, the light one for every other. */
 export function eipPaletteFor(mode: ThemeMode): EipPalette {
     return mode === "dark" ? DARK_PALETTE : LIGHT_PALETTE;
+}
+
+/**
+ * The palette's LOWER SHELF as a `Tier2Look` — the colour contract the shared dictionary
+ * pieces paint with (src/components/dictionarySearch: the search field, the result slabs,
+ * the no-results well; DictionaryEntryRow's tones). The Dictionary page hands them its
+ * time-of-day look; a search that sits on the eip's white shelf (the Compare panel) hands
+ * them this instead, so it follows the app theme like the rest of the panel.
+ *
+ *   ground  → the shelf itself      well / wellShadow → the content tabs' sunken track
+ *   surface → inner cards (slabs)   surfaceEdge       → the raised-key lip
+ *
+ * The outline and pressed tint are the Tier2Look's own (tier2Look.ts LIGHT/DARK_SURFACES):
+ * the eip palette has no 1px-outline or pressed token of its own.
+ *
+ * Depended on by: features/flashcards/compare/CompareShelfBody.tsx,
+ * features/flashcards/writingNotebook/NotebookWordPickerSheet.tsx.
+ * Docs: docs/WORD_COMPARE_FEATURE.md § The search.
+ */
+export function eipShelfLook(palette: EipPalette): Tier2Look {
+    return {
+        ground: palette.shelf,
+        well: palette.tabWell,
+        wellShadow: palette.tabWellShadow,
+        surface: palette.card,
+        surfaceEdge: palette.edge,
+        outline: palette.dark ? "rgba(255, 255, 255, 0.12)" : COLORS.border,
+        line: palette.line,
+        pressed: palette.dark ? "rgba(255, 255, 255, 0.06)" : COLORS.rowHoverBg,
+        ink: palette.ink,
+        ink2: palette.ink2,
+        muted: palette.muted,
+        dark: palette.dark,
+    };
 }

@@ -221,3 +221,94 @@ windows for one bar.
   cell means.
 - ~~**(b): what happens to the Bubble Match track toggle**~~ — moot: it was deleted
   2026-10-03 (the hub pins Recognition; reading is played as reading-flp breaks).
+
+---
+
+### 10. Word-tile Scrabble (HSK word tiles, sentence legality)
+
+**Status: BUILT 2026-11-22 as Sentence Tiles — see [SENTENCE_TILES_GAME.md](./SENTENCE_TILES_GAME.md)**
+(flag `sentenceTiles` ON, feature testers only, not deployed; migration 204). The owner is
+playtesting it. The pilot's method, results and open questions stay in the Claude Doc
+[Scrabble Viability Framework](https://claude.ai/artifact/9rm7EehdaZ2fiJqpzTRH1o)
+(§ "Quality scoring" and § "Pilot: HSK 1–3 word tiles"); this entry keeps the pilot history.
+
+**What.** A Scrabble-like game whose tiles are whole det entries (one word = one tile,
+even multi-character), where every line on the board must read as a **natural
+sentence**. Legality is judged by an AI agent call made from the server, because
+sentences can't be checked against a dictionary. Tile point values are AI-rated
+"nicheness" for now. They should later come from how rarely a tile appears in a sample
+of sentences built from the bag.
+
+**Framework decisions already made by the user.**
+- Target player is **casual**.
+- No pass/fail gates. Each metric gets a soft 0–1 quality score and the overall score
+  is their geometric mean.
+- Rack size and board size are both design variables.
+
+**Where we left off (pilot, difficulty ≤ 3 = 1,680 tiles, 100-tile bags).**
+- Overall ≈ **0.08**, driven by one metric: **61%** of a part-of-speech-composed bag are
+  weak tiles (<10% chance of forming a 2-tile sentence). Numerals, classifiers,
+  conjunctions and most nouns only fit sentences of 3+ tiles. Excluding that metric,
+  rack 9 scores 0.79.
+- Composing the bag by POS quota with duplicated function words cut dead racks from
+  22% to 10%. It left random-pair legality unchanged at 7%.
+- Rack 9 beat rack 7 on every rack metric (dead racks 7.5%, best sentence 3.5 tiles).
+  Suggested board size is 9×9 to 11×11. That is reasoning only; nothing has simulated it.
+- Every figure comes from one AI judge pass on small samples (40–50 racks). Treat each as ±5 points.
+
+**Round 2 (2026-11-21, crossing rule lifted, plays run through one board tile, particles added).**
+Scripts and judge outputs: `server/scripts/analysis/wordScrabblePilot/` (README there).
+- Rack 9 + 3 anchors: **4% dead racks, rack score 0.94**. On an empty board the same bag is
+  14% dead, so the opening move needs a free redraw or a seeded centre tile.
+- No play used a whole rack (max 6 tiles). A 5+ tile long-sentence bonus fires on 14% of turns.
+- Hook rate 12% (was 9.6%). Particles hook the back; reply words hook the front.
+- Empirical tile points (usage when held) replace the AI rating. 25% of the bag is dead
+  weight (<15% usage), half of it the numeral and classifier block (一 两 三 个 本 张). Next
+  bag: swap those for det compounds (一个, 一些, 一点) or drop them.
+- Judge noise looks like ±7 points. The next run should double-judge.
+
+**Round 3 (2026-11-22, minimum connectivity filter, racks 9/11/13, two judges per rack).**
+- Every candidate tile (1,684) has an AI connectivity rating 1–5: how little help it needs to
+  join a sentence. Rubric: `connectivity-rubric.md`; ratings: `data/r3-conn-out-*.jsonl`.
+  Against round-2 play data the ratings track real usage (Spearman 0.80; mean usage 5% / 23% /
+  33% / 59% / 83% for ratings 1–5). The bag admits only rating ≥ 3 (1,129 of 1,684 tiles).
+  This dropped 着 从 和 但是 and the numeral/classifier block. The compounds 一个 一点 一下 一些
+  were rated 1–2 too, so they also fell out.
+- **Dead racks 0% in every configuration, including the empty-board opening move** (14% in
+  round 2). Dead-weight share fell from 25% to 10%.
+- Rack 9 → 11 lifts the mean best sentence from 3.8 to 4.3 tiles and 5+ tile plays from 16% to
+  43%. Rack 13 adds nothing over 11. **Rack 11 is the recommended size.** At rack 11 a 5+
+  bonus would fire too often; a 6+ bonus fires on about 15% of turns.
+- A bigger rack does **not** rescue low-connectivity tiles: rating-3 tiles are used 32% / 37% /
+  26% at racks 9 / 11 / 13. The tiles still stuck are concrete nouns (云 腿 手指 河 公共汽车 学费).
+  Caveat: judges list at most 6 plays, which undercounts usage on big racks.
+- **Decided 2026-11-22: stuck nouns stay in the bag.** Their points reflect how rarely they play
+  instead. `tile-points.py` prices every qualifying tile (1,129) as `1 + round(9·(1 − play rate))`,
+  with play rate measured at rack 11. Sampled tiles use their own rate, shrunk toward their rating's
+  mean (prior weight 10 racks). Unsampled tiles use their rating's mean only (rating 3 → 41%,
+  4 → 67%, 5 → 88%), which can't tell a stuck noun from an easy one. Logged verdicts should
+  replace this prior in the product. Bag spread: 吗/你 1 pt … 腿/云 9 pts.
+- Two judges agree on dead racks and mean best sentence (gap ≤ 0.4 tiles). They disagree on the
+  5+ rate by 4–16 points and on the play-count estimate.
+
+**Data gaps found.**
+- 也/吗/吧/呢 were missing from the pilot (NULL `difficulty`, not yet backfilled). **Fixed
+  on PPE 2026-11-21** via `/mark-discoverable`. Dev has them since the 2026-11-22 pull. 吗
+  and 吧 also had their import reading corrected (ma2 → ma, ba1 → ba). They are now
+  difficulty 1/1/1/2.
+- `dictionaryentries_zh."frequencyScore"` is 5 for 76% of difficulty ≤ 3 rows, so it
+  can't weight a tile bag.
+
+**Open questions (for the user).**
+- ~~Should crosswise runs follow the sentence rule?~~ **Decided 2026-11-21: no.** Only
+  the line a player places is judged. Incidental side-by-side runs are not checked, so
+  crossings and parallel plays stay possible. Judge consistency is explicitly not a
+  goal: the game is casual, played by correspondence (a few seconds of judging is
+  fine), and players get published guidelines. Every verdict should be logged, because
+  the logs become training data for an in-house scorer that can preview a move's
+  score before it is played.
+- Should frame-dependent tiles be merged into frames (一个, 三本), or kept and handled
+  by a larger rack?
+- Should each game draw its own bag (a fixed function-word skeleton plus content words
+  from the learner's own cards)?
+- Next run: two judges per item, racks of 10–11, and a move simulator for board size.

@@ -526,7 +526,7 @@ a new popup inherits it by being one of them, and nothing per call site opts in.
 | Popup family | Behaviour while a keyboard is up | Where |
 |---|---|---|
 | Every MUI `Dialog` | The Dialog **root** gets `padding-bottom: var(--keyboard-inset)`, so the paper re-centres in the space above the keyboard and a tall dialog's own `max-height` shrinks it (its content scrolls). Animated on the keyboard's own slide curve via `--keyboard-inset-timing`. | `src/contexts/ThemeContext.tsx` → `MuiDialog.styleOverrides.root` |
-| Every `SheetPanel` (eip, compare sheet, acp, cdp) | The sheet does **not** move. The body's scroll element gets extra bottom padding equal to the inset, so every row can be scrolled up above the keyboard. | `src/components/sheet/SheetPanel.tsx` → the "Keyboard clearance" layout effect |
+| Every `SheetPanel` (eip, Compare panel, acp, cdp) | The sheet does **not** move. The body's scroll element gets extra bottom padding equal to the inset, so every row can be scrolled up above the keyboard. | `src/components/sheet/SheetPanel.tsx` → the "Keyboard clearance" layout effect |
 
 **A long-form writing field keeps the caret comfortable.** Where a learner writes a
 passage (the Reader's edit mode, the cyoa passage editor), the page ends its scroll box at
@@ -540,8 +540,8 @@ to scroll into (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Editing → Comfortable
 marked `data-sheet-maximize-on-focus` animates its `SheetPanel` to full height (the same
 snap as a drag to the top), on the tap itself — so the sheet grows as the keyboard rises
 rather than leaving a part-height sheet showing only the field. The marker sits on
-`DictionaryWordSearch`'s field, so every paneled dictionary gets it: CompareSheet, the
-eip's Compare tab (`CompareWorkspace`) and the Writing Notebook's word picker
+`DictionaryWordSearch`'s field, so every paneled dictionary gets it: the Compare panel
+(`features/flashcards/compare/CompareSheet.tsx`) and the Writing Notebook's word picker
 (`NotebookWordPickerSheet`). Other sheet inputs are deliberately not marked. Code: `src/components/sheet/SheetPanel.tsx` → the "Maximize
 when a dictionary search takes focus" effect; `src/components/DictionaryWordSearch.tsx`.
 

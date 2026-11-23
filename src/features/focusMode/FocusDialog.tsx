@@ -13,7 +13,7 @@ import { FOCUS_WORLD_NAMES } from "./focusWorldNames";
  *   turn-off      the lever was tapped while focus is on: confirm switching it off.
  *   auto-on       first visit to a world whose focus was switched on for the learner when
  *                 its Reading / Writing goal was turned on (docs/FOCUS_MODE.md § 1a). Info only.
- *   ended         the server switched focus off by itself (the pile is back under FOCUS_DAILY_CARDS).
+ *   ended         the server switched focus off by itself (the pile is back under that world's FOCUS_DAILY_CARDS).
  *   game-blocked  a game was tapped in a focused world with too few of today's cards left.
  *
  * Same MUI Dialog treatment as the app's other confirms (NewGameConfirmDialog).
@@ -53,9 +53,9 @@ function copyFor(content: FocusDialogContent): { title: string; body: string; di
                 title: "Turn on focus mode?",
                 body:
                     `You have ${content.readyCount} cards ready in ${worldsPhrase([content.world])}. ` +
-                    `Focus mode keeps it manageable: each day you'll see at most ${FOCUS_DAILY_CARDS} of them, ` +
+                    `Focus mode keeps it manageable: each day you'll see at most ${FOCUS_DAILY_CARDS[content.world]} of them, ` +
                     `and a card you get right is done for the day. It turns itself off once you're back ` +
-                    `under ${FOCUS_DAILY_CARDS} ready cards.`,
+                    `under ${FOCUS_DAILY_CARDS[content.world]} ready cards.`,
                 dismiss: "Not now",
                 confirm: "Turn on",
             };
@@ -71,7 +71,7 @@ function copyFor(content: FocusDialogContent): { title: string; body: string; di
                 title: "Focus mode is on",
                 body:
                     `You already have a lot of cards ready in ${worldsPhrase([content.world])}, so we turned on ` +
-                    `focus mode for you: each day you'll see at most ${FOCUS_DAILY_CARDS} of them, and a card you ` +
+                    `focus mode for you: each day you'll see at most ${FOCUS_DAILY_CARDS[content.world]} of them, and a card you ` +
                     `get right is done for the day. Tap the lever on the platform to turn it off.`,
                 dismiss: "Got it",
             };

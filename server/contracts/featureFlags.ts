@@ -165,6 +165,34 @@ export const FEATURE_FLAGS = {
    * Requires migration 196 on the target database.
    */
   cyoa: true,
+
+  /**
+   * Voice Assistant — the spoken Mandarin tutor (docs/VOICE_ASSISTANT.md). Gates
+   * `/api/voice/*` (server/routes/voiceRoutes.ts), the voice WebSocket on
+   * `/api/voice/session` (attachVoiceSocket in server/server.ts — the second chokepoint, and
+   * the app's only WebSocket), the `/voice` + `/voice/:sessionId` routes and the Menu popover
+   * row (the only entry point, Q2).
+   *
+   * Requires migration 202, `VOICE_AI_API_KEY` and `GOOGLE_APPLICATION_CREDENTIALS` with the
+   * Speech-to-Text API enabled. Without the key or credentials the routes still mount but
+   * report the tutor unavailable instead of crashing.
+   *
+   * ⚠️ CURRENTLY OFF (default per docs/VOICE_ASSISTANT.md § 10).
+   */
+  voiceAssistant: false,
+
+  /**
+   * Sentence Tiles — the two-player correspondence word-tile game judged by AI
+   * (docs/SENTENCE_TILES_GAME.md). Gates `/api/sentenceTiles/*` (server/routes/sentenceTilesRoutes.ts,
+   * the only server entry), the `/sentence-tiles` + `/sentence-tiles/:gameId` routes and the
+   * Menu popover row (the only client entry).
+   *
+   * ON, but TESTING-ONLY: the service refuses any account without `users.isFeatureTester`, and the
+   * Menu row shows only with testing features switched on (useTestingFeatures). Requires migration
+   * 204 and `SENTENCE_TILES_AI_API_KEY`; without the key, cached lines still play and new lines
+   * answer "judging is unavailable".
+   */
+  sentenceTiles: true,
 } as const;
 
 /** The name of any feature flag above. */

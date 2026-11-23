@@ -213,9 +213,12 @@ export class OnDeckVocabController {
       // With the switch on, top a learner short on SORTED cards up to the flp baseline
       // first, so even an empty deck yields a full loop of new words. The client spots
       // the temporary cards by their `starterPackBucket`. Skipped with the switch off
-      // (the learner has not run out of their own cards yet) and in a focused world
-      // (it serves the day's set and nothing else).
-      const { lentIds } = !lend || collection?.kind === 'focus'
+      // (the learner has not run out of their own cards yet), in a focused world (it
+      // serves the day's set and nothing else), and on the writing world, whose deck is
+      // the characters of the learner's own words — a lent dictionary word is never in it
+      // (docs/WRITING_PRACTICE_REWORK.md § 3d; the loop itself refuses to lend there too,
+      // OnDeckVocabService.canLendProvisional).
+      const { lentIds } = !lend || collection?.kind === 'focus' || world === 'writing'
         ? { lentIds: [] as number[] }
         : await this.provisionalCardService.ensureBaselineForSurface(userId, language, 'flp');
 

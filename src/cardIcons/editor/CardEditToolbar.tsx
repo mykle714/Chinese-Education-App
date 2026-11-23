@@ -61,8 +61,9 @@ export type { AlignDirection } from "../cardIconLayout";
 export { TOOLBAR_DROPDOWN_SELECTOR } from "./toolbarDropdownSelector";
 
 /**
- * CardEditToolbar — the floating bar shown just below the page header while the custom
- * card icon-layout editor is open (docs/CARD_ICON_LAYOUT.md).
+ * CardEditToolbar — the tool rows inside the Customize panel (`CardEditPanel`, the
+ * eip-style sheet that drops down over the page header) while the custom card
+ * icon-layout editor is open (docs/CARD_ICON_LAYOUT.md).
  *
  * Two modes, toggled by the "adv" button (each keeps its own draft on the page, so
  * toggling never destroys the other view):
@@ -252,9 +253,14 @@ const CardEditToolbar: React.FC<{
             // before registering. `manipulation` opts out of double-tap zoom so taps fire
             // immediately. (Click handling itself was never blocked — this is the tap latency.)
             touchAction: "manipulation",
-            // Tighten the gap between the startIcon and the label (MUI defaults to an 8px margin
-            // between them); pull them closer so each button hugs its content.
-            "& .MuiButton-startIcon": { marginRight: "1px", marginLeft: 0 },
+            // Tighten the gap between the startIcon and the label so each button hugs its
+            // content. TWO sources of space have to be cancelled: MUI's own 8px startIcon
+            // margin, AND the app theme's `gap: 7px` on every MuiButton root
+            // (src/contexts/ThemeContext.tsx → MuiButton.styleOverrides.root) — the theme gap
+            // sits between the icon and the label as flex children, so overriding only the
+            // margin still left the label ~8px from its icon.
+            gap: 0,
+            "& .MuiButton-startIcon": { marginRight: "2px", marginLeft: 0 },
             // The explicit `color` above out-specifies MUI's default `.Mui-disabled` grey, so a
             // disabled button (e.g. redo at the top of the redo stack, undo with an empty stack)
             // would otherwise still look fully active. Re-assert the greyed-out look here so the
@@ -474,17 +480,14 @@ const CardEditToolbar: React.FC<{
         const contrastModes: TextColorMode[] = ["theme", "dark", "light"];
 
         return (
-            // Enter/exit slide (drop-in from behind the header, slide back up on close) is
-            // owned by the <Slide> wrapper in FlashcardsLearnPage so it animates in BOTH
-            // directions; this root is just the static container.
+            // Enter/exit slide (drop-in over the header, slide back up on close) and the
+            // white rounded surface are owned by CardEditPanel, the host both fie pages wrap
+            // this toolbar in; this root is just the static container.
             <Box className="card-edit-toolbar">
-                {/* Primary toolbar row. Painted in the PAGE's own ground (COLORS.background,
-                --paper) rather than a toggle-grey, so the bar reads as part of the surface it
-                drops onto instead of a slab floating over it. Both fie surfaces sit on that
-                ground — the flp via MobileDemoFrame, the cdp via MobileTabScreen's default
-                surfaceColor — so one token covers both; if a third surface ever runs a
-                different ground, this becomes a prop rather than a second hard-coded color.
-                The hairline under each row is what keeps the bar legible against the page. */}
+                {/* Primary toolbar row. Unpainted: the rows sit on the white surface of the
+                CardEditPanel that hosts this toolbar (the eip-style drop-down sheet), whose
+                rounded bottom edge + downward shadow separate it from the page. No divider
+                separates this row from the advanced menu below — the two read as one panel. */}
                 <Box
                     className="card-edit-toolbar__row"
                     sx={{
@@ -493,8 +496,6 @@ const CardEditToolbar: React.FC<{
                         gap: 1,
                         px: 1.5,
                         py: 0.75,
-                        backgroundColor: COLORS.background,
-                        borderBottom: "1px solid rgba(0,0,0,0.08)",
                     }}
                 >
                     {/* Contextual left button — ONE persistent <Button> in both modes so it
@@ -619,16 +620,17 @@ const CardEditToolbar: React.FC<{
                             display: "flex",
                             flexWrap: "wrap",
                             alignItems: "center",
+                            // Each wrapped line is centered in the panel, so a short last line
+                            // sits under the middle of the full one instead of hugging the left.
+                            justifyContent: "center",
                             // Deliberately tight (2px between tools, 6px at the row ends): the
                             // eleven tools have to collect onto TWO lines at phone width, and
                             // the earlier 3px/12px spacing spilled them onto a third.
                             gap: "2px",
                             px: 0.75,
                             py: 0.75,
-                            // Same page ground as the primary row above — the two rows are one
-                            // bar, and a second tone would split them visually.
-                            backgroundColor: COLORS.background,
-                            borderBottom: "1px solid rgba(0,0,0,0.08)",
+                            // Unpainted, like the primary row: both sit on the panel's white
+                            // surface, and the panel's rounded bottom edge closes the menu.
                         }}
                     >
                         {/* Count readout — flows as the FIRST list item, vertically centered. */}

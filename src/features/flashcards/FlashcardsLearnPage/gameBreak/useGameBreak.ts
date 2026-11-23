@@ -12,6 +12,7 @@ import {
     type FlpBreakContext,
     type FlpBreakResults,
 } from "../../../../games/flpBreak";
+import { readBreakProgress, writeBreakProgress } from "./breakProgressStore";
 
 /** Cards per break: the 15th card is the last before a game (docs/FLP_GAME_BREAKS.md § 1). */
 export const BREAK_INTERVAL = 15;
@@ -29,6 +30,20 @@ export const BREAK_INTERVAL = 15;
  *   leaving  — no run to report: the game area is sliding away, the stack hidden behind it.
  */
 export type GameBreakPhase = "cards" | "title" | "skipping" | "growing" | "playing" | "shrinking" | "results" | "leaving";
+
+/**
+ * Phases in which a break is OFFERED or UNDER WAY but not finished: the break's card is up,
+ * or the game is growing / mid-run. A session that ends in one of these (the visit is
+ * parked, or the app is closed) saves BREAK_INTERVAL − 1, so the next session's first card
+ * is the last before the break and the break comes straight back (§ 1 "The count
+ * persists"). From `shrinking` on, the run is over, so the break counts as spent.
+ */
+const MID_BREAK_PHASES: ReadonlySet<GameBreakPhase> = new Set(["title", "growing", "playing"]);
+
+/** The count a session in `phase` with `cardsSinceBreak` dismisses should resume at. */
+function progressToResume(cardsSinceBreak: number, phase: GameBreakPhase): number {
+    return MID_BREAK_PHASES.has(phase) ? BREAK_INTERVAL - 1 : cardsSinceBreak % BREAK_INTERVAL;
+}
 
 /** How the page brings the flp back: the word tools only, or the whole stack too. */
 export type BreakReturnMotion = "tools" | "full";
@@ -78,7 +93,10 @@ export interface UseGameBreakReturn {
     beginLeave: () => void;
     /** The exit animation finished: the break is over, the counter starts over. */
     finishLeave: () => void;
-    /** Counter back to 0, no break in progress (a Deck Tower visit ended). */
+    /**
+     * No break in progress (a Deck Tower visit ended). The counter is KEPT — it resumes
+     * where the visit left it, or one card before the break if the visit left mid-break.
+     */
     reset: () => void;
 }
 
@@ -96,6 +114,8 @@ export interface UseGameBreakReturn {
  * `src/games/flpBreak` only (features → games, never the reverse).
  */
 export function useGameBreak(args: {
+    /** The signed-in user, for the persisted count's key; no user → nothing persists. */
+    userId: string | number | null | undefined;
     world: FlpWorld;
     language: Language;
     workingLoop: readonly VocabEntry[];
@@ -109,9 +129,22 @@ export function useGameBreak(args: {
      */
     forcedKey?: string | null;
 }): UseGameBreakReturn {
-    const { world, language, workingLoop, disabled = false, forcedKey = null } = args;
+    const { userId, world, language, workingLoop, disabled = false, forcedKey = null } = args;
 
-    const [cardsSinceBreak, setCardsSinceBreak] = useState(0);
+    // The count toward the next break PERSISTS (breakProgressStore, § 1 "The count
+    // persists"): it opens at the stored figure for this (user, language, world).
+    const readStoredProgress = () =>
+        userId == null ? 0 : readBreakProgress(userId, language, world, BREAK_INTERVAL);
+    const [cardsSinceBreak, setCardsSinceBreak] = useState(readStoredProgress);
+    // A different user / language / world is a different count: swap it in DURING render
+    // (React's "adjust state when a prop changes" pattern), so the persist effect below
+    // never writes the old count under the new key.
+    const progressKey = userId == null ? null : `${userId}:${language}:${world}`;
+    const [loadedProgressKey, setLoadedProgressKey] = useState(progressKey);
+    if (loadedProgressKey !== progressKey) {
+        setLoadedProgressKey(progressKey);
+        setCardsSinceBreak(readStoredProgress());
+    }
     const [phase, setPhase] = useState<GameBreakPhase>("cards");
     const [planned, setPlanned] = useState<PlannedBreak | null>(null);
     const [results, setResults] = useState<FlpBreakResults | null>(null);
@@ -140,6 +173,15 @@ export function useGameBreak(args: {
     // Derived from the registry — enabled, language-gated, on this bar, with an adapter.
     const candidates = useMemo(() => flpBreakCandidatesFor(world, language), [world, language]);
     const forced = useMemo(() => candidates.find((c) => c.key === forcedKey) ?? null, [candidates, forcedKey]);
+
+    // Persist on every change, in the form the next session resumes from — so a closed
+    // tab or a killed app loses nothing. Not while a tester's pin is honoured (§ 10): a
+    // pinned session breaks on every card and would wipe the learner's real count.
+    const progressToSave = progressToResume(cardsSinceBreak, phase);
+    useEffect(() => {
+        if (userId == null || forced !== null) return;
+        writeBreakProgress(userId, language, world, progressToSave);
+    }, [userId, language, world, forced, progressToSave]);
 
     // DUE: the front card is the last before the break. Gated on there being a game to
     // offer and on the loop not winding down (a 1-card loop is about to run dry; § 1).
@@ -256,15 +298,17 @@ export function useGameBreak(args: {
 
     // A PINNED visit starts on the break's card, zero cards in (§ 10). The break's card
     // needs only the plan, not the prefetched board: Play already waits for that. The next
-    // card is under it, as on every title card, so Skip lands on it. Once per visit: the
-    // counter is also 0 after each break, and a second opening there would make Skip loop
-    // on the title card forever, with no card ever reachable.
+    // card is under it, as on every title card, so Skip lands on it. Once per visit
+    // (`forcedOpeningSpentRef`, cleared only by `reset`): a second opening after a break
+    // would make Skip loop on the title card forever, with no card ever reachable. Not
+    // gated on the counter being 0: it persists across visits (§ 1), so a visit can open
+    // with any count.
     useEffect(() => {
-        if (!due || !planned || forced === null || cardsSinceBreak !== 0) return;
+        if (!due || !planned || forced === null) return;
         if (forcedOpeningSpentRef.current) return;
         forcedOpeningSpentRef.current = true;
         setPhase("title");
-    }, [due, planned, forced, cardsSinceBreak]);
+    }, [due, planned, forced]);
 
     // Undo can take the session back off the "due" card (counter 14 → 13): drop the plan,
     // so the break is re-decided — with a fresh seed — when it falls due again.
@@ -348,9 +392,12 @@ export function useGameBreak(args: {
     }, [planned, phase]);
 
     /**
-     * Start the counter over with no break in progress — a Deck Tower visit ended and the
-     * session was parked (FlpTowerHost `parked`), so the next visit counts its own
-     * BREAK_INTERVAL and a pin opens it again. A break left mid-way is dropped; the return choreography still
+     * End the visit's break state — a Deck Tower visit ended and the session was parked
+     * (FlpTowerHost `parked`), so a pin opens the next visit again. The COUNT carries on
+     * (§ 1 "The count persists"): it resumes where the visit left it, and a break left
+     * mid-way (`MID_BREAK_PHASES`) resumes one card before it, so the break is re-planned
+     * — possibly as another game — on the next visit's first card. Under a tester's pin
+     * the count goes back to the stored, pre-pin figure. The return choreography still
      * plays (unseen, the session is hidden) so the word tools are back for the next visit.
      */
     const reset = useCallback(() => {
@@ -359,10 +406,11 @@ export function useGameBreak(args: {
         setAbandoned(false);
         setPlanned(null);
         setResults(null);
-        setCardsSinceBreak(0);
+        setCardsSinceBreak(forced !== null ? readStoredProgress() : progressToResume(cardsSinceBreak, phase));
         if (phase !== "cards") setReturnNonce((n) => n + 1);
         setPhase("cards");
-    }, [phase]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- readStoredProgress reads userId/language/world, listed here
+    }, [phase, cardsSinceBreak, forced, userId, language, world]);
 
     const stackHold: UseGameBreakReturn["stackHold"] =
         phase === "cards" ? (due ? "due" : null)

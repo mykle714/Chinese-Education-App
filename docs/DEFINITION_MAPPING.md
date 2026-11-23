@@ -112,7 +112,7 @@ Child docs:
   `VocabEntryDAL.findRelatedBySharedCharacters` (related words),
   `VocabEntryDAL.findUsedInForCharacter` (used-in, **both** passes — pass 2 rows carry no
   `selectedSense`, but the resolver's default-sense branch still applies),
-  `VocabEntryDAL.findWritingUsedInForCharacters` (writing-flp used-in bubbles, both passes),
+  `VocabEntryDAL.findWritingSourceWordsForCharacters` (the writing card's source words — the learner's own words only),
   `StarterPacksService._rowsToDiscoverCards` (discover / sort cards),
   `StudyChallengeDAL` (challenge word cards),
   `CommunityLayoutDAL.normalize` (community feed — the design OWNER's pick).
@@ -250,7 +250,7 @@ Child docs:
 - **Pipeline position:** immediately AFTER `backfill-long-definitions.js`; re-running that
   script for a word **invalidates** this column for that word. See
   `.claude/commands/mark-discoverable.md`.
-- **Compare twin:** the eip Compare tab stores the identical `{ zh, en }` shape in
+- **Compare twin:** the Compare panel stores the identical `{ zh, en }` shape in
   `word_comparison_cache.citations` (migration 127) and renders through the same component —
   see [WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md). Compare is a live path, so its
   citations come from the comparison call itself rather than a backfill — and since the
@@ -449,10 +449,13 @@ invariant".
 starred compound-only senses such as 的 "taxi" from 的士). See
 [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) § "Bound forms".
 
-**Surfaced to users as "Commonality"** — the five-circle `CommonalityMeter` (`src/components/ScoreMeters.tsx`; Material Symbols `circle` glyphs, filled for the score, outlined for the rest), icons only, on the
+**Surfaced to users as "Usefulness"** ("Commonality" until 2026-11-22) — the five-circle `CommonalityMeter` (`src/components/ScoreMeters.tsx`; Material Symbols `circle` glyphs, filled for the score, outlined for the rest), icons only, on the
 eip Definition tab (`DefinitionFacts.tsx`, via `InfoCardTabContent.tsx`), the acp card
-header (`AddCardsPage.tsx`), and per sense in the card-face `SensePicker`. Its sibling
-`DifficultyMeter` draws `difficulty` as six upward triangles (`change_history` glyphs; hexagons until 2026-11-07).
+header (`AddCardsPage.tsx`), and per sense in the card-face `SensePicker`. Also the
+measure a cyoa story is ranked and labelled by (docs/CYOA_FEATURE.md § 6.2a). Its old
+sibling, the six-triangle `DifficultyMeter` for `difficulty`, was deleted 2026-11-21:
+**`difficulty` is no longer surfaced to users anywhere.** It stays a hidden value that
+drives acp's adaptive leveling, sort-pack levels, game lending and provisional picks.
 
 **Deployed.** Migration 122 (the rename) is on PPE; its temporary deploy runbook has
 been deleted. The one ordering fact worth keeping: **122 must precede 123**, since 123
@@ -466,7 +469,7 @@ a *register* number under a *frequency* name until the backfills are re-run with
 cluster-definitions → 5). **That re-run never happened.** Measured on dev 2026-08-17:
 896 of 930 discoverable zh rows are still stamped `version: 1` (only 34 reached v2), and
 no es row has ever reached v4 (713 at v3, 130 at v2). PPE is very unlikely to be ahead
-of dev. **So most "Commonality" dots in the app today are still register judgments
+of dev. **So most "Usefulness" dots in the app today are still register judgments
 wearing a frequency label.** This is a known, accepted state — it is deliberately **not**
 queued in [DEFERRED_WORK.md](./DEFERRED_WORK.md); the re-run costs one Sonnet call per row
 and has not been judged worth the spend. Re-measure with:

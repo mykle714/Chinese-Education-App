@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
-import { Box, Slide, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { Box, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import DelayedCircularProgress from "../../../components/DelayedCircularProgress";
 import { useAuth } from "../../../AuthContext";
 import type { Language } from "../../../types";
@@ -24,6 +24,7 @@ import InfoCardSection from "./InfoCardSection";
 import { getBreakdownItems as buildBreakdownItems } from "../../../utils/breakdownUtils";
 import { useEipTabs } from "./useEipTabs";
 import EipTabStrip from "./EipTabStrip";
+import { useCompareSheet } from "../compare/useCompareSheet";
 import { useEipOverflowNotice } from "./useEipOverflowNotice";
 import { useNotificationFor } from "../../../components/notifications/useNotify";
 import { useLearningToggle } from "../../../hooks/useLearningToggle";
@@ -39,10 +40,12 @@ import { useWritingFlashcard } from "./useWritingFlashcard";
 import HintPawn from "./hintPawn/HintPawn";
 import type { GameBreakPhase } from "./gameBreak/useGameBreak";
 import { pawnHintFor } from "./hintPawn/pawnHints";
+import { useDeckReviewHint } from "./hintPawn/useDeckReviewHint";
 import { useHintPawnEnabled } from "../../../hooks/useHintPawnSetting";
 import CardIconCanvas from "../../../cardIcons/editor/CardIconCanvas";
 import { measureDefaultTextCenters } from "../../../cardIcons/cardTextLayout";
-import CardEditToolbar, { CARD_EDIT_ANIM_MS, CARD_EDIT_ANIM_EASING, TOOLBAR_DROPDOWN_SELECTOR } from "../../../cardIcons/editor/CardEditToolbar";
+import CardEditToolbar, { TOOLBAR_DROPDOWN_SELECTOR } from "../../../cardIcons/editor/CardEditToolbar";
+import CardEditPanel from "../../../cardIcons/editor/CardEditPanel";
 import IconPickerDialog from "../../../components/IconPickerDialog";
 import { iconSearchTerm, resolveSelectedSenseIndex, resolveDisplayDefinition } from "../../../utils/definitionUtils";
 import {
@@ -59,14 +62,6 @@ import { useTTS } from "../../../hooks/useTTS";
 import { useFlashcardLearnSettings } from "../../../hooks/useFlashcardLearnSettings";
 import type { VocabEntry, SideOneLanguage } from "../types";
 
-/**
- * Tower session: the content area's bare layout boxes — a tap on one is a tap off the card,
- * which is Back (`handleTowerOffCardTap`). The content area itself, FlashCardSection's card
- * slot, and the slot's padded container around the card frame.
- */
-const TOWER_OFF_CARD_SELECTOR = ".mobile-demo-content, .mobile-demo-card-slot, .mobile-demo-draggable-container";
-/** A press that travels further than this is a drag, not a tap. */
-const TOWER_OFF_CARD_SLOP_PX = 10;
 /**
  * The game-break phases in which the hint pawn is `away` — thrown off the left edge, back
  * when the cards return (docs/HINT_PAWN.md § "Game breaks"). The title phase joins them only
@@ -144,7 +139,6 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // language. See useWorkingLoop for the full state machine + retry logic.
     const {
         workingLoop,
-        currentIndex,
         currentEntry,
         nextEntry,
         deepEntry,
@@ -152,7 +146,6 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         loading,
         error,
         isAnimating,
-        isUndoing,
         lastMarkUndoSnapshot,
         activeFrontSlot,
         flyOut,
@@ -190,7 +183,14 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         onTowerLoopChange({ loading, hasCard });
     }, [onTowerLoopChange, loading, hasCard]);
 
-    // Drag/flip logic. Depends on the working loop's isAnimating + currentIndex,
+    // The front card's identity — what every per-card reset keys on (flip, eip, the
+    // writing draft). The card's id, NOT `currentIndex`: an index can stay put while the
+    // card under it is swapped (a one-card loop's replacement lands at 0 again — it
+    // arrived flipped, 2026-11-22) and move while the card stays (a removal behind the
+    // front re-anchors it — that un-flipped the card being studied and closed its eip).
+    const frontCardId = currentEntry?.id ?? null;
+
+    // Drag/flip logic. Depends on the working loop's isAnimating + front card,
     // and feeds dismisses back into it via handleCardDismiss.
     const {
         cardRef,
@@ -205,7 +205,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         showTapToFlipHint,
         shakeNonce,
         handlers,
-    } = useCardDrag(isAnimating, handleCardDismiss, currentIndex, TOWER_CARD_FLIP_MS);
+    } = useCardDrag(isAnimating, handleCardDismiss, frontCardId, TOWER_CARD_FLIP_MS);
 
     // Writing flp (`?world=writing`): the same card, drawn with the writing face. The
     // card never follows a drag — a tap (or swipe attempt) on the front submits (or
@@ -307,6 +307,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     const testingFeatures = useTestingFeatures();
     const forcedBreakKey = useForcedBreak(flpWorld, !parked && testingFeatures);
     const gameBreak = useGameBreak({
+        userId: user?.id,
         world: flpWorld,
         language: (user?.selectedLanguage ?? "zh") as Language,
         workingLoop,
@@ -317,7 +318,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // Undo stays live only on the break's card itself (it cancels the break). Past that
     // the break is under way: undo would edit a card the learner can't see.
     // The break's card on top is one more card in the stack, so everything the session does
-    // around a card (undo, a tap off it) carries on until Play or Skip takes it away.
+    // around a card (undo) carries on until Play or Skip takes it away.
     const stackIsCards = gameBreak.phase === "cards" || gameBreak.phase === "title";
     // The out-of-ready-cards card locks undo too: the loop under it is being (or has been)
     // re-dealt, and the deal clears the snapshot anyway.
@@ -331,7 +332,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     //     in the same batch, so the next render already waits on the new deal;
     //   - the re-deal lands with cards → `lend`: "You're out of cards!", over the
     //     first lent word; swiped or tapped off, study carries on;
-    //   - nothing to deal even with the switch on (a focused world never lends; or the
+    //   - nothing to deal even with the switch on (a focused world or the writing world never lends; or the
     //     dictionary has nothing left) → `done`: "Done for the day!" (+ confetti), which stays.
     // A visit that starts dry (a tap on the empty tower) goes straight down this path.
     // The tower is not told any of it: its count is its own and simply stands at 0.
@@ -351,11 +352,15 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     }, [readyOut, loading, hasCard]);
     // The `lend` card has flown off: the lent word under it is the top card now.
     const onReadyOutCardGone = useCallback(() => setReadyOut(null), []);
+    // A session that never lends: a focused world, and the writing world, whose deck is
+    // the characters of the learner's own words (the server refuses to lend into it —
+    // OnDeckVocabService.canLendProvisional; docs/WRITING_PRACTICE_REWORK.md § 3d).
+    const neverLends = tower.focused || flpWorld === "writing";
     // What running dry WILL show, as far as is known before the deal: the lend card, unless
-    // the switch is already on (the loop is lent words; nothing more comes) or the world is
-    // focused (it never lends) — then "Done for the day!". It can still be wrong when the
+    // the switch is already on (the loop is lent words; nothing more comes) or the session
+    // never lends — then "Done for the day!". It can still be wrong when the
     // dictionary has nothing left to lend; the top card then corrects it.
-    const readyOutNext: Exclude<ReadyOutKind, "pending"> = lendMode || tower.focused ? "done" : "lend";
+    const readyOutNext: Exclude<ReadyOutKind, "pending"> = lendMode || neverLends ? "done" : "lend";
     // The card BEHIND the loop's last card (ReadyOutCardLayer `backing`): there is no word
     // behind it, so the learner sees what comes after it — while it is the only card, and
     // through the render the loop runs dry in, until the top card takes over. Not during a
@@ -363,8 +368,8 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     const readyOutBacking = !parked && !readyOutUp && gameBreak.phase === "cards"
         && (workingLoop.length === 1 || loopDry) ? readyOutNext : null;
     // A `pending` card shows what the backing card promised (the switch was off, so the
-    // only question is focus), rather than blanking between the two.
-    const readyOutLook: Exclude<ReadyOutKind, "pending"> = tower.focused ? "done" : "lend";
+    // only question is whether the session lends), rather than blanking between the two.
+    const readyOutLook: Exclude<ReadyOutKind, "pending"> = neverLends ? "done" : "lend";
     // The tower takes the game's cleared cards off as the game goes away.
     const breakGameUp = gameBreak.phase === "growing" || gameBreak.phase === "playing";
     const onTowerGameBreakChange = tower.onGameBreakChange;
@@ -417,37 +422,6 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         leaveSession();
     }, [provisionalReviewed.length, exitOfferShown, leaveSession]);
 
-    // ── A tap off the card is Back ────────────────────────────────────────────
-    // Over the Deck Tower the card lies on the tower's top, with the sky all round it, so
-    // tapping the sky beside it reads as "put the deck down" — the same as the back arrow
-    // (docs/DECK_TOWER.md § "Studying the tower"). Only a TAP on bare space counts:
-    //   - the press must start AND end on one of the content area's empty layout boxes
-    //     (TOWER_OFF_CARD_SELECTOR), so the card, the word tools, More Info and any control
-    //     never count — a whitelist, so a new control added later is safe by default;
-    //   - it must not travel (a swipe that starts on the card and ends off it fires its
-    //     click on a shared ancestor, which is one of those boxes);
-    //   - the target must be a DOM descendant: React events bubble through portals, so a
-    //     tap on a portaled sheet's backdrop would otherwise land here.
-    // Off during an icon edit (its own off-canvas tap deselects) and once a game break has
-    // left the stack; its card counts as a card, and is excluded the same way as any other.
-    const towerOffCardPress = useRef<{ x: number; y: number } | null>(null);
-    // The results card counts too, though undo stays locked on it: a played game can't be undone.
-    const towerOffCardLive = !parked && !editMode && (stackIsCards || gameBreak.phase === "results");
-    const isTowerOffCardTarget = (e: React.SyntheticEvent): boolean => {
-        const el = e.target as HTMLElement;
-        return e.currentTarget.contains(el) && el.matches(TOWER_OFF_CARD_SELECTOR);
-    };
-    const noteTowerOffCardPress = (e: React.PointerEvent) => {
-        towerOffCardPress.current = towerOffCardLive && isTowerOffCardTarget(e) ? { x: e.clientX, y: e.clientY } : null;
-    };
-    const handleTowerOffCardTap = (e: React.MouseEvent) => {
-        const press = towerOffCardPress.current;
-        towerOffCardPress.current = null;
-        if (!press || !towerOffCardLive || !isTowerOffCardTarget(e)) return;
-        if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > TOWER_OFF_CARD_SLOP_PX) return;
-        handleBack();
-    };
-
     // ── Advanced-toolbar reservation ──────────────────────────────────────────
     // The three-row advanced toolbar is an absolute overlay, so it takes no flow height. These
     // refs feed useToolbarInset, which measures how far it intrudes past the card slot's top
@@ -485,12 +459,12 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     const toolbarInset = useToolbarInset(editMode && advMode, cardSlotRef, toolbarRef, cardSlotPad.top);
 
     // Hard-clear the preserved writing-practice draft when a card is marked (which
-    // advances currentIndex) and when leaving the flp (cleanup on unmount).
+    // changes the front card) and when leaving the flp (cleanup on unmount).
     // (docs/HANDWRITING_RECOGNITION.md "Canvas / state lifecycle")
     useEffect(() => {
         clearWritingDraft();
         return () => clearWritingDraft();
-    }, [currentIndex]);
+    }, [frontCardId]);
 
     // Log the current card whenever it changes (covers both correct and incorrect advances).
     // Dumps the card object verbatim as it arrived from the server (no key-picking or
@@ -544,9 +518,14 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     const railDisabled = breakUp || readyOutUp || frontVacated || !displayCurrentEntry;
     // The hint pawn (docs/HINT_PAWN.md): what it would say about the front card, and the
     // per-device switch (Settings → Display → Study helper). Memoised on the entry so the
-    // pawn's bubble presence only reconciles when the card changes.
+    // pawn's bubble presence only reconciles when the card changes. On a dive's first card,
+    // a review-heavy deck's deck-review line outranks the card's own hint (useDeckReviewHint).
     const hintPawnEnabled = useHintPawnEnabled();
-    const pawnHint = useMemo(() => pawnHintFor(flpWorld, displayCurrentEntry ?? null), [flpWorld, displayCurrentEntry]);
+    const deckReviewKey = useDeckReviewHint(parked, tower.readyBandCounts, displayCurrentEntry?.id ?? null);
+    const pawnHint = useMemo(
+        () => pawnHintFor(flpWorld, displayCurrentEntry ?? null, deckReviewKey),
+        [flpWorld, displayCurrentEntry, deckReviewKey]
+    );
     useEffect(() => {
         // Parked under the tower: nobody is looking at the card yet. It is narrated when the
         // visit starts (`parked` is a dep).
@@ -581,7 +560,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // tab to the panel instead of stacking another panel on top. Each tab is
     // its own looked-up dictionary entry. The trail lives as long as the CARD does —
     // closing the panel keeps it, moving to the next card clears it (see closeEip and
-    // the currentIndex effect). The active tab owns its own selected sub-tab, so the
+    // the front-card effect). The active tab owns its own selected sub-tab, so the
     // page no longer tracks a separate selectedTab.
     const eip = useEipTabs();
 
@@ -589,10 +568,10 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // said was NOT in Learning when the word loaded (lent 'provisional' cards included,
     // so Add promotes them). After a tap it stays as "Added!" (still removable) while the
     // word is showing; the next load of that word (trail A → B → A, or reopening the eip)
-    // re-evaluates it and the key disappears. Fed `null` while the panel is closed or on
-    // the Compare tab, which leaves the hook inert (no fetch).
+    // re-evaluates it and the key disappears. Fed `null` while the panel is closed, which
+    // leaves the hook inert (no fetch).
     // Docs: docs/EIP_SHEET_GESTURES.md § Add key.
-    const eipLearningEntry = isEicOpen && eip.activeTab?.kind === "entry" ? eip.activeTab.entry : null;
+    const eipLearningEntry = isEicOpen ? eip.activeTab?.entry ?? null : null;
     const eipLearning = useLearningToggle(eipLearningEntry, (eipLearningEntry?.language ?? "zh") as Language);
     const eipAddKeyShown = eipLearning.inLibraryOnLoad === false;
     // Notifications (docs/NOTIFICATIONS.md): the eip trail-full notice; the eip Add key's
@@ -625,7 +604,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // Closes the EIP (scrim tap or drag-dismiss). The TABS SURVIVE: the trail belongs to
     // the card, not to the panel, so reopening the sheet on the same card comes back to
     // the same drill-in chain on the same word. It is dropped when the card changes (the
-    // `currentIndex` effect below), which is also when `openForRoot` would reseed it.
+    // front-card effect below), which is also when `openForRoot` would reseed it.
     const closeEip = useCallback(() => {
         setIsEicOpen(false);
     }, []);
@@ -636,7 +615,8 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     //   - undo: the tower's height was reconciled at the climb-out, so undoing last visit's
     //     mark would put a card back on a tower that already counted it;
     //   - the sort offer: it may be raised again on the next visit's way out;
-    //   - the game-break counter: each visit counts its own BREAK_INTERVAL;
+    //   - the game break in progress (the COUNT toward the next one persists — a break
+    //     left mid-way resumes one card before it; docs/FLP_GAME_BREAKS.md § 1);
     //   - the eip sheet: the next visit opens on the card, not on last visit's panel;
     //   - the card's flip: a card flipped but not yet marked goes back to Side 1, so a
     //     visit never opens on a revealed answer. `resetCard` (useCardDrag) is the same
@@ -655,6 +635,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
             setExitOfferOpen(false);
             gameBreak.reset();
             closeEip();
+            closeCompare();
             // The lend switch belongs to the visit: the next one starts on the learner's
             // own ready cards again (re-dealt now, while parked, if the switch was on).
             resetLend();
@@ -761,15 +742,17 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         [plateTones],
     );
 
-    // "Compare" on the word-tools rail above the card. The flp has a tab strip of its
-    // own, so it opens Compare AS AN EIP TAB beside the word — the one surface that does
-    // not use the compare SHEET (both cdps do, having no strip to put a tab in).
-    // Deferred past the next paint, like More Info: opening the eip blocks a frame, and the
+    // "Compare" on the word-tools rail above the card — raises the Compare panel
+    // (compare/CompareSheet, docs/WORD_COMPARE_FEATURE.md) with the answer word in slot A.
+    // Compare never stacks over the eip (owner's call 2026-11-21), so an open eip closes
+    // first; the eip used to host Compare as a crumb in its word trail.
+    // Deferred past the next paint, like More Info: mounting a sheet blocks a frame, and the
     // Compare plate's press (keycapPressDelegate) must paint first.
+    const { openCompare, closeCompare, compareSheet } = useCompareSheet();
     const handleCompare = (target: VocabEntry) => {
         afterNextPaint(() => {
-            openEicSheet();
-            eip.openCompareTab(target);
+            closeEip();
+            openCompare(target);
         });
     };
 
@@ -788,7 +771,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // eip.clear is stable but its identity changes when tabs change; we only
     // want to react to card changes, not tab changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentIndex]);
+    }, [frontCardId]);
 
     // The break's card reached the top of the stack: it has no word, so the word tools and
     // More Info have nothing to act on.
@@ -902,8 +885,6 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
             {!parked && (
                 <TowerStudyHeader
                     lastMarkUndoSnapshot={breakLocksUndo ? null : lastMarkUndoSnapshot}
-                    isAnimating={isAnimating}
-                    isUndoing={isUndoing}
                     onBack={handleBack}
                     onUndo={handleUndoLastMark}
                     editMode={editMode}
@@ -930,7 +911,6 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                 // onClick runs (turning align / shift into no-ops). So also exempt presses
                 // inside any open dropdown via its own portaled class.
                 onPointerDown={(e) => {
-                    noteTowerOffCardPress(e);
                     if (!(editMode && advMode) || (selectedIcon === null && selectedText === null)) return;
                     const el = e.target as HTMLElement;
                     if (
@@ -941,80 +921,71 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                         selectTarget(null);
                     }
                 }}
-                onClick={handleTowerOffCardTap}
             >
-                {/* Floating edit toolbar — overlays the top of the content area while
-                    editing so it does NOT push the card down (docs/CARD_ICON_LAYOUT.md).
-                    Wrapped in <Slide> so it drops in on enter AND slides back up on exit
-                    (both directions), matched to the card slot's toolbar inset + adv-rows Collapse. */}
-                <Slide
-                    in={editMode}
-                    direction="down"
-                    timeout={CARD_EDIT_ANIM_MS}
-                    easing={CARD_EDIT_ANIM_EASING}
-                    mountOnEnter
-                    unmountOnExit
-                >
-                    <Box ref={toolbarRef} sx={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 20 }}>
-                        <CardEditToolbar
-                            advMode={advMode}
-                            count={advDraft.length}
-                            layout={advDraft}
-                            hasSelection={selectedIcon !== null || selectedText !== null}
-                            selectionKind={selectedText !== null ? "text" : selectedIcon !== null ? "icon" : null}
-                            canUndo={advHistory.length > 0}
-                            canRedo={advFuture.length > 0}
-                            onChangeIcon={() => setIconSearchOpen(true)}
-                            onAddIcon={() => setIconSearchOpen(true)}
-                            onToggleAdv={() => setAdvMode((v) => !v)}
-                            onUndo={undoAdv}
-                            onRedo={redoAdv}
-                            onDeleteSelected={handleDeleteSelected}
-                            onDuplicate={handleDuplicateSelected}
-                            onAlign={handleAlign}
-                            onMirror={handleMirror}
-                            onToggleLock={handleToggleLock}
-                            selectedLocked={selectedLocked}
-                            onReorder={handleReorder}
-                            onReorderStart={pushAdvHistory}
-                            onToggleLockAt={handleToggleLockAt}
-                            // The order list selects an icon — route through selectTarget so it
-                            // also clears any text-block selection (mutual exclusion).
-                            onSelectIcon={(i) => selectTarget({ kind: "icon", index: i })}
-                            selectedIndex={selectedIcon}
-                            snapMove={snapMove}
-                            snapRotate={snapRotate}
-                            snapResize={snapResize}
-                            onToggleSnapMove={handleToggleSnapMove}
-                            onToggleSnapRotate={handleToggleSnapRotate}
-                            onToggleSnapResize={handleToggleSnapResize}
-                            onNudgeMove={handleNudgeMove}
-                            onRotateStep={handleRotateStep}
-                            onResizeStep={handleResizeStep}
-                            foreignLabel={currentEntry?.entryKey ?? ""}
-                            englishLabel={currentEntry ? resolveDisplayDefinition(currentEntry) : ""}
-                            textForeign={textForeign}
-                            textEnglish={textEnglish}
-                            onSetTextForeign={setTextForeign}
-                            onSetTextEnglish={setTextEnglish}
-                            cardColor={cardColor}
-                            onSetCardColor={setCardColor}
-                            canReset={canReset}
-                            onReset={() => setResetConfirmOpen(true)}
-                            onSave={handleSaveLayout}
-                            onCancel={exitEdit}
-                            saving={savingLayout}
-                        />
-                    </Box>
-                </Slide>
+                {/* The Customize panel — the eip-style white sheet that drops down over the
+                    header (CardEditPanel portals it to the frame) and hosts the edit toolbar.
+                    It takes no flow height; useToolbarInset moves the card only if the panel
+                    actually reaches it (docs/CARD_ICON_LAYOUT.md § "The Customize panel"). */}
+                <CardEditPanel open={editMode} ref={toolbarRef}>
+                    <CardEditToolbar
+                        advMode={advMode}
+                        count={advDraft.length}
+                        layout={advDraft}
+                        hasSelection={selectedIcon !== null || selectedText !== null}
+                        selectionKind={selectedText !== null ? "text" : selectedIcon !== null ? "icon" : null}
+                        canUndo={advHistory.length > 0}
+                        canRedo={advFuture.length > 0}
+                        onChangeIcon={() => setIconSearchOpen(true)}
+                        onAddIcon={() => setIconSearchOpen(true)}
+                        onToggleAdv={() => setAdvMode((v) => !v)}
+                        onUndo={undoAdv}
+                        onRedo={redoAdv}
+                        onDeleteSelected={handleDeleteSelected}
+                        onDuplicate={handleDuplicateSelected}
+                        onAlign={handleAlign}
+                        onMirror={handleMirror}
+                        onToggleLock={handleToggleLock}
+                        selectedLocked={selectedLocked}
+                        onReorder={handleReorder}
+                        onReorderStart={pushAdvHistory}
+                        onToggleLockAt={handleToggleLockAt}
+                        // The order list selects an icon — route through selectTarget so it
+                        // also clears any text-block selection (mutual exclusion).
+                        onSelectIcon={(i) => selectTarget({ kind: "icon", index: i })}
+                        selectedIndex={selectedIcon}
+                        snapMove={snapMove}
+                        snapRotate={snapRotate}
+                        snapResize={snapResize}
+                        onToggleSnapMove={handleToggleSnapMove}
+                        onToggleSnapRotate={handleToggleSnapRotate}
+                        onToggleSnapResize={handleToggleSnapResize}
+                        onNudgeMove={handleNudgeMove}
+                        onRotateStep={handleRotateStep}
+                        onResizeStep={handleResizeStep}
+                        foreignLabel={currentEntry?.entryKey ?? ""}
+                        englishLabel={currentEntry ? resolveDisplayDefinition(currentEntry) : ""}
+                        textForeign={textForeign}
+                        textEnglish={textEnglish}
+                        onSetTextForeign={setTextForeign}
+                        onSetTextEnglish={setTextEnglish}
+                        cardColor={cardColor}
+                        onSetCardColor={setCardColor}
+                        canReset={canReset}
+                        onReset={() => setResetConfirmOpen(true)}
+                        onSave={handleSaveLayout}
+                        onCancel={exitEdit}
+                        saving={savingLayout}
+                    />
+                </CardEditPanel>
                 {/* WORD TOOLS — `Compare` and `Customize`, on the PAGE above
                     the card and outside its boundary (`.wtl.top`, artboards 19–25). Not at
                     the bottom of the screen, which belongs to the thumb: the card is swiped
                     there and the info panel is raised from there. Any of them pressed on
                     the question face flips the card first (revealAnswer).
 
-                    Hidden while the icon editor is open — the fie toolbar overlays exactly
-                    this band, and the card is locked anyway.
+                    Greyed + inert (not hidden) while the icon editor is open, the same
+                    treatment as the More Info pill: the Customize panel now drops over the
+                    header rather than over this band, so the rail stays in view.
 
                     No `Write it` here (`showWriteIt={false}`, owner 2026-11-17) — the cdp
                     and Dictionary eip keep theirs.
@@ -1042,11 +1013,11 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                         "& > *": { pointerEvents: "auto" },
                     }}
                 >
-                    {railEntry && !editMode && !writingMode && (
+                    {railEntry && !writingMode && (
                         <WordToolsRail
                             className="mobile-demo-word-tools"
                             entry={railEntry}
-                            disabled={railDisabled}
+                            disabled={editMode || railDisabled}
                             onCompare={handleCompare}
                             onCustomize={handleCustomizeCard}
                             onToolPress={revealAnswer}
@@ -1171,7 +1142,8 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                 {/* THE HINT PAWN — the study helper in the bottom-left corner, which speaks
                     the front card's hint (docs/HINT_PAWN.md). Mounted in every world; it
                     arrives only once a hint is due (writing: used-in words; main and reading:
-                    a wrong-streak tip), so a session with no hint-worthy card never shows it.
+                    a wrong-streak tip; any world: the deck-review line on a review-heavy
+                    dive's first card), so a session with no hint-worthy card never shows it.
                     After FlashCardSection in the DOM so it paints above the card stack;
                     before the eip so the sheet still covers it. */}
                 {hintPawnEnabled && (
@@ -1237,17 +1209,13 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     // The active tab owns the panel's entry/breakdown/sub-tab. openEicSheet
                     // always seeds a root tab before this renders, so activeTab is present;
                     // the currentEntry/breakdownItems fallbacks are a paint-safety net only.
-                    // The Compare tab (docs/WORD_COMPARE_FEATURE.md) is a different kind — it
-                    // has no entry/breakdown/sub-tab of its own, so it renders CompareWorkspace
-                    // instead (InfoCardSection branches on `compareTab`).
                     const active = eip.activeTab;
-                    const compareTab = active?.kind === "compare" ? active : null;
-                    const panelEntry = (active?.kind === "entry" ? active.entry : null) ?? displayCurrentEntry;
-                    const panelBreakdown = (active?.kind === "entry" ? active.breakdownItems : null) ?? breakdownItems;
-                    const panelSubTab = active?.kind === "entry" ? active.selectedSubTab : 0;
+                    const panelEntry = active?.entry ?? displayCurrentEntry;
+                    const panelBreakdown = active?.breakdownItems ?? breakdownItems;
+                    const panelSubTab = active?.selectedSubTab ?? 0;
                     // The panel's live sense pick. Seeded per entry tab from the entry's
                     // persisted `selectedSense`, so it agrees with the flashcard face on open.
-                    const panelSenseIndex = active?.kind === "entry" ? active.selectedSenseIndex : 0;
+                    const panelSenseIndex = active?.selectedSenseIndex ?? 0;
                     return (
                         <InfoCardSection
                             currentEntry={panelEntry}
@@ -1267,9 +1235,6 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                             // Display-only in the eip (its header underlines this sense); the
                             // pick is made on the card face and arrives via syncEntry.
                             selectedSenseIndex={panelSenseIndex}
-                            compareTab={compareTab}
-                            onSetCompareSlot={eip.setCompareSlot}
-                            onCompareResult={eip.setCompareResult}
                             entryTabId={eip.activeTab?.id}
                             entryTabIndex={eip.activeIndex}
                             tabStrip={
@@ -1306,6 +1271,8 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                         />
                     );
                 })()}
+                {/* The Compare panel (handleCompare) — its own sheet, never over the eip. */}
+                {compareSheet}
                 {/* THE GAME BREAK, once Play is tapped (until then it is a card in the
                     stack). It portals to the phone frame, over the flp header and the
                     footer, so its own back arrow is the way out. docs/FLP_GAME_BREAKS.md § 2. */}

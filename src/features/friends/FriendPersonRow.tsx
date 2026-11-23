@@ -26,7 +26,8 @@ import { WEIGHT } from "../../theme/scale";
  * ── TWO TAP MODELS, and a row uses exactly one ────────────────────────────────
  *   * `onPersonPress` — the avatar + name half is tappable (→ expand) and the
  *     `actions` slot holds real buttons OUTSIDE it, so tapping Decline is never read
- *     as tapping the person. This is the friend screens.
+ *     as tapping the person. This is the friend screens. Once a row's `detail` is
+ *     OPEN, closing widens to the whole row (see `rowCollapses`); opening does not.
  *   * `onRowPress` — the WHOLE row is one button and `actions` is presentational.
  *     For a row with exactly one thing it can do; this is the challenges page.
  * Passing both is not an error, but `onRowPress` wins and `onPersonPress` is dropped.
@@ -132,6 +133,13 @@ function FriendPersonRow({ name, username, avatarIconId, secondary, actions, lea
     // handlers on nested elements for the same row is exactly the composition
     // `onRowPress` exists to remove.
     const personPress = onRowPress ? undefined : onPersonPress;
+    // While the detail is OPEN, the whole row — the person half, the leading section, the
+    // padding and the expanded panel itself — is one "close" target (user, 2026-11-22:
+    // "tapping anywhere in expanded friend panel should shrink it"). Opening still needs a
+    // tap on the person half; only closing widens to the full row. The person half keeps
+    // its keyboard handler and `aria-expanded`, so the disclosure semantics are unchanged.
+    const rowCollapses = expanded === true && detail !== undefined && personPress !== undefined;
+    const rowClick = onRowPress ?? (rowCollapses ? personPress : undefined);
     const reduceMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
 
     return (
@@ -140,7 +148,7 @@ function FriendPersonRow({ name, username, avatarIconId, secondary, actions, lea
             // The row is a real button when `onRowPress` is set: role + tabIndex +
             // Enter/Space, not just an onClick, so it is reachable and operable from a
             // keyboard the way the <button> it replaces would have been.
-            onClick={onRowPress}
+            onClick={rowClick}
             role={onRowPress ? "button" : undefined}
             tabIndex={onRowPress ? 0 : undefined}
             onKeyDown={onRowPress
@@ -160,6 +168,8 @@ function FriendPersonRow({ name, username, avatarIconId, secondary, actions, lea
                 // White on the paper ground, not the beige card fill: beige is the
                 // FLASHCARD's material, and a person is not a card.
                 borderRadius: "16px",
+                // An open row is tappable everywhere (it closes), so it shows the hand.
+                ...(rowCollapses && { cursor: "pointer" }),
                 ...(onRowPress && {
                     cursor: "pointer",
                     // Press feedback on the WHOLE row, which is the point: the thing
@@ -237,7 +247,9 @@ function FriendPersonRow({ name, username, avatarIconId, secondary, actions, lea
 
             <Box
                 className="friend-person-row__person"
-                onClick={personPress}
+                // While open, the ROW handles the tap (rowClick); handling it here too would
+                // toggle twice and leave the row open.
+                onClick={rowCollapses ? undefined : personPress}
                 role={personPress ? "button" : undefined}
                 tabIndex={personPress ? 0 : undefined}
                 aria-expanded={personPress ? expanded : undefined}
@@ -319,7 +331,17 @@ function FriendPersonRow({ name, username, avatarIconId, secondary, actions, lea
             </Box>
 
             {actions && (
-                <Box className="friend-person-row__actions" sx={{ display: "flex", alignItems: "center", gap: 0.5, flexShrink: 0 }}>
+                <Box
+                    className="friend-person-row__actions"
+                    // A real button in `actions` (the onPersonPress model) must not ALSO close
+                    // an open row; a tap on presentational content (the leaderboard's
+                    // VelocityStat) still bubbles up and closes it.
+                    onClick={rowCollapses
+                        ? (event) => {
+                            if ((event.target as HTMLElement).closest("button, a, [role='button']")) event.stopPropagation();
+                        }
+                        : undefined}
+                    sx={{ display: "flex", alignItems: "center", gap: 0.5, flexShrink: 0 }}>
                     {actions}
                 </Box>
             )}

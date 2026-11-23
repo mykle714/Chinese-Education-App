@@ -433,6 +433,12 @@ the v1 `{fill, ink, tint}` shape is gone); `src/utils/categoryColors.ts` → `BA
    uses it and it is the one hue with no Mark tier. `tea` / `teaM` / `teaTint` /
    `tealAccent` were deleted from `COLORS` and `RAMP`; its three users moved — Hydra
    Bubbles to green (decision 6), the Immersive World and Scene Editor hp tiles to blue.
+   ⚠️ **Since reversed:** `tea` / `teaM` / `teaTint` are back in `COLORS` and `RAMP` (mark =
+   mid) and worn by Superposition (`GAME_HUE`), the writing notebook's mi-grid guide, the voice
+   assistant's speaking state, cyoa passage links and the confetti burst.
+8. **`moss` joined the ramp (2026-11-22)** as an off-design hue: a leafy green (hue 135, the four
+   tiers on the ramp recipe) for Sentence Tiles, its only wearer. It is not `grn`, which is
+   Comfortable's band colour. `src/theme/colors.ts` → `COLORS.moss*`, `RAMP.moss`.
 
 **Other changes worth knowing:**
 - **The fie card-fill swatches are pinned** (`src/utils/cardColor.ts` →
@@ -2038,7 +2044,7 @@ come from `getToneColor` inside cpcd, never the artboard's inlined hexes.
   the swipe. A tap still opens the entry (no `click` after a pan) and a vertical drag still
   scrolls the page (`pan-x pan-y`, the browser picks the axis). It needs the page's scroll
   area to allow `pan-x`, so DictionaryPage passes `horizontalPan` to MobileTabScreen. Opt-in
-  per row (`swipeGloss`); the Compare picker and community search keep the ellipsis. Code:
+  per row (`swipeGloss`); the mini search (Compare, notebook picker) and community search keep the ellipsis. Code:
   `src/components/DictionaryEntryRow.tsx` → `DictionaryEntryGloss`, `swipeGloss`; the line
   itself is the shared `src/components/SwipeableTextLine.tsx`.
 - **The Dictionary lists senses, as the flp eip does** (owner's call 2026-10-31, reversing the
@@ -2052,7 +2058,7 @@ come from `getToneColor` inside cpcd, never the artboard's inlined hexes.
     header's dd and the underlined cell in the list.
   - **The search row** goes through `src/utils/definitionUtils.ts` → `resolveSearchRowView`, then
     `joinDefinitionList`. A `matchedSense` moves that sense's dd to the front and supplies the
-    pinyin. Compare slot B shares the row; `CommunitySearchBar` prints the list's first item.
+    pinyin. The Compare panel's search shares the row; `CommunitySearchBar` prints the list's first item.
   - **Search still reads every gloss** (`server/dal/implementations/DictionaryDAL.ts` →
     `STRIPPED_ALL_GLOSSES`), so a hit on a later gloss can show a row that does not print the
     searched word: "pretty" finds 漂亮, whose row reads "beautiful".
@@ -2121,7 +2127,7 @@ come from `getToneColor` inside cpcd, never the artboard's inlined hexes.
   `resolveDisplayPronunciation`, `src/components/ScoreMeters.tsx` → `CommonalityMeter`.
 - **One section-title style in the word panels** (owner's call 2026-11-07). Every title in
   the eip Definition tab and the cdp body — "Other Translations", the facts strip's "Parts of
-  Speech" / "Commonality" / "Difficulty", and "Synonyms" / "Related Words" — is drawn by
+  Speech" / "Usefulness" (a "Difficulty" caption too, until 2026-11-21), and "Synonyms" / "Related Words" — is drawn by
   `EipSectionLabel`: `FONTS.sans` (the page-header title face), `SIZE.micro`, bold, uppercase,
   `TRACKING.caps`, `palette.flashcard.textSecondary`. The facts captions used to be their own
   Tower Tier 2 `.lab` (`FONTS.label` at 10.5px, .08em) and drifted from the rest.
@@ -2142,17 +2148,17 @@ a row of `.chip` pills (`1 2 3 ›`); it is still an MUI `Pagination`. A5 themed
 `Button` but not `Pagination`, so converting it is a theme-override question rather than a
 row question.
 
-**`CompareWorkspace` inherits the new row.** Its slot-B mini search renders the same
-component, so it changed too: its 8px inter-row gap was removed (a `.dr` separates with
-its own hairline, and a gap leaves those hairlines floating) and it passes `inset={4}`,
-the row's one styling prop, so text inside an already-inset panel is not twice-indented.
+**The mini search inherited the new row** (Compare's then-`CompareWorkspace`, 2026-08-24):
+its 8px inter-row gap was removed (a `.dr` separates with its own hairline) and it passed
+`inset={4}`. *(Superseded 2026-11-21: the mini search — `DictionaryWordSearch`, now the Compare
+panel's and the notebook picker's — draws the § 7b slabs, `variant="slab"`, like the page.)*
 
 **Tapping the Chinese headword copies it instead of opening the entry.** The Dictionary
 page's rows pass `headwordTapToCopy`, which turns on `ForeignText`'s `tapToCopy` for the
 headword (characters first, pinyin on the next tap — the same behaviour as the eip
 header headword) and stops that tap at `.dictionary-entry-row__headword-block` so it never
-reaches the row's `<button>`. The gloss and chevron still open the entry. The Compare
-slot-B search leaves it off: there the row is a picker, and a tap anywhere means "choose
+reaches the row's `<button>`. The gloss and chevron still open the entry. The mini search
+(Compare, notebook picker) leaves it off: there the row is a picker, and a tap anywhere means "choose
 this word". Spanish rows ignore it (ForeignText's plain branch has no tap-to-copy).
 
 ### 7b · Tier-2 redesign (2026-10-29)
@@ -2183,8 +2189,9 @@ results*. It **supersedes several decisions above** — the full-bleed rows, the
   `src/features/dictionary/DictionaryPage.tsx` → `WELCOME_COPY`, `welcomeCopyFor`.
 - **Rows sit on one white slab** (`DictionaryResultSlab`) with hairlines BETWEEN rows,
   rather than full-bleed. `DictionaryEntryRow` gained `variant="slab"` (16/12px insets,
-  15px ink2 gloss, 22px chevron); the default `list` variant is unchanged for Compare and
-  community search. Group headings ("Starts with “shí”", a segment name) are bare `Label`
+  15px ink2 gloss, 22px chevron); the default `list` variant is unchanged for community
+  search. The mini search (`DictionaryWordSearch` — Compare, notebook picker) took the slabs too
+  on 2026-11-21, through the shared `src/components/dictionarySearch/DictionarySearchResults.tsx`. Group headings ("Starts with “shí”", a segment name) are bare `Label`
   overlines (`DictionarySlabLabel`).
 - **Match sections** (added 2026-10-29, owner request; order set by the owner). Plain-search
   results are split into labelled slabs by kind of match, in the server's rank order:
@@ -2207,8 +2214,8 @@ results*. It **supersedes several decisions above** — the full-bleed rows, the
   server search for it exists (docs/DEFERRED_WORK.md).
 - **The zh inline keypad is gone** from this page: tone vowels now come from the
   beginner keyboard's **ā pad** (docs/BEGINNER_KEYBOARD.md § 6z-10). `PinyinKeypad` still
-  renders above the field for **es** (accents, ñ, ¿ ¡ — es has no beginner keyboard) and
-  in the Compare tab.
+  renders above the field for **es** (accents, ñ, ¿ ¡ — es has no beginner keyboard), here and
+  in the mini search (`dictionarySearchField.ts` → `showsInlineKeypad`, shared since 2026-11-21).
 - **Slab footer** — the artboard draws the Deck Tower's floating slab (`.ft`), not the
   flat bar, so `/dictionary` carries `footerStyle: "slab"` in
   `routeMeta`. No cast shadow and no wash: the page sets neither footer channel, so the
@@ -2253,16 +2260,21 @@ results*. It **supersedes several decisions above** — the full-bleed rows, the
     the `DelayedCircularProgress` spinner. (The read-only card page `/dictionary/card/:word`
     that also wore the ground was deleted 2026-11-10.)
 
-**Code:** `src/features/dictionary/DictionaryPage.tsx` → `searchFieldSx`, `useTier2Look`;
-`src/features/dictionary/dictionaryMatchSections.ts` → `groupByMatchSection`, `matchSectionLabel`;
+**Code:** `src/features/dictionary/DictionaryPage.tsx` → `useTier2Look`;
+`src/components/dictionarySearch/dictionarySearchField.ts` → `dictionarySearchFieldSx`,
+`dictionarySearchPlaceholderFor`, `showsInlineKeypad`;
+`src/components/dictionarySearch/DictionarySearchResults.tsx` (segment + match-section slabs,
+shared with `src/components/DictionaryWordSearch.tsx`);
+`src/components/dictionarySearch/dictionaryMatchSections.ts` → `groupByMatchSection`, `matchSectionLabel`;
 `server/dal/implementations/DictionaryDAL.ts` → `searchByWord1`, `prefixGlossMatch`, `LADDER_MATCH_KINDS`;
 `server/contracts/wire.ts` → `DictionaryMatchKind`, `matchKind`;
-`src/features/dictionary/DictionaryPageParts.tsx` → `DictionaryAskAiRow`,
-`DictionaryResultSlab`, `DictionarySlabLabel`, `DictionaryLoadMore`, `DictionaryNoResults`;
+`src/features/dictionary/DictionaryPageParts.tsx` → `DictionaryAskAiRow`, `DictionaryNoResults`;
+`src/components/dictionarySearch/DictionaryResultParts.tsx` → `DictionaryResultSlab`,
+`DictionarySlabLabel`, `DictionaryLoadMore`, `DictionaryNoResultsWell`;
 `src/components/DictionaryEntryRow.tsx` → `variant`; `src/components/PinyinKeypad.tsx` →
 `ZH_ROWS`, `ES_ROWS`, `KeyGroup`; `src/components/ForeignText.tsx` →
 `isLatinScriptLang`; `src/components/primitives/Label.tsx` → `Label`;
-`src/components/CompareWorkspace.tsx`; `src/hooks/useDictionarySearch.ts`;
+`src/hooks/useDictionarySearch.ts`;
 `src/routes/routeMeta.ts` → `/dictionary` rows' `footerStyle`;
 `src/components/MobileTabScreen.tsx` → `footerFootprint`, `footerClearance`;
 `src/components/MobileFooter.tsx` → `FooterSpacer`, `SLAB_FOOTER_TOTAL_CLEARANCE`.
@@ -3036,9 +3048,8 @@ Hydra's pinyin display genuinely is a live toggle.
   the legend was dropped and the countdown moved inline beside the band pill.
 - **A `Know / Read / Write` switcher.** See the **D6 amendment** below.
 - **`WordToolsRail` (`.wtl.top`)** above the card — Write it / Compare. Compare raises the
-  compare SHEET over the page (the cdp had no tab strip to host a Compare tab in; since
-  2026-11-10 its eip has a word trail, but the rail sits outside the sheet, so Compare still
-  raises the compare sheet).
+  Compare panel over the page (since 2026-11-21 the only Compare surface; an open eip closes
+  first — WORD_COMPARE_FEATURE.md).
   **Amended 2026-09-04:** it used to navigate to a standalone `/compare` page through route
   state; that page is deleted — see WORD_COMPARE_FEATURE.md.
 - **A "More Info" pill + a pull-up sheet.** The definition / breakdown / examples boxes
@@ -3084,7 +3095,8 @@ greys out while it is open, because the sheet would cover the canvas being edite
 `src/timeOfDay/useTier2Look.ts` → `useTier2Look`;
 `src/components/NodePage.tsx` (the `overlay` slot);
 `src/components/primitives/Label.tsx` (`SectionRule`'s `right` slot);
-`src/components/CompareSheet.tsx` (seeds slot A from the calling word; replaced
+`src/features/flashcards/compare/CompareSheet.tsx` (seeds slot A from the calling word; was
+`src/components/CompareSheet.tsx` until 2026-11-21, and replaced
 `src/features/dictionary/ComparePage.tsx`, deleted 2026-09-04).
 **Deleted:** `src/features/flashcards/MasteryProgressBar.tsx` (368 lines).
 **Docs:** `docs/MASTERY_REWORK.md`, `docs/CARD_ICON_LAYOUT.md`,

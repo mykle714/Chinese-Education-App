@@ -56,7 +56,33 @@ progress. So:
 * it **persists** after the round. It is never garbage-collected, because deleting it
   would throw away the marks earned on it.
 
-### The two-bucket rule
+### Tracked rows (migration 203)
+
+`'provisional'` means **lent by the server**, and only the lend path writes it
+(`ProvisionalCardDAL.insertProvisional`). Every other path that needs a hidden row, one
+that holds progress without being in the learner's deck, writes **`'tracked'`**
+(`VET_TRACKED_BUCKET`, `server/dal/shared/vetTable.ts`):
+
+| Writer | Why it needs a hidden row |
+|---|---|
+| `VocabEntryDAL.ensureCharacterMarkStates` | a word's writing mark fans out to its characters (WRITING_PRACTICE_REWORK.md § 3a) |
+| `server/dal/shared/writingDeck.ts` → `ensureCharacterRows` | Writing Grid / Superposition deals, and the writing deck's materialization (§ 3d there) |
+| `VocabEntryDAL.undoSortedRow` | an undone sort whose card already carries marks (§ 7) |
+| `VocabEntryDAL.demoteLibraryRowToTracked` | "Remove from Learning" (§ 7) |
+
+A tracked row behaves like a lent one everywhere **except lending**: every sorted read
+hides it, it accepts marks, sorting promotes it in place (`isHiddenBucket`,
+`server/contracts/wire.ts`), and discover still offers it. But `findHeldProvisional` (the
+re-lend source) and `listProvisionalKeys` (the post-round sort offer) read
+`'provisional'` alone, and the client's `isProvisional` (lent badge, marked-lent tally) is
+`'provisional'` alone. Lending targets new users, so it must never hand back a bare
+character row or a word the learner removed on purpose.
+
+**No backfill.** Nothing on a row records which path created it, so rows made before
+migration 203 by the four tracked writers are still `'provisional'` and can still be
+re-lent. Only rows written since then are tracked.
+
+### The bucket rule
 
 Every vet read must decide which bucket it means. Getting this wrong fails *silently*
 in both directions, so the two predicates are centralized in
@@ -64,8 +90,9 @@ in both directions, so the two predicates are centralized in
 
 ```ts
 vetSortedClause(alias?)      // "starterPackBucket" = 'library'
-vetPlayableClause(alias?)    // "starterPackBucket" IN ('library','provisional')
-vetProvisionalClause(alias?) // "starterPackBucket" = 'provisional'
+vetPlayableClause(alias?)    // "starterPackBucket" IN ('library','provisional','tracked')
+vetProvisionalClause(alias?) // "starterPackBucket" = 'provisional'   (lent only)
+vetHiddenClause(alias?)      // "starterPackBucket" IN ('provisional','tracked')
 ```
 
 **The rule of thumb (revised 2026-08-20):**
@@ -88,11 +115,21 @@ Current classification (all call sites):
 | `countSorted` (what the baseline is compared against) | SORTED | `ProvisionalCardDAL.ts` |
 | `findHeldProvisional` (the re-lend source) | PROVISIONAL | `ProvisionalCardDAL.ts` |
 | `getLibraryDistractors` (Speed Reading filler characters) | PLAYABLE | `SpeedReadingDAL.ts` |
+| `listProvisionalKeys` (the post-round sort offer) | PROVISIONAL | `ProvisionalCardDAL.ts` |
+| `getRecentUsers` (tdp usage stats: "sorted" = not hidden) | NOT HIDDEN | `UsageStatsDAL.ts` |
 | `getLibraryCards` / `getMastered…` / `getNonMastered…` | SORTED | `OnDeckVocabService.ts` |
 | `getCategoryCounts` (band figures: td's cards page filter keys, Account) | SORTED | `OnDeckVocabService.ts` |
 | `findByUserIdAndLanguage`, `countByUserIdAndLanguage`, `searchEntries`, `findByDifficultyLevel`, `bulkFindByKeys`, `findByTokens`, `findEntriesCreatedAfter`, `findRelatedBySharedCharacters`, `findUsedInForCharacter` | SORTED | `VocabEntryDAL.ts` |
 | community feed | SORTED | `CommunityLayoutDAL.ts` |
 | `estimateLevel`, discover supply, quick-mark supply, `_hydrateCards.sorted`, `getProgress` | SORTED | `StarterPacksService.ts` |
+
+The **writing flp** reads neither bucket rule: it reads the writing deck
+(`server/dal/shared/writingDeck.ts` → `writingDeckFrom`) — single characters of the
+learner's SORTED words, backed by their character rows in any bucket, plus virtual rows
+for characters with no row yet. A virtual character that is dealt (or picked into a focus
+snapshot) gets a hidden `tracked` row then, by the same insert the Writing Grid uses
+(`ensureCharacterRows`), so its marks land on a vet row and it is never re-lent
+(WRITING_PRACTICE_REWORK.md § 3d). The writing world itself never lends.
 
 Two by-id reads are **deliberately unfiltered** — `findByIdAndLanguage` and
 `findByUserAndKey`. Bucket visibility is a property of *list* reads; "give me the row
@@ -653,24 +690,27 @@ that once made lending unable to fill a round were removed with
 
 ### Which flp sessions may be topped up with lent cards
 
-One rule — `canLendProvisional(lend, collection)` (`OnDeckVocabService.ts`) — decides whether
+One rule — `canLendProvisional(lend, collection, world)` (`OnDeckVocabService.ts`) — decides whether
 the initial loop, the per-swipe refill (`getNextLibraryCardWithFallback`) and the break
 refill (`refillWorkingLoop`) may lend:
 
 > Lend only when the session's **lend switch** is on (`lend`) **and** the round is
-> **unrestricted** (`collection` unset). A focused world's round (`CollectionFilter`
-> `{ kind: 'focus' }`) never lends.
+> **unrestricted** (`collection` unset) **and** it is not the writing world. A focused
+> world's round (`CollectionFilter` `{ kind: 'focus' }`) never lends; nor does the writing
+> world, whose deck is the characters of the learner's own words — a lent dictionary word
+> is never in it ([WRITING_PRACTICE_REWORK.md](./WRITING_PRACTICE_REWORK.md) § 3d).
 
 | Session | Off-cooldown cards spent ⇒ |
 |---|---|
 | Study Mix, switch off (every visit starts here) | **short / empty** → the flp's out-of-ready-cards card turns the switch on |
 | Study Mix, switch on | lend to fill the 10-card loop |
 | Focused world | **short / empty**; a lent card is outside the day's set → the flp's "done for the day" card |
+| Writing world | **short / empty** → "done for the day" (no lent card is a deck character) |
 
 `POST /api/flashcards/mark` returns **200 with `newCard: null`** rather than a 404 so
 `useWorkingLoop` winds the loop down cleanly; an empty loop is what raises the flp's card.
 The *baseline* top-up (`OnDeckVocabController.getDistributedWorkingLoop` →
-`ensureBaselineForSurface`) runs only with the switch on and outside a focused world, so a
+`ensureBaselineForSurface`) runs only with the switch on, outside a focused world and off the writing world, so a
 brand-new learner studies the cards they have before any are lent. The switch is the
 flp's client state (`useWorkingLoop` → `lendMode`) and resets when the Deck Tower visit ends
 ([DECK_TOWER.md](./DECK_TOWER.md) § Running out of ready cards).
@@ -731,7 +771,7 @@ only ever return fewer cards, never smuggle in extra ones.
 ### Promotion preserves progress
 
 `StarterPacksService.sortCard` **promotes in place**: if the row already exists and is
-`'provisional'`, it flips the bucket to `'library'` and **touches nothing else**. Every
+hidden (`'provisional'` or `'tracked'`, `isHiddenBucket`), it flips the bucket to `'library'` and **touches nothing else**. Every
 mark earned while the card was temporary survives — including marks earned on it during a
 run where it was serving under a difficulty tier (§ 3c). The tier was only ever a serving
 label; promotion drops it and the card bands off its real history from then on.
@@ -743,8 +783,9 @@ An already-`'library'` row is left completely alone (re-sorting must not reset a
 `undoSort` used to `DELETE` the row unconditionally, which would silently destroy marks
 earned in a game. It now branches, atomically, in one CTE:
 
-* the row **has marks** → set the bucket back to `'provisional'`. The card leaves the
-  deck, keeps its history, and discover keeps offering it, so it can be re-sorted later
+* the row **has marks** → set the bucket to `'tracked'` (since migration 203; it was
+  `'provisional'` before). The card leaves the deck, keeps its history, is never lent
+  back, and discover keeps offering it, so it can be re-sorted later
   with the progress intact. The response carries `demoted: true`.
 * the row **has no marks** → delete it, as before, so a mis-tap leaves no trace and the
   word returns to the normal fresh supply.
@@ -756,12 +797,12 @@ earned in a game. It now branches, atomically, in one CTE:
 Both the eip's "Added!" key (`useLearningToggle`, drawn as `EipAddKey` in the eip trail on the
 Dictionary page and on words drilled into from the saved-card cdp — LEAF_NODE_PAGES.md § "The Learning control")
 and the vet cdp's delete button (`VocabCardDetailPage` → `handleDelete`, one tap, no
-confirmation) remove a word from Learning by setting a `'library'` row's bucket to `'provisional'` —
+confirmation) remove a word from Learning by setting a `'library'` row's bucket to `'tracked'` —
 **always** a demotion, marks or not (unlike undo above, it never deletes). The row keeps
 its history (and any legacy `deck_cards` rows); `vetSortedClause()` reads stop seeing it, and a re-add
-via `addToLibrary` promotes it back in place. Because it is now an ordinary held
-provisional row, it can be re-lent into a short round like any other (`findHeldProvisional`).
-Code: `VocabEntryService.removeFromLibrary` → `VocabEntryDAL.demoteLibraryRowToProvisional`;
+via `addToLibrary` promotes it back in place. It is **never re-lent**: the learner removed
+it on purpose (migration 203; before that it became `'provisional'` and could be lent back).
+Code: `VocabEntryService.removeFromLibrary` → `VocabEntryDAL.demoteLibraryRowToTracked`;
 re-add: `VocabEntryService.addToLibrary` → `VocabEntryDAL.findBucketRowByUserAndKey` /
 `insertLibraryRow` / `promoteRowToLibrary`.
 

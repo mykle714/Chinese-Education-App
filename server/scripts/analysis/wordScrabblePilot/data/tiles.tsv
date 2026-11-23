@@ -1,0 +1,1684 @@
+一	1	5	"[""numeral"", ""adverb"", ""adjective""]"	one
+一下	1	5	"[""numeral""]"	a bit
+一个	1	5	"[""numeral""]"	a
+一月	1	4	"[""noun""]"	January
+一次	1	5	"[""numeral"", ""adjective""]"	once
+一点	1	5	"[""numeral"", ""noun""]"	a bit
+七	1	5	"[""numeral""]"	seven
+万	1	5	"[""numeral""]"	ten thousand
+三	1	5	"[""numeral""]"	three
+三十	1	5	"[""numeral""]"	thirty
+三月	1	4	"[""noun""]"	March
+上	1	5	"[""verb"", ""noun"", ""adjective"", ""particle""]"	to go up
+上午	1	5	"[""noun""]"	morning
+下	1	5	"[""verb"", ""classifier""]"	down
+下午	1	5	"[""noun""]"	afternoon
+下次见	1	5	"[""interjection""]"	see you next time
+不	1	5	"[""adverb"", ""particle""]"	not
+不好	1	5	"[""adjective""]"	no good
+不客气	1	5	"[""interjection"", ""adjective""]"	you're welcome
+不是	1	5	"[""verb"", ""noun""]"	is not
+不用客气	1	5	"[""interjection""]"	you're welcome
+不能	1	5	"[""verb""]"	cannot
+不要	1	5	"[""adverb""]"	don't!
+东	1	5	"[""noun""]"	east
+东西	1	5	"[""noun""]"	thing
+个	1	5	"[""classifier""]"	classifier
+中	1	5	"[""noun"", ""verb"", ""interjection""]"	middle
+中国	1	5	"[""noun""]"	China
+中国人	1	5	"[""noun""]"	Chinese person
+中文	1	5	"[""noun""]"	Chinese language
+九	1	5	"[""numeral""]"	nine
+也	1	5	"[""adverb"", ""particle""]"	also
+书	1	5	"[""noun"", ""verb""]"	book
+买	1	5	"[""verb""]"	to buy
+了	1	5	"[""particle"", ""verb"", ""adjective""]"	to understand
+事	1	5	"[""noun""]"	thing
+事情	1	5	"[""noun""]"	thing
+二	1	5	"[""numeral"", ""adjective""]"	two
+二十	1	5	"[""numeral""]"	twenty
+二月	1	4	"[""noun""]"	February
+五	1	5	"[""numeral""]"	five
+五十	1	5	"[""numeral""]"	fifty
+五月	1	5	"[""noun""]"	May
+人	1	5	"[""noun""]"	person
+什么	1	5	"[""pronoun""]"	what?
+今天	1	5	"[""noun"", ""adverb""]"	today
+他	1	5	"[""pronoun""]"	he
+他们	1	5	"[""pronoun""]"	they
+以后	1	5	"[""noun""]"	after
+会	1	5	"[""verb"", ""noun""]"	can
+住	1	5	"[""verb""]"	to live
+你	1	5	"[""pronoun""]"	you
+你好	1	5	"[""interjection""]"	hello
+做	1	5	"[""verb""]"	to do
+儿子	1	5	"[""noun""]"	son
+元	1	5	"[""classifier"", ""noun""]"	Chinese yuan
+先	1	5	"[""adverb""]"	first
+先生	1	5	"[""noun""]"	mister (Mr.)
+八	1	5	"[""numeral""]"	eight
+八十	1	5	"[""numeral""]"	eighty
+八月	1	5	"[""noun""]"	August
+六	1	5	"[""numeral""]"	six
+再见	1	5	"[""interjection"", ""verb""]"	goodbye
+写	1	5	"[""verb""]"	to write
+冷	1	5	"[""adjective""]"	cold
+几个	1	5	"[""numeral""]"	a few
+几点	1	5	"[""noun""]"	what time?
+出	1	5	"[""verb"", ""classifier""]"	to go out
+别	1	5	"[""adverb"", ""verb""]"	don't ...!
+别客气	1	5	"[""interjection""]"	don't mention it
+到	1	5	"[""verb"", ""preposition""]"	to arrive
+前	1	5	"[""noun"", ""adjective""]"	front
+前面	1	5	"[""noun""]"	in front
+包	1	5	"[""noun"", ""verb"", ""classifier""]"	bag
+北	1	5	"[""noun""]"	north
+北京	1	5	"[""noun""]"	Beijing
+医生	1	5	"[""noun""]"	doctor
+医院	1	5	"[""noun""]"	hospital
+十	1	5	"[""numeral""]"	ten
+十一	1	5	"[""numeral"", ""noun""]"	eleven
+十一月	1	5	"[""noun""]"	November
+十三	1	5	"[""numeral""]"	thirteen
+十二	1	5	"[""numeral""]"	twelve
+十二月	1	5	"[""noun""]"	December
+十五	1	5	"[""numeral""]"	fifteen
+十八	1	5	"[""numeral""]"	eighteen
+十四	1	5	"[""numeral""]"	fourteen
+十月	1	5	"[""noun""]"	October
+半	1	5	"[""numeral"", ""adjective"", ""adverb""]"	half
+南	1	5	"[""noun""]"	south
+去	1	5	"[""verb"", ""particle""]"	to go
+去年	1	5	"[""noun""]"	last year
+发	1	5	"[""verb"", ""noun"", ""classifier""]"	to send out
+口	1	5	"[""noun"", ""classifier""]"	mouth
+叫	1	5	"[""verb"", ""preposition""]"	to call
+可以	1	5	"[""verb"", ""adjective""]"	can
+右	1	5	"[""noun""]"	right side
+号	1	5	"[""noun"", ""classifier""]"	day of a month
+吃	1	5	"[""verb""]"	to eat
+吃饭	1	5	"[""verb""]"	to have a meal
+同学	1	5	"[""noun""]"	classmate
+名	1	5	"[""noun"", ""adjective""]"	name
+名字	1	5	"[""noun""]"	name
+后	1	5	"[""noun""]"	behind
+吗	1	5	"[""particle""]"	question particle
+吧	1	5	"[""particle""]"	...right?
+听	1	5	"[""verb"", ""noun"", ""classifier""]"	to listen to
+听见	1	5	"[""verb""]"	to hear
+和	1	5	"[""conjunction"", ""preposition"", ""verb""]"	and
+哪	1	5	"[""pronoun"", ""particle""]"	which
+哪个	1	5	"[""pronoun""]"	which
+哪儿	1	5	"[""pronoun""]"	where?
+哪里	1	5	"[""pronoun"", ""interjection""]"	where?
+唱歌	1	5	"[""verb""]"	to sing a song
+喜欢	1	5	"[""verb""]"	to like
+喝	1	5	"[""verb"", ""interjection""]"	to drink
+四	1	5	"[""numeral""]"	four
+四十	1	5	"[""numeral""]"	forty
+四月	1	4	"[""noun""]"	April
+回	1	5	"[""verb"", ""classifier"", ""noun""]"	time
+回来	1	5	"[""verb""]"	to come back
+国	1	5	"[""noun""]"	country
+在	1	5	"[""verb"", ""preposition"", ""adverb""]"	to be at
+在家	1	5	"[""verb""]"	to be at home
+地方	1	5	"[""noun""]"	place
+坐	1	5	"[""verb""]"	to sit
+外	1	5	"[""noun""]"	outside
+多	1	5	"[""adjective"", ""adverb"", ""numeral""]"	many
+多少	1	5	"[""pronoun"", ""noun"", ""adverb""]"	how many?
+大	1	5	"[""adjective"", ""adverb"", ""noun""]"	big
+大家	1	5	"[""pronoun"", ""noun""]"	everyone
+天	1	5	"[""noun""]"	sky
+天气	1	5	"[""noun""]"	weather
+太	1	5	"[""adverb""]"	too (much)
+太好了	1	5	"[""interjection"", ""adjective""]"	very good
+头	1	5	"[""noun"", ""classifier""]"	head
+头发	1	5	"[""noun""]"	hair (on the head)
+女	1	5	"[""noun""]"	female
+她	1	5	"[""pronoun""]"	she
+好	1	5	"[""adjective"", ""verb"", ""adverb"", ""interjection"", ""particle""]"	good
+好吃	1	5	"[""adjective"", ""verb""]"	tasty
+妈妈	1	5	"[""noun""]"	mother
+妹妹	1	5	"[""noun""]"	younger sister
+字	1	5	"[""noun""]"	character
+学	1	5	"[""verb""]"	to learn
+学习	1	5	"[""verb"", ""noun""]"	to study
+学校	1	5	"[""noun""]"	school
+学生	1	5	"[""noun""]"	student
+孩子	1	5	"[""noun""]"	child
+它	1	5	"[""pronoun""]"	it
+家	1	5	"[""noun"", ""classifier""]"	home
+家里	1	5	"[""noun""]"	home
+对	1	5	"[""preposition"", ""adjective"", ""verb"", ""classifier""]"	correct
+对不起	1	5	"[""interjection"", ""verb""]"	I'm sorry
+小	1	5	"[""adjective""]"	small
+小心	1	5	"[""verb"", ""adjective""]"	to be careful
+小时	1	5	"[""noun""]"	hour
+少	1	5	"[""adjective"", ""verb""]"	few
+就	1	5	"[""adverb"", ""verb"", ""preposition"", ""conjunction""]"	just
+山	1	5	"[""noun""]"	mountain
+左	1	5	"[""noun"", ""adjective""]"	left-hand side
+年	1	5	"[""noun""]"	year
+床	1	5	"[""noun"", ""classifier""]"	bed
+开	1	5	"[""verb""]"	to open
+开始	1	5	"[""verb"", ""noun""]"	to begin
+张	1	5	"[""classifier"", ""verb""]"	classifier: sheet
+很	1	5	"[""adverb""]"	very
+心	1	5	"[""noun""]"	heart
+快	1	5	"[""adjective"", ""adverb""]"	quick
+快乐	1	5	"[""adjective"", ""noun""]"	happy
+怎么	1	5	"[""pronoun"", ""adverb""]"	how?
+想	1	5	"[""verb""]"	to think (about)
+慢	1	5	"[""adjective""]"	slow
+我	1	5	"[""pronoun""]"	I
+我们	1	5	"[""pronoun""]"	we
+房子	1	5	"[""noun""]"	house
+房间	1	5	"[""noun""]"	room
+手	1	5	"[""noun""]"	hand
+打	1	5	"[""verb"", ""preposition""]"	to hit
+新	1	5	"[""adjective"", ""adverb""]"	new
+新年快乐	1	5	"[""interjection""]"	Happy New Year!
+日	1	5	"[""noun""]"	day
+日本	1	5	"[""noun""]"	Japan
+日本人	1	5	"[""noun""]"	Japanese person
+早	1	5	"[""adjective"", ""adverb"", ""noun"", ""interjection""]"	early
+早上	1	5	"[""noun""]"	early morning
+时	1	5	"[""noun""]"	time
+时候	1	5	"[""noun""]"	time
+明天	1	5	"[""noun"", ""adverb""]"	tomorrow
+明年	1	5	"[""noun""]"	next year
+星期	1	5	"[""noun""]"	week
+星期天	1	5	"[""noun""]"	Sunday
+春天	1	5	"[""noun""]"	spring (season)
+昨天	1	5	"[""noun"", ""adverb""]"	yesterday
+是	1	5	"[""verb"", ""adjective"", ""adverb""]"	to be
+是不是	1	5	"[""verb"", ""adverb""]"	is or isn't
+晚	1	5	"[""noun"", ""adjective""]"	evening
+晚上	1	5	"[""noun""]"	evening
+月	1	5	"[""noun""]"	moon
+有	1	5	"[""verb""]"	to have
+有没有	1	5	"[""verb"", ""adverb""]"	do you have?
+朋友	1	5	"[""noun""]"	friend
+本	1	5	"[""classifier"", ""adverb""]"	(bound form) root
+来	1	5	"[""verb"", ""particle""]"	to come
+树	1	5	"[""noun"", ""verb""]"	tree
+桌子	1	5	"[""noun""]"	table
+椅子	1	5	"[""noun""]"	chair
+比	1	5	"[""verb"", ""preposition"", ""noun""]"	to compare
+水	1	5	"[""noun"", ""adjective""]"	water
+汉字	1	4	"[""noun""]"	Chinese character(s)
+汉语	1	5	"[""noun""]"	Chinese language
+没	1	5	"[""adverb"", ""verb""]"	not
+没有	1	5	"[""verb"", ""adverb""]"	to not have
+火	1	5	"[""noun"", ""adjective"", ""classifier""]"	fire
+点	1	5	"[""noun"", ""verb"", ""classifier""]"	point
+爱	1	5	"[""verb"", ""noun""]"	to love
+爸爸	1	5	"[""noun""]"	dad
+牛	1	5	"[""noun"", ""adjective""]"	cow
+现在	1	5	"[""noun"", ""adverb""]"	now
+生日快乐	1	5	"[""interjection""]"	Happy birthday
+用	1	5	"[""verb"", ""preposition"", ""noun""]"	to use
+电视	1	5	"[""noun""]"	TV
+电话	1	5	"[""noun""]"	phone call
+画	1	5	"[""noun"", ""verb""]"	picture
+白	1	5	"[""adjective"", ""adverb"", ""verb""]"	white
+百	1	5	"[""numeral""]"	hundred
+的	1	5	"[""particle""]"	~'s
+看	1	5	"[""verb"", ""particle""]"	to look at
+看到	1	5	"[""verb""]"	to see
+看看	1	5	"[""verb""]"	to take a look at
+看见	1	5	"[""verb""]"	to see
+真的	1	5	"[""adverb"", ""adjective""]"	really
+眼	1	5	"[""noun"", ""classifier""]"	eye
+眼睛	1	5	"[""noun""]"	eye
+睡觉	1	5	"[""verb""]"	to sleep
+知道	1	5	"[""verb""]"	to know
+空气	1	5	"[""noun""]"	air
+站	1	5	"[""verb"", ""noun""]"	to stand
+笑	1	5	"[""verb""]"	to laugh
+第一	1	5	"[""numeral"", ""adjective""]"	first
+第二	1	5	"[""numeral""]"	second
+米	1	5	"[""noun"", ""classifier""]"	uncooked rice
+米饭	1	5	"[""noun""]"	(cooked) rice
+红	1	5	"[""adjective"", ""noun""]"	red
+红色	1	5	"[""noun"", ""adjective""]"	red (color)
+给	1	5	"[""verb"", ""preposition"", ""particle""]"	to give
+绿	1	5	"[""adjective"", ""verb""]"	green
+美国	1	5	"[""noun""]"	United States
+美国人	1	5	"[""noun""]"	American
+老	1	5	"[""adjective"", ""adverb"", ""particle""]"	prefix used before the surname of a person or a numeral indicating the order of birth of the children in a family or to indicate affection or familiarity
+老师	1	5	"[""noun""]"	teacher
+耳朵	1	5	"[""noun""]"	ear
+能	1	5	"[""verb""]"	can
+脚	1	5	"[""noun"", ""classifier""]"	foot
+花	1	5	"[""noun"", ""verb"", ""adjective""]"	flower
+英国	1	5	"[""noun""]"	United Kingdom (UK)
+英文	1	5	"[""noun""]"	English (language)
+英语	1	5	"[""noun""]"	English (language)
+苹果	1	5	"[""noun""]"	apple
+茶	1	5	"[""noun""]"	tea
+菜	1	5	"[""noun"", ""adjective""]"	dish (of food)
+衣服	1	5	"[""noun""]"	clothes
+西	1	5	"[""noun""]"	west
+要	1	5	"[""verb"", ""conjunction""]"	to want
+见	1	5	"[""verb"", ""noun""]"	to see
+说	1	5	"[""verb""]"	to say
+说话	1	5	"[""verb"", ""noun""]"	to speak
+请	1	5	"[""verb""]"	please
+谁	1	5	"[""pronoun""]"	who
+谢谢	1	5	"[""verb"", ""interjection""]"	thank you
+走	1	5	"[""verb""]"	to walk
+起	1	5	"[""verb"", ""classifier""]"	to get up
+起床	1	5	"[""verb""]"	to get out of bed
+车	1	5	"[""noun"", ""verb""]"	car
+过	1	5	"[""verb"", ""particle""]"	to cross
+这	1	5	"[""pronoun""]"	(pronoun) this
+进	1	5	"[""verb"", ""classifier""]"	to enter
+都	1	5	"[""adverb"", ""noun""]"	all
+里	1	5	"[""noun"", ""particle""]"	inside
+里面	1	5	"[""noun""]"	inside
+钱	1	5	"[""noun"", ""classifier""]"	money
+长	1	5	"[""adjective"", ""verb"", ""noun""]"	long
+门	1	5	"[""noun"", ""classifier""]"	door
+问	1	5	"[""verb""]"	to ask
+雨	1	5	"[""noun"", ""verb""]"	rain
+零	1	5	"[""numeral"", ""verb"", ""adjective""]"	zero
+音乐	1	5	"[""noun""]"	music
+飞	1	5	"[""verb""]"	to fly
+饭	1	5	"[""noun""]"	meal
+高	1	5	"[""adjective""]"	tall
+高兴	1	5	"[""adjective"", ""verb""]"	happy
+鱼	1	5	"[""noun""]"	fish
+黄	1	5	"[""adjective"", ""verb""]"	yellow
+黑	1	5	"[""adjective"", ""verb""]"	black
+鼻子	1	5	"[""noun""]"	nose
+一个人	2	5	"[""adverb""]"	alone
+一些	2	5	"[""numeral""]"	some
+一会儿	2	5	"[""noun"", ""adverb""]"	a moment
+一号	2	5	"[""noun"", ""numeral""]"	number one
+一周	2	5	"[""numeral"", ""noun""]"	one week
+一定	2	5	"[""adverb"", ""adjective""]"	surely
+一定要	2	5	"[""adverb""]"	must
+一年半	2	4	"[""numeral""]"	a year and a half
+一起	2	5	"[""adverb"", ""noun""]"	together
+一边	2	5	"[""noun"", ""adverb""]"	one side
+丈夫	2	5	"[""noun""]"	husband
+三次	2	4	"[""numeral"", ""adjective""]"	three times
+上一个	2	5	"[""adjective"", ""pronoun""]"	previous one
+上个星期	2	5	"[""noun""]"	last week
+上个月	2	5	"[""noun""]"	last month
+上去	2	5	"[""verb""]"	to go up
+上周	2	5	"[""noun""]"	last week
+上学	2	5	"[""verb""]"	to go to school
+上星期	2	5	"[""noun""]"	last week
+上月	2	4	"[""noun""]"	last month
+上来	2	5	"[""verb"", ""particle""]"	to come up
+上次	2	5	"[""noun""]"	last time
+上课	2	5	"[""verb""]"	to attend class
+上车	2	5	"[""verb""]"	to board
+上边	2	5	"[""noun""]"	above
+上面	2	5	"[""noun"", ""adjective""]"	on top of
+下一个	2	5	"[""noun""]"	the next one
+下一次	2	5	"[""noun""]"	next
+下个	2	5	"[""adjective""]"	next (week etc)
+下个星期	2	5	"[""noun""]"	next week
+下个月	2	5	"[""noun""]"	next month
+下去	2	5	"[""verb"", ""particle""]"	to go down
+下周	2	5	"[""noun""]"	next week
+下星期	2	5	"[""noun""]"	next week
+下月	2	4	"[""noun""]"	next month
+下来	2	5	"[""verb"", ""particle""]"	to come down
+下次	2	5	"[""noun""]"	next time
+下班	2	5	"[""verb""]"	to get off work
+下课	2	5	"[""verb""]"	to finish class
+下边	2	4	"[""noun""]"	below
+下雨	2	5	"[""verb""]"	to rain
+下面	2	5	"[""noun"", ""verb""]"	below
+不会	2	5	"[""verb""]"	will not
+不可以	2	5	"[""verb""]"	may not
+不太好	2	5	"[""adjective""]"	not so good
+不好意思	2	5	"[""interjection"", ""adjective"", ""verb""]"	sorry
+不对	2	5	"[""adjective""]"	incorrect
+不用	2	5	"[""adverb""]"	need not
+不行	2	5	"[""verb"", ""adjective""]"	won't do
+不过	2	5	"[""conjunction"", ""adverb""]"	but
+东边	2	4	"[""noun""]"	east
+两	2	5	"[""numeral"", ""classifier""]"	two
+两星期	2	5	"[""noun""]"	fortnight
+中午	2	5	"[""noun""]"	noon
+中国菜	2	4	"[""noun""]"	Chinese cuisine
+中国话	2	4	"[""noun""]"	spoken Chinese
+中学	2	5	"[""noun""]"	middle school
+中饭	2	4	"[""noun""]"	lunch
+为什么	2	5	"[""pronoun""]"	why?
+之前	2	5	"[""preposition"", ""adverb""]"	before
+乐	2	4	"[""adjective"", ""verb""]"	happy
+书包	2	5	"[""noun""]"	schoolbag
+买东西	2	5	"[""verb""]"	to do one's shopping
+买票	2	4	"[""verb""]"	to buy tickets
+买菜	2	5	"[""verb""]"	to buy groceries
+二十多	2	5	"[""numeral""]"	over 20
+五号	2	4	"[""noun""]"	fifth day of a month
+交	2	5	"[""verb"", ""noun""]"	to hand over
+人们	2	5	"[""noun""]"	people
+什么时候	2	5	"[""pronoun""]"	when?
+今年	2	5	"[""noun""]"	this year
+介绍	2	5	"[""verb"", ""noun""]"	to introduce (somebody to somebody)
+从	2	5	"[""preposition"", ""adverb""]"	from
+以前	2	5	"[""noun""]"	before
+件	2	5	"[""classifier"", ""noun""]"	item, piece
+休息	2	5	"[""verb"", ""noun""]"	to rest
+但是	2	5	"[""conjunction""]"	but
+位	2	5	"[""noun"", ""classifier""]"	position
+低	2	5	"[""adjective"", ""verb""]"	low
+体育	2	4	"[""noun""]"	sports
+作业	2	5	"[""noun"", ""verb""]"	homework
+便宜	2	5	"[""adjective"", ""noun"", ""verb""]"	cheap
+像	2	5	"[""verb"", ""noun""]"	to resemble
+儿	2	5	"[""noun"", ""particle""]"	child
+全	2	5	"[""adjective"", ""adverb""]"	all
+公共汽车	2	4	"[""noun""]"	bus
+公园	2	5	"[""noun""]"	park
+公里	2	5	"[""noun""]"	kilometer
+关	2	5	"[""verb"", ""noun""]"	to turn off
+关系	2	5	"[""noun"", ""verb""]"	relationship
+冬天	2	5	"[""noun""]"	winter
+准备	2	5	"[""verb"", ""noun""]"	to prepare
+出去	2	5	"[""verb""]"	to go out
+出发	2	5	"[""verb""]"	to set off
+出来	2	5	"[""verb"", ""particle""]"	to come out
+出生	2	5	"[""verb""]"	to be born
+出门	2	5	"[""verb""]"	to go out
+分	2	5	"[""verb"", ""noun"", ""classifier""]"	minute
+分钟	2	5	"[""noun""]"	minute
+别人	2	5	"[""pronoun""]"	other people
+别的	2	5	"[""pronoun""]"	other
+前边	2	5	"[""noun""]"	front
+力	2	5	"[""noun""]"	strength
+加	2	5	"[""verb"", ""noun""]"	to add
+加油	2	5	"[""verb""]"	to cheer somebody on
+动	2	5	"[""verb""]"	to move
+动物	2	5	"[""noun""]"	animal
+北边	2	4	"[""noun""]"	north
+十三日	2	4	"[""noun""]"	the 13th (of month)
+千	2	5	"[""numeral""]"	thousand
+半小时	2	5	"[""numeral"", ""noun""]"	half hour
+半年	2	5	"[""noun""]"	half a year
+卖	2	5	"[""verb""]"	to sell
+南边	2	4	"[""noun""]"	south
+厕所	2	5	"[""noun""]"	toilet
+又	2	5	"[""adverb""]"	(once) again
+发烧	2	5	"[""verb""]"	to have a fever
+变	2	5	"[""verb"", ""noun""]"	to change
+变得	2	5	"[""verb""]"	to become
+可	2	5	"[""verb"", ""adverb"", ""conjunction""]"	may
+可是	2	5	"[""conjunction"", ""adverb""]"	but
+可能	2	5	"[""adverb"", ""adjective"", ""noun""]"	possible
+吃的	2	5	"[""noun""]"	(coll.) food
+吃药	2	5	"[""verb""]"	to take medicine
+后边	2	5	"[""noun""]"	behind
+后面	2	5	"[""noun"", ""adverb""]"	the back
+听到	2	5	"[""verb""]"	to hear
+听说	2	5	"[""verb"", ""noun""]"	to hear it said
+告诉	2	5	"[""verb""]"	to tell
+呢	2	5	"[""particle""]"	sentence particle
+周	2	5	"[""noun"", ""verb"", ""adjective""]"	week
+周一	2	5	"[""noun""]"	Monday
+周三	2	5	"[""noun""]"	Wednesday
+周二	2	5	"[""noun""]"	Tuesday
+周五	2	5	"[""noun""]"	Friday
+周四	2	5	"[""noun""]"	Thursday
+周日	2	5	"[""noun""]"	Sunday
+周末	2	5	"[""noun""]"	weekend
+咖啡	2	5	"[""noun""]"	(loanword) coffee
+哈哈	2	5	"[""onomatopoeia"", ""interjection""]"	haha
+哥哥	2	5	"[""noun""]"	older brother
+四次	2	4	"[""numeral"", ""adjective""]"	four times
+回到	2	5	"[""verb""]"	to return to
+回去	2	5	"[""verb""]"	to go back
+回头见	2	5	"[""interjection""]"	See you!
+回家	2	5	"[""verb""]"	to return home
+回答	2	5	"[""verb"", ""noun""]"	to answer
+因为	2	5	"[""conjunction"", ""preposition""]"	because
+国家	2	5	"[""noun""]"	country
+在一起	2	5	"[""adverb"", ""verb""]"	together
+在下面	2	4	"[""adverb""]"	underneath
+地	2	5	"[""noun"", ""particle""]"	ground
+坏	2	5	"[""adjective"", ""verb""]"	bad
+坐下	2	5	"[""verb""]"	to sit down
+坐车	2	5	"[""verb""]"	to travel by car
+声	2	5	"[""noun"", ""classifier""]"	sound
+声音	2	5	"[""noun""]"	voice
+夏天	2	5	"[""noun""]"	summer
+外国	2	5	"[""noun""]"	foreign country
+外国人	2	5	"[""noun""]"	foreigner
+外边	2	5	"[""noun""]"	outside
+外面	2	5	"[""noun""]"	outside
+多大	2	5	"[""adjective""]"	how big?
+夜	2	5	"[""noun""]"	night
+大声	2	5	"[""adverb"", ""noun""]"	loud voice
+大学	2	5	"[""noun""]"	university
+大海	2	5	"[""noun""]"	sea
+天冷	2	5	"[""adjective""]"	it's cold (weather)
+天天	2	5	"[""adverb""]"	every day
+天空	2	4	"[""noun""]"	sky
+太阳	2	5	"[""noun""]"	sun
+女人	2	5	"[""noun""]"	woman
+女儿	2	5	"[""noun""]"	daughter
+女的	2	5	"[""noun""]"	woman
+奶奶	2	5	"[""noun""]"	paternal grandmother
+好不好	2	5	"[""interjection""]"	OK?
+好人	2	5	"[""noun""]"	good person
+好听	2	5	"[""adjective""]"	pleasant to hear
+好多	2	5	"[""adjective""]"	many
+好好	2	5	"[""adverb""]"	well
+好看	2	5	"[""adjective""]"	good-looking
+妻子	2	5	"[""noun""]"	wife
+姐姐	2	5	"[""noun""]"	older sister
+客气	2	5	"[""adjective"", ""verb""]"	polite
+害怕	2	5	"[""verb""]"	to be afraid
+家人	2	5	"[""noun""]"	family member
+容易	2	5	"[""adjective""]"	easy
+对不对	2	5	"[""adjective""]"	Is it right?
+对了	2	5	"[""interjection""]"	Oh, by the way, ...
+小声	2	5	"[""adverb"", ""noun""]"	in a low voice
+小学	2	5	"[""noun""]"	elementary school
+小学生	2	5	"[""noun""]"	schoolchild
+小狗	2	5	"[""noun""]"	puppy
+工人	2	5	"[""noun""]"	worker
+工作	2	5	"[""noun"", ""verb""]"	work
+已经	2	5	"[""adverb""]"	already
+带	2	5	"[""verb"", ""noun""]"	to bring
+帮助	2	5	"[""verb"", ""noun""]"	to help
+常	2	5	"[""adverb"", ""adjective""]"	often
+常常	2	5	"[""adverb""]"	often
+帽子	2	5	"[""noun""]"	hat
+干	2	5	"[""verb"", ""adjective"", ""adverb""]"	to do
+干净	2	5	"[""adjective""]"	clean
+年级	2	5	"[""noun""]"	grade
+年轻人	2	5	"[""noun""]"	young people
+店	2	5	"[""noun""]"	store
+开心	2	5	"[""adjective"", ""verb""]"	to feel happy
+开灯	2	5	"[""verb""]"	to turn on the light
+开车	2	5	"[""verb""]"	to drive
+开门	2	5	"[""verb""]"	to open a door
+弟弟	2	5	"[""noun""]"	younger brother
+当	2	5	"[""verb"", ""preposition"", ""adjective"", ""onomatopoeia""]"	to be
+当然	2	5	"[""adverb"", ""adjective""]"	of course
+很多	2	5	"[""adjective"", ""numeral""]"	a lot of
+得	2	5	"[""verb"", ""particle""]"	to get
+德国	2	5	"[""noun""]"	Germany
+心里	2	5	"[""noun""]"	heart
+快点	2	5	"[""verb"", ""adverb""]"	Hurry up!
+快要	2	5	"[""adverb""]"	about to
+想要	2	5	"[""verb""]"	to want to
+意思	2	5	"[""noun"", ""verb""]"	meaning
+感冒	2	5	"[""noun"", ""verb""]"	(common) cold
+慢慢	2	5	"[""adverb""]"	slowly
+成功	2	5	"[""verb"", ""noun"", ""adjective""]"	success
+所以	2	5	"[""conjunction""]"	so
+手机	2	5	"[""noun""]"	mobile phone
+手表	2	5	"[""noun""]"	wristwatch
+打开	2	5	"[""verb""]"	to open
+打扫	2	5	"[""verb""]"	to clean
+打电话	2	5	"[""verb""]"	to make a phone call
+报纸	2	5	"[""noun""]"	newspaper
+拉	2	5	"[""verb""]"	to pull
+接	2	5	"[""verb""]"	to receive
+推	2	5	"[""verb""]"	to push
+放	2	5	"[""verb""]"	to put
+放学	2	5	"[""verb""]"	school lets out
+教	2	5	"[""verb"", ""noun""]"	to teach
+教室	2	5	"[""noun""]"	classroom
+散步	2	5	"[""verb""]"	to take a walk
+数	2	5	"[""noun"", ""verb""]"	number
+数字	2	5	"[""noun"", ""adjective""]"	number
+数学	2	5	"[""noun""]"	mathematics
+新年	2	5	"[""noun""]"	New Year
+方便	2	5	"[""adjective"", ""verb""]"	convenient
+方向	2	5	"[""noun""]"	direction
+方法	2	5	"[""noun""]"	method
+旁边	2	5	"[""noun""]"	side
+旅游	2	5	"[""verb"", ""noun""]"	to travel
+旅行	2	5	"[""verb"", ""noun""]"	to travel
+日子	2	5	"[""noun""]"	day
+日文	2	4	"[""noun""]"	Japanese (language)
+日语	2	4	"[""noun""]"	Japanese language
+旧	2	5	"[""adjective""]"	old
+时间	2	5	"[""noun""]"	(duration of) time
+明	2	5	"[""adjective"", ""verb"", ""noun""]"	bright
+明天见	2	5	"[""interjection"", ""noun""]"	see you tomorrow
+明白	2	5	"[""verb"", ""adjective""]"	to understand
+星	2	4	"[""noun""]"	star
+星星	2	5	"[""noun""]"	(coll.) a star
+星期一	2	5	"[""noun""]"	Monday
+星期三	2	5	"[""noun""]"	Wednesday
+星期二	2	5	"[""noun""]"	Tuesday
+星期五	2	5	"[""noun""]"	Friday
+星期四	2	5	"[""noun""]"	Thursday
+星期日	2	4	"[""noun""]"	Sunday
+春	2	5	"[""noun"", ""adjective""]"	spring (season)
+春节	2	5	"[""noun""]"	Spring Festival
+普通	2	5	"[""adjective""]"	ordinary
+月份	2	5	"[""noun""]"	month
+有一点	2	5	"[""adverb""]"	a little
+有一点儿	2	5	"[""adverb""]"	a little
+有人	2	5	"[""pronoun"", ""verb""]"	someone
+有意思	2	5	"[""adjective""]"	interesting
+有时	2	5	"[""adverb""]"	sometimes
+有时候	2	5	"[""adverb""]"	sometimes
+有点	2	5	"[""adverb""]"	a little
+有点儿	2	5	"[""adverb""]"	a little
+有用	2	5	"[""adjective""]"	useful
+有的	2	5	"[""pronoun""]"	some (exist)
+服务	2	5	"[""verb"", ""noun""]"	service
+服务员	2	5	"[""noun""]"	waiter
+机票	2	5	"[""noun""]"	plane ticket
+条	2	5	"[""classifier"", ""noun""]"	long thin strip
+来到	2	5	"[""verb""]"	to arrive
+极了	2	5	"[""particle""]"	extremely
+查	2	5	"[""verb""]"	to check
+楼	2	5	"[""noun"", ""classifier""]"	floor
+次	2	5	"[""classifier"", ""adjective""]"	time
+歌	2	5	"[""noun""]"	song
+正在	2	5	"[""adverb""]"	in the process of
+步	2	5	"[""noun"", ""classifier""]"	a step
+母亲	2	5	"[""noun""]"	mother
+每天	2	5	"[""noun"", ""adverb""]"	every day
+水果	2	5	"[""noun""]"	fruit
+汤	2	5	"[""noun""]"	soup
+汽车	2	5	"[""noun""]"	car
+没事	2	5	"[""verb"", ""interjection""]"	it's nothing
+没事儿	2	5	"[""verb"", ""interjection""]"	it's nothing
+没关系	2	5	"[""interjection""]"	it doesn't matter
+法国	2	5	"[""noun""]"	France
+洗	2	5	"[""verb""]"	to wash
+洗手	2	5	"[""verb""]"	to wash one's hands
+洗手间	2	5	"[""noun""]"	toilet
+洗脸	2	5	"[""verb""]"	to wash the face
+活	2	5	"[""verb"", ""adjective"", ""noun""]"	to live
+活动	2	5	"[""noun"", ""verb"", ""adjective""]"	activity
+海	2	5	"[""noun""]"	sea
+消息	2	5	"[""noun""]"	(piece of) news
+游	2	5	"[""verb""]"	to swim
+游泳	2	5	"[""verb"", ""noun""]"	to swim
+漂亮	2	5	"[""adjective""]"	beautiful
+火车	2	5	"[""noun""]"	train
+火车票	2	4	"[""noun""]"	train ticket
+灯	2	5	"[""noun""]"	lamp
+热	2	5	"[""adjective"", ""noun"", ""verb""]"	hot (of weather)
+热水	2	5	"[""noun""]"	hot water
+然后	2	5	"[""conjunction"", ""adverb""]"	then
+照片	2	5	"[""noun""]"	photograph
+爱好	2	5	"[""noun"", ""verb""]"	hobby
+爷爷	2	5	"[""noun""]"	grandpa
+牛奶	2	5	"[""noun""]"	cow's milk
+狗	2	5	"[""noun""]"	dog
+猫	2	5	"[""noun"", ""verb""]"	cat
+班	2	5	"[""noun"", ""classifier""]"	class
+生	2	5	"[""verb"", ""adjective"", ""noun""]"	to be born
+生日	2	5	"[""noun""]"	birthday
+生活	2	5	"[""noun"", ""verb""]"	life
+生病	2	5	"[""verb""]"	to fall ill
+电	2	5	"[""noun"", ""verb""]"	electricity
+电影	2	5	"[""noun""]"	movie
+电影票	2	4	"[""noun""]"	cinema ticket
+电影院	2	5	"[""noun""]"	cinema
+电脑	2	5	"[""noun""]"	computer
+男	2	5	"[""adjective""]"	(bound form) male
+男人	2	5	"[""noun""]"	a man
+男生	2	5	"[""noun""]"	boy
+男的	2	5	"[""noun""]"	man
+画画	2	5	"[""verb""]"	to draw
+病	2	5	"[""noun"", ""verb""]"	illness
+白天	2	5	"[""noun""]"	daytime
+白色	2	5	"[""noun"", ""adjective""]"	white
+看一看	2	5	"[""verb""]"	to have a look
+看不见	2	5	"[""verb""]"	cannot see
+看书	2	5	"[""verb""]"	to read
+看医生	2	5	"[""verb""]"	to visit a doctor
+真	2	5	"[""adjective"", ""adverb""]"	real
+着	2	5	"[""particle"", ""verb"", ""noun""]"	-ing (ongoing)
+知	2	5	"[""verb""]"	to know
+知道了	2	5	"[""interjection""]"	Got it!
+短	2	5	"[""adjective"", ""noun"", ""verb""]"	short
+石头	2	4	"[""noun""]"	stone
+礼物	2	5	"[""noun""]"	gift
+票	2	5	"[""noun"", ""classifier""]"	ticket
+离	2	5	"[""verb"", ""preposition""]"	to leave
+离开	2	5	"[""verb""]"	to leave
+秋天	2	5	"[""noun""]"	autumn
+窗户	2	5	"[""noun""]"	window
+站起来	2	5	"[""verb""]"	to stand up
+笔	2	5	"[""noun"", ""classifier""]"	pen
+等	2	5	"[""verb"", ""particle""]"	to wait for
+等一下	2	5	"[""verb"", ""adverb""]"	to wait a moment
+简单	2	5	"[""adjective""]"	simple
+算	2	5	"[""verb""]"	to calculate
+糖	2	5	"[""noun""]"	sugar
+累	2	5	"[""adjective"", ""verb"", ""noun""]"	tired
+纸	2	5	"[""noun"", ""classifier""]"	paper
+练	2	4	"[""verb""]"	to practice
+练习	2	5	"[""verb"", ""noun""]"	to practice
+结婚	2	5	"[""verb""]"	to get married
+结果	2	5	"[""noun"", ""adverb"", ""verb""]"	result
+美	2	5	"[""adjective"", ""noun"", ""verb""]"	beautiful
+老虎	2	4	"[""noun""]"	tiger
+考试	2	5	"[""noun"", ""verb""]"	exam
+而	2	5	"[""conjunction""]"	and
+肉	2	5	"[""noun"", ""adjective""]"	meat
+肚子	2	5	"[""noun""]"	belly
+背	2	4	"[""noun"", ""verb"", ""adjective""]"	back
+腿	2	5	"[""noun""]"	leg
+自行车	2	5	"[""noun""]"	bicycle
+色	2	4	"[""noun""]"	(coll.) color
+花钱	2	5	"[""verb""]"	to spend money
+英国人	2	5	"[""noun""]"	British person
+草	2	5	"[""noun"", ""adjective""]"	grass
+药	2	5	"[""noun"", ""verb""]"	medicine
+葡萄	2	4	"[""noun""]"	grape
+蓝	2	5	"[""adjective"", ""noun""]"	blue
+蛋	2	5	"[""noun""]"	egg
+行	2	5	"[""verb"", ""adjective"", ""noun"", ""classifier""]"	all right
+表	2	5	"[""noun"", ""verb""]"	watch (timepiece)
+裙子	2	5	"[""noun""]"	skirt
+裤子	2	5	"[""noun""]"	pants
+见到	2	5	"[""verb""]"	to see
+见面	2	5	"[""verb""]"	to meet
+计划	2	5	"[""noun"", ""verb""]"	plan
+记	2	5	"[""verb"", ""noun"", ""classifier""]"	to remember
+记住	2	5	"[""verb""]"	to remember
+记得	2	5	"[""verb""]"	to remember
+许多	2	4	"[""adjective"", ""numeral""]"	many
+词	2	5	"[""noun""]"	word
+试一试	2	5	"[""verb""]"	to have a try
+话	2	5	"[""noun""]"	words
+说说	2	5	"[""verb""]"	to say something
+读	2	5	"[""verb""]"	to read
+贵	2	5	"[""adjective""]"	expensive
+走路	2	5	"[""verb""]"	to walk
+起来	2	5	"[""verb"", ""particle""]"	to get up
+足球	2	5	"[""noun""]"	soccer
+跑	2	5	"[""verb""]"	to run
+跑步	2	5	"[""verb"", ""noun""]"	to run
+路	2	5	"[""noun"", ""classifier""]"	road
+跳	2	5	"[""verb""]"	to jump
+跳舞	2	5	"[""verb""]"	to dance
+身体	2	5	"[""noun""]"	body
+车子	2	5	"[""noun""]"	vehicle
+车票	2	5	"[""noun""]"	bus or train ticket
+边	2	5	"[""noun"", ""adverb""]"	side
+过去	2	5	"[""verb"", ""noun"", ""particle""]"	(in the) past
+过来	2	5	"[""verb"", ""particle""]"	to come over
+运动	2	5	"[""noun"", ""verb""]"	sports
+运动会	2	4	"[""noun""]"	sports competition
+运动员	2	4	"[""noun""]"	athlete
+近	2	5	"[""adjective"", ""verb""]"	near
+还有	2	5	"[""conjunction"", ""verb""]"	in addition
+进去	2	5	"[""verb""]"	to go in
+进来	2	5	"[""verb""]"	to come in
+远	2	5	"[""adjective"", ""adverb""]"	far
+里边	2	5	"[""noun""]"	inside
+错	2	5	"[""adjective"", ""noun"", ""verb""]"	wrong
+镜子	2	4	"[""noun""]"	mirror
+长大	2	5	"[""verb""]"	to grow up
+门口	2	5	"[""noun""]"	doorway
+问题	2	5	"[""noun""]"	problem
+间	2	5	"[""classifier"", ""noun""]"	between
+阳光	2	5	"[""noun"", ""adjective""]"	sunshine
+雨伞	2	4	"[""noun""]"	umbrella
+雪	2	5	"[""noun"", ""verb""]"	snow
+非常	2	5	"[""adverb"", ""adjective""]"	very
+非常多	2	5	"[""adjective""]"	very many
+面	2	5	"[""noun"", ""classifier"", ""adjective""]"	face
+面包	2	5	"[""noun""]"	bread
+面条	2	5	"[""noun""]"	noodles
+鞋子	2	5	"[""noun""]"	shoe
+颜色	2	5	"[""noun""]"	color
+风	2	5	"[""noun""]"	wind
+飞机	2	5	"[""noun""]"	airplane
+食物	2	5	"[""noun""]"	food
+餐厅	2	5	"[""noun""]"	restaurant
+马	2	5	"[""noun""]"	horse
+鸟	2	5	"[""noun"", ""verb""]"	bird
+鸡	2	5	"[""noun""]"	chicken
+鸡蛋	2	5	"[""noun""]"	(chicken) egg
+黄色	2	5	"[""adjective"", ""noun""]"	yellow
+一下儿	3	4	"[""numeral""]"	a bit
+一下子	3	5	"[""adverb""]"	all at once
+一个半	3	4	"[""numeral""]"	one and a half
+一会	3	5	"[""noun"", ""numeral""]"	a moment
+一共	3	5	"[""adverb""]"	altogether
+一半	3	5	"[""numeral"", ""noun""]"	half
+一套	3	5	"[""numeral"", ""noun""]"	a set
+一家	3	4	"[""noun"", ""numeral""]"	the whole family
+一家人	3	5	"[""noun""]"	the whole family
+一对	3	4	"[""noun""]"	pair
+一对儿	3	4	"[""noun""]"	a pair
+一层	3	4	"[""numeral"", ""noun""]"	layer
+一年多	3	4	"[""noun""]"	more than a year
+一排	3	4	"[""numeral""]"	row
+一点点	3	5	"[""numeral""]"	a little bit
+一直	3	5	"[""adverb""]"	continuously
+一眼	3	5	"[""numeral"", ""noun""]"	a glance
+一种	3	5	"[""numeral""]"	one kind of
+一般	3	5	"[""adjective"", ""adverb""]"	ordinary
+一部分	3	5	"[""noun""]"	part of
+三分之一	3	4	"[""numeral""]"	one third
+上下	3	4	"[""noun"", ""verb""]"	top and bottom
+上下班	3	5	"[""verb""]"	to and from work
+上个	3	4	"[""adjective""]"	last (week etc)
+上山	3	4	"[""verb""]"	to climb a hill
+上方	3	4	"[""noun""]"	place above (it)
+上海	3	5	"[""noun""]"	Shanghai
+上班	3	5	"[""verb""]"	to go to work
+上班时间	3	4	"[""noun""]"	working hours
+上网	3	5	"[""verb""]"	to go online
+上船	3	4	"[""verb""]"	to get on the boat
+下一步	3	5	"[""noun""]"	the next step
+下半年	3	5	"[""noun""]"	second half of year
+下山	3	4	"[""verb""]"	to go down a hill
+下方	3	4	"[""noun"", ""verb""]"	below
+下棋	3	4	"[""verb""]"	to play chess
+下车	3	5	"[""verb""]"	to get off (vehicle)
+下雪	3	5	"[""verb""]"	to snow
+下飞机	3	4	"[""verb""]"	to get off a plane
+不一定	3	5	"[""adverb""]"	not necessarily
+不了	3	5	"[""verb"", ""interjection""]"	no thanks
+不到	3	5	"[""verb""]"	less than
+不可能	3	5	"[""adjective""]"	impossible
+不同	3	5	"[""adjective""]"	different
+不在	3	5	"[""verb""]"	not to be present
+不大	3	5	"[""adverb""]"	not very
+不少	3	5	"[""adjective"", ""numeral""]"	many
+不方便	3	5	"[""adjective"", ""noun""]"	inconvenient
+不正常	3	4	"[""adjective""]"	abnormal
+不满意	3	4	"[""adjective""]"	dissatisfied
+不然	3	5	"[""conjunction"", ""adverb""]"	otherwise
+不管	3	5	"[""conjunction"", ""verb""]"	no matter
+不见	3	5	"[""verb""]"	to have disappeared
+不见了	3	5	"[""verb""]"	to have disappeared
+世界	3	5	"[""noun""]"	world
+世界地图	3	4	"[""noun""]"	world map
+东北	3	4	"[""noun""]"	Northeast China
+东面	3	4	"[""noun""]"	east side
+两千年	3	3	"[""noun""]"	2000 years
+两国	3	4	"[""noun""]"	the two countries
+两边	3	5	"[""noun""]"	both sides
+个人	3	5	"[""noun"", ""pronoun""]"	individual
+个子	3	5	"[""noun""]"	height
+中号	3	4	"[""adjective"", ""noun""]"	medium-sized
+中学生	3	5	"[""noun""]"	middle schooler
+中式	3	4	"[""noun"", ""verb""]"	Chinese style
+中心	3	5	"[""noun""]"	center
+中间	3	5	"[""noun""]"	in the middle
+为	3	5	"[""verb"", ""preposition""]"	to do
+为了	3	5	"[""preposition"", ""conjunction""]"	in order to
+主人	3	5	"[""noun""]"	owner
+主意	3	5	"[""noun""]"	idea
+主要	3	5	"[""adjective"", ""adverb""]"	main
+之内	3	4	"[""noun""]"	inside
+之后	3	5	"[""preposition"", ""adverb""]"	after
+之间	3	5	"[""noun""]"	between
+乡	3	4	"[""noun""]"	countryside
+书本	3	3	"[""noun""]"	books in general
+了不起	3	5	"[""adjective""]"	amazing
+了解	3	5	"[""verb"", ""noun""]"	to understand
+事实	3	5	"[""noun""]"	fact
+二号	3	4	"[""noun""]"	2nd day of the month
+云	3	5	"[""noun""]"	cloud
+五一	3	5	"[""noun""]"	5-1 (May 1st)
+交通	3	5	"[""noun""]"	traffic
+亲爱	3	4	"[""adjective""]"	dear
+人人	3	5	"[""pronoun"", ""noun""]"	everyone
+人家	3	5	"[""pronoun"", ""noun""]"	other people
+人民	3	4	"[""noun""]"	the people
+从不	3	4	"[""adverb""]"	never
+从来没	3	4	"[""adverb""]"	have never
+付钱	3	4	"[""verb""]"	to pay
+代	3	4	"[""noun"", ""verb""]"	generation
+代表	3	4	"[""noun"", ""verb""]"	representative
+以上	3	5	"[""noun""]"	that amount or more
+以下	3	4	"[""noun""]"	the following
+以为	3	5	"[""verb""]"	to think
+以内	3	4	"[""noun""]"	within
+以外	3	4	"[""noun""]"	apart from
+价格	3	5	"[""noun""]"	price
+价钱	3	5	"[""noun""]"	price
+份	3	""	"[""measure word""]"	portion
+优点	3	4	"[""noun""]"	advantage
+会不会	3	5	"[""verb""]"	can or cannot
+会议	3	5	"[""noun""]"	meeting
+传球	3	4	"[""verb""]"	to pass the ball
+伯伯	3	4	"[""noun""]"	uncle
+位置	3	5	"[""noun""]"	position
+低头	3	4	"[""verb""]"	to bow the head
+体	3	4	"[""noun""]"	body
+体育活动	3	4	"[""noun""]"	sporting activity
+作	3	4	"[""verb"", ""noun"", ""adjective""]"	to do
+便	3	5	"[""adverb"", ""conjunction""]"	convenient
+保	3	4	"[""verb""]"	to protect
+保护	3	5	"[""verb"", ""noun""]"	to protect
+信	3	5	"[""noun"", ""verb""]"	letter
+信息	3	5	"[""noun""]"	information
+假	3	5	"[""adjective"", ""noun"", ""verb"", ""conjunction""]"	fake
+假日	3	4	"[""noun""]"	a holiday
+假期	3	5	"[""noun""]"	vacation
+假的	3	5	"[""adjective""]"	fake
+健康	3	5	"[""noun"", ""adjective""]"	health
+元旦	3	4	"[""noun""]"	New Year's Day
+光	3	5	"[""noun"", ""adjective"", ""adverb""]"	light
+兔子	3	5	"[""noun""]"	rabbit
+入	3	5	"[""verb""]"	to enter
+全世界	3	5	"[""noun""]"	entire world
+全家	3	5	"[""noun""]"	whole family
+全班	3	4	"[""noun""]"	the whole class
+八分之一	3	3	"[""numeral""]"	one eighth
+公主	3	4	"[""noun""]"	princess
+公交车	3	5	"[""noun""]"	town bus
+公共	3	4	"[""adjective""]"	public
+公司	3	5	"[""noun""]"	company
+公路	3	4	"[""noun""]"	highway
+公车	3	4	"[""noun""]"	bus
+关上	3	5	"[""verb""]"	to close (a door)
+关于	3	5	"[""preposition""]"	about
+关心	3	5	"[""verb"", ""noun""]"	to care about
+关机	3	5	"[""verb""]"	to turn off
+关门	3	5	"[""verb""]"	to close a door
+兴趣	3	5	"[""noun""]"	interest
+养	3	5	"[""verb""]"	to raise (animals)
+内	3	4	"[""noun""]"	inside
+农村	3	5	"[""noun""]"	rural area
+农民	3	4	"[""noun""]"	farmer
+冰	3	5	"[""noun"", ""verb"", ""adjective""]"	ice
+冰水	3	4	"[""noun""]"	iced water
+冰箱	3	5	"[""noun""]"	refrigerator
+冲	3	5	"[""verb"", ""preposition"", ""adjective""]"	to rush
+冷天	3	4	"[""noun""]"	cold weather
+冷水	3	5	"[""noun""]"	cold water
+出口	3	4	"[""noun"", ""verb""]"	an exit
+出国	3	4	"[""verb""]"	to go abroad
+出现	3	5	"[""verb""]"	to appear
+出生日期	3	4	"[""noun""]"	date of birth
+出租车	3	5	"[""noun""]"	taxi
+分为	3	4	"[""verb""]"	to divide into
+分开	3	5	"[""verb""]"	to separate
+分数	3	5	"[""noun""]"	score
+切	3	5	"[""verb"", ""adverb"", ""interjection""]"	to cut
+刮风	3	5	"[""verb""]"	to be windy
+到现在	3	5	"[""adverb""]"	up until now
+前一天	3	4	"[""noun""]"	the day before
+前天	3	5	"[""noun""]"	day before yesterday
+前头	3	4	"[""noun""]"	in front
+前年	3	5	"[""noun""]"	the year before last
+加上	3	5	"[""verb"", ""conjunction""]"	to add
+加入	3	5	"[""verb""]"	to join
+动作	3	5	"[""noun""]"	action
+劳动节	3	5	"[""noun""]"	Labor Day
+包包	3	4	"[""noun""]"	bag or purse etc
+包子	3	5	"[""noun""]"	steamed stuffed bun
+北方	3	5	"[""noun""]"	north
+北部	3	4	"[""noun""]"	northern part
+区	3	5	"[""noun""]"	area
+医	3	5	"[""noun"", ""verb""]"	medicine
+十万	3	4	"[""numeral""]"	hundred thousand
+十分	3	5	"[""adverb""]"	very
+十分之一	3	4	"[""numeral""]"	one tenth
+千克	3	4	"[""classifier"", ""noun""]"	kilogram
+半个	3	5	"[""numeral""]"	half of something
+半夜	3	5	"[""noun""]"	middle of the night
+半天	3	5	"[""noun""]"	a long time
+单	3	4	"[""noun"", ""adjective"", ""adverb""]"	list
+单人	3	4	"[""noun""]"	one person
+单词	3	4	"[""noun""]"	word
+单身	3	5	"[""adjective""]"	single
+单车	3	4	"[""noun""]"	(coll.) bicycle
+南北	3	4	"[""noun""]"	north and south
+南方	3	5	"[""noun""]"	south
+南部	3	4	"[""noun""]"	southern part
+南面	3	4	"[""noun""]"	south side
+卡	3	5	"[""noun"", ""verb"", ""adjective""]"	(loanword) card
+卧室	3	4	"[""noun""]"	bedroom
+卫生	3	5	"[""noun"", ""adjective""]"	hygiene
+卫生纸	3	5	"[""noun""]"	toilet paper
+卫生间	3	5	"[""noun""]"	toilet
+印度	3	5	"[""noun""]"	India
+原	3	5	"[""adjective"", ""noun""]"	original
+原来	3	5	"[""adverb"", ""adjective""]"	originally
+厨房	3	5	"[""noun""]"	kitchen
+友	3	4	"[""noun""]"	friend
+友好	3	4	"[""adjective""]"	friendly
+双	3	5	"[""adjective"", ""classifier""]"	double
+反	3	4	"[""verb"", ""adjective"", ""adverb""]"	opposite
+反对	3	5	"[""verb""]"	to oppose
+发信	3	3	"[""verb""]"	to post a letter
+发热	3	4	"[""verb""]"	to have a fever
+发现	3	5	"[""verb"", ""noun""]"	to discover
+发生	3	5	"[""verb""]"	to happen
+发短信	3	5	"[""verb""]"	to text
+发音	3	4	"[""noun"", ""verb""]"	pronunciation
+取	3	5	"[""verb""]"	to take
+取消	3	5	"[""verb""]"	to cancel
+取钱	3	5	"[""verb""]"	to withdraw money
+受不了	3	5	"[""verb"", ""adjective""]"	can't stand
+受伤	3	5	"[""verb""]"	injured
+变化	3	5	"[""noun"", ""verb""]"	change
+变成	3	5	"[""verb""]"	to become
+变红	3	4	"[""verb""]"	to redden
+变老	3	4	"[""verb""]"	to grow old
+变黑	3	4	"[""verb""]"	to darken
+口水	3	4	"[""noun""]"	saliva
+可乐	3	5	"[""noun"", ""adjective""]"	(loanword) cola
+可口可乐	3	5	"[""noun""]"	Coca-Cola
+可爱	3	5	"[""adjective""]"	cute
+台	3	5	"[""classifier"", ""noun""]"	platform
+号码	3	5	"[""noun""]"	number
+司机	3	5	"[""noun""]"	driver
+吃不下	3	5	"[""verb""]"	can't eat any more
+各种	3	5	"[""adjective""]"	all kinds of
+合	3	5	"[""verb"", ""adjective""]"	to close
+合作	3	5	"[""verb""]"	to cooperate
+同	3	5	"[""adjective"", ""preposition""]"	same
+同意	3	5	"[""verb""]"	to agree
+同时	3	5	"[""adverb""]"	at the same time
+同班同学	3	4	"[""noun""]"	classmate
+后天	3	5	"[""noun"", ""adjective""]"	day after tomorrow
+后年	3	4	"[""noun""]"	the year after next
+后来	3	5	"[""adverb"", ""adjective""]"	afterwards
+向	3	5	"[""preposition"", ""verb"", ""adverb"", ""noun""]"	towards
+向上	3	4	"[""verb"", ""adverb""]"	upward
+向东	3	3	"[""adverb""]"	eastwards
+向北	3	3	"[""adverb""]"	northward
+向西	3	3	"[""adverb""]"	westward
+听不到	3	5	"[""verb""]"	can't hear
+听不见	3	5	"[""verb""]"	not be able to hear
+听力	3	4	"[""noun""]"	listening ability
+听清	3	5	"[""verb""]"	to hear clearly
+听话	3	5	"[""adjective"", ""verb""]"	obedient
+听起来	3	5	"[""verb""]"	to sound like
+告	3	5	"[""verb""]"	to tell
+周天	3	4	"[""noun""]"	Sunday
+味	3	5	"[""noun"", ""classifier""]"	taste
+味道	3	5	"[""noun""]"	taste
+命	3	5	"[""noun"", ""verb""]"	life
+和好	3	4	"[""verb""]"	to become reconciled
+和平	3	4	"[""noun"", ""adjective""]"	peace
+咖啡店	3	5	"[""noun""]"	café
+哪些	3	5	"[""pronoun""]"	which ones?
+商人	3	4	"[""noun""]"	businessman
+商场	3	5	"[""noun""]"	shopping mall
+啤酒	3	5	"[""noun""]"	beer (loanword)
+喜	3	5	"[""verb"", ""noun""]"	to like
+喜爱	3	4	"[""verb""]"	to like
+嘴	3	5	"[""noun""]"	mouth
+嘴巴	3	5	"[""noun""]"	mouth
+嘴里	3	5	"[""noun""]"	in the mouth
+四分之一	3	4	"[""numeral""]"	one-quarter
+回信	3	4	"[""verb"", ""noun""]"	to reply
+回国	3	4	"[""verb""]"	Return home
+回头	3	5	"[""verb"", ""adverb""]"	later
+困难	3	5	"[""adjective"", ""noun""]"	difficult
+国内	3	5	"[""noun""]"	domestic
+国外	3	5	"[""noun""]"	abroad
+国庆节	3	4	"[""noun""]"	National Day
+国旗	3	4	"[""noun""]"	flag (of a country)
+国王	3	4	"[""noun""]"	king
+图	3	5	"[""noun"", ""verb""]"	picture
+图片	3	5	"[""noun""]"	picture
+圆	3	5	"[""adjective"", ""noun"", ""verb"", ""classifier""]"	round
+土	3	5	"[""noun"", ""adjective""]"	earth
+土地	3	4	"[""noun""]"	land
+土豆	3	5	"[""noun""]"	potato
+地上	3	5	"[""noun""]"	on the ground
+地图	3	5	"[""noun""]"	map
+地点	3	4	"[""noun""]"	place
+地球	3	5	"[""noun""]"	the earth
+地铁	3	5	"[""noun""]"	subway
+场	3	5	"[""noun"", ""classifier""]"	venue
+城	3	4	"[""noun""]"	city
+城外	3	3	"[""noun""]"	outside of a city
+城市	3	5	"[""noun""]"	city
+声调	3	4	"[""noun""]"	tone
+外套	3	5	"[""noun""]"	coat
+外教	3	4	"[""noun""]"	foreign teacher
+外语	3	5	"[""noun""]"	foreign language
+多个	3	4	"[""adjective""]"	multiple
+多云	3	4	"[""adjective""]"	(meteorology) cloudy
+多年	3	5	"[""noun""]"	many years
+夜市	3	4	"[""noun""]"	night market
+夜里	3	5	"[""noun""]"	at night
+大事	3	5	"[""noun""]"	major event
+大人	3	5	"[""noun""]"	adult
+大口	3	4	"[""noun""]"	a big mouthful
+大城市	3	5	"[""noun""]"	major city
+大夫	3	4	"[""noun""]"	doctor
+大学生	3	5	"[""noun""]"	university student
+大小	3	5	"[""noun""]"	size
+大河	3	4	"[""noun""]"	large river
+大白菜	3	4	"[""noun""]"	Chinese cabbage
+大米	3	5	"[""noun""]"	(husked) rice
+大约	3	5	"[""adverb""]"	approximately
+大路	3	4	"[""noun""]"	avenue
+大门	3	5	"[""noun""]"	gate
+大雨	3	5	"[""noun""]"	heavy rain
+大风	3	4	"[""noun""]"	gale
+天上	3	5	"[""noun""]"	the sky
+天黑	3	5	"[""verb"", ""noun""]"	to get dark
+太太	3	5	"[""noun""]"	wife
+失望	3	5	"[""adjective"", ""verb""]"	disappointed
+头上	3	4	"[""noun""]"	overhead
+头疼	3	5	"[""adjective"", ""noun""]"	headache
+女士	3	4	"[""noun""]"	lady
+女子	3	4	"[""noun""]"	woman
+女生	3	5	"[""noun""]"	female student
+女装	3	4	"[""noun""]"	women's clothes
+好事	3	4	"[""noun"", ""adjective""]"	good deed
+好处	3	5	"[""noun""]"	benefit
+好好儿	3	4	"[""adverb"", ""adjective""]"	well
+好心	3	4	"[""noun""]"	kindness
+好用	3	5	"[""adjective""]"	easy to use
+好起来	3	5	"[""verb""]"	to get better
+好运	3	5	"[""noun""]"	good luck
+如	3	4	"[""conjunction"", ""verb""]"	as
+如果	3	5	"[""conjunction""]"	if
+存钱	3	5	"[""verb""]"	to save money
+季节	3	5	"[""noun""]"	season
+学会	3	5	"[""verb"", ""noun""]"	to learn
+学到	3	5	"[""verb""]"	to learn (something)
+学期	3	5	"[""noun""]"	semester
+学费	3	4	"[""noun""]"	tuition fee
+安全带	3	4	"[""noun""]"	seat belt
+安排	3	5	"[""verb"", ""noun""]"	to arrange
+官员	3	4	"[""noun""]"	official
+定	3	4	"[""verb"", ""adverb""]"	to fix
+宝宝	3	5	"[""noun""]"	baby
+实在	3	5	"[""adverb"", ""adjective""]"	really
+实现	3	5	"[""verb""]"	to achieve
+实用	3	5	"[""adjective"", ""verb""]"	practical
+客	3	5	"[""noun"", ""classifier""]"	guest
+客人	3	5	"[""noun""]"	guest
+客厅	3	5	"[""noun""]"	living room
+室友	3	5	"[""noun""]"	roommate
+家乡	3	5	"[""noun""]"	hometown
+家长	3	5	"[""noun""]"	parent
+宾馆	3	4	"[""noun""]"	hotel
+对话	3	4	"[""noun"", ""verb""]"	conversation
+对面	3	5	"[""noun"", ""adverb""]"	across (the street)
+小事	3	5	"[""noun""]"	trivial matter
+小刀	3	4	"[""noun""]"	knife
+小区	3	5	"[""noun""]"	housing estate
+小吃	3	5	"[""noun""]"	snack
+小岛	3	4	"[""noun""]"	isle
+小树	3	4	"[""noun""]"	small tree
+小河	3	4	"[""noun""]"	stream
+小组	3	4	"[""noun""]"	group
+小船	3	4	"[""noun""]"	boat
+小说	3	5	"[""noun""]"	novel
+小路	3	4	"[""noun""]"	lane
+小雨	3	5	"[""noun""]"	light rain
+小面包	3	4	"[""noun""]"	bread roll
+小鸟	3	4	"[""noun""]"	small bird
+小鸡	3	4	"[""noun""]"	chick
+尽快	3	5	"[""adverb""]"	as soon as possible
+层	3	5	"[""classifier"", ""noun""]"	layer
+岛	3	4	"[""noun""]"	island
+工	3	4	"[""noun""]"	work
+工作人员	3	4	"[""noun""]"	staff member
+工作日	3	5	"[""noun""]"	workday
+工作时间	3	4	"[""noun""]"	working hours
+工资	3	5	"[""noun""]"	wages
+巧克力	3	4	"[""noun""]"	chocolate (loanword)
+差	3	5	"[""adjective"", ""verb""]"	inferior
+差不多	3	5	"[""adverb"", ""adjective""]"	almost
+巴士	3	4	"[""noun""]"	bus (loanword)
+市	3	5	"[""noun""]"	city
+市民	3	4	"[""noun""]"	city resident
+布	3	5	"[""noun"", ""verb""]"	cloth
+带上	3	5	"[""verb""]"	to take along
+带去	3	4	"[""verb""]"	to take along
+带回	3	4	"[""verb""]"	to bring back
+带来	3	4	"[""verb""]"	to bring
+带走	3	4	"[""verb""]"	to take away
+平	3	5	"[""adjective"", ""verb""]"	flat
+平安	3	5	"[""adjective""]"	safe and sound
+平日	3	5	"[""noun"", ""adverb""]"	ordinarily
+平时	3	5	"[""noun"", ""adverb""]"	ordinarily
+年底	3	5	"[""noun""]"	the end of the year
+年轻	3	5	"[""adjective""]"	young
+广告	3	5	"[""noun"", ""verb""]"	advertisement
+广场	3	5	"[""noun""]"	public square
+应	3	4	"[""verb""]"	should
+底下	3	5	"[""noun""]"	below
+度	3	5	"[""noun"", ""classifier"", ""verb""]"	degree
+度假	3	5	"[""verb""]"	to go on holidays
+座	3	5	"[""classifier"", ""noun""]"	seat
+座位	3	5	"[""noun""]"	seat
+建立	3	4	"[""verb""]"	to establish
+开会	3	5	"[""verb""]"	to hold a meeting
+开关	3	5	"[""noun"", ""verb""]"	power switch
+开学	3	5	"[""verb"", ""noun""]"	to start school
+开水	3	5	"[""noun""]"	boiled water
+开饭	3	4	"[""verb""]"	to serve a meal
+弹琴	3	4	"[""verb""]"	to play the lute
+强	3	5	"[""adjective"", ""verb""]"	strong
+当地	3	4	"[""noun"", ""adjective""]"	local
+得到	3	5	"[""verb""]"	to get
+微信	3	5	"[""noun""]"	WeChat
+德国人	3	4	"[""noun""]"	German person
+德语	3	4	"[""noun""]"	German (language)
+心情	3	5	"[""noun""]"	mood
+急	3	5	"[""adjective"", ""verb""]"	urgent
+总	3	5	"[""adverb"", ""adjective""]"	always
+总共	3	5	"[""adverb""]"	altogether
+总是	3	5	"[""adverb""]"	always
+想出	3	4	"[""verb""]"	to come up with
+想到	3	5	"[""verb""]"	to think of
+想家	3	4	"[""verb""]"	homesick
+想想看	3	5	"[""verb""]"	to think about it
+想法	3	5	"[""noun"", ""verb""]"	opinion
+想起	3	5	"[""verb""]"	to think of
+想起来	3	5	"[""verb""]"	to remember
+意大利面	3	4	"[""noun""]"	pasta
+意见	3	5	"[""noun""]"	opinion
+感	3	5	"[""verb"", ""noun""]"	to feel
+感到	3	5	"[""verb""]"	to feel
+感动	3	5	"[""verb"", ""adjective""]"	to move (somebody)
+成	3	5	"[""verb"", ""adjective"", ""classifier""]"	to become
+成为	3	5	"[""verb""]"	to become
+成绩	3	5	"[""noun""]"	grades
+成长	3	5	"[""verb"", ""noun""]"	to grow
+房	3	5	"[""noun"", ""classifier""]"	house
+手包	3	4	"[""noun""]"	handbag
+手套	3	5	"[""noun""]"	glove
+手拉手	3	4	"[""verb"", ""adverb""]"	to join hands
+手指	3	5	"[""noun""]"	finger
+手指头	3	4	"[""noun""]"	finger
+手纸	3	4	"[""noun""]"	toilet paper
+打不过	3	4	"[""verb""]"	to be no match for
+打包	3	5	"[""verb""]"	to pack
+打印	3	4	"[""verb""]"	to print
+打印机	3	4	"[""noun""]"	printer
+打字	3	5	"[""verb""]"	to type
+打工	3	5	"[""verb""]"	to work odd jobs
+打球	3	5	"[""verb""]"	to play ball
+打算	3	5	"[""verb"", ""noun""]"	to plan
+打车	3	5	"[""verb""]"	to take a taxi
+打针	3	5	"[""verb""]"	to give an injection
+技术	3	4	"[""noun""]"	technology
+护士	3	5	"[""noun""]"	nurse
+报	3	5	"[""noun"", ""verb""]"	newspaper
+报名	3	5	"[""verb""]"	to sign up
+报告	3	4	"[""noun"", ""verb""]"	report
+担心	3	5	"[""verb"", ""adjective""]"	to worry
+拍照	3	5	"[""verb""]"	to take a picture
+指	3	5	"[""verb"", ""noun""]"	finger
+排	3	5	"[""verb"", ""noun"", ""classifier""]"	a row
+接下来	3	5	"[""adverb"", ""verb""]"	next
+接人	3	4	"[""verb""]"	to meet a person
+接到	3	5	"[""verb""]"	to receive
+提到	3	5	"[""verb""]"	to mention
+提前	3	5	"[""verb"", ""adverb""]"	ahead of schedule
+提高	3	5	"[""verb""]"	to improve
+收	3	5	"[""verb""]"	to receive
+收到	3	5	"[""verb""]"	to receive
+收音机	3	4	"[""noun""]"	radio
+改	3	5	"[""verb""]"	to change
+改变	3	5	"[""verb"", ""noun""]"	to change
+放下	3	5	"[""verb""]"	to put down
+放假	3	5	"[""verb""]"	to have a vacation
+放心	3	5	"[""verb"", ""adjective""]"	to be at ease
+放进	3	5	"[""verb""]"	to put into
+故事	3	5	"[""noun""]"	story
+教师	3	4	"[""noun""]"	teacher
+教育	3	5	"[""noun"", ""verb""]"	education
+数数	3	5	"[""verb""]"	to count
+文件	3	4	"[""noun""]"	document
+文化	3	5	"[""noun""]"	culture
+新西兰	3	4	"[""noun""]"	New Zealand
+新闻	3	5	"[""noun""]"	news
+方	3	4	"[""noun"", ""adjective"", ""classifier""]"	square
+方便面	3	5	"[""noun""]"	instant noodles
+方式	3	5	"[""noun""]"	way
+方面	3	5	"[""noun""]"	respect
+旗	3	4	"[""noun""]"	flag
+无法	3	5	"[""verb""]"	unable to
+日出	3	3	"[""noun""]"	sunrise
+日期	3	4	"[""noun""]"	date
+日记	3	4	"[""noun""]"	diary
+时代	3	5	"[""noun""]"	era
+明星	3	5	"[""noun""]"	star
+普通人	3	4	"[""noun""]"	ordinary person
+普通话	3	5	"[""noun""]"	Mandarin Chinese
+晴天	3	5	"[""noun""]"	sunny day
+最近	3	5	"[""adverb"", ""adjective"", ""noun""]"	recently
+有一次	3	5	"[""adverb""]"	once
+有了	3	5	"[""interjection"", ""verb""]"	I've got a solution!
+有事	3	5	"[""verb""]"	to be busy
+有些人	3	5	"[""pronoun""]"	some people
+有可能	3	5	"[""adverb"", ""adjective""]"	possible
+有名	3	5	"[""adjective""]"	famous
+有意义	3	5	"[""adjective"", ""verb""]"	meaningful
+有病	3	5	"[""verb"", ""adjective""]"	to be ill
+有空	3	5	"[""verb""]"	to be free
+有趣	3	5	"[""adjective""]"	interesting
+有道理	3	5	"[""adjective""]"	to make sense
+有钱	3	5	"[""adjective""]"	wealthy
+望	3	4	"[""verb"", ""preposition""]"	to gaze afar
+木头	3	5	"[""noun"", ""adjective""]"	wood
+本子	3	5	"[""noun""]"	notebook
+本星期	3	3	"[""noun""]"	this week
+本月	3	4	"[""noun""]"	this month
+机	3	5	"[""noun""]"	(bound form) machine
+机会	3	5	"[""noun""]"	opportunity
+机器	3	5	"[""noun""]"	machine
+条件	3	5	"[""noun""]"	condition
+来回	3	5	"[""adverb"", ""noun"", ""verb""]"	back and forth
+来自	3	5	"[""verb""]"	to come from
+极	3	5	"[""adverb"", ""noun""]"	extremely
+果汁	3	5	"[""noun""]"	fruit juice
+柜子	3	5	"[""noun""]"	cupboard
+树叶	3	4	"[""noun""]"	tree leaves
+根	3	5	"[""noun"", ""classifier""]"	root
+桃子	3	5	"[""noun""]"	peach
+梨	3	5	"[""noun""]"	pear
+梳子	3	5	"[""noun""]"	comb
+橘子	3	5	"[""noun""]"	tangerine
+橙子	3	4	"[""noun""]"	orange
+歌儿	3	4	"[""noun""]"	song
+歌手	3	5	"[""noun""]"	singer
+歌曲	3	4	"[""noun""]"	song
+正	3	5	"[""adjective"", ""adverb""]"	straight
+正常	3	5	"[""adjective""]"	normal
+死	3	5	"[""verb"", ""adjective"", ""adverb""]"	to die
+比一比	3	4	"[""verb""]"	to make a comparison
+比如	3	5	"[""conjunction""]"	for example
+比如说	3	5	"[""conjunction"", ""adverb""]"	for example
+比赛	3	5	"[""noun"", ""verb""]"	match
+比起	3	5	"[""preposition""]"	compared with
+毛巾	3	5	"[""noun""]"	towel
+毛衣	3	5	"[""noun""]"	(wool) sweater
+民	3	4	"[""noun""]"	(bound form) the people
+民主	3	4	"[""noun"", ""adjective""]"	democracy
+气	3	5	"[""noun"", ""verb""]"	air
+气死	3	5	"[""verb""]"	to infuriate
+水平	3	5	"[""noun"", ""adjective""]"	level
+江	3	4	"[""noun""]"	river
+沙拉	3	4	"[""noun""]"	(loanword) salad
+没了	3	5	"[""verb""]"	to cease to exist
+没想到	3	5	"[""verb""]"	didn't expect
+没意思	3	5	"[""adjective""]"	boring
+没有事	3	4	"[""verb""]"	nothing is up
+没有差别	3	4	"[""verb""]"	no difference
+没有意思	3	5	"[""adjective""]"	boring
+没用	3	5	"[""adjective""]"	useless
+没电	3	5	"[""verb""]"	dead (of batteries)
+没空儿	3	4	"[""verb""]"	having no time
+河	3	5	"[""noun""]"	river
+河边	3	4	"[""noun""]"	river bank
+油	3	5	"[""noun"", ""adjective"", ""verb""]"	oil
+油条	3	4	"[""noun""]"	fried dough stick
+法	3	5	"[""noun""]"	law
+法国人	3	5	"[""noun""]"	French person
+法文	3	4	"[""noun""]"	French language
+法语	3	4	"[""noun""]"	French (language)
+洗发水	3	4	"[""noun""]"	shampoo (liquid)
+洗头	3	4	"[""verb""]"	to wash one's hair
+洗澡	3	5	"[""verb""]"	to bathe
+洗衣	3	4	"[""verb"", ""noun""]"	laundry
+活着	3	5	"[""verb"", ""adjective""]"	alive
+流	3	4	"[""verb"", ""noun""]"	to flow
+海水	3	4	"[""noun""]"	seawater
+海边	3	5	"[""noun""]"	seaside
+温度	3	5	"[""noun""]"	temperature
+湖	3	4	"[""noun""]"	lake
+满	3	5	"[""adjective"", ""verb"", ""adverb""]"	full
+满意	3	5	"[""adjective"", ""verb""]"	satisfied
+满满	3	4	"[""adjective""]"	full
+满足	3	5	"[""verb"", ""adjective""]"	to satisfy
+火锅	3	5	"[""noun""]"	hotpot
+炉	3	4	"[""noun""]"	stove
+炉子	3	4	"[""noun""]"	stove
+炒饭	3	5	"[""noun"", ""verb""]"	fried rice
+点单	3	4	"[""verb""]"	to place an order
+点头	3	4	"[""verb""]"	to nod
+点菜	3	5	"[""verb""]"	to order dishes
+烟	3	5	"[""noun"", ""verb""]"	smoke
+热情	3	5	"[""adjective"", ""noun""]"	enthusiastic
+热气	3	4	"[""noun""]"	steam
+热水器	3	4	"[""noun""]"	water heater
+照	3	5	"[""verb"", ""preposition"", ""noun""]"	to shine
+照相	3	4	"[""verb""]"	to take a photograph
+照相机	3	4	"[""noun""]"	camera
+照镜子	3	4	"[""verb""]"	to look in a mirror
+爬山	3	5	"[""verb""]"	to hike
+片	3	5	"[""classifier"", ""noun"", ""verb""]"	thin piece
+牙	3	5	"[""noun""]"	tooth
+牙刷	3	5	"[""noun""]"	toothbrush
+牙膏	3	5	"[""noun""]"	toothpaste
+牛排	3	4	"[""noun""]"	steak
+牛肉	3	5	"[""noun""]"	beef
+牛肉面	3	5	"[""noun""]"	beef noodle soup
+特	3	5	"[""adverb""]"	special
+特别	3	5	"[""adjective"", ""adverb""]"	special
+狗狗	3	4	"[""noun""]"	doggie
+猪	3	5	"[""noun""]"	pig
+猪肉	3	5	"[""noun""]"	pork
+王	3	4	"[""noun"", ""adjective""]"	king or monarch
+环	3	5	"[""noun"", ""verb"", ""classifier""]"	ring
+现代	3	5	"[""noun""]"	modern times
+现金	3	5	"[""noun""]"	cash
+班上	3	5	"[""noun""]"	(in the) class
+班级	3	4	"[""noun""]"	school class
+班长	3	4	"[""noun""]"	class monitor
+球	3	5	"[""noun""]"	ball
+理发	3	5	"[""verb""]"	to get a haircut
+理想	3	5	"[""noun"", ""adjective""]"	ideal
+理解	3	5	"[""verb"", ""noun""]"	to understand
+瓜子	3	5	"[""noun""]"	melon seed
+生字	3	4	"[""noun""]"	new character
+生意	3	5	"[""noun""]"	business
+生日卡	3	4	"[""noun""]"	birthday card
+生气	3	5	"[""verb"", ""noun""]"	to get angry
+生物	3	4	"[""noun"", ""adjective""]"	living creature
+生词	3	4	"[""noun""]"	new word
+生词本	3	4	"[""noun""]"	vocabulary notebook
+用力	3	4	"[""verb""]"	to exert oneself
+用来	3	4	"[""verb""]"	to be used for
+电子书	3	4	"[""noun""]"	e-book
+电梯	3	5	"[""noun""]"	elevator
+电灯	3	4	"[""noun""]"	electric light
+电视台	3	4	"[""noun""]"	television station
+电视机	3	4	"[""noun""]"	television set
+电视节目	3	4	"[""noun""]"	television program
+电话卡	3	3	"[""noun""]"	telephone card
+男友	3	4	"[""noun""]"	boyfriend
+男女	3	4	"[""noun""]"	male and female
+留	3	5	"[""verb""]"	to stay
+留学	3	4	"[""verb""]"	to study abroad
+留学生	3	4	"[""noun""]"	overseas student
+病人	3	4	"[""noun""]"	patient
+白云	3	4	"[""noun""]"	white cloud
+白人	3	4	"[""noun""]"	white man or woman
+白开水	3	4	"[""noun""]"	plain boiled water
+白米饭	3	5	"[""noun""]"	cooked white rice
+白菜	3	5	"[""noun""]"	Chinese cabbage
+白酒	3	5	"[""noun""]"	baijiu
+百万	3	4	"[""numeral""]"	million
+百分之	3	4	"[""numeral""]"	percent
+百度	3	5	"[""noun"", ""verb""]"	Baidu
+的话	3	5	"[""particle""]"	if
+皮包	3	4	"[""noun""]"	handbag
+皮球	3	4	"[""noun""]"	rubber ball
+盘	3	5	"[""noun"", ""classifier"", ""verb""]"	plate
+盘子	3	5	"[""noun""]"	plate
+目前	3	4	"[""noun"", ""adverb""]"	currently
+直	3	5	"[""adjective"", ""adverb"", ""verb""]"	straight
+直到	3	4	"[""preposition""]"	until
+相信	3	5	"[""verb""]"	to believe
+相同	3	5	"[""adjective""]"	same
+相片	3	4	"[""noun""]"	photograph
+看上去	3	5	"[""verb""]"	it seems (that)
+看不清	3	5	"[""verb""]"	can't see clearly
+看出	3	4	"[""verb""]"	to see
+看得出	3	5	"[""verb""]"	can tell
+看得见	3	5	"[""verb""]"	can see
+看法	3	5	"[""noun""]"	view
+看球	3	4	"[""verb"", ""interjection""]"	to watch a match
+看病	3	5	"[""verb""]"	to visit a doctor
+看起来	3	5	"[""verb"", ""particle""]"	to seem
+真是	3	5	"[""adverb""]"	truly
+真正	3	5	"[""adjective"", ""adverb""]"	real
+眼前	3	4	"[""noun""]"	before one's eyes
+眼皮	3	4	"[""noun""]"	eyelid
+眼镜	3	5	"[""noun""]"	eyeglasses
+着急	3	5	"[""adjective"", ""verb""]"	to worry
+短信	3	5	"[""noun""]"	text message
+矮	3	5	"[""adjective""]"	(of a person) short
+石	3	4	"[""noun"", ""classifier""]"	stone
+矿泉水	3	5	"[""noun""]"	mineral water
+社会	3	5	"[""noun""]"	society
+神	3	4	"[""noun"", ""adjective""]"	god
+种	3	5	"[""classifier"", ""noun"", ""verb""]"	kind, type
+秒	3	5	"[""noun""]"	second
+空	3	5	"[""noun"", ""adjective"", ""verb""]"	empty
+立刻	3	5	"[""adverb""]"	immediately
+笑声	3	4	"[""noun""]"	laughter
+笔记	3	5	"[""noun""]"	notes
+笔记本	3	5	"[""noun""]"	notebook
+笨	3	5	"[""adjective""]"	stupid
+等一会	3	4	"[""verb"", ""adverb""]"	Wait a moment!
+等一等	3	4	"[""verb""]"	wait a moment
+等等	3	5	"[""particle"", ""verb""]"	et cetera
+算了	3	5	"[""verb""]"	forget about it
+管	3	5	"[""verb"", ""noun"", ""preposition""]"	to manage
+管理	3	5	"[""verb"", ""noun""]"	to manage
+管理员	3	4	"[""noun""]"	manager
+篮球	3	4	"[""noun""]"	basketball
+粉红色	3	4	"[""noun"", ""adjective""]"	pink
+粉色	3	5	"[""noun"", ""adjective""]"	pink
+粥	3	4	"[""noun""]"	congee
+糖果	3	4	"[""noun""]"	candy
+系	3	5	"[""noun"", ""verb""]"	department
+紧张	3	5	"[""adjective""]"	nervous
+红包	3	5	"[""noun""]"	red envelope
+红灯	3	5	"[""noun""]"	red light
+红绿灯	3	5	"[""noun""]"	traffic light
+红茶	3	4	"[""noun""]"	black tea
+红豆	3	4	"[""noun""]"	red bean
+红酒	3	5	"[""noun""]"	red wine
+约	3	5	"[""verb"", ""adverb"", ""noun""]"	approximately
+线	3	4	"[""noun""]"	line
+组	3	5	"[""noun"", ""classifier"", ""verb""]"	group
+经常	3	5	"[""adverb"", ""adjective""]"	often
+经理	3	5	"[""noun""]"	manager
+经过	3	5	"[""verb"", ""noun""]"	to pass
+绿树	3	3	"[""noun""]"	trees
+绿灯	3	4	"[""noun""]"	green light
+绿色	3	5	"[""noun"", ""adjective""]"	green
+缺点	3	5	"[""noun""]"	shortcoming
+网	3	5	"[""noun""]"	net
+网上	3	5	"[""noun""]"	online
+网球	3	4	"[""noun""]"	tennis
+羊	3	4	"[""noun""]"	sheep
+美元	3	4	"[""noun""]"	US dollar
+美女	3	5	"[""noun""]"	beautiful woman
+美好	3	4	"[""adjective""]"	beautiful
+美食	3	5	"[""noun""]"	culinary delicacy
+老人	3	5	"[""noun""]"	old man or woman
+老公	3	5	"[""noun""]"	(coll.) eunuch
+老大	3	4	"[""noun"", ""adverb""]"	old age
+老实	3	5	"[""adjective""]"	honest
+老家	3	5	"[""noun""]"	native place
+老年	3	4	"[""noun"", ""adjective""]"	old age
+老年人	3	4	"[""noun""]"	the elderly
+老是	3	5	"[""adverb""]"	always
+耳机	3	5	"[""noun""]"	headphones
+聊天	3	5	"[""verb""]"	to chat
+联系	3	5	"[""verb"", ""noun""]"	to get in touch with
+背包	3	5	"[""noun""]"	knapsack
+胡子	3	4	"[""noun""]"	beard
+能力	3	5	"[""noun""]"	ability
+脏	3	5	"[""adjective"", ""verb""]"	dirty
+脱衣服	3	5	"[""verb""]"	undress
+脸	3	5	"[""noun""]"	face
+自	3	5	"[""preposition"", ""adverb""]"	oneself
+自动	3	5	"[""adjective"", ""adverb""]"	automatic
+自然	3	5	"[""noun"", ""adjective"", ""adverb""]"	nature
+船	3	5	"[""noun""]"	boat
+节	3	5	"[""noun"", ""verb"", ""classifier""]"	seasonal festival
+节日	3	5	"[""noun""]"	festival
+节目	3	5	"[""noun""]"	TV program
+芒果	3	4	"[""noun""]"	(loanword) mango
+花时间	3	5	"[""verb""]"	to spend time
+花生	3	5	"[""noun""]"	peanut
+苦	3	5	"[""adjective"", ""verb"", ""noun""]"	bitter
+英	3	4	"[""noun""]"	British
+草地	3	4	"[""noun""]"	lawn
+草莓	3	5	"[""noun""]"	strawberry
+菜单	3	5	"[""noun""]"	menu
+菜市场	3	4	"[""noun""]"	food market
+蓝天	3	4	"[""noun""]"	blue sky
+蓝色	3	5	"[""noun"", ""adjective""]"	blue (color)
+蔬菜	3	5	"[""noun""]"	vegetables
+虫子	3	5	"[""noun""]"	bug
+虽然	3	5	"[""conjunction""]"	although
+虾	3	5	"[""noun""]"	shrimp
+蛋糕	3	5	"[""noun""]"	cake
+血	3	5	"[""noun""]"	blood
+行为	3	4	"[""noun""]"	behavior
+行李	3	5	"[""noun""]"	luggage
+街上	3	5	"[""noun""]"	on the street
+街道	3	4	"[""noun""]"	street
+表现	3	5	"[""verb"", ""noun""]"	performance
+衬衫	3	4	"[""noun""]"	shirt
+袜子	3	5	"[""noun""]"	socks
+西南	3	4	"[""noun""]"	southwest
+西方	3	4	"[""noun""]"	the West
+西班牙	3	4	"[""noun""]"	Spain
+西班牙人	3	4	"[""noun""]"	Spaniard
+西班牙语	3	4	"[""noun""]"	Spanish language
+西瓜	3	5	"[""noun""]"	watermelon
+西红柿	3	5	"[""noun""]"	tomato
+西边	3	4	"[""noun""]"	west side
+西面	3	4	"[""noun""]"	west side
+要是	3	5	"[""conjunction""]"	(coll.) if
+要有	3	5	"[""verb""]"	to need
+要求	3	5	"[""verb"", ""noun""]"	to request
+角	3	4	"[""noun"", ""classifier""]"	corner
+计算	3	4	"[""verb"", ""noun""]"	to calculate
+计算机	3	5	"[""noun""]"	computer
+认真	3	5	"[""adjective"", ""verb""]"	serious
+记不住	3	5	"[""verb""]"	can't remember
+记者	3	4	"[""noun""]"	reporter
+试	3	5	"[""verb""]"	to try
+试试看	3	5	"[""verb""]"	to give it a try
+语	3	5	"[""noun"", ""verb""]"	language
+语文	3	4	"[""noun""]"	Chinese (subject)
+语言	3	5	"[""noun""]"	language
+说出	3	4	"[""verb""]"	to speak out
+说好	3	5	"[""verb""]"	to agree
+说明	3	5	"[""verb"", ""noun""]"	to explain
+豆	3	5	"[""noun""]"	bean
+豆子	3	4	"[""noun""]"	bean
+豆腐	3	5	"[""noun""]"	tofu
+贴	3	4	"[""verb"", ""noun"", ""classifier""]"	to stick
+走出	3	4	"[""verb""]"	to walk out of
+走去	3	4	"[""verb""]"	to walk over (to)
+走开	3	4	"[""verb""]"	to walk away
+走过	3	5	"[""verb""]"	to walk past
+走进	3	5	"[""verb""]"	to enter
+起名	3	4	"[""verb""]"	to name
+起点	3	4	"[""noun""]"	starting point
+超市	3	5	"[""noun""]"	supermarket
+超级市场	3	4	"[""noun""]"	supermarket
+超过	3	5	"[""verb""]"	to exceed
+足球场	3	4	"[""noun""]"	soccer field
+足球赛	3	4	"[""noun""]"	soccer match
+足球队	3	4	"[""noun""]"	soccer team
+路上	3	5	"[""adverb"", ""noun""]"	on the way
+身	3	4	"[""noun"", ""classifier""]"	body
+身上	3	5	"[""noun""]"	on the body
+身子	3	4	"[""noun""]"	body
+身边	3	5	"[""noun""]"	at one's side
+身高	3	5	"[""noun""]"	(a person's) height
+转	3	5	"[""verb"", ""classifier""]"	to turn
+轮	3	4	"[""noun"", ""classifier"", ""verb""]"	wheel
+轻	3	5	"[""adjective"", ""verb""]"	light
+输	3	5	"[""verb""]"	to lose
+边儿	3	4	"[""noun""]"	side
+达	3	4	"[""verb"", ""adjective""]"	to reach
+达到	3	4	"[""verb""]"	to reach
+过一会儿	3	5	"[""adverb""]"	after a while
+过年	3	5	"[""verb""]"	to spend New Year
+过生日	3	5	"[""verb""]"	to have a birthday
+过程	3	5	"[""noun""]"	process
+过马路	3	5	"[""verb""]"	to cross the street
+运	3	4	"[""verb"", ""noun""]"	to transport
+运动场	3	4	"[""noun""]"	sports field
+运气	3	5	"[""noun""]"	luck (good or bad)
+进入	3	4	"[""verb""]"	to enter
+进步	3	5	"[""verb"", ""noun"", ""adjective""]"	to improve
+连	3	5	"[""verb"", ""adverb"", ""preposition"", ""noun""]"	to connect
+选	3	5	"[""verb""]"	to choose
+通电话	3	4	"[""verb""]"	to phone somebody up
+通知	3	5	"[""verb"", ""noun""]"	to notify
+通过	3	5	"[""verb"", ""preposition""]"	to pass through
+逛街	3	5	"[""verb""]"	to window-shop
+道	3	5	"[""noun"", ""classifier""]"	road
+道理	3	5	"[""noun""]"	reason
+邻居	3	5	"[""noun""]"	neighbor
+部	3	5	"[""classifier"", ""noun""]"	part
+部分	3	5	"[""noun""]"	part
+酒	3	5	"[""noun""]"	alcoholic beverage
+酸	3	5	"[""adjective"", ""noun"", ""verb""]"	sour
+重	3	5	"[""adjective"", ""verb"", ""classifier""]"	heavy
+重新	3	5	"[""adverb""]"	again
+量体重	3	4	"[""verb""]"	to weigh oneself
+钥匙	3	5	"[""noun""]"	key
+钱包	3	5	"[""noun""]"	wallet
+铁	3	5	"[""noun"", ""adjective""]"	iron (metal)
+铁路	3	4	"[""noun""]"	railway
+银	3	5	"[""noun""]"	silver
+银行	3	5	"[""noun""]"	bank
+锻炼	3	5	"[""verb""]"	to work out
+长发	3	4	"[""noun""]"	long hair
+长城	3	4	"[""noun""]"	the Great Wall
+长得	3	5	"[""verb""]"	to look (pretty, the same etc)
+长方形	3	4	"[""noun""]"	rectangle
+长江	3	5	"[""noun""]"	Yangtze River
+门前	3	4	"[""noun""]"	in front of the door
+门外	3	4	"[""noun""]"	outside the door
+门票	3	4	"[""noun""]"	admission ticket
+问好	3	4	"[""verb""]"	to say hello to
+问路	3	4	"[""verb""]"	to ask the way
+闻	3	5	"[""verb""]"	to smell
+闻到	3	5	"[""verb""]"	to smell
+队	3	5	"[""noun"", ""classifier""]"	team
+阳台	3	5	"[""noun""]"	balcony
+阴	3	5	"[""adjective"", ""noun""]"	overcast (weather)
+阴天	3	5	"[""noun""]"	cloudy day
+附近	3	5	"[""noun""]"	nearby
+院子	3	5	"[""noun""]"	courtyard
+除了	3	5	"[""preposition""]"	apart from
+难	3	5	"[""adjective"", ""noun""]"	difficult
+难受	3	5	"[""adjective"", ""verb""]"	to feel unwell
+难吃	3	5	"[""adjective""]"	unpalatable
+难看	3	5	"[""adjective""]"	ugly
+难过	3	5	"[""adjective""]"	to feel sad
+雨天	3	5	"[""noun""]"	rainy day
+雨衣	3	4	"[""noun""]"	raincoat
+雪人	3	4	"[""noun""]"	snowman
+青年	3	4	"[""noun""]"	youth
+青菜	3	5	"[""noun""]"	green vegetables
+面前	3	5	"[""noun""]"	in front of
+音	3	4	"[""noun""]"	sound
+音乐会	3	4	"[""noun""]"	concert
+音乐家	3	3	"[""noun""]"	musician
+飞机场	3	4	"[""noun""]"	airport
+飞机票	3	5	"[""noun""]"	air ticket
+食品	3	4	"[""noun""]"	food
+食堂	3	4	"[""noun""]"	cafeteria
+饭菜	3	4	"[""noun""]"	food
+饺子	3	5	"[""noun""]"	dumpling
+首先	3	5	"[""adverb""]"	first (of all)
+香	3	5	"[""adjective"", ""noun""]"	fragrant
+香水	3	4	"[""noun""]"	perfume
+香港	3	4	"[""noun""]"	Hong Kong
+香蕉	3	5	"[""noun""]"	banana
+马上	3	5	"[""adverb""]"	immediately
+马路	3	5	"[""noun""]"	road
+高中	3	5	"[""noun"", ""verb""]"	senior high school
+高中生	3	4	"[""noun""]"	high school student
+高声	3	4	"[""adverb""]"	loudly
+高速	3	4	"[""adjective"", ""noun""]"	high speed
+高速公路	3	4	"[""noun""]"	expressway
+高铁	3	5	"[""noun""]"	high speed rail
+高高兴兴	3	4	"[""adjective"", ""adverb""]"	in a good mood
+鬼	3	5	"[""noun"", ""adjective""]"	ghost
+鸟儿	3	4	"[""noun""]"	bird
+鸡肉	3	5	"[""noun""]"	chicken meat
+黑人	3	4	"[""noun""]"	black person
+黑板	3	4	"[""noun""]"	blackboard
+黑色	3	5	"[""noun"", ""adjective""]"	black
+龙	3	4	"[""noun""]"	Chinese dragon

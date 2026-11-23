@@ -10,10 +10,24 @@ import { ValidationError } from '../../types/dal.js';
 import {
   vetReadFrom,
   vetSortedClause,
-  WRITING_FLP_WORD_CLAUSE,
   WRITING_MASTERY_SELECT,
 } from '../shared/vetTable.js';
 import { DICT_JOIN } from '../shared/dictJoin.js';
+import { writingDeckFrom, materializeWritingIds } from '../shared/writingDeck.js';
+
+/**
+ * A world's card population as FROM source + membership WHERE fragment, so the three
+ * card reads below cannot drift apart. Same population as the tower's ready counts
+ * (`OnDeckVocabDAL.findReadinessRows`): the core and reading worlds are the learner's
+ * SORTED cards; the writing world is the writing deck (dal/shared/writingDeck.ts) —
+ * single characters of sorted words, hidden and virtual (negative-id) character rows
+ * included — which is its own membership rule, so it takes no sorted filter.
+ */
+function worldSource(world: MasteryWorldId, language: string): { from: string; membership: string } {
+  return world === 'writing'
+    ? { from: writingDeckFrom('$1'), membership: '' }
+    : { from: vetReadFrom(language), membership: `AND ${vetSortedClause()}` };
+}
 
 /**
  * Data access for focus mode (docs/FOCUS_MODE.md § 2). LAYER: DAL.
@@ -131,16 +145,17 @@ export class FocusModeDAL implements IFocusModeDAL {
     if (!userId) throw new ValidationError('userId is required');
     // Same population as OnDeckVocabService.getFlpReadyCounts (the tower's own figure),
     // ordered by id so ties in the queue ranking are deterministic. DICT_JOIN supplies
-    // the stale tier's ease keys (cardQueueRanking.rankCardQueue). Sorted-only, so no
-    // row here is lent and starterPackBucket is not needed.
+    // the stale tier's ease keys (cardQueueRanking.rankCardQueue). Sorted-only — or, on
+    // writing, the writing deck, whose hidden character rows are 'tracked' (migration
+    // 203) — so no row is here BECAUSE it was lent and starterPackBucket is not needed.
+    const source = worldSource(world, language);
     const result = await this.dbManager.executeQuery<CardRowSource>((client) => client.query(
       `SELECT ve.id, ve."typedMarkHistory", ${WRITING_MASTERY_SELECT},
               de."difficulty", de."maxCharStrokeCount"
-         FROM ${vetReadFrom(language)} ${DICT_JOIN}
+         FROM ${source.from} ${DICT_JOIN}
         WHERE ve."userId" = $1
           AND ve."language" = $2
-          ${world === 'writing' ? WRITING_FLP_WORD_CLAUSE : ''}
-          AND ${vetSortedClause()}
+          ${source.membership}
         ORDER BY ve.id`,
       [userId, language]
     ));
@@ -149,33 +164,44 @@ export class FocusModeDAL implements IFocusModeDAL {
 
   async countWorldCards(userId: string, language: string, world: MasteryWorldId): Promise<number> {
     if (!userId) throw new ValidationError('userId is required');
-    // Keep this population identical to listWorldCards. DICT_JOIN is here because
-    // WRITING_FLP_WORD_CLAUSE reads the det.
+    // Keep this population identical to listWorldCards (both read worldSource).
+    const source = worldSource(world, language);
     const result = await this.dbManager.executeQuery<{ count: number }>((client) => client.query(
       `SELECT COUNT(*)::int AS count
-         FROM ${vetReadFrom(language)} ${DICT_JOIN}
+         FROM ${source.from}
         WHERE ve."userId" = $1
           AND ve."language" = $2
-          ${world === 'writing' ? WRITING_FLP_WORD_CLAUSE : ''}
-          AND ${vetSortedClause()}`,
+          ${source.membership}`,
       [userId, language]
     ));
     return result.recordset[0]?.count ?? 0;
   }
 
-  async listCardsByIds(userId: string, language: string, ids: number[]): Promise<FocusCardRow[]> {
+  async listCardsByIds(userId: string, language: string, world: MasteryWorldId, ids: number[]): Promise<FocusCardRow[]> {
     if (!userId) throw new ValidationError('userId is required');
     if (ids.length === 0) return [];
+    // Still the world's population: a card that has left it since (removed, or — on
+    // writing — a character whose last sorted word was removed) drops out of the set.
+    const source = worldSource(world, language);
     const result = await this.dbManager.executeQuery<CardRowSource>((client) => client.query(
       `SELECT ve.id, ve."typedMarkHistory", ${WRITING_MASTERY_SELECT}
-         FROM ${vetReadFrom(language)}
+         FROM ${source.from}
         WHERE ve."userId" = $1
           AND ve."language" = $2
           AND ve.id = ANY($3::int[])
-          AND ${vetSortedClause()}`,
+          ${source.membership}`,
       [userId, language, ids]
     ));
     return result.recordset.map(toCardRow);
+  }
+
+  async materializeWritingIds(userId: string, ids: number[]): Promise<number[]> {
+    if (!userId) throw new ValidationError('userId is required');
+    if (!ids.some((id) => id < 0)) return ids;
+    // executeQuery wants a pg-shaped result, so the ids travel as rows.
+    const result = await this.dbManager.executeQuery<number>(async (client) =>
+      ({ rows: await materializeWritingIds(client, userId, ids) }));
+    return result.recordset;
   }
 }
 

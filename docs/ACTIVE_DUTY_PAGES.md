@@ -42,6 +42,8 @@ Referenced code: `src/routes/routeMeta.ts` → `ROUTE_META`, `FLAGGED_OFF_PATHS`
 | `/adventures/:id/edit` | `StoryEditorPage` | authors only: Adventures → **New story**, or an own draft card (`AdventuresPage` → `slideNavigate(storyEditPath(id))`); or a story's header Edit icon (`StoryPlayPage`) | 2026-11-20 |
 | `/adventures/:id/edit/:passageId` | `PassageEditorPage` | story editor → a passage row, or **New passage** (`StoryEditorPage` → `slideNavigate(passageEditPath(...))`) | 2026-11-20 |
 | `/arena` | `ArenaPage` | Menu popover → **Arena** (flag `arena`, on) | 2026-11-10 |
+| `/sentence-tiles` | `SentenceTilesPage` | Menu popover → **Sentence Tiles** (flag `sentenceTiles`, ON; row shown only to feature testers with testing features switched on — `useTestingFeatures`) | 2026-11-22 |
+| `/sentence-tiles/:gameId` | `SentenceTilesGamePage` | Sentence Tiles → a game row, or a friend in **New game** (`SentenceTilesPage` → `slideNavigate('/sentence-tiles/' + id)`) | 2026-11-22 |
 | `/tester-dashboard` | `TesterDashboardPage` (tdp) | Menu popover → gated **Tester Dashboard** row (testers / admins only) | 2026-11-10 |
 | `/login` | `LoginPage` (+ steps in `src/pages/login/`) | not tapped to: every signed-out launch and every ended session lands here (`ProtectedRoute`, the interceptor, `logout`, `deleteAccount`); td avatar → AccountSheet → Log out | 2026-11-14 |
 | `/register` | `RegisterRedirect` → `/login` | old links only (sign-up lives on `/login` since 2026-11-14) | 2026-11-14 |
@@ -58,6 +60,7 @@ Rendered in place, with no URL of their own. Everything they render is active du
 | Menu popover (hp) | footer **Menu** tab | 2026-11-10 |
 | AccountSheet (Account / Friends / Settings tabs) | td header avatar (`DeckTowerAvatar`) | 2026-11-10 |
 | td launch screen | td, once per launch | 2026-11-11 |
+| Superposition (game break) | wflp → a game break (`src/games/flpBreak/index.ts` → `FLP_BREAK_GAMES`; `GAME_FLAGS.superposition` on) | 2026-11-22 |
 
 ## Flagged off (reachable once the flag flips)
 

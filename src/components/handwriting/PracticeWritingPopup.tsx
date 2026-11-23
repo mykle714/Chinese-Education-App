@@ -37,7 +37,7 @@ import { recordCompletion } from "./completions";
 import { getWritingDraft, setWritingDraft } from "./writingDraftStore";
 import { useLevelGuide } from "./useLevelGuide";
 import { useStrokeClock } from "./useStrokeClock";
-import { guideFades, levelPreview, regionClipPath, WRITING_FOCUS_SIZE } from "./levelBehavior";
+import { guideFades, levelHasGuide, levelPreview, regionClipPath, WRITING_FOCUS_SIZE } from "./levelBehavior";
 import type { Ink, WritingAttempt, WritingCanvasHandle } from "./types";
 import { PHONE_OVERLAY_SX } from "../phoneGeometry";
 import { WRITING_LEVELS } from "../../../server/contracts/writingLevels";
@@ -374,23 +374,24 @@ export default function PracticeWritingPopup({
   );
 
   // Footer assist button, from the level's behaviour (levelBehavior.ts):
-  //   Step Through → Show · Thirds / Quarters → Next (cycles the region). Snap,
+  //   Step Through → Show · Sections → Next (cycles the region) · Flash → Flash (one
+  //   look per slot open, then a disabled "Used" — useLevelGuide.assistLabel). Snap,
   //   Trace and Memorize have none (Memorize's first stroke unlocks). Timed shows Retry once
   //   the active character's clock has run out. It sits in the panel footer's
   //   footer (WritingPanel), so appearing / vanishing never moves the canvas.
   const assistLabel = behavior.timed
     ? activeExpired || (!isMulti && results[0] !== "idle") ? "Retry" : null
-    : behavior.button?.label ?? null;
+    : guide.assistLabel;
   const assistButton = assistLabel ? (
     <Button
       className="practice-writing__assist"
       variant="contained"
       disableElevation
       onClick={behavior.timed ? handleRetry : guide.press}
-      disabled={!behavior.timed && guide.cooldownSec > 0}
+      disabled={!behavior.timed && guide.assistDisabled}
       sx={WRITING_PANEL_ACTION_SX}
     >
-      {!behavior.timed && guide.cooldownSec > 0 ? `${guide.cooldownSec}s` : assistLabel}
+      {assistLabel}
     </Button>
   ) : null;
 
@@ -436,7 +437,7 @@ export default function PracticeWritingPopup({
           drawable
           // Post-Verify reveal overrides the level's normal guide gating (even Blank),
           // and shows the WHOLE glyph rather than the active region.
-          showGuide={behavior.guide !== "none" || verifyRevealed}
+          showGuide={levelHasGuide(mode) || verifyRevealed}
           guideVisible={guide.outlineVisible || verifyRevealed}
           loopAnimation={behavior.animation === "loop"}
           snap={behavior.snap}
@@ -502,7 +503,7 @@ export default function PracticeWritingPopup({
             character={chars[focusedIndex]}
             size={FOCUS_SIZE}
             drawable
-            showGuide={behavior.guide !== "none"}
+            showGuide={levelHasGuide(mode)}
             guideVisible={guide.outlineVisible}
             loopAnimation={behavior.animation === "loop"}
             snap={behavior.snap}

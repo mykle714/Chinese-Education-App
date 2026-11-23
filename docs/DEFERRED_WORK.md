@@ -284,6 +284,7 @@ need to decide. A 502/503 for an upstream failure would make the distinction che
 | `ICONS8_API_KEY` | `server/.env`, `.env.docker` | icons8.com | The fie icon search proxy |
 | `JWT_SECRET` | all three server env files | Generate a new random value | ⚠️ **Rotating this invalidates every live session** — every user is logged out. Do it deliberately, not in the same pass as the others |
 | `DB_PASSWORD` | all three server env files | Postgres role | ⚠️ Must change in the DB and the env file together, and the containers restart |
+| `SENTENCE_TILES_AI_API_KEY` | `server/.env`, `.env.docker`; PPE repo-root `.env` | console.anthropic.com | The Sentence Tiles judge — currently the Voice key's value (item 63) |
 | Google service account | `server/google-tts-credentials.json` (path via `GOOGLE_APPLICATION_CREDENTIALS`) | GCP IAM — issue a new key, then delete the old one | `server/services/TTSService.ts` |
 
 **Checked while writing this**: none of these files is tracked by git — `.gitignore:14`
@@ -836,6 +837,17 @@ Doc: [DICTIONARY_AI_FALLBACK_SEARCH.md](./DICTIONARY_AI_FALLBACK_SEARCH.md).
 | **Cost of leaving it** | A dead, still-tested code path that suggests the app has a manual level picker |
 | **Trigger** | The next change to `StarterPacksService`'s level walk |
 | **References** | [SORT_CARDS_REQUIREMENTS.md](./SORT_CARDS_REQUIREMENTS.md) § 6.6; `server/services/StarterPacksService.ts` → `getNextPacks`; `src/features/discover/starterPacksApi.ts` |
+
+### 63. Give the Sentence Tiles judge its own API key (it borrows the Voice key)
+
+*Added 2026-11-23.*
+
+| | |
+|---|---|
+| **What** | Issue a dedicated Anthropic key for `SENTENCE_TILES_AI_API_KEY` and replace the borrowed value in dev's `server/.env` + `server/.env.docker` and PPE's repo-root `.env` (then `docker restart cow-backend` on dev; `docker-compose -f docker-compose.ppe.yml up -d backend` on PPE — never `down -v`) |
+| **Why deferred** | Owner's call (2026-11-23): reuse the Voice key so Sentence Tiles can be tested on PPE now. The env var was set to `VOICE_AI_API_KEY`'s value on dev and copied to PPE (where Voice itself has no key yet) |
+| **Cost of leaving it** | The design gives the judge its own key so its spend is billed apart and can be revoked alone (`server/services/anthropicClient.ts` → `getSentenceTilesAiClient`; docs/SENTENCE_TILES_GAME.md § "Abuse protection"). While shared, judge spend and Voice spend are indistinguishable on the bill, and cutting one off cuts both. The game's own caps still apply (40 calls/player/day, 1,000/day overall) |
+| **Trigger** | Before Sentence Tiles reaches anyone outside the tester accounts, or before Voice's flag is turned on — whichever is first |
 
 ## Recently closed
 

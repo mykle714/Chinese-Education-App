@@ -17,7 +17,8 @@ diff does not make obvious:
 2. **New env var `SENTENCE_TILES_AI_API_KEY`**: the AI judge's own Anthropic key, kept apart from
    `DICT_AI_API_KEY` so its spend is billed and revocable on its own (`server/services/anthropicClient.ts`
    → `getSentenceTilesAiClient`). On PPE it goes in the **repo-root `.env`**: `docker-compose.ppe.yml`
-   loads `env_file: ./.env`. **The owner supplies the key**; the agent does not create or copy one.
+   loads `env_file: ./.env`. **Already added to PPE's `.env` on 2026-11-23**, temporarily reusing the Voice key's
+   value (owner's call; own key tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md) item 63).
    Without it the game still loads, but every new line answers "Judging is unavailable right now"
    (only already-cached lines can be played).
 3. **Spend limits** (approved 2026-11-22, `server/contracts/sentenceTiles.ts`): 40 judge calls per
@@ -28,9 +29,8 @@ diff does not make obvious:
 
 1. Follow the batch's steps 1–3 in the story runbook (pull → 200/202/203/204 by hand → rebuild both
    containers).
-2. Add `SENTENCE_TILES_AI_API_KEY=<key>` to `~/vocabulary-app/.env` on PPE, then recreate the backend
-   so it reads the env file: `docker-compose -f docker-compose.ppe.yml up -d backend` (**never** `down -v`).
-   If the key is not available yet, skip this step: V1–V3 still pass and V5 shows the "unavailable" banner.
+2. The key is already in PPE's `.env`; the step-1 rebuild recreates the backend, which reads it. (A later
+   key change needs `docker-compose -f docker-compose.ppe.yml up -d backend`; **never** `down -v`.)
 3. Run V1–V5.
 
 ## Verification

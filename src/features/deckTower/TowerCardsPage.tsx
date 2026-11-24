@@ -2,10 +2,7 @@ import { forwardRef, memo, useCallback, useRef, type CSSProperties } from "react
 import { Box, Typography } from "@mui/material";
 import CollectionSortControl from "../flashcards/CollectionSortControl";
 import { useCardLibrary } from "../flashcards/useCardLibrary";
-import { cardStockPressSx, cardStockShadow, sortCardStockSx } from "../discover/sortCardStock";
 import MiniVocabCardGrid from "../../components/MiniVocabCardGrid";
-import { MINI_CARD_DIMENSIONS } from "../../components/miniCardFace";
-import { FLP_CARD_STOCK_INSET_RATIO } from "../flashcards/constants";
 import SearchField from "../../components/SearchField";
 import { HeaderIconButton } from "../../components/PageHeader";
 import { HUB_HEADER_PAD_TOP_PX, HUB_HEADER_PAD_X_PX, HUB_HEADER_TITLE_PX, HUB_HEADER_TITLE_TRACKING } from "../../components/pageHeaderSizing";
@@ -16,6 +13,7 @@ import { FONTS } from "../../theme/fonts";
 import { LEADING, WEIGHT } from "../../theme/scale";
 import { shadowTone } from "./iso";
 import TowerFilterKeys from "./TowerFilterKeys";
+import { GROUND_SHADOW_VAR_NAME, TOWER_CARD_STOCK } from "./towerCardStock";
 import type { TowerWorldId } from "./towerWorlds";
 import type { VocabEntry } from "../../types";
 
@@ -71,38 +69,6 @@ import type { VocabEntry } from "../../types";
  * Docs: docs/DECK_TOWER.md § "The cards page".
  */
 
-/** The cards' cast-shadow colour, set on the page root from the sky (see header). */
-const GROUND_SHADOW_VAR = "var(--tower-cards-ground-shadow)";
-
-/**
- * The mastery strip's left/right inset on this stock, px: the beige panel's inset plus
- * `STRIP_PANEL_CLEARANCE_PX` of panel on either end, so the strip sits wholly on the panel.
- */
-const STRIP_PANEL_CLEARANCE_PX = 5;
-const STRIP_SIDE_INSET_PX = Math.round(MINI_CARD_DIMENSIONS.regular.width * FLP_CARD_STOCK_INSET_RATIO + STRIP_PANEL_CLEARANCE_PX);
-
-/**
- * The stock every card is printed on — acp's thick panel (sortCardStock
- * `sortCardStockSx`: 4px wall + cast shadow; `cardStockPressSx`: pushed back on
- * press). Module-level so its identity never changes — every memoized card receives
- * it. Its `&:hover` keeps the panel's shadow: the flat face's hover elevation would
- * replace the wall and shadow on a desktop hover.
- */
-const TOWER_CARD_STOCK = {
-    rim: COLORS.cardFace,
-    sx: {
-        ...sortCardStockSx("regular", false, GROUND_SHADOW_VAR),
-        "&:hover": { boxShadow: cardStockShadow(false, GROUND_SHADOW_VAR) },
-        // Pressed, the card is pushed back flush with the sky (no wall, no shadow); the cdp
-        // opens on release. After `&:hover`, so a sticky touch hover cannot mask the press.
-        ...cardStockPressSx(GROUND_SHADOW_VAR),
-        // The mastery strip squeezed in off the cream rim: MiniCard spans it 8px in from
-        // the card's sides, which on this stock is only ~1.5px inside the beige panel
-        // (inset `width × FLP_CARD_STOCK_INSET_RATIO`, ≈6.5px), so its ends touched the rim.
-        "& .mini-card__mastery-window": { left: STRIP_SIDE_INSET_PX, right: STRIP_SIDE_INSET_PX },
-    },
-} as const;
-
 /** The title row's gap under its content. */
 const TITLE_ROW_GAP_PX = 14;
 /**
@@ -120,7 +86,10 @@ interface TowerCardsPageProps {
     ink: string;
     /** The sky as drawn right now (the pan's blended palette) — the cards' ground (their cast-shadow tone). */
     sky: string;
-    onOpenCard: (entry: VocabEntry, world: TowerWorldId) => void;
+    /** A card tapped: opens td's card view, zooming out of `element` (the tapped tile). */
+    onOpenCard: (entry: VocabEntry, world: TowerWorldId, element: HTMLElement) => void;
+    /** Bumped when the card view closes: re-read the library and figures (useCardLibrary). */
+    refreshKey?: number;
     /** The up arrow: one stop up — the top of the cards page from the grid, else the platform line. */
     onUp: () => void;
     /** The host's per-frame styling: the world pan's slide, the study dive's fade. */
@@ -128,23 +97,23 @@ interface TowerCardsPageProps {
 }
 
 const TowerCardsPage = forwardRef<HTMLDivElement, TowerCardsPageProps>(function TowerCardsPage(
-    { world, ink, sky, onOpenCard, onUp, style },
+    { world, ink, sky, onOpenCard, onUp, style, refreshKey = 0 },
     ref
 ) {
-    const panel = useCardLibrary(world);
+    const panel = useCardLibrary(world, refreshKey);
     const { collections, tileCount, activeCollection, toggleCardsFilter, cardsSearch, setCardsSearch, cardsSortKey, setCardsSortKey, language, goals } = panel;
 
     // The grid wants a STABLE click handler (its cards are memoized); the host's changes
     // identity every render, so it is read through a ref.
     const onOpenCardRef = useRef(onOpenCard);
     onOpenCardRef.current = onOpenCard;
-    const handleCardClick = useCallback((entry: VocabEntry) => onOpenCardRef.current(entry, world), [world]);
+    const handleCardClick = useCallback((entry: VocabEntry, element: HTMLElement) => onOpenCardRef.current(entry, world, element), [world]);
 
     return (
         <Box
             ref={ref}
             className={`tower-cards-page tower-cards-page--${world}`}
-            style={{ ...style, ["--tower-cards-ground-shadow" as string]: shadowTone(sky) }}
+            style={{ ...style, [GROUND_SHADOW_VAR_NAME]: shadowTone(sky) } as CSSProperties}
             sx={{
                 width: "100%",
                 flexShrink: 0,

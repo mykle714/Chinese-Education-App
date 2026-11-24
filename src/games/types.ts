@@ -133,26 +133,6 @@ export type RoutedGameDef = GameDef & {
     Component: LazyExoticComponent<ComponentType>;
 };
 
-/** A single asset row fetched from `/api/games/:gameId/assets`. */
-export interface GameAsset {
-    id: string;
-    gameId: string;
-    assetId: string;
-    displayName: string | null;
-    imagePath: string;
-    metadata: Record<string, unknown> | null;
-    createdAt: string;
-}
-
-/** A save-state row fetched from `/api/games/:gameId/progress`. */
-export interface GameProgress {
-    id: string;
-    userId: string;
-    gameId: string;
-    state: Record<string, unknown>;
-    updatedAt: string;
-}
-
 /**
  * Who is hosting a game's Stage (docs/FLP_GAME_BREAKS.md § 6):
  *   page      — the game's own route, inside a `GameLeafPage` (standalone play);

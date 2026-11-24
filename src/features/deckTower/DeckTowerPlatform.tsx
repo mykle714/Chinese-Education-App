@@ -242,6 +242,12 @@ interface DeckTowerPlatformProps {
      * is still loading: it reads as 0 then, and "0 cards" would be a lie.
      */
     showImprint: boolean;
+    /**
+     * Which imprint: "count" ("0 cards") or "retry" ("↻ retry", the deck's count failed to
+     * load; the caller makes `stack.onTap` a re-fetch and draws the stack at 0, so the
+     * empty-stack hit path below takes the tap). Default "count".
+     */
+    imprintVariant?: "count" | "retry";
     /** The stack is falling with the trap door. */
     stackFalling: boolean;
     /** How far the falling things have dropped, in viewBox px (world −z is screen +y). */
@@ -400,6 +406,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
     hingeAngle,
     stack,
     showImprint,
+    imprintVariant = "count",
     stackFalling,
     dropPx,
     pawns,
@@ -544,7 +551,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
             : { className: "deck-tower-page__standing" };
 
     // The cards' imprint ("0 cards"). Over the snow (si intro) it is printed on the sheet.
-    const imprint = showImprint ? <IsoCardImprint rect={layout.card} surface={textOverSnow ? snowTop : floor} /> : null;
+    const imprint = showImprint ? <IsoCardImprint rect={layout.card} surface={textOverSnow ? snowTop : floor} variant={imprintVariant} /> : null;
     // The walkers the snow's trails follow (snowChannel.ts): each live (not falling) pawn's
     // ground point on the floor, and the one summit spot on the tower's top. Recorded only
     // while that snow lies.
@@ -696,7 +703,7 @@ const DeckTowerPlatform: React.FC<DeckTowerPlatformProps> = ({
                 key="stack"
                 {...fallSx(stackFalling)}
                 role={stack.onTap ? "button" : undefined}
-                aria-label={stack.onTap ? "Start studying" : undefined}
+                aria-label={stack.onTap ? (imprintVariant === "retry" ? "Couldn't load your cards. Retry" : "Start studying") : undefined}
                 tabIndex={stack.onTap ? 0 : undefined}
                 onClick={stack.onTap}
                 onKeyDown={(e) => {

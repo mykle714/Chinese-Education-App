@@ -37,7 +37,7 @@ const CARD_EDIT_PANEL_RADIUS = 20;
  * The forwarded ref lands on the panel surface itself — the box `useToolbarInset`
  * measures (its Slide transform is discounted there via `slideOffsetY`).
  *
- * Hosts: flp (`FlashcardsLearnPage`) and cdp (`VocabCardDetailPage`).
+ * Hosts: flp (`FlashcardsLearnPage`) and td's card view (`deckTower/cardView/TowerCardView`).
  * Layer: fie presentation component (src/cardIcons/editor) — knows nothing about either page.
  */
 const CardEditPanel = forwardRef<HTMLDivElement, { open: boolean; children: React.ReactNode }>(

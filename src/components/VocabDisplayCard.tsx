@@ -23,6 +23,12 @@ interface VocabDisplayCardProps {
     emptyFace?: ReactNode;
     // The speaker just right of the headword. Absent → no speaker.
     onSpeak?: () => void;
+    // READING CHOICES (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Reading choices"): the
+    // reading the learner picked for this occurrence (toned); absent → the entry's own.
+    headwordPronunciation?: string;
+    // Given (the word has several readings), a tap on the headword calls it to cycle the
+    // reading INSTEAD of copying; absent → tap-to-copy.
+    onHeadwordTap?: () => void;
     // Ring the speaker while this word's audio loads / plays.
     isSpeaking?: boolean;
     // The controls at the header's right edge (the Reader: More Info + the Add key),
@@ -89,6 +95,11 @@ const SPEAKER_TOP_OFFSET = Math.round(44 / 2 + 3 - SPEAKER_BUTTON_SIZE / 2);
  *     Reading = `resolveDisplayPronunciation`, the one `SenseList` compares each sense's
  *     reading against, so an "alternate pinyin" in the list always means "differs from the
  *     header". Tone colours follow the learner's flp setting (`showPinyinColor`), as the eip does.
+ *     Headword tap (2026-11-23): for a word with SEVERAL readings (`onHeadwordTap`) a tap
+ *     cycles the selected occurrence's reading — READING CHOICES, shown via
+ *     `headwordPronunciation` (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Reading choices");
+ *     otherwise it copies the characters, the next tap the pinyin, alternating, with the
+ *     "Characters Copied!" caption (CPCDRow.tapToCopy).
  *   - **Controls** (2026-11-17) — the eip's speaker (`SpeakerButton`) just right of the
  *     headword (`onSpeak` / `isSpeaking`), and a column at the header's right edge
  *     (`renderHeaderActions`) holding the More Info keycap (opens the eip) and the eip's
@@ -104,7 +115,8 @@ const SPEAKER_TOP_OFFSET = Math.round(44 / 2 + 3 - SPEAKER_BUTTON_SIZE / 2);
  *     "No dictionary entry found." line.
  *   - **Custom** — a caller-built face (`customFace`) replaces all of the above in the padded
  *     content box: the Reader's SENTENCE MODE puts its sentence face (ReaderSentenceFace —
- *     the Explain key and the AI explanation) here.
+ *     the Explain key and the AI explanation) here, and a selected PHRASE its split-screen
+ *     face (ReaderPhraseSplitFace — two compact entries sharing this box's scroll).
  *   - **Idle** — before the learner's first selection (the Reader's NOTHING-SELECTED
  *     MODE, useTextSelection) the face shows `idleHint` over its whole area — the page's how-to-navigate demo
  *     (src/reading/ReaderTapHint.tsx), which replaced a 5 s app notification. Once a word
@@ -114,11 +126,12 @@ const SPEAKER_TOP_OFFSET = Math.round(44 / 2 + 3 - SPEAKER_BUTTON_SIZE / 2);
  * was an MUI Card with a primary ring + shadow when a word was found; 2026-11-16 → 11-17 a
  * flat white card with a plain numbered definitions list.)
  *
- * Its only caller is the Reader (src/features/reader/ReaderDocumentPage.tsx).
+ * Callers: the Reader (src/features/reader/ReaderDocumentPage.tsx) and the cyoa play page
+ * (src/features/cyoa/StoryPlayPage.tsx), both through src/reading/useReadingKeycap.tsx.
  * Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Look.
  * Layer: shared component (renders only).
  */
-const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ dictionaryEntry, idleHint: idleHintProp, emptyFace, onSpeak, isSpeaking, renderHeaderActions, customFace }) => {
+const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ dictionaryEntry, idleHint: idleHintProp, emptyFace, onSpeak, isSpeaking, renderHeaderActions, customFace, headwordPronunciation, onHeadwordTap }) => {
     // A custom face outranks the idle hint (the caller should not pass both).
     const idleHint = customFace ? null : idleHintProp;
     // Read-only use of the flp's preferences: only the tone-colour toggle is consulted.
@@ -223,16 +236,30 @@ const VocabDisplayCard: React.FC<VocabDisplayCardProps> = React.memo(({ dictiona
                                 // instead (ACTION LAYOUT).
                                 sx={{ display: 'flex', alignItems: 'flex-start', flex: '0 0 auto' }}
                             >
-                                <ForeignText
-                                    className="vocab-display-card__header-cpcd"
-                                    size={HEADWORD_SIZE}
-                                    justifyContent="flex-start"
-                                    text={dictionaryEntry.word1}
-                                    pronunciation={resolveDisplayPronunciation(dictionaryEntry)}
-                                    language={dictionaryEntry.language}
-                                    useToneColor={showPinyinColor}
-                                    showPinyin
-                                />
+                                {/* The headword's tap (see the file comment → Header): with
+                                    `onHeadwordTap` (a word with several readings) it cycles the
+                                    reading; otherwise it copies, like the eip header headword —
+                                    characters first, then the pinyin, alternating
+                                    (CPCDRow.tapToCopy). The keycap's capture-phase mousedown
+                                    preventDefault (above) only keeps focus in the reading box;
+                                    the click still fires. */}
+                                <Box
+                                    className={`vocab-display-card__headword-tap${onHeadwordTap ? ' vocab-display-card__headword-tap--cycles-reading' : ''}`}
+                                    onClick={onHeadwordTap}
+                                    sx={{ display: 'flex', ...(onHeadwordTap && { cursor: 'pointer' }) }}
+                                >
+                                    <ForeignText
+                                        className="vocab-display-card__header-cpcd"
+                                        size={HEADWORD_SIZE}
+                                        justifyContent="flex-start"
+                                        text={dictionaryEntry.word1}
+                                        pronunciation={headwordPronunciation ?? resolveDisplayPronunciation(dictionaryEntry)}
+                                        language={dictionaryEntry.language}
+                                        useToneColor={showPinyinColor}
+                                        showPinyin
+                                        tapToCopy={!onHeadwordTap}
+                                    />
+                                </Box>
                                 {onSpeak && (
                                     <Box
                                         className="vocab-display-card__speaker"

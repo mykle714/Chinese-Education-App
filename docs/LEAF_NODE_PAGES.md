@@ -187,11 +187,8 @@ so nothing breaks.
   and runs `document.startViewTransition(() => flushSync(() => navigate(to)))`.
   (Manual `startViewTransition` + `flushSync` because this app uses the component
   `<BrowserRouter>`/`<Routes>`, where React Router's `<Link viewTransition>` does
-  not fire one.) Used by td's cards page → cdp (`DeckTowerPage` → `onOpenTowerCard`) and
-  its notebook stack (circle, below) and sort platform (dash, below), Reader list taps,
-  Friends / Study Challenge / Arena pages, Account → Settings → Account security, and
-  `WordSearchHubItem`. The Bento hubs (Menu, Games) do **not** use it — their
-  tiles navigate plainly. ⚠️ Several of those pages also call it from their **back**
+  not fire one.) Used by td's notebook stack (circle, below) and sort platform (dash, below), Reader list taps,
+  Friends / Study Challenge / Arena pages, and Account → Settings → Account security. ⚠️ Several of those pages also call it from their **back**
   arrow, which runs a forward slide on a back action — see
   [BACK_NAVIGATION.md](./BACK_NAVIGATION.md) § 3.2 finding 1.
 - **CSS (`src/index.css`):** `::view-transition-new(root)` runs `vt-slide-in-up` /
@@ -318,7 +315,7 @@ animate. Returns `{ surfaceRef, style, exit }`:
   2026-09-13 and the frame itself became the positioned host — see
   `src/components/overlayHost.ts`.) Overlays that dim are hosted at the frame too, OUTSIDE
   the page surface, so the clone does not carry them: they vanish on navigation rather
-  than sliding off (docs/UX_AND_NAVIGATION.md § Dimming the background). (Bubble Match's stage is DOM, not canvas, so the clone copies cleanly.
+  than sliding off (docs/UX_AND_NAVIGATION.md § Dimming the background). (Game stages are DOM, not canvas, so the clone copies cleanly.
   Caveat: a page that renders a **canvas** would lose it in the clone — `cloneNode`
   does not copy canvas pixels. No leaf page does today; the Night Market did, until it
   was removed 2026-11-09.)
@@ -371,12 +368,11 @@ leaf page slides the page up while the footer drops away.
 the `footerTab` field of each row in `src/routes/routeMeta.ts` (`routeFooterTab`) — the
 same row that decides the route's shell and page transition. A route with no
 `footerTab` is footerless (every leaf page, `/reader/:id`, the games) and the footer
-slides away. Parameterized node routes (`/flashcards/card/:id`,
-`/discover/sort/:language`, …) are matched with React Router's
+slides away. Parameterized node routes (`/discover/sort/:language`, …) are matched with React Router's
 `matchPath`, so they need no separate prefix list. (The old hand-synced `FOOTER_ROUTES` /
 `FOOTER_ROUTE_PREFIXES` tables in `FooterPresenter.tsx` are gone.) The current
 route → tab mapping is tabulated in [NAVIGATION.md](./NAVIGATION.md) § 1: `deck` for `/`
-(td) and its drill-ins (the saved-card cdp, Add Cards), `menu` for the pages the
+(td) and its drill-in (Add Cards), `menu` for the pages the
 Menu popover opens (there is no `/menu` route since 2026-11-06), `arena` and `dictionary` for their own spaces.
 
 Every other route (all leaf pages, login, etc.) is absent → the footer slides out.
@@ -419,10 +415,8 @@ own-animation pages) are neither archetype.
 | `/dictionary` | `DictionaryPage` | Footer tab; tapping a result raises the **eip sheet** over the results (`EipSheet`) — no navigation (2026-10-10) |
 | `/reader` | `ReaderPage` | Node (document list; footer kept, Menu tab) — opening a document routes to `/reader/:id`, a footerless node-style surface, see § below |
 | `/reader/:id` | `ReaderDocumentPage` | Node-style (footerless) — the open-document cdp-style page, see § below |
-| `/flashcards/card/:id` | `VocabCardDetailPage` | Node (saved-card cdp; slab footer, Flashcards tab lit) |
 | `/flashcards/writing/notebook` | `WritingNotebookPage` | Leaf (from td's writing-world paper stack, circle transition) |
-| `/games/bubble-match` | `BubbleMatchPage` | Leaf (footer removed; the info/picker screen no longer shows the footer). The five `/games/*` rows are mounted only while the `standaloneGames` flag is on (off since 2026-11-06) |
-| `/games/word-search` | `WordSearchPage` | Leaf |
+| `/games/word-search` | `WordSearchPage` | Leaf. The two `/games/*` rows are mounted only while the `standaloneGames` flag is on (off since 2026-11-06) |
 | `/games/match-speed` | `MatchSpeedPage` | Leaf |
 | `/community` | `CommunityPage` | Node (reached from the Menu popover; Menu tab stays lit) |
 | `/tester-dashboard` | `TesterDashboardPage` | Leaf |
@@ -442,10 +436,18 @@ eip sheet over the list rather than navigating, so there is no list → card →
 to survive. (The `dictionaryBrowseState` singleton and `Layout.tsx`'s route watcher that reset
 it were deleted 2026-11-10 with the read-only dictionary cdp.)
 
-## Card detail (cdp): one surface
+## Card detail (cdp): one surface — no longer a page
 
-There is one card-detail page, the **saved-card cdp** (`/flashcards/card/:id`,
-`src/features/flashcards/VocabCardDetailPage.tsx`), a **Node** page. A dictionary word that
+> **Superseded 2026-11-23.** The routed saved-card cdp (`/flashcards/card/:id`,
+> `src/features/flashcards/VocabCardDetailPage.tsx`) was deleted. A saved card now opens in
+> place, as **td's card view** (`src/features/deckTower/cardView/TowerCardView.tsx`, state in
+> `useTowerCardView`): an overlay over td's cards page, with no route of its own (opening
+> pushes a history entry on `/` carrying `{ towerCard: <vet id> }`, so any Back closes it).
+> It is neither a Leaf nor a Node page. Its full description lives in
+> [DECK_TOWER.md](./DECK_TOWER.md) § "The card view". The bullets below are kept as the
+> routed page's record where they no longer hold; what carried over is noted inline.
+
+There was one card-detail page, the **saved-card cdp**, a **Node** page. A dictionary word that
 is not a saved card is shown only in the eip sheet; the read-only dictionary cdp
 (`/dictionary/card/:word`) was deleted 2026-11-10.
 
@@ -456,23 +458,30 @@ is not a saved card is shown only in the eip sheet; the read-only dictionary cdp
   or `/` when deep-linked with no history entry). Reached from td's cards page, so
   the **Flashcards** tab stays active; it wears the slab footer, the Tier 2 ground
   (`useTier2Look`) and prints its hero card on the tower card stock (`cardStockVars`,
-  `src/features/flashcards/card/cardStock.ts`).
+  `src/features/flashcards/card/cardStock.ts`). *(Card view, 2026-11-23: one screen, no
+  scrolling; delete is an outlined trash button top-right of its header and closes the view
+  instead of going Back; the footer is hidden while it is open; no Tier 2 ground — it sits
+  on td's sky. The hero still prints on the tower card stock.)*
 - The word's extra info is **the eip itself**, raised from the shared `SheetPill` "More Info"
   capsule (`src/components/SheetPill.tsx`): `EipSheet` → `InfoCardSection` (`SheetPanel` +
   `InfoCardPanelBody`), the same sheet acp and the Dictionary page raise, with its own
   `useEipTabs` word trail. Props: `showSynonymsRelated`, `showLearning`, `learningSkipsRoot`;
   no `showWordTools` — the word-tools rail (`WordToolsRail`) sits above the hero card, and its
   Compare closes the eip and raises the Compare panel (`useCompareSheet`). See EIP_SHEET_GESTURES.md § Mount sites.
+  *(Card view: same eip, props and trail; More Info is the flp's `MoreInfoPill`
+  (`FlashcardsLearnPage/styled.ts`) at the flp's position instead of the `SheetPill`; the rail
+  is the flp session's plate rail with Compare + Customize only — `Write it` was removed.)*
 - **Drill-ins push a crumb.** Breakdown rows (`BreakdownRow`), single-char **Used In** rows and
   example-sentence segments open the tapped word as a new crumb on the trail in the same sheet
   — the flp's behaviour (EIP_SHEET_GESTURES.md § The trail is a breadcrumb stack). The cdp
-  never navigates to another card page.
+  never navigated to another card page; td's card view keeps the rule.
 
 ### The Learning control
 
 The app's one Learning control is the eip's raised **Add ⇄ Added!** key in the trail row
 (`EipAddKey`; EIP_SHEET_GESTURES.md § Add key), shown when the `EipSheet` host passes
-`showLearning` — the Dictionary page and the saved-card cdp. On the saved-card cdp
+`showLearning` — the Dictionary page and td's card view
+(`features/deckTower/cardView/TowerCardView`). In the card view
 `learningSkipsRoot` hides it while the root (the saved card itself) is showing; it appears on
 every word drilled into from it. Discoverable entries and signed-in users only. It tracks
 whichever word is showing on the trail.
@@ -516,10 +525,11 @@ whichever word is showing on the trail.
 
 ### Narration on entry: none (removed 2026-08-19)
 
-**The cdp does not narrate on landing.** A card detail page is a reference surface a
+**The cdp did not narrate on landing, and td's card view (its replacement, 2026-11-23) keeps
+the rule** (`TowerCardView` mounts `useTTS` for manual playback only). A card detail page is a reference surface a
 learner opens to *read*, frequently several in a row through the breakdown / "Used In"
 / example-sentence drill-ins — playback on arrival was unbidden noise, and on a
-drill-in chain it queued overlapping words. Narration on the cdp is now entirely
+drill-in chain it queued overlapping words. Narration in the card view is entirely
 manual: the hero card's speaker button, and each example sentence's own button.
 
 The shared `useAutoSpeakEntry(tts, entry)` hook that implemented the old behavior has
@@ -527,13 +537,13 @@ been **deleted** from `src/hooks/useTTS.ts` — the two cdps were its only calle
 nothing else changed. `useTTS`'s manual `speak`/`prefetch` path is untouched, and
 `prefetch` still warms the audio so the first press of the speaker button is instant.
 
-Autoplay elsewhere is unaffected: the flp, Bubble Match, Hydra Bubbles, Match Speed
+Autoplay elsewhere is unaffected: the flp, Match Speed
 and the acp all narrate on their own gestures/toggles and keep doing so.
 
 ## Reader: node list + node-style document page (cdp-style)
 
-The Reader is TWO routed pages, following the same fetch-by-id cdp pattern as
-`VocabCardDetailPage` (`/flashcards/card/:id`):
+The Reader is TWO routed pages, following the fetch-by-id pattern of the old routed cdp
+(`/flashcards/card/:id`, replaced 2026-11-23 by td's in-place card view):
 
 - **Document list** (`/reader`, `ReaderPage.tsx`) — a NODE page reached from the
   Menu popover (`NodePage`, footer kept, Menu tab lit). It has **no back arrow**: it
@@ -579,8 +589,6 @@ fixed `ReaderDocumentSurface` layout sits outside the standard `NodePage`/
 `MobileTabScreen` shell, unlike the list page.
 
 ## Not yet classified
-The generic in-game shell `src/games/runtime/GamePage.tsx` (used by any future
-registry game that does not ship its own page) still has a down arrow **and** a
-footer, so it fits neither rule cleanly. It is intentionally left on the older
-`MobileDemoHeader` + `MobileFooter` composition until classified. Bubble Match
-ships its own page (`BubbleMatchPage`) and is a leaf.
+Nothing. (The generic in-game shell `src/games/runtime/GamePage.tsx`, which had both a
+down arrow and a footer, was deleted unused; every routed game ships its own leaf page
+via `GameLeafPage`.)

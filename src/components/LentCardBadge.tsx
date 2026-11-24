@@ -28,7 +28,7 @@ import { iconImageUrl } from "../cardIcons/cardIconLayout";
  * icon degrades to NO badge rather than a broken-image glyph on every card.
  *
  * Referenced by: src/components/ProvisionalCardsNotice.tsx,
- * src/games/match-speed/MatchSpeedCard.tsx, src/games/bubbles/Bubble.tsx.
+ * src/games/match-speed/MatchSpeedCard.tsx.
  * Documented in docs/PROVISIONAL_CARDS.md § 5.
  */
 

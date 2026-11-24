@@ -286,6 +286,17 @@ const InfoCardPanelBody = forwardRef<InfoCardPanelBodyHandle, InfoCardPanelBodyP
                 // remain selectable so users can copy individual characters.
                 userSelect: "none",
                 WebkitUserSelect: "none",
+                // No insertion caret anywhere in the panel. Re-enabling selection on cpcd
+                // (below) lets the browser drop a blinking caret on a click, and the
+                // global `caret-color: transparent` in index.css only covers
+                // `.cpcd-row__chars` / `.cpcd-row__pinyin-cell`, not the other
+                // `cpcd-row__*` wrappers this selector opens up (seen in the cdp's Related
+                // Words list). `caret-color` inherits, so setting it on the root covers
+                // every descendant; real form fields get their caret back.
+                caretColor: "transparent",
+                "& input, & textarea, & [contenteditable='true']": {
+                    caretColor: "auto",
+                },
                 // CPCD char + pinyin cells live as siblings under cpcd-row, so we
                 // re-enable selection on anything with a cpcd-row__ or
                 // char-pinyin-display class (and their descendants).

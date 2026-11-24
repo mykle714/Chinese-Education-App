@@ -25,8 +25,8 @@ of **up to four choices**, which leads to the next passage. Stories are written 
 **Goals**
 - Reuse the Reader's reading engine wholesale — one implementation of word selection,
   segmentation, cpcd view, tap overlay, keycap and eip, shared by both features.
-- A reader page with more vertical room than the Reader: no header title, no display
-  strip, no search bar.
+- A reader page with more vertical room than the Reader: no header title, no search bar,
+  and the display strip rebuilt as a slim toolbar in the space the rdb's tab took (§ 3.1).
 - Multiple-choice progression with full-width choice buttons (choices may be whole
   sentences).
 - An editor for author accounts to write passages and wire up choices.
@@ -34,14 +34,15 @@ of **up to four choices**, which leads to the next passage. Stories are written 
 **Non-goals (removed relative to the Reader)**
 | Reader feature | In cyoa | Why |
 |---|---|---|
-| Search (`ReaderSearchKey`, `ReaderSearchBar`, `useReaderSearch`) | ❌ removed | passages are short |
+| Search (the search `ReaderIconKey`, `ReaderSearchBar`, `useReaderSearch`) | ❌ removed | passages are short |
 | Edit / Delete (header icons, `ReaderEditToolbar`, `DeleteDocumentDialog`) | ❌ for non-authors | stories are authored content; authors edit in the cyoa editor (§ 5) |
-| Display strip (the row under the keycap) | ❌ no strip | owner's call 2026-11-21: "just the rdb"; its Read aloud, audio chip and Pinyin pill moved to the header instead (§ 3.1) |
+| Display strip (the row under the keycap) | ✅ as the story TOOLBAR (2026-11-23, reversing 2026-11-21's "just the rdb") | built in the space the rdb's pull-down tab used to take, laid out like the Reader's strip: Read aloud + the rdb's fold key left, Phrase + Pinyin pills right (§ 3.1, § 3.4) |
 | Header title text | ❌ dropped | more space at the top (§ 3.1) |
 | rdb keycap, eip, Sentence Explain, tiebreak alternatives, English words | ✅ kept | part of the shared engine |
-| Read aloud (`ReaderReadAloudButton`, `useReaderReadAloud`) | ✅ in the header (2026-11-21, reversing 2026-11-20) | reads the passage from its caret (§ 3.1) |
-| Tap-to-hear audio chip (`ReaderAudioChip`) | ✅ in the header (2026-11-21) | the SAME setting as the Reader's chip (`useReaderAudioSettings`, per device), so autoplay is configurable from either page (§ 3.1) |
-| Pinyin pill (`ReaderDisplayToggle`) + the Pinyin display mode (`ReaderCpcdView`) | ✅ in the header (2026-11-21) | the SAME per-device `reader.displayMode` as the Reader's pill; the passage only (§ 3.1) |
+| Read aloud (`ReaderReadAloudButton`, `useReaderReadAloud`) | ✅ in the toolbar (2026-11-23; the header 2026-11-21 → 11-23) | reads the passage from its caret (§ 3.1) |
+| Tap-to-hear audio chip (`ReaderAudioChip`) | ✅ in the header (2026-11-21) — where the Reader keeps it too | the SAME setting as the Reader's chip (`useReaderAudioSettings`, per device), so autoplay is configurable from either page (§ 3.1) |
+| Pinyin pill (`ReaderDisplayToggle`) + the Pinyin display mode (`ReaderCpcdView`) | ✅ in the toolbar (2026-11-23) | the SAME per-device `reader.displayMode` as the Reader's pill; the passage only (§ 3.1) |
+| Phrase pill (`ReaderPhraseToggle`) + phrase stepping, the split-screen keycap, tap-inside-the-selection | ✅ in the toolbar (2026-11-23), Chinese stories only | the SAME per-device `reader.stepMode` as the Reader's pill; the passage AND the inspected label step by it (docs/READER_SEGMENTATION.md § "Phrase stepping") |
 
 ---
 
@@ -63,11 +64,13 @@ of **up to four choices**, which leads to the next passage. Stories are written 
 
 ```
 ┌─────────────────────────────────────────┐
-│ ← [▶Read] [🔊 default] [Pinyin] [Edit] │  header: back arrow, NO title text
+│ ←                     [🔊 default] [Edit] │  header: back arrow, NO title text
 ├─────────────────────────────────────────┤
 │ ┌─────────────────────────────────────┐ │
 │ │        rdb (VocabDisplayCard)       │ │  hideable (§ 3.4)
 │ └─────────────────────────────────────┘ │
+│ [▶Read] (▴)          [Phrase] [Pinyin] │  toolbar: rides the rdb's lower edge
+│                                         │
 │                                         │
 │      从前，有一个小女孩住在山上。        │  shared reading pane — no box,
 │      有一天，她听到森林里有声音……        │  words on the page ground with a
@@ -84,28 +87,39 @@ of **up to four choices**, which leads to the next passage. Stories are written 
 
 - **Header.** `NodePageHeader` with the back arrow and an empty title (`title=""`). An
   author reading **their own** story also gets an **Edit icon** here, which opens the
-  editor (owner's call 2026-11-20). Every reader (author previewing or not) gets the
-  Reader's display-strip controls left of it, in the strip's order (owner's call
-  2026-11-21 — there is no strip, "just the rdb", so they live in the header):
-  - **Read aloud** (`ReaderReadAloudButton` + `src/reading/useReaderReadAloud.ts`) — reads
-    the **passage** from its caret, moving the word selection along; any other tap stops it
-    (so 🔍 never reads into inspect mode); disabled while a choice is inspected.
-    Tap-to-hear stands down while it plays (`useReadingKeycap` `readAloudPlaying`).
-  - **Tap-to-hear audio chip** (`ReaderAudioChip`) — the Reader's own chip over the
-    Reader's own per-device setting (`src/reading/useReaderAudioSettings.ts`, localStorage
-    `reader.audio`): muting it here mutes the Reader and back — one setting, not a copy.
-  - **Pinyin pill** (`ReaderDisplayToggle`) — Text ⇄ Pinyin for the **passage**, on the
-    Reader's per-device `reader.displayMode` (`src/reading/useReaderDisplayMode.ts`), so
-    the mode is shared too. Pinyin mode is the Reader's `ReaderCpcdView` (tiebreak
-    alternatives included, `src/reading/useSegmentOverrides.ts`); the tap region scrolls
-    the cpcd box. The inspected choice label stays plain text (§ 3.2).
-  Code: `StoryPlayPage.tsx` → `.story-play__header-actions`, `showCpcd`, `readAloud`.
+  editor (owner's call 2026-11-20). Every reader gets the **tap-to-hear audio chip**
+  (`ReaderAudioChip`) left of it — the header is where the Reader keeps its chip too — the
+  Reader's own chip over the Reader's own per-device setting
+  (`src/reading/useReaderAudioSettings.ts`, localStorage `reader.audio`): muting it here
+  mutes the Reader and back — one setting, not a copy.
+  Code: `StoryPlayPage.tsx` → `.story-play__header-actions`.
 - **rdb.** The Reader's dictionary keycap, unchanged — the same `VocabDisplayCard` with the
   same wiring (`src/reading/useReadingKeycap.tsx`): the tap demo while nothing is selected,
   the entry, speaker, Add ⇄ Added!, More Info → the eip (`ReadingEipHost`), the Sentence
-  Explain face. Folded by the top tab (§ 3.4).
+  Explain face, the split-screen phrase face. Folded by the toolbar's fold key (§ 3.4).
+- **Toolbar** (2026-11-23). The Reader's display strip rebuilt in the space the rdb's
+  pull-down tab used to take, laid out like the strip (owner's call 2026-11-23: "build a
+  similar looking toolbar to reader, move what you can down into it"). It rides the rdb's
+  lower edge, so it slides with the card and sits under the header while the card is
+  folded. A press on the bar keeps focus on the reading box (the Reader strip's rule).
+  - left — **Read aloud** (`ReaderReadAloudButton` + `src/reading/useReaderReadAloud.ts`):
+    reads the **passage** from its caret, moving the word selection along; any other tap
+    stops it (so 🔍 never reads into inspect mode); disabled while a choice is inspected.
+    Tap-to-hear stands down while it plays (`useReadingKeycap` `readAloudPlaying`). Then
+    the rdb's **fold key** (`ReaderIconKey`, ▴ / ▾), in the slot the Reader gives Search
+    (§ 3.4).
+  - right — the **Phrase pill** (`ReaderPhraseToggle`, Chinese stories only) on the Reader's
+    per-device `reader.stepMode` (`src/reading/useReaderStepMode.ts`): step the passage —
+    and the inspected label — by phrase instead of by word (docs/READER_SEGMENTATION.md
+    § "Phrase stepping"). Then the **Pinyin pill** (`ReaderDisplayToggle`): Text ⇄ Pinyin for
+    the **passage**, on the Reader's per-device `reader.displayMode`
+    (`src/reading/useReaderDisplayMode.ts`). Pinyin mode is the Reader's `ReaderCpcdView`
+    (tiebreak alternatives included, `src/reading/useSegmentOverrides.ts`); the tap region
+    scrolls the cpcd box. The inspected choice label stays plain text (§ 3.2).
+  Not on the toolbar: the search key (Reader only) and the audio chip (header, as on the Reader).
+  Code: `StoryPlayPage.tsx` → `.story-play-toolbar`, `showCpcd`, `readAloud`, `stepMode`.
 - **Reading pane.** The Reader's reading box (`src/reading/TextArea.tsx`) with its tap
-  region (`ReadingTapRegion`) stretched over the side padding to the screen's edges, filling
+  region (`ReadingTapRegion`), full-bleed to the screen's edges (scrollbar on the edge), filling
   the space between the rdb and the choices; it scrolls internally for a long passage.
 - **Choices.** 1–4 full-width buttons stacked at the bottom, each carrying the app's
   1px outline and the rounded edge (CLAUDE.md § Buttons & cards). Text wraps; buttons
@@ -179,23 +193,26 @@ resume point is just the current passage, and no path is stored.
 The rdb and the choice stack each take vertical space from the passage, so the learner
 can fold either away. **Each is toggled by an indicator on the screen edge it slides out
 from** (owner's call 2026-11-20):
-- **rdb** — an indicator at the **top** of the content area. Folded, it sits just under
-  the header; the rdb slides down from under the header to show and back up to hide.
+- **rdb** — the toolbar's **fold key** (since 2026-11-23; a chevron tab hanging from the
+  keycap before that). The toolbar rides the card's lower edge, so folded it sits just
+  under the header; the rdb slides down from under the header to show and back up to hide.
+  The key is a round `ReaderIconKey` whose chevron points where the card goes next
+  (▴ fold up · ▾ drop down). Code: `StoryPlayPage.tsx` → `.story-play-toolbar__rdb-fold-key`.
 - **choices** — an indicator at the **bottom** of the screen. Folded, it sits on the
   screen's foot; the choice stack slides up from the foot to show and back down to hide.
 
-**The tab rides the panel's leading edge** (owner's call 2026-11-21): the rdb's tab hangs
-from the keycap's lower edge, the choices' tab stands on the stack's upper edge, so each
-tab travels with its panel as it slides in and out. It stays visible while its panel is
-hidden, so there is always a way to bring it back.
+**The control rides the panel's leading edge** (owner's call 2026-11-21): the rdb's
+toolbar (with its fold key) rides the keycap's lower edge, the choices' tab stands on the
+stack's upper edge, so each travels with its panel as it slides in and out. It stays
+visible while its panel is hidden, so there is always a way to bring it back.
 
 Motion: a `Collapse` on the Reader's KEYBOARD LIFT curve (`StoryPlayPage.tsx` →
 `FOLD_TIMEOUT`, `FOLD_EASING`). The rdb's fold pins its content to the fold's bottom edge
 (`FOLD_SLIDE_DOWN_SX`), so the keycap slides rather than being uncovered in place; the
 choices' fold grows upward from the foot, so it slides without help. Decided 2026-11-20:
-- **Look: a chevron tab** — a small tab sticking out of the edge, its chevron pointing
-  the way the panel will move (▾ / ▴), flipping when the panel opens or closes. Tappable,
-  so it carries the 1px outline and the rounded edge.
+- **Look: a chevron tab** (the choices; the rdb's until 2026-11-23) — a small tab sticking
+  out of the edge, its chevron pointing the way the panel will move (▾ / ▴), flipping when
+  the panel opens or closes. Tappable, so it carries the 1px outline and the rounded edge.
 - **Tap only** — no drag. That keeps it clear of the reading pane's own tap and drag
   gestures (`ReaderTapOverlay`).
 
@@ -305,8 +322,10 @@ All client-side, presentation + client-state layers (docs/FRONTEND_LAYERING.md):
 ### 4.3 Box-less look — SHIPPED 2026-11-20
 The reading area is no longer a card: no surface fill, hairline or radius, in reading and
 edit mode. The words sit on the page ground inside a wide side margin: the page's content
-padding (16 / 24px) plus `READER_TEXT_GUTTER_PX` (24px x, 8px y).
-Code: `src/reading/readerStyles.ts` → `READER_TEXT_GUTTER_PX`;
+padding (`READER_PAGE_PAD_PX`, 16 / 24px) plus `READER_TEXT_GUTTER_PX` (24px x, 8px y). The
+passage pane is full-bleed (no side margin, 2026-11-23) so its scrollbar sits on the screen's
+edge; both amounts are padding on the scroll surface (`READER_TEXT_PADDING_SX`).
+Code: `src/reading/readerStyles.ts` → `READER_TEXT_GUTTER_PX`, `READER_PAGE_PAD_PX`, `READER_TEXT_PADDING_SX`;
 `src/reading/TextArea.tsx` (the textarea's padding and the removed fieldset);
 `src/reading/ReaderCpcdView.tsx` (same gutter, so Text and Pinyin modes break
 lines identically). `ReaderSearchHighlights` copies the textarea's computed padding, so it
@@ -695,9 +714,9 @@ comes from `src/reading/` (§ 4).
 | `AdventuresPage.tsx` | page | `/adventures`: a 2-column grid of 4:5 cards in the Reader grid's skin, in the server's order. A card shows the icon (green ramp tile), title, the commonality meter + "Endings f/t", and a corner chip: **Draft** (author's unpublished) or **In progress** |
 | `useStoryPlay.ts` | client state | load `/play`, `choose()`: shows the prefetched `next[choiceId]` at once and confirms with `/choose` in the background (a pick before the confirmation lands is queued and replayed); on a 400 (stale choice) re-reads `/play` and shows a notice; on 404 → "no longer available"; on a network failure puts the previous passage back. Keeps `endingsFoundBefore` for the end panel's tick. The decisions are pure functions in `storyPlayModel.ts` |
 | `storyPlayModel.ts` | model (pure, tested) | `planPick` (queue / predict / wait), `planChooseFailure` (unavailable / re-read / revert), `shouldReplayQueued`, `endingsFoundBeforeFor` — tests in `__tests__/storyPlayModel.test.ts` |
-| `StoryPlayPage.tsx` | page | `/adventures/:id`: header with no title (Back → `location.state.from` when the opener set it, else the list), the top tab + rdb, the passage's reading box, the foot (notice, choice stack or end panel, bottom tab), the eip. Composes the engine: `useContentVocabulary` over passage + labels, two `useReadingText`s (passage, inspected label), `useReadingKeycap` on the active one, `useReadingVocabSync` |
+| `StoryPlayPage.tsx` | page | `/adventures/:id`: header with no title (Back → `location.state.from` when the opener set it, else the list), the rdb + its toolbar (Read aloud, fold key, Phrase + Pinyin pills), the passage's reading box, the foot (notice, choice stack or end panel, bottom tab), the eip. Composes the engine: `useContentVocabulary` over passage + labels, two `useReadingText`s (passage, inspected label), `useReadingKeycap` on the active one, `useReadingVocabSync` |
 | `StoryChoiceStack.tsx` | presentation | the choice keys with the inspect key in a sunken `look.well` socket; inspect mode (✕, others dim and lock, the label becomes the page's `inspectedLabel` reading box and does not pick); unavailable choices faded with "Coming soon" |
-| `StoryEdgeTab.tsx` | presentation | the chevron tab (§ 3.4); `edge="top" \| "bottom"` |
+| `StoryEdgeTab.tsx` | presentation | the choices' chevron tab, on the stack's upper edge (§ 3.4); the rdb's top-edge variant was removed 2026-11-23 when it became the toolbar's fold key |
 | `StoryEndPanel.tsx` | presentation | `kind="ending"` (name or "The End", **New!** badge, endings count ticking from the old value) and `kind="toBeContinued"`; both have one action, Back to Adventures |
 | `cyoaStyles.ts` | styles | muted / message / pill fragments (re-exported from `src/reading/readerStyles.ts`), `storyKeyShadow` (rounded edge + straight lip), the editor's card / field / chip fragments |
 
@@ -765,7 +784,7 @@ This is **suppression, not a pause**: a running clock still drains its 15 s idle
 | Q-1 | Engine home: shared `src/reading/` vs. cyoa nested inside `features/reader/`? | **`src/reading/`** (2026-11-20) |
 | Q-2 | Author permission: new column, or reuse `isFeatureTester` / `isAdmin`? | **new `users."isAuthor"`** (2026-11-20) |
 | Q-3 | Story graph; editor shape | **free graph; passage-list editor** (2026-11-20) |
-| Q-4 | Where the rdb / choices show-hide toggles live | **edge indicators**: top for the rdb, bottom for the choices (2026-11-20). **chevron tab, tap only** |
+| Q-4 | Where the rdb / choices show-hide toggles live | **edge indicators**: top for the rdb, bottom for the choices (2026-11-20). **chevron tab, tap only**. 2026-11-23: the rdb's tab became the story toolbar's fold key (§ 3.4) |
 | Q-5 | Are choice labels read with the engine too? | **yes — via the inspect key's in-button mini reader** (2026-11-20, § 3.2). **no English by design, but not enforced** (§ 6.2c) |
 | Q-6 | Is progress saved? | **yes** (2026-11-20, § 3.3). **choices are final**, no step back |
 | Q-7 | What does an ending show? | **the endings-found stat, e.g. 2/7** (2026-11-20, § 3.6). **No start over** — back to the list only; reaching an ending clears the resume point (§ 3.6) |

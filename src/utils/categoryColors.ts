@@ -1,5 +1,5 @@
 // Shared color tokens for a card's progress category (FlashcardCategory) and the
-// built-in collections. One source for MiniVocabCard, the cdp's MasteryWindow, the
+// built-in collections. One source for MiniVocabCard, the card view's TowerMasteryPanel, the
 // Account bucket spines and the Deck Tower's collection colours (filter keys, floor plates).
 import type { MasteryWorldId } from "../../server/contracts/wire";
 import { COLORS, RAMP, type RampHue } from "../theme/colors";
@@ -63,7 +63,7 @@ export const BAND_MID: Record<string, string> = bandTier("mid");
  * replaced the v1 split where the cdp coloured cells by MARK TYPE and the mini card by
  * band — the two mastery surfaces now speak one palette.
  *
- * Consumers: `components/mastery/MasteryWindow.tsx` (cdp window + cooldown swatch) and
+ * Consumers: `features/deckTower/cardView/TowerMasteryPanel.tsx` (the card view's raised bar) and
  * `components/MiniCard.tsx` → `MasteryStrip` (the thumbnail strip). Both take the SAME
  * colour: the mini strip's deeper-Target `"small"` variant (`--yelMkD`) was retired on
  * 2026-09-28, when the whole Mark tier was darkened 5% L and `--yelMk` became deep enough

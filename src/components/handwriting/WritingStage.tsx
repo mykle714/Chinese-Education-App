@@ -75,6 +75,8 @@ interface WritingStageProps {
   guideFadeOut?: boolean;
   /** Level 8: this character's running clock (null/absent = not started / not timed). */
   clock?: { remainingMs: number; totalMs: number } | null;
+  /** The guide's stroke-data load (HanziGuide `onLoadingChange`); never fires without a guide. */
+  onGuideLoadingChange?: (loading: boolean) => void;
 }
 
 const WritingStage = forwardRef<WritingCanvasHandle, WritingStageProps>(function WritingStage(
@@ -100,6 +102,7 @@ const WritingStage = forwardRef<WritingCanvasHandle, WritingStageProps>(function
     guideFadeIn = false,
     guideFadeOut = false,
     clock,
+    onGuideLoadingChange,
   },
   ref,
 ) {
@@ -182,6 +185,7 @@ const WritingStage = forwardRef<WritingCanvasHandle, WritingStageProps>(function
           regionClip={regionClip}
           fadeIn={guideFadeIn}
           fadeOut={guideFadeOut}
+          onLoadingChange={onGuideLoadingChange}
         />
       )}
       {snapActive && glyphData && (

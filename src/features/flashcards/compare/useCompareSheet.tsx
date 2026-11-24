@@ -8,7 +8,7 @@ import type { VocabEntry } from "../../../types";
  * components (React fast refresh).
  *
  * Layer: feature hook (src/features/flashcards/compare).
- * Depended on by: FlashcardsLearnPage, VocabCardDetailPage, EipSheet.
+ * Depended on by: FlashcardsLearnPage, deckTower/cardView/TowerCardView, EipSheet.
  */
 export interface UseCompareSheetOptions {
     // Stack depth to open AT. Read once, when `openCompare` fires — a sheet's position in

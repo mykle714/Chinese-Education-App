@@ -6,16 +6,18 @@ Mini-games that reinforce vocabulary and character learning.
 > Tower's study session ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md); rotation =
 > `src/games/flpBreak/index.ts` → `FLP_BREAK_GAMES`: Match Speed, Word Search, Writing Grid,
 > Superposition, Speed Reading, Memory Map). The Games hub (`/games`, `GamesPage`) and its
-> Menu row were **deleted**, and the five ROUTED games' own pages are switched **off** by
-> the `standaloneGames` feature flag (`server/contracts/featureFlags.ts`): while it is off
-> `src/games/registry.ts` → `ROUTED_GAMES` is empty, so no `/games/*` route is mounted. The
-> page code is kept, dormant. **Bubble Match, Hydra Bubbles and Bucket Drop are therefore
-> unreachable**: the first two have no break adapter, and Bucket Drop's
-> (`BUCKET_DROP_BREAK`) is left out of the rotation. The hub's launcher components
-> (`src/games/shared/GameCard.tsx`, `gameCards.ts`, `bubble-match/bubbleMatchCard.ts`,
-> `word-search/WordSearchHubItem.tsx`, `WordSearchResumeTile.tsx`,
-> `useWordSearchLauncher.tsx`) have no live caller. Sections below that describe the hub
-> describe deleted or dormant code, and say so.
+> Menu row were **deleted**, and the two ROUTED games' own pages (Match Speed, Word Search)
+> are switched **off** by the `standaloneGames` feature flag
+> (`server/contracts/featureFlags.ts`): while it is off `src/games/registry.ts` →
+> `ROUTED_GAMES` is empty, so no `/games/*` route is mounted. The page code is kept,
+> dormant. The hub's launcher components (`GameCard`, `gameCards`, `RoundPlayButton`,
+> Word Search's hub tile / resume tile / launcher) were deleted 2026-11-23. Sections below
+> that describe the hub describe deleted code, and say so.
+>
+> **Archived 2026-11-23: Bubble Match, Hydra Bubbles and Bucket Drop.** Their code and
+> design docs live on the `archive/bubble-match-hydra-bucket-drop` branch — see
+> [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md). The shared bubble field
+> (`src/games/bubbles/`) and `src/games/runtime/GameEndPopup.tsx` went with them.
 
 > **Second host:** games embedded mid-session in the flp as "game breaks" — **phase 1
 > built (Match Speed and Word Search)**: [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md). A break-capable
@@ -27,30 +29,27 @@ Mini-games that reinforce vocabulary and character learning.
 
 ## Status
 
-- 🚩 **Every game sits behind its own feature flag (2026-09-19), and all eight are ON.**
+- 🚩 **Every game sits behind its own feature flag (2026-09-19), and all six are ON.**
   `GAME_FLAGS` in `server/contracts/featureFlags.ts`, keyed by the game's own `gameId` —
   see [FEATURE_FLAGS.md](./FEATURE_FLAGS.md) § 3. The client chokepoint is a single filter
   at `GAME_REGISTRY` in `src/games/registry.ts`, so switching a game off removes it from
-  the hub, from the router and from every test that enumerates games with no other edit;
-  the server half is `isGameEnabled` on all three `GamesController` handlers, because a
-  hidden hub tile does not stop a bookmarked page from POSTing save state. The record is
-  typed against `KNOWN_GAME_IDS`, so **adding a game is a compile error until it is given a
-  flag**.
-- **Study Challenge rounds — live since 2026-08-22.** Five games
-  (Bubble Match, Match Speed, Hydra Bubbles, Word Search-Pinyin, Bucket Drop-Pinyin) can be
-  drawn as a scored round of a weekly head-to-head. The contract they must honour is
+  the router, from the flp break rotation and from every test that enumerates games with
+  no other edit. The record is typed against `KNOWN_GAME_IDS` (`server/constants.ts`), so
+  **adding a game is a compile error until it is given a flag**.
+- **Study Challenge rounds — live since 2026-08-22.** Two games
+  (Match Speed, Word Search-Pinyin) can be drawn as a scored round of a weekly
+  head-to-head, so a challenge plays 2 rounds. The contract they must honour is
   [§ Challenge-eligible games](#challenge-eligible-games-the-challengescoring-contract);
   the feature is [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md).
 - Hub page (`/games`) — **deleted 2026-11-06** (see the banner above).
-- Games — **nine shipped**, all registered in `src/games/registry.ts`. Two kinds
+- Games — **six shipped**, all registered in `src/games/registry.ts`. Two kinds
   (`GameDef`, `src/games/types.ts`; `isRoutedGame`, `ROUTED_GAMES` in the registry):
-  **routed** games have a `route` + `Component` and a hub tile (Bubble Match, Word Search,
-  Match Speed, Hydra Bubbles, Bucket Drop); **break-only** games have neither and are
+  **routed** games have a `route` + `Component` (Word Search, Match Speed); **break-only**
+  games have neither and are
   played only as flp game breaks inside the Deck Tower's study session
   ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md)) — Speed Reading, Memory Map (the bullet below
   this list), Writing Grid ([WRITING_PRACTICE_REWORK.md](./WRITING_PRACTICE_REWORK.md) § 2)
   and Superposition ([SUPERPOSITION_GAME.md](./SUPERPOSITION_GAME.md)):
-  - **Bubble Match** (`/games/bubble-match`) — see [§ Game: Bubble Match](#game-bubble-match-gamesbubble-match).
   - **Word Search** (`/games/word-search`) — see [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md).
   - **Match Speed** (`/games/match-speed`) — see [MATCH_SPEED_GAME.md](./MATCH_SPEED_GAME.md).
     One hub tile, one mode (Study Mix). A tap-to-match recognition speed drill: 2 columns × 6 rows (foreign |
@@ -63,26 +62,8 @@ Mini-games that reinforce vocabulary and character learning.
     with a count-**up** clock, a speed tier by finishing TIME (lower is better) and an
     accuracy tier by correct answers (§ Run tiers). A wrong answer costs no time.
     Every round must be answered — it has **no Skip**.
-  - **Hydra Bubbles** (`/games/hydra-bubbles`) — see
-    [§ Game: Hydra Bubbles](#game-hydra-bubbles-gameshydra-bubbles) and
-    [HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md). An **endless, clockless** recognition
-    drill on Bubble Match's bubbles, with the opposite pressure model: clearing a
-    pair spawns 1 or 3 new bubbles depending on the cleared word's payout **tier**,
-    so the board grows on its own and the only way to hold it back is to take on the
-    words you know least well. One wrong match ends the run.
-  - **Bucket Drop** (`/games/bucket-drop`) — see [BUCKET_DROP_GAME.md](./BUCKET_DROP_GAME.md).
-    **BUILT 2026-10-06, no migration.** A drag-and-drop **stopwatch**: the perimeter of the
-    play panel is lined with grey square keycap-hole buckets each holding an English dd, the
-    run's 20 foreign words are dealt as a pile in the middle, and the player drags any word
-    into its meaning's bucket (or leaves it anywhere) — speed + accuracy tiers (§ Run tiers). **Moded** like Word Search:
-    the hub tile is Pinyin (production, challenge-eligible); No Pinyin (reading, zh only)
-    has no host today (its flp break adapter is built but switched off).
-
-  Bubble Match and Word Search are **DOM + `requestAnimationFrame`** games; Match
-  Speed and Speed Reading are **DOM + timers only** (no rAF loop — no physics and no
-  per-frame animation, just CSS transitions and intervals). Bucket Drop is **DOM +
-  pointer events**: the drag writes `style.transform` directly and the drop animations are
-  Web Animations API one-shots, with no loop at all. **There is no Pixi game
+  Every game is plain **DOM** (Match Speed and Speed Reading are DOM + timers only — no
+  rAF loop, no physics, just CSS transitions and intervals). **There is no Pixi game
   runtime any more** — the never-used `GameStage` / `GamePage` / `useGameActors`
   scaffolding was deleted (commit `70dc441`); see
   [§ Layer 2](#layer-2--runtime-srcgamesruntime).
@@ -141,17 +122,14 @@ almost everything below follows from that one difference:
 Speed Reading is the first game to need machinery the other three didn't, all of
 which is now shared:
 
-- **A language gate on `GameDef`** — `languages?: Language[]`, evaluated in
-  `GamesPage` against `user.selectedLanguage`. A game whose languages exclude the
-  learner is **hidden** from the hub, not shown-and-blocked (a visible row that
-  dead-ends reads as a bug). Speed Reading declares `["zh"]`; the other three omit
-  the field and are unaffected.
+- **A language gate on `GameDef`** — `languages?: Language[]`, evaluated by
+  `isGameAvailable` (`src/games/registry.ts`) against `user.selectedLanguage`. A game
+  whose languages exclude the learner is **hidden** (never dealt as an flp break), not
+  shown-and-blocked. Speed Reading and Memory Map declare `["zh"]`.
 - **`?markType=` on `GET /api/onDeck/gamePool`** — the endpoint used to hardcode
-  `recognition` back when Bubble Match was its only caller. A game's pool must be
-  bucketed by, and cooled on, the track it actually MARKS; Speed Reading marks
-  **reading**. Bubble Match's call site passes the track it locked for the run
-  (`fetchGamePool({ markType: lockRunTrack(), … })` — recognition, or reading with pinyin off; see
-  § "Bubble Match: pinyin picks the track"), so no caller relies on the default.
+  `recognition` back when the (now archived) Bubble Match was its only caller. A game's
+  pool must be bucketed by, and cooled on, the track it actually MARKS; Speed Reading
+  marks **reading**.
 - **`GlyphSvg`** (`src/components/handwriting/`) — a static glyph renderer, the
   second consumer of the `hanzi-writer-data` stroke corpus after the Practice
   Writing guide.
@@ -174,25 +152,16 @@ mark.
 Each ROUTED game has its own route under `/games/<slug>`, mounted only while the
 `standaloneGames` flag is on (`ROUTED_GAMES`). It is off, so today none is mounted.
 
-The slug is also a **server-side whitelist**: `KNOWN_GAME_IDS` (`server/constants.ts`)
-mirrors the client `GAME_REGISTRY`, and `/api/games/:gameId/progress` 404s on anything
-else. `gameprogress` is keyed `(userId, gameId)` and the segment arrives raw, so
-without the list a caller mints unbounded save rows on their own account by varying
-the slug. Adding a game means adding its slug there — the 404 is the reminder.
+The slug list `KNOWN_GAME_IDS` (`server/constants.ts`) mirrors the client
+`GAME_REGISTRY`; its one job is typing `GAME_FLAGS`. (It was also the whitelist for the
+generic `/api/games/:gameId/assets|progress` routes, deleted 2026-11-23 with no caller.)
 
-**Bubble Match is a leaf page (no footer).** `BubbleMatchPage` is wrapped in
-`LeafPage` (see [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)): the down-arrow back
-button (→ `/games`) is the only way out, there is **no** footer on any of its
-screens (loading / blocked / stage — the level is picked on the hub, so there is
-no in-game picker screen), and the page slides up on enter / down on exit. The pinyin + autoplay toggles live in
-the header's right slot via `BubbleMatchHeaderControls`; the fire badge sits to their
-right and is rendered by `PageHeader` for every page, not passed by the game. The
-autoplay chip edits the **app-wide** narration autoplay flag, not a game pref — the
-same control appears in every other narrating surface's header
+**Word Search and Match Speed are leaf pages** (no footer): wrapped in `LeafPage` (see
+[LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)), the down-arrow back button is the only way
+out, and the page slides up on enter / down on exit. The fire badge in the header is
+rendered by `PageHeader` for every page, not passed by the game; an autoplay chip in a
+game header edits the **app-wide** narration autoplay flag, not a game pref
 ([AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md)).
-
-**Word Search is also a leaf page**, wrapped the same way (down arrow → `/games`,
-no footer, slides up on enter).
 
 **Every routed game is a leaf page** (break-only games have no page at all). Games
 are classified `chrome: "leaf"` in bulk by `GAME_ROUTE_META` in
@@ -209,10 +178,9 @@ is split into its **page** (the route: `GameLeafPage`, `useBlockEdgeSwipe`, laun
 `state`) and a **Stage** (the run itself), and the Stage renders inside a host-injected
 `Frame` (`GameStageFrameProps`, `GameStageHost` in `src/games/types.ts`). This is NOT a
 generic shell: there is no shared stage, each game keeps its own. Match Speed
-(`MatchSpeedStage`), Word Search (`WordSearchStage`) and Bucket Drop (`BucketDropStage`)
-have both hosts (page + break, switched by `GameStageHost`); Speed Reading, Memory Map,
-Writing Grid and Superposition are **break-only** — a Stage with no page and no `host`
-prop. Bubble Match and Hydra are not split yet. The flp side — adapters and candidate derivation — is
+(`MatchSpeedStage`) and Word Search (`WordSearchStage`) have both hosts (page + break,
+switched by `GameStageHost`); Speed Reading, Memory Map, Writing Grid and Superposition
+are **break-only** — a Stage with no page and no `host` prop. The flp side — adapters and candidate derivation — is
 `src/games/flpBreak/`; the break's opening card is an flp card, not a game surface; see
 [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md).
 
@@ -231,8 +199,8 @@ There is **none**: no footer tab, no Menu popover row, no hub (all removed 2026-
 A game is reached only by the Deck Tower's study session dealing it as a break
 ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md)), or by a tester forcing one
 (`src/features/deckTower/ForcedBreakPicker.tsx`). If `standaloneGames` is switched back on,
-the five routed pages come back at their URLs, still with no launcher: one would have to be
-rebuilt (the dormant `GameCard` family is the starting point).
+the two routed pages come back at their URLs, still with no launcher: one would have to be
+built (the old `GameCard` family was deleted 2026-11-23; it is in git history).
 
 ### Break-only games, and the exit destination
 
@@ -244,15 +212,9 @@ The deleted hub listed **routed** games only (`ROUTED_GAMES`). Speed Reading, Me
 Grid and Superposition have no route and no page: they are played only as flp game breaks
 inside the Deck Tower's study session ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md)), which
 also runs the reading-track variants of two routed games (Match Speed with pinyin hidden,
-Word Search **No Pinyin**). The hub offered Word Search's Pinyin mode only and pinned Bubble
-Match to Recognition (`state.showPinyin: true`).
+Word Search **No Pinyin**).
 
-⚠️ **Two reading variants have no host at all.** Bubble Match with pinyin hidden and Bucket
-Drop **No Pinyin** were launched only from the deleted Reading Center carousel; Bubble
-Match has no flp break adapter yet, and Bucket Drop's (`BUCKET_DROP_BREAK`) is built but left
-out of `FLP_BREAK_GAMES` (`src/games/flpBreak/index.ts`). Their reading paths stay in code,
-unreachable, until one of those adapters is switched on.
-Every game but Bubble Match and Memory Map keeps a per-mode **personal best**
+Every game but Memory Map keeps a per-mode **personal best**
 ([WRITING_PRACTICE_REWORK.md](./WRITING_PRACTICE_REWORK.md) § 2a).
 
 **Exits** (dormant while `standaloneGames` is off). A routed game's Back (`useGameBack`)
@@ -266,53 +228,15 @@ and acp, whose launches from the Deck Tower carry one
 
 ## Design decisions
 
-> **Historical (§ 1–4):** these describe the Games hub, deleted 2026-11-06. § 1's
-> `GameCard` code still exists, dormant.
+> **Historical (§ 1–4):** these describe the Games hub, deleted 2026-11-06.
 
 ### 1. Hub is a vertical, width-spanning menu
-Every game is ONE entity, **`GameCard`** (`src/games/shared/GameCard.tsx`), in the shared
-`Bento` grid, in one of two Bento-family variants so styling carries across both:
-
-| Variant | Shape | Body | Games (hub) |
-|---|---|---|---|
-| `tile` | half-width; name, ghost glyph, optional `WinCountPill` top-left; the whole tile is a router link | **is** a `BentoTile` (no outline) | Match Speed (with win pill), Hydra Bubbles, Bucket Drop |
-| `card` | full row; header (name + win pill) over a row of option slots + optional `RoundPlayButton` | `CardShell` (`src/components/bento/CardShell.tsx`, the body `BentoTile` renders through), outlined | Bubble Match, Word Search |
-
-A card's options are `GameCardOption`s of two kinds, both drawn on the shared
-`GameOptionTile` shell (radius, padding, 62px floor, outline, `OPTION_TITLE_SX`):
-`kind: "level"` (hued, ⭐ when cleared this week) and `kind: "resume"` (a caller node —
-Word Search's `WordSearchResumeTile`). The shell takes an optional small ghost `glyph` —
-the card ghost's ink/opacity/bleed scaled to the tile, `OPTION_GHOST` — worn by level
-tiles and the resume tile alike. Options are measured in slots of one Bubble Match level's
-width (`slotFlex(span)`, which also swallows the gaps a multi-slot option covers): a level
-takes one, a resume option `slots` (Word Search's takes 2). Card data comes from `src/games/shared/gameCards.ts`
-(`gameCardBase`, `buildTileCard`) and the per-game builders that extend
-them. Visibility gating shared with the flp break picker (`flpBreakCandidates`) is
-`isGameAvailable` (`src/games/registry.ts`); the hub layers the routed-only rule on top
-(`GamesPage` → `visibleGames`, over `ROUTED_GAMES`). See
-[BENTO_SYSTEM.md](./BENTO_SYSTEM.md) § "CardShell".
-
-Two games get a `card`, both special-cased in `GamesPage.tsx` rather
-than generalized onto `GameDef`: Bubble Match renders as a level card — `GameCard` (`src/games/shared/GameCard.tsx`)
-fed by `buildBubbleMatchCard` (`src/games/bubble-match/bubbleMatchCard.ts`), spanning
-the grid's full row (`gridColumn: "1 / -1"`), one level tile per difficulty since the
-in-game level picker was removed (level hues, "Level N" titles with no subtitle — the
-Chill/Hustle/Torture names in `LEVEL_CONFIGS` are in-game only (HUD + win screen) — weekly
-⭐, the game's `bubble_chart` glyph as a small ghost on each level tile for texture,
-lifetime win pill); every level launches with `state.showPinyin: true`. Word
-Search is the same shared card, fed by `buildWordSearchCard`
-(`src/games/word-search/wordSearchCard.tsx`) through `useWordSearchLauncher`
-(`src/games/word-search/useWordSearchLauncher.tsx` — save slot, resume, erase,
-confirm-before-clobber) and rendered by
-`WordSearchHubItem` (Pinyin only).
-
-**Card rules** (`GameCard`): a `card` whose options row is EMPTY draws its title at the
-hero tile's size (`TILE_VARIANTS.hero.title`), one carrying option tiles keeps
-`CARD_TITLE_SX`'s smaller title — so Word Search drops to the small title the moment a
-board is parked. **A card with a play button is tappable as a whole**: a tap anywhere no
-inner control claims acts as the play button (`GameCard` root `onClick`; option slots and
-the play button stop propagation). The card is not itself a button — the play button
-(`RoundPlayButton`, `size="card"`) stays the keyboard control.
+Every game was ONE `GameCard` entity in the shared `Bento` grid, as a half-width `tile`
+or a full-row `card` with option slots (levels, a resume tile) and a `RoundPlayButton`.
+The whole launcher family (`GameCard`, `gameCards`, `RoundPlayButton`, Word Search's hub
+tile, resume tile and launcher) was deleted 2026-11-23; it is in git history. Visibility
+gating shared with the flp break picker (`flpBreakCandidates`) is still
+`isGameAvailable` (`src/games/registry.ts`).
 
 ### 2. Empty state instead of placeholder cards
 When the registry yields no visible rows — every game gated out by `unlock` or
@@ -393,33 +317,20 @@ Rules of thumb:
   header's tab badge, its only reader.)
 - Back-arrow drill-ins → use the `LeafPage` (down arrow, no footer) or `NodePage`
   (left arrow, keeps footer) wrapper instead of composing the header by hand.
-  Games is a node page.
 - Specialty in-page headers (the flp's `TowerStudyHeader`, the game headers) → compose `PageHeader` directly and own their own `rightContent`. Build
   that `rightContent` from `HeaderToggleChip` / `HeaderIconButton` — the three game
   and flp headers each used to carry a byte-identical private `toggleSx` helper, and
   that is exactly what those exports exist to prevent.
 
-### What Bucket Drop introduced
+### `GameDef.modes` and the shared shake
 
 - **`GameDef.modes`** — a moded game's per-mode primary tracks, declared on the registry
-  entry (read off the game's own `MODE_CONFIGS`). Bucket Drop is the second moded game
-  after Word Search, and `src/games/__tests__/challengePool.test.ts` used to special-case
-  `gameId === "word-search"`; it now loops `game.modes`, plus a new test that every game
+  entry (read off the game's own `MODE_CONFIGS`; Word Search is the one moded game today).
+  `src/games/__tests__/challengePool.test.ts` loops `game.modes`, and tests that every game
   declares either `markType` or `modes`.
-- **`WRONG_SHAKE_KEYFRAMES`** (`src/games/bubbles/constants.ts`) — Bubble Match's
-  wrong-match shake, extracted so a wrong Bucket Drop bucket shakes identically
-  (`Bubble.tsx` and `bucket-drop/DropBucket.tsx` both spread it). Since 2026-10-29 it is
-  an alias of the app-wide invalid-operation shake, `src/theme/invalidShake.ts` →
-  `INVALID_SHAKE_KEYFRAMES` / `INVALID_SHAKE_ANIMATION` (keyframes `invalidShake`). That
-  shake moved to theme/ so features/ can use it too: acp shakes a dragged sorted card.
-- **The first game whose pool fetch goes through `src/api/http.ts`** (`apiGet`), as
-  [FRONTEND_LAYERING.md](./FRONTEND_LAYERING.md) requires. ⚠️ Bubble Match, Match Speed,
-  Hydra Bubbles and Speed Reading still call `fetch(API_BASE_URL + "/api/onDeck/gamePool?…")`
-  with `authHeader()` directly — the older pattern, not yet migrated.
-- **Free-roaming drag targets.** Every word of the run is on the field from load (a pile in
-  the centre), any of them can be picked up, and a word let go anywhere but a bucket rests
-  where it landed — each word owns its own position imperatively (`StackWord` → `restRef`).
-  See [BUCKET_DROP_GAME.md](./BUCKET_DROP_GAME.md) § 5.
+- **The invalid-operation shake** is app-wide: `src/theme/invalidShake.ts` →
+  `INVALID_SHAKE_KEYFRAMES` / `INVALID_SHAKE_ANIMATION` (keyframes `invalidShake`); acp
+  shakes a dragged sorted card with it.
 
 ## Games framework
 
@@ -430,9 +341,7 @@ frontend layers and a thin backend.
 ### Layer 1 — Registry (`src/games/registry.ts`)
 
 ```ts
-export const GAME_REGISTRY: GameDef[] = [
-  { gameId: "bubble-match", title: "Bubble Match", route: "/games/bubble-match",
-    Component: lazy(() => import("./bubble-match/BubbleMatchPage")) },
+const ALL_GAMES: GameDef[] = [
   { gameId: "word-search", title: "Word Search", route: "/games/word-search",
     Component: lazy(() => import("./word-search/WordSearchPage")) },
   { gameId: "match-speed", title: "Match Speed", route: "/games/match-speed",
@@ -446,49 +355,25 @@ Each `GameDef` (`src/games/types.ts`) carries `gameId`, `title`,
 
 The registry is consumed by:
 
-- `src/games/GamesPage.tsx` — renders one menu row per registered game; falls
-  back to the existing empty state when nothing is registered (or everything
-  is gated out).
-- `src/App.tsx` — iterates `GAME_REGISTRY` to mount one route per game, each
-  wrapped in a `Suspense` boundary for the lazy component.
-- `src/components/Layout.tsx` — spreads `GAME_ROUTES` into
-  `MOBILE_DEMO_PATHS` so every game gets the phone frame automatically.
+- `src/games/flpBreak/index.ts` — the flp break rotation (`flpBreakCandidates` over
+  `GAME_REGISTRY`, filtered to games with a break adapter).
+- `src/routes/registry.ts` / `src/routes/routeMeta.ts` — mount one leaf route per
+  `ROUTED_GAMES` entry (empty while `standaloneGames` is off), each in a `Suspense`
+  boundary for the lazy component.
 
-Net effect: adding a new game = one entry in `GAME_REGISTRY` + one page
-component. No edits to `GamesPage`, `App`, or `Layout`.
+Net effect: adding a new game = one entry in `ALL_GAMES` + its Stage (and page, if
+routed). No edits to the route tables.
 
 ### Layer 2 — Runtime (`src/games/runtime/`)
 
 All live. The folder is a **grab-bag of shared game bits**, not a framework — no game
 inherits a shell from it.
 
-- **`GameEndPopup.tsx`** — the shared end-of-run popup **shell**: presentational
-  layer owning the scrim, the card chrome (× button), the corner puck, and the
-  FLIP-style collapse animation between them. The **page** owns the `minimized`
-  flag and the card's content (title / message / actions), passed as `children`;
-  `classPrefix` keeps each game's BEM classes distinct. **Bubble Match is its one game
-  caller today** (`BubbleMatchEndPopup`); `ChallengeRoundScoreboard` shares the shell. The
-  Match Speed, Word Search and Bucket Drop end popups (`MatchSpeedEndPopup`,
-  `BucketDropEndPopup`, Word Search's inline win card) were **deleted 2026-11-10** with
-  the medals, along with their Play Again and Match Speed's cleanup mode: every game runs
-  as an flp break, whose results go to the break's card (§ Run tiers,
-  [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 5b). Their routed pages, behind the OFF
-  `standaloneGames` flag, now end on a frozen board ([DEFERRED_WORK.md](./DEFERRED_WORK.md)).
-  **Minimizing is opt-in**: pass `onMinimize`/`onRestore` and the × button and the
-  corner puck appear; omit them and neither is rendered, so the popup is modal and its
-  own buttons are the only exits. The rule is "minimizable iff the board is still worth
-  uncovering" — Bubble Match's post-loss cleanup mode.
-  **The puck docks into the game frame's corner**, not the screen's: `GameEndPopup`
-  passes `puckAnchorSelector=".game-frame"` to `MinimizablePopup`, which measures that
-  element (the enclosing match, else one inside the popup's parent — the phone frame,
-  since the scrim is portaled there) and lands both the puck and the card's collapse
-  animation `SQUARE_MARGIN` in from its top-right corner.
-  **The scrim covers the ENTIRE screen**, the leaf header included: `MinimizablePopup`
-  portals it to the phone frame (`useScreenOverlayHost`, z 200) instead of pinning it to
-  the game's `position: relative` content box, which left the back arrow and title lit
-    above the dim until 2026-10-06. (`inPlace` keeps a popup inside its parent instead; Speed
-  Reading's sideways stage used it before the game became break-only —
-  docs/UX_AND_NAVIGATION.md § Dimming the background.)
+- **End-of-run popups** — none. The shared `GameEndPopup` shell and every game's end
+  popup are gone (the last caller was archived 2026-11-23); every game runs as an flp
+  break, whose results go to the break's card (§ Run tiers,
+  [FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 5b). The routed pages, behind the OFF
+  `standaloneGames` flag, end on a frozen board ([DEFERRED_WORK.md](./DEFERRED_WORK.md)).
 - **Answer-feedback sound** — there is none. Every game marks silently; narration
   (TTS) is the only audio (docs/AUDIO_PLAYBACK.md § 7).
 - **`useBackgroundPause.ts`** — the app-wide backgrounding pause, which resumes by
@@ -508,16 +393,15 @@ inherits a shell from it.
     the cumulative score, and unmount or `pagehide` finalises it — so leaving a game
     mid-round is a scored, spent attempt rather than a free restart.
   - **`useGameBack.ts`** — a game page's Back handler: where it goes (the challenge
-    mid-test, else `/games`), plus the confirm an armed challenge round puts in front
-    of it. Used by all four challenge-eligible pages; the destination ternary used to
-    be inlined in each.
+    mid-test, else `GAMES_HUB_EXIT`), plus the confirm an armed challenge round puts in
+    front of it. Used by both challenge-eligible games (`MatchSpeedStage`,
+    `WordSearchStage`).
   - **`ChallengeRoundScoreboard.tsx`** — the between-games board, rendered in place of a
-    game's own end-of-run popup during a challenge round. It PORTALS itself to
+    game's end-of-run surface during a challenge round. It PORTALS itself to
     `nearestOverlayHost` so it blacks out the whole screen including the leaf header —
     a game page writes it as an ordinary sibling of its popup and does nothing else.
   - **`challengeLaunch.ts`** — gameId → route + the nav state that page requires, plus
-    the round's query params. The one place that knows Bubble Match needs a level and
-    Word Search needs a mode.
+    the round's query params. The one place that knows Word Search needs a mode.
 - **`useSidewaysStage.ts`** — the landscape-stage helper behind Speed Reading's
   rotated presentation (see `LeafPage`'s `hideHeader` render-prop form in
   [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md)).
@@ -526,8 +410,7 @@ inherits a shell from it.
 > host), `GamePage.tsx` (generic page shell), and `useGameActors.ts` (generic actor
 > handle) were written ahead of the first game and **no game ever imported them**.
 > They were removed in commit `70dc441`. Do not resurrect them speculatively — the
-> shipped pattern is DOM + rAF (Bubble Match, Word Search) or DOM + timers (Match
-> Speed, Speed Reading). The app's one Pixi host was the Night Market's, removed 2026-11-09 and
+> shipped pattern is plain DOM (Match Speed and Speed Reading are DOM + timers). The app's one Pixi host was the Night Market's, removed 2026-11-09 and
 > archived ([ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)) — a game that genuinely needs a WebGL
 > scene graph should start from that archived host rather than a fresh unproven abstraction.
 
@@ -538,8 +421,7 @@ inherits a shell from it.
 Presentational only; nothing here holds state.
 
 - **`GameFrame`** (`.play`) — the inset white rounded panel between the leaf header and
-  the page edge. It exists so the board's boundary is not the phone's: a bubble drifting
-  to the edge used to look like it had left the app. It is also `position: relative`, so a
+  the page edge. It exists so the board's boundary is not the phone's. It is also `position: relative`, so a
   game's own overlays (a countdown, a pause veil) stop at the panel's rounded edge instead
   of covering its margin, and it gives a physics surface **one** element to measure for
   bounds. Under a `GameFrameHostContext` provider (`gameFrameExit.ts`) — only the flp game
@@ -557,8 +439,7 @@ Presentational only; nothing here holds state.
   for a HUD sitting directly under a `GameTimer`, which already draws one.
 - **`GameHudBar`** — the HUD's optional third slot, `flex: 1`. It always restates a number
   a label beside it already gives; that is the point. The count is what you read when you
-  look at the strip, the bar is what you see when you do not. Bubble Match points it at
-  pairs cleared, Hydra at the field's fill ratio.
+  look at the strip, the bar is what you see when you do not.
 - **`GameHint`** — the one-line instruction at the panel's FOOT ("tap a word, then its
   meaning"). Deliberately a `.lab`: mono, uppercase, faint. A rule you need on your first
   run and never read again should be legible on request and invisible the rest of the
@@ -619,27 +500,11 @@ status bar.
 **Which hue a game gets is `GameDef.hue` — and since v2 that EQUALS the artboard's.** Each
 game's `GAME_HUE` (its own `constants.ts`) drives both the hub row and the ground, so the
 two cannot drift. The hues are the artboards' own (SHELF_REDESIGN.md artboards 12–16):
-Bubble Match `red`, Word Search `pur`, Match Speed `blu`, Speed Reading `yel`, Hydra
-Bubbles `grn`; Memory Map, which has no artboard, is `blu` (since 2026-10-06; `org` before — so it
+Word Search `pur`, Match Speed `blu`, Speed Reading `yel`; Memory Map, which has no artboard, is `blu` (since 2026-10-06; `org` before — so it
 shares Match Speed's hue). Until 2026-09-24 three of
-them differed from the artboards (Match Speed green, Speed Reading blue, Hydra teal) and
+them differed from the artboards (Match Speed green, Speed Reading blue, and a third, now archived) and
 this paragraph explained why the hub won; teal then left the palette and the three moved.
 Source: `src/games/shared/gameSurface.ts` header ("WHICH HUE A GAME GETS").
-
-**Bubble Match is the one exception: white ground, level-hued bands.** It passes
-`ground={COLORS.white}` to `GameLeafPage` (an optional override of `gameSurfaceSx`'s MID-tier
-fill; the provider's `theme-color` follows it), and its surface `hue` is the run's LEVEL hue
-(`levelHue` → `LEVEL_HUES`: 1 `grn`, 2 `org`, 3 `red`) rather than `GAME_HUE`, so the board
-matches the level tile that launched the run. The level colour lives only on the board's two
-bands: the HUD strip and the cancel strip's resting fill both wear the hue's `surface` tier
-(`BubbleStage` → `bandBg`, read via `useGameSurfaceHue`, overriding `GameHud`'s default tint
-ground); armed, the cancel strip still takes `CANCEL_ZONE_COLORS.armed`. Word bubbles are white
-and meanings grey, both with the same neutral `--line2` ring — no level colour on the bubbles.
-`GAME_HUE` (`red`) still colours the hub row and is the fallback for a level with no
-`LEVEL_HUES` entry. Hydra Bubbles keeps the shared cancel-strip fill.
-Source: `src/games/bubble-match/constants.ts` → `levelHue`, `WORD_BUBBLE_BG`;
-`src/games/bubble-match/BubbleStage.tsx`; `src/games/bubble-match/BubbleMatchPage.tsx`;
-`src/games/shared/GameSurface.tsx` → `GameLeafPage`.
 
 **The header flips are CSS descendant selectors, the panel's are not.** The header route
 avoids threading an `onAccent` flag through `LeafPage` → `PageHeader` →
@@ -648,23 +513,19 @@ mechanism (`#bm .lhd h1{color:#fff}`). `GameHud`/`GameTimer`/`GameFrame` read th
 instead, because a HUD label's colour is overridable per call site (a lives counter turning
 red) and a blanket descendant rule would silently clobber it. One detail worth keeping: the
 chip outline is an inset `box-shadow`, not a `border` — a border would add 2px per chip, and
-the leaf header is already tight enough that "Hydra Bubbles" ellipsises.
+the leaf header is already tight enough that a long game title ellipsises.
 
 **What the frame does NOT discharge:** `useBlockEdgeSwipe(true)` and `touchAction: "none"`
 stay the page's job. The edge-swipe block is a document-level touch handler with a
 lifecycle, and hiding it inside a layout wrapper would make "why can I still swipe out of
 this game" invisible to whoever reads the page.
 
-**Every popup stays OUTSIDE the frame** — `GameEndPopup`, `ProvisionalSortOffer`. Each covers the whole content area and must not be
+**Every popup stays OUTSIDE the frame** — e.g. `ProvisionalSortOffer`. Each covers the whole content area and must not be
 clipped by the panel's radius.
 
-All the games are framed, and four of them (Bubble Match, Word Search, Match Speed, Hydra
-Bubbles) now use `GameHud` for their strip as well — see entries 12–16 of
-[SHELF_REDESIGN.md](./SHELF_REDESIGN.md). Bubble Match's and Hydra's HUDs used to be
-absolutely-positioned overlays INSIDE their stages, at `top: 8`, so bubbles drifted under
-the text and each field's measured bounds were larger than the area a bubble could
-actually be read in; both stages now return a fragment — HUD row, then measured field.
-Match Speed shows no clock during play; its finish time appears on the end card.
+All the games are framed; Word Search and Match Speed use `GameHud` for their strip as
+well — see entries 12–16 of [SHELF_REDESIGN.md](./SHELF_REDESIGN.md). Match Speed shows
+no clock during play; its finish time appears on the end card.
 
 Speed Reading draws no `GameHud` (removed 2026-11-04, with its round counter and
 round-tick strip; SPEED_READING_GAME.md § Screen layout). Its board is still its own
@@ -679,17 +540,13 @@ sharing that container is under them and every tap on it would answer the round.
 | --- | --- |
 | `useVocabEntries` (`GET /api/vocabentries`) | deleted 2026-07-28 — exposed a flat `definition?: string \| null` with no sense fields, so a new game written against it would have silently produced sense-blind definitions |
 | `useDictionaryEntries` (`GET /api/dictionary/lookup/:term`) | deleted 2026-07-28, same reason |
-| `useGameAssets(gameId)` (`GET /api/games/:gameId/assets`) | deleted in `70dc441` — existed only to feed `GameStage`'s texture preload |
-| `useGameProgress<TState>(gameId)` (`GET`/`POST /api/games/:gameId/progress`) | deleted in `70dc441` — unused; Word Search persists its board to `localStorage` (`gameStateStorage.ts`) instead |
+| `useGameAssets(gameId)` | deleted in `70dc441` — existed only to feed `GameStage`'s texture preload |
+| `useGameProgress<TState>(gameId)` | deleted in `70dc441` — unused; Word Search persists its board to `localStorage` (`gameStateStorage.ts`) instead |
 
-> ⚠️ **The backend halves of the last two are still live and now have no client.**
-> `GET /api/games/:gameId/assets`, `GET`/`POST /api/games/:gameId/progress`
-> (`server/routes/gamesRoutes.ts` → `GamesController` → `GameAssetService` /
-> `GameProgressService` → the `gameassets` / `gameprogress` tables, migration 52)
-> are all still wired and unreferenced from the client. Either a future game adopts
-> them or they should be retired together with their two tables — flagged rather
-> than silently deleted because the seed script `server/scripts/seedGameAssets.js`
-> and migration 52 belong to the same decision.
+Their server halves (the generic `/api/games/:gameId/assets|progress` routes and the
+`gameassets` / `gameprogress` tables) were deleted 2026-11-23; migration 206 drops the
+tables. `/api/games/speedReading/*` (`server/routes/speedReadingRoutes.ts`) is unrelated
+and live.
 
 Games talk to the server through `src/api/http.ts` (the typed cookie-auth `fetch`
 wrapper — `apiGet` / `apiPost`), which inherits transparent token-refresh from the
@@ -711,8 +568,6 @@ Every `GET /api/onDeck/gamePool` call goes through **one** function,
 | `need` | `need` | Present = partial refill (no baseline top-up) |
 | `exclude` / `avoid` | `exclude` / `avoid` | Hard exclude / soft demote, comma-joined; omitted when empty |
 | `seedIds` | `seedIds` | Put these on the board FIRST if the game's mark on them counts and they are under pbh 6 on the game's bar (`isBreakSeedPlayable`); the rest are never dealt. An flp game break's working loop — docs/FLP_GAME_BREAKS.md § 4. Capped at 40 server-side |
-| `strictBuckets` | `strictBuckets=1` | "These bands or nothing" (Hydra) |
-| `lendLevelOffset` | `lendLevelOffset` | Lend tier offset (Hydra) |
 | `flpBreak` | `flpBreak=1` | This board is an flp game break — in a focused world the server draws from outside today's set (FOCUS_MODE.md § 4a). Sent on the opening board and every top-up |
 | `challengeParams` | `challengeId`/`gameId`/`mode`/`anytime` | `useChallengeRound().poolParams`, passed verbatim |
 | `excludeContested` | `contested=exclude` | Sent only when `challengeParams` is set |
@@ -720,13 +575,10 @@ Every `GET /api/onDeck/gamePool` call goes through **one** function,
 **There is no client "lend" flag.** Lending is decided server-side
 (`OnDeckVocabController.getGamePool`): a full board (no `need`) runs `ensureBaseline`
 against `CARD_BASELINES[surface]` (or the distribution's sum when `surface` is absent);
-a refill never lends unless its `surface` is in `ROLLING_SUPPLY_SURFACES` (Hydra). So a
-caller always sends its real `surface`.
+a refill (`need`) never lends. So a caller always sends its real `surface`.
 
-Callers: Bubble Match (`BubbleMatchPage` → `fetchGamePool`), Match Speed
-(`MatchSpeedStage` → `fetchPool`), Speed Reading (`useSpeedReadingQueue` → `fetchPool`, built by `speedReadingPoolRequest`),
-Bucket Drop (`BucketDropStage` → `fetchPool`), Hydra (`HydraBubblesPage` →
-`fetchChallengeCards`; `useColorBuffers` → `fetchColor`). **Not** through it: Word Search
+Callers: Match Speed (`MatchSpeedStage` → `fetchPool`), Speed Reading
+(`useSpeedReadingQueue` → `fetchPool`, built by `speedReadingPoolRequest`). **Not** through it: Word Search
 (`GET /api/onDeck/wordSearchGrid`), Memory Map (`src/api/memoryMap.ts`), Writing Grid
 (`src/api/writingGrid.ts`) — each has its own endpoint.
 
@@ -736,29 +588,14 @@ tick). It predates the shared module and was preserved as-is.
 
 ### Layer 4 — Backend (`server/`)
 
-Two new tables (migration `database/migrations/52-create-game-tables.sql`):
-
-- **`gameassets`** — `(gameId, assetId)` unique; per-game asset registry.
-  Binaries live under `server/public/games/<gameId>/` and are served as
-  static files; the DB stores the relative path.
-- **`gameprogress`** — `(userId, gameId)` unique; one save blob per
-  user/game. `state` is JSONB whose shape each game defines client-side.
-
-Follows the existing DAL + Service + Controller pattern:
-
-- `server/dal/implementations/GameAssetDAL.ts`,
-  `server/dal/implementations/GameProgressDAL.ts`
-- `server/services/GameAssetService.ts`, `server/services/GameProgressService.ts`
-- `server/controllers/GamesController.ts`
-- Wired in `server/dal/setup.ts`; routes registered in
-  `server/routes/gamesRoutes.ts` (split out of `server.ts`; paths unchanged):
-  - `GET  /api/games/:gameId/assets`
-  - `GET  /api/games/:gameId/progress`
-  - `POST /api/games/:gameId/progress`
-
-`server/scripts/seedGameAssets.js <gameId>` walks
-`server/public/games/<gameId>/` and upserts one `gameassets` row per file —
-safe to re-run.
+There is no generic games backend. The `gameassets` / `gameprogress` tables and their
+`/api/games/:gameId/assets|progress` routes (`GamesController`, `GameAssetService`,
+`GameProgressService` and their DALs) were deleted 2026-11-23; migration
+`database/migrations/206-drop-game-framework-and-archived-game-rows.sql` drops the tables.
+Games use the OnDeck endpoints for cards (`server/routes/onDeckRoutes.ts`), plus
+per-game routers where a game needs its own data: `/api/games/speedReading/*`
+(`server/routes/speedReadingRoutes.ts`), Memory Map (`server/routes/memoryMapRoutes.ts`),
+Writing Grid (`server/routes/writingGridRoutes.ts`).
 
 ### Sense correctness — every game must honor the learner's selected sense
 
@@ -786,12 +623,10 @@ they agree) — change one, change the other.
 
 How the shipped games satisfy this:
 
-- **Bubble Match** resolves on the client. `gamePool` selects `ve.*, ${DICT_COLS}`
-  (`OnDeckVocabService.fetchGameCandidates`), so `selectedSense` (from `ve.*`) and
-  `definitionClusters` (`server/dal/shared/dictJoin.ts`) both reach the browser;
-  `Bubble.tsx` calls `resolveDisplayDefinition(entry)` for the text and
-  `BubbleStage.tsx` calls it again for bubble sizing — deliberately the same
-  resolver, so a bubble is always sized for the string it actually shows.
+- **Match Speed / Speed Reading** resolve on the client. `gamePool` selects
+  `ve.*, ${DICT_COLS}` (`OnDeckVocabService.fetchGameCandidates`), so `selectedSense`
+  (from `ve.*`) and `definitionClusters` (`server/dal/shared/dictJoin.ts`) both reach the
+  browser, where the card calls `resolveDisplayDefinition(entry)`.
 - **Word Search** resolves on the server, because the grid payload intentionally
   does not carry clusters: `OnDeckVocabService.getWordSearchGrid` sets
   `definition: resolveDisplayDefinition(w)` when building `WordSearchInput`.
@@ -825,7 +660,7 @@ chosen rather than in each game's rendering code:
 
 | Chokepoint | Covers | Symbol |
 | --- | --- | --- |
-| Game pool | Bubble Match, Match Speed, Speed Reading, Hydra Bubbles | `OnDeckVocabService.getGameVocabPool` → `takenDds` inside `drain` |
+| Game pool | Match Speed, Speed Reading | `OnDeckVocabService.getGameVocabPool` → `takenDds` inside `drain` |
 | Word Search grid | Word Search | `OnDeckVocabService.getWordSearchGrid` → `takenDds` inside `drain` |
 | Memory Map fill | Memory Map | `MemoryMapService.selectOccupants` → `takenDds` |
 
@@ -843,13 +678,11 @@ Three consequences worth knowing:
 - **A colliding candidate is dropped, never deferred.** A key is held for the whole
   round, so a card that collides now could not become admissible later. The round
   simply comes back one card shorter if the library cannot fill it — the same
-  best-effort contract every fill tier already has. This is one more way a
-  `strictBuckets` caller (Hydra) can come back short (§ 6.2d of
-  [HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md)).
+  best-effort contract every fill tier already has.
 - **Partial refills are seeded from the cards already on screen.** A refilling caller
   already sends `exclude` = every card on the board or in its buffer; the pool looks
   up those cards' dds (`OnDeckVocabService.fetchDdKeys`) and seeds `takenDds` with
-  them, so a replacement cannot collide with a bubble the player is looking at. No
+  them, so a replacement cannot collide with a card the player is looking at. No
   client change was needed for this, and none should be added — `exclude` is the
   wire contract, dd resolution is the server's job.
 - **Word Search releases a key on eviction.** Its substring de-dup loop drops words
@@ -875,8 +708,7 @@ game's slots, say), it must apply the same key — and a client-side composer ne
 ### The countdown
 
 Every flp break game opens on a **3 · 2 · 1** over its readable opening board: Match Speed,
-Word Search, Writing Grid, Superposition, Speed Reading and Memory Map. (Bucket Drop's
-adapter is switched off and has none.) The opening board gets a beat to be read, and the
+Word Search, Writing Grid, Superposition, Speed Reading and Memory Map. The opening board gets a beat to be read, and the
 run's clock starts on the release, so no reading time is billed. There is **no "Go!" card**.
 The release is the dim lifting, with its own beep (owner, 2026-11-10; until then Match
 Speed and Writing Grid showed 3·2·1·Go, four steps).
@@ -933,8 +765,6 @@ it to whatever moves on its own:
 | Match Speed | the provisional notice is open | the run clock (the 3·2·1 countdown does not start until the notice is dismissed — § The countdown) | `MatchSpeedStage.tsx` (`clockPaused`, `useGameCountdown`, the run-clock effect) |
 | Word Search | the provisional notice is open, or the countdown is up (`counting`) | the count-up clock, via the existing `pauseTimer`/`resumeTimer` pair | `WordSearchStage.tsx` (`clockPaused`, `clockPausedRef`, the pause effect) |
 | Speed Reading | the provisional notice is open, or the countdown is up (`counting`) | the count-up clock — `startAtRef` is pushed forward by the paused span on resume | `SpeedReadingStage.tsx` (`clockPaused`, `pausedAtRef`, the pause effect) |
-| Bubble Match | the provisional notice is open | the bubble launcher, the descending ceiling and the overfill loss check | `BubbleMatchPage.tsx` (`clockPaused`) → `BubbleStage.tsx` (`paused`, `pausedRef`, `stepFrame`, the launch interval) |
-| Bucket Drop | the provisional notice is open | the count-up stopwatch (banked into `activeMsRef` per running segment) and pickup | `BucketDropStage.tsx` (`clockPaused`, `clockRunning`, `activeMsRef`) → `BucketDropBoard` (`paused`) |
 
 Three consequences worth keeping in mind when adding a popup or a game:
 
@@ -946,13 +776,12 @@ Three consequences worth keeping in mind when adding a popup or a game:
   settings-sheet pause source on 2026-08-28 when that sheet was deleted — its
   replacements are header chips, which leave the board playable and correctly do
   **not** pause ([AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md)).
-- **End-of-run surfaces are irrelevant.** The break's results card, Bubble Match's end
-  popup and `ProvisionalSortOffer` only ever open once the run is scored and the clock
+- **End-of-run surfaces are irrelevant.** The break's results card and
+  `ProvisionalSortOffer` only ever open once the run is scored and the clock
   has already stopped.
 - **Resume must not pay the pause back.** A count-up clock moves its origin forward
   (Speed Reading), banks each stretch of play (Match Speed's hidden stopwatch) or uses an explicit
-  pause/resume pair (Word Search); the rAF field re-bases its frame clock every
-  paused frame so the whole span doesn't arrive as one giant `dt` (Bubble Match).
+  pause/resume pair (Word Search).
 
 Also note Word Search's pause has **two** sources — the popup gate and the
 backgrounding (`visibilitychange`) pause described in the next section. Returning
@@ -970,32 +799,22 @@ must find the round exactly as they left it.
 This is the same mechanism as the section above with a **second source** feeding
 the same `clockPaused` boolean. It is not new machinery.
 
-**The rule protects a CLOCK, so a genuinely clockless game is exempt.** Hydra Bubbles
-opts out (docs/HYDRA_BUBBLES.md § 7.1c): it has no timer, its bubbles' drift moves
-no score, fill or spawn (and the rAF loop does not run while hidden), and nothing on
-its board changes except in response to a match, so a returning player finds the run
-as they left it without any pause machinery. A game
-qualifies for this exemption only if **nothing** advances unattended; if any part of
-it is timed (Hydra's own challenge variant is scored on time to clear) the rule applies
-in full to that part.
+**The rule protects a CLOCK, so a genuinely clockless game is exempt** (Memory Map —
+§ What Memory Map introduced). A game qualifies for this exemption only if **nothing**
+advances unattended; if any part of it is timed the rule applies in full to that part.
 
 **Status — ✅ every timed game pauses (first four completed 2026-08-17):**
 
 | Game | How |
 | --- | --- |
 | Word Search | its own earlier implementation — `WordSearchStage.tsx` listens for `visibilitychange`, calls `persistSnapshot()` then `pauseTimer()`, and resumes only if `clockPausedRef.current` is false. **This is what the rule was generalised from**, and it is deliberately left as-is (its localStorage snapshot is entangled with its pause path) |
-| Bubble Match | `useBackgroundPause(phase === "playing")` → the existing `clockPaused` → `BubbleStage`'s `paused` prop |
 | Match Speed | `useBackgroundPause(countdown \|\| playing)` → the existing `clockPaused` (countdown + run clock) |
 | Speed Reading | `useBackgroundPause(phase === "ready" \|\| phase === "feedback")` → the existing `clockPaused` (`pausedAtRef`, the clock effect) |
-| Bucket Drop | `useBackgroundPause(phase === "playing")` → `clockPaused` |
 | Writing Grid | `useBackgroundPause(arrange \|\| write)` → holds the accumulated-active-time stopwatch |
 | Superposition | `useBackgroundPause(running)` → holds the stopwatch and the hint countdown |
-| Hydra Bubbles | **challenge rounds only** (2026-08-22): `useBackgroundPause(playing && isChallengeLaunch)` → `framePaused` → the stage. Free play stays exempt — see the clockless-exemption paragraph above, and note that this is exactly the case it named |
 
 The three that needed it got a **signal wired to a gate they already had**, not a new
-pause implementation — which is what the 2026-08-16 audit predicted. Hydra's later,
-partial adoption is the exemption working as written rather than an exception to it: the
-same game is exempt free-play and covered in its timed variant.
+pause implementation — which is what the 2026-08-16 audit predicted.
 
 **The shared piece** (`src/games/runtime/useBackgroundPause.ts`):
 
@@ -1042,8 +861,7 @@ bare numbers for now ("Speed 3"); names and art are to come.
 - **Tier 1 is the best, tier 7 the lowest.** Every *finished* run lands on a tier on each
   axis it has: tier 7 catches everything past tier 6's cutoff, so there is no untiered
   finish (unlike the old no-medal outcome).
-- **An unfinished run gets no tiers.** Left early (an flp break's Leave), ran out of cards,
-  or (Bucket Drop) a short pool: the results card says "Run ended" / "Out of cards" with no
+- **An unfinished run gets no tiers.** Left early (an flp break's Leave) or ran out of cards: the results card says "Run ended" / "Out of cards" with no
   chips. That is the caller's decision; the engine only grades.
 - **Ladders are per game.** A ladder is six cutoffs, best-first. Speed cutoffs are finish
   times in ms (lower is better); accuracy cutoffs are the right-answer share 0–1 (higher is
@@ -1064,12 +882,9 @@ bare numbers for now ("Speed 3"); names and art are to come.
 | Match Speed | time to 30 pairs | pairs / match attempts |
 | Word Search | time to find every word, scaled to the 9-word board | — (misses not counted) |
 | Speed Reading | raw time for 20 rounds (the +3s wrong-answer penalty was removed) | correct / 20 |
-| Bucket Drop | finishing time (full pool only) | clean drops / all drops |
 | Writing Grid | total active time | — |
 | Superposition | time to build the 4 characters | — |
 | Memory Map | hidden active-time clock, scaled to a full `BREAK_PROMPTS` quota | "knew it" (green) / words found |
-
-Bubble Match and Hydra Bubbles never had medals and have no tiers.
 
 Code: `src/games/shared/runTiers.ts` → `RunTier`, `RunTiers`, `SpeedResult`,
 `AccuracyResult`, `gradeSpeed`, `gradeAccuracy`, `formatAccuracy` (on `speedTierFor` /
@@ -1125,7 +940,7 @@ spec is mandatory for those tracks rather than opt-in.
 and the shared runner applies them to the events the game emits:
 
 - contested hit / miss, filler hit / miss, and whatever per-game bonuses exist
-  (Bubble Match's ±500 survival bonus, Word Search's per-second penalty);
+  (Word Search's per-second `elapsedPenalty`, a `perUse` cost);
 - the game emits *events*; the spec turns events into a score.
 
 Why data and not a function: **live mode must be able to score the same events
@@ -1170,8 +985,7 @@ const challengeRound = useChallengeRound({
    entry.entryKey, contested: challengeRound.isContested(entry.entryKey) })`. Classify at
    BOARD-GENERATION time against the word set, never against mastery — a challenge round
    writes real marks, so a word can band up mid-round.
-3. **Call `challengeRound.finish(won)`** where your run ends. `won` decides an
-   all-or-nothing survival bonus if your spec has one (Bubble Match's does).
+3. **Call `challengeRound.finish(won)`** where your run ends.
 4. **Render `<ChallengeRoundScoreboard round={challengeRound} classPrefix="…" />`** in
    place of your own end-of-run popup while `challengeRound.active`. Put it wherever the
    popup went; it portals out to a full-screen host itself, so it does not matter which
@@ -1225,12 +1039,14 @@ observation, because the game owns the input surface.
 
 ### Adding a new game — checklist
 
-Reflects what the four shipped games actually do. There is no generic runtime to
-inherit from (§ Layer 2) — copy the closest shipped game: Bubble Match / Word Search
-for a rAF loop, Match Speed / Speed Reading for a timer-driven board.
+There is no generic runtime to inherit from (§ Layer 2) — copy the closest shipped game
+(Match Speed / Speed Reading for a timer-driven board, Word Search for a moded one). New
+games are played as flp breaks, so most need only a Stage plus a break adapter in
+`src/games/flpBreak/` ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 6); the steps below
+that mention a page apply only to a routed game.
 
-1. Create `src/games/<gameId>/<GameId>Page.tsx`. Wrap it in `LeafPage`
-   (down arrow → `/games`, no footer) — all four shipped games are leaf pages, and
+1. Create `src/games/<gameId>/<GameId>Page.tsx` (routed games only). Wrap it in
+   `GameLeafPage` (down arrow, no footer) — every routed game is a leaf page, and
    `GAME_ROUTE_META` classifies every registry entry as `chrome: "leaf"`, so a game
    that wants the footer needs a `chrome` field on `GameDef` first. **Do not** add a
    per-page `IPhoneFrame` — the frame comes from `MobileDemoFrame` via `Layout.tsx`.
@@ -1241,19 +1057,19 @@ for a rAF loop, Match Speed / Speed Reading for a timer-driven board.
    game's `constants.ts` and read it from there for the `?markType=` query, the
    `markFlashcard({ type })` call, and your `GameDef.markType` (which challenge
    eligibility is derived from — `src/games/__tests__/challengePool.test.ts`; a MODED game
-   declares `GameDef.modes` instead, as Word Search and Bucket Drop do). Hub tiles
+   declares `GameDef.modes` instead, as Word Search does). Hub tiles
    are **name-only** (2026-10-03): `GameDef` has no `subtitle`, and the hub does not
    label a tile with its track. If your game's mark type varies by mode, omit
    `GameDef.markType` and put the type on each mode config instead, the way Word Search
    does. See the backend notes under
-   [§ Game: Bubble Match](#backend) and
+   [§ Game pool backend](#game-pool-backend-apiondeckgamepool) and
    [MASTERY_REWORK.md § "Games select by their own mark type"](./MASTERY_REWORK.md). Also pass `surface=<your-game>` so the server
    tops the player up to your baseline (`CARD_BASELINES` in `server/contracts/wire.ts`).
    **Do NOT block entry on `sufficient === false`** — after provisioning it can only be
    false when the dictionary itself is exhausted, and a short round still plays. Show
    `ProvisionalCardsNotice` before the round and `ProvisionalSortOffer` after it
    (drive the latter with `useProvisionalSortOffer(roundIsOver, lentWords)` and render
-   it as a SIBLING of your `GameEndPopup`, so it stacks over the result). See
+   it as a SIBLING of your end-of-run surface, so it stacks over the result). See
    [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md).
 3. **Render definitions through `resolveDisplayDefinition`** — see
    [§ Sense correctness](#sense-correctness--every-game-must-honor-the-learners-selected-sense).
@@ -1280,7 +1096,9 @@ for a rAF loop, Match Speed / Speed Reading for a timer-driven board.
    an entry in `src/games/runtime/challengeLaunch.ts` so the challenge page knows the
    route and the nav state your page requires. Also emit the live **idle signal**. See
    [§ Challenge-eligible games](#challenge-eligible-games-the-challengescoring-contract).
-9. Append the `GameDef` to `GAME_REGISTRY` in `src/games/registry.ts`:
+9. Append the `GameDef` to `ALL_GAMES` in `src/games/registry.ts`, and add its slug to
+   `KNOWN_GAME_IDS` (`server/constants.ts`) and `GAME_FLAGS`
+   (`server/contracts/featureFlags.ts`) — the build fails until it has a flag:
 
    ```ts
    {
@@ -1291,9 +1109,8 @@ for a rAF loop, Match Speed / Speed Reading for a timer-driven board.
    }
    ```
 
-Steps 1–8 are the game. Step 9 is all the wiring: the hub, router, and
-mobile-demo frame configure themselves from the registry, so `GamesPage`, `App`,
-and `Layout` need no edits.
+Steps 1–8 are the game. Step 9 is all the wiring: the router, the phone frame and the
+break rotation configure themselves from the registry.
 
 ### Removing a game — retire it from challenges FIRST
 
@@ -1301,7 +1118,7 @@ and `Layout` need no edits.
 ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md)). It lives here because the constraint
 belongs with the games registry, not with the feature that discovered it.
 
-A Study Challenge draws three game ids **at issue time on Monday** and stores them in
+A Study Challenge draws its game ids **at issue time on Monday** and stores them in
 `study_challenges.gameSequence`. The pair does not play them until **Friday**. So a game
 deleted from `GAME_REGISTRY` mid-week leaves live challenges holding an id that no longer
 resolves, and both players are stuck at a round that cannot start.
@@ -1339,25 +1156,15 @@ Renaming a `gameId` counts as removing one game and adding another. Don't.
 - `src/components/MobileDemoFrame.tsx` — shared phone-frame container
 - `src/components/MobileDemoHeader.tsx` — shared header (back / title / active badge / extraActions); no hamburger
 - `src/components/PageHeader.tsx` — base header (renamed `rightItems` → `rightContent`)
-- `src/components/Layout.tsx` — wires `MobileDemoFrame` into demo routes; spreads `GAME_ROUTES` into `MOBILE_DEMO_PATHS`
-- `src/games/GamesPage.tsx` — hub page; renders `ROUTED_GAMES` gated by `isGameAvailable`
-- `src/App.tsx` — `/games` route + per-game routes from registry
+- `src/components/Layout.tsx` — wires `MobileDemoFrame` into `shell: "frame"` routes (from `src/routes/routeMeta.ts`)
 - `src/games/registry.ts` — central `GAME_REGISTRY`, `ROUTED_GAMES`, `isRoutedGame`, `GAME_ROUTES`
-- `src/games/types.ts` — `GameDef` (routed vs break-only), `RoutedGameDef`, `GameAsset`, `GameProgress`
-- `src/games/runtime/GameEndPopup.tsx` — shared end-of-run popup shell (routed games' pages)
+- `src/games/types.ts` — `GameDef` (routed vs break-only), `RoutedGameDef`
 - `src/games/runtime/useSidewaysStage.ts` — landscape-stage helper (Speed Reading)
 - `src/games/shared/GameFrame.tsx` — `GameFrame` / `GameHud` / `GameHudLabel` / `GameHudBar` / `GameHint` / `GameTimer`; the `.play` panel every game plays inside (§ Layer 2b)
 - `src/routes/routeMeta.ts` — `GAME_ROUTE_META` derives one `chrome: "leaf"` row per registry entry
 - *(deleted — do not look for these: `runtime/GameStage.tsx`, `runtime/GamePage.tsx`, `runtime/useGameActors.ts`, and the whole `src/games/hooks/` folder; see § Layer 2 / § Layer 3)*
 - `src/utils/definitionUtils.ts` / `server/utils/definitions.ts` — the dd resolvers every game's definition text must go through
-- `server/dal/implementations/GameAssetDAL.ts`, `GameProgressDAL.ts`
-- `server/services/GameAssetService.ts`, `GameProgressService.ts`
-- `server/controllers/GamesController.ts`
-- `server/dal/setup.ts` — DI wiring
-- `server/routes/gamesRoutes.ts` — route registration (games)
 - `server/routes/onDeckRoutes.ts` — `gamePool` / `wordSearchGrid` route registration (camelCase paths — project convention, see [BACKEND_LAYERING.md](./BACKEND_LAYERING.md))
-- `server/scripts/seedGameAssets.js` — asset seed helper
-- `database/migrations/52-create-game-tables.sql` — `gameassets` + `gameprogress`
 
 ## Game: Word Search (`/games/word-search`)
 
@@ -1365,44 +1172,26 @@ Second game (built). Find 12 of your own vocab words — shown as English glosse
 hidden as snaking (orthogonal) paths in a 9×6 grid of colored-pinyin (cpcd)
 characters. Drag or tap to trace; any valid multi-char selection pops a
 dictionary info-card + audio. Count-up timer → speed tier on completion (§ Run tiers). Reuses
-Bubble Match's pool + fallback distribution, adds a substring de-dup pass and a
+the game pool's category + fallback distribution, adds a substring de-dup pass and a
 server-side snaking grid generator (`GET /api/onDeck/wordSearchGrid`). Full
 spec + file map: → [WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md).
 
-## Game: Bubble Match (`/games/bubble-match`)
+## Pinyin is a per-game setting
 
-The first shipped game. A DOM + `requestAnimationFrame` game (absolutely-positioned
-bubbles moved via `transform`) — chosen over Pixi for direct reuse of the
-colored-pinyin `CPCDRow` (cpcd) and cheap circle-circle physics at ~50 bubbles. (The
-physics body stayed a circle; the RENDERED bubble is the design's `.bub` squircle —
-`border-radius: 28%` (eased from the artboard's 40% on 2026-10-06) on `.bubble__inner` and on
-the held-cue overlay, with a 1px ring (was 2px). See
-docs/SHELF_REDESIGN.md § 12 for why the ~8% corner overshoot is harmless.) That
-choice is why the speculative Pixi runtime was never adopted and has since been
-deleted (§ Layer 2). It owns its page shell (`LeafPage` + its own flp-style header,
-**no footer** — see Routes above).
-
-### Pinyin is a per-game setting
-
-> STATUS: **DESIGN — decided 2026-08-23, NOT BUILT.** Today Bubble Match, Hydra
-> Bubbles and Match Speed all read *and write* the ONE shared `showPinyin` boolean in
-> `useFlashcardLearnSettings` (`src/hooks/useFlashcardLearnSettings.ts`, stored as
-> `flashcard.learn-settings`), which is the **flp's** setting. Code to change:
-> `BubbleMatchPage` / `BubbleMatchHeader`,
-> `HydraBubblesPage`, `MatchSpeedPage` / `MatchSpeedSettingsDialog`.
+> STATUS: **DESIGN — decided 2026-08-23, NOT BUILT.** Today Match Speed reads *and
+> writes* the ONE shared `showPinyin` boolean in `useFlashcardLearnSettings`
+> (`src/hooks/useFlashcardLearnSettings.ts`, stored as `flashcard.learn-settings`), which
+> is the **flp's** setting. Code to change: `MatchSpeedPage`, `MatchSpeedStage`.
 
 **Every game owns its own pinyin preference.** "Show pinyin" is not one app-wide
 display taste: on a zh board it decides *what skill the board tests*
 ([MASTERY_REWORK.md § 1a](./MASTERY_REWORK.md)), so it belongs to the surface doing
 the testing, not to a global blob.
 
-Sharing it leaks in two directions, and both are real today:
+Sharing it leaks:
 
-* **Between games.** Switching Bubble Match to Reading — which is done *by* hiding
-  pinyin — also strips pinyin from Hydra Bubbles and Match Speed, neither of which the
-  learner touched, and neither of which changes track to match.
 * **Between a drill and its reference material.** The flp owns
-  `flashcard.learn-settings`, and the cdp, the acp and the Dictionary page's eip read it as a
+  `flashcard.learn-settings`, and td's card view (`showPinyinColor` only — it always shows pinyin), the acp and the Dictionary page's eip read it as a
   *reading* preference. A game that writes that key is editing the learner's flashcard
   display from inside a game.
 
@@ -1410,284 +1199,38 @@ The rule, and how much of it already holds:
 
 | Surface | Where its pinyin preference lives |
 |---|---|
-| flp (+ cdp, acp, Dictionary eip) | `useFlashcardLearnSettings` — **unchanged**; the flp keeps this key and becomes its only writer |
+| flp (+ td's card view, acp, Dictionary eip) | `useFlashcardLearnSettings` — **unchanged**; the flp keeps this key and becomes its only writer |
 | **Word Search** | ✅ already per-game — a property of the MODE (`MODE_CONFIGS`, `src/games/word-search/constants.ts`). The precedent. |
 | **Memory Map** | ✅ already per-game — never draws pinyin at all (since 2026-10-06 it renders bare measured characters, not `ForeignText`); it is a reading map |
 | **Speed Reading** | ✅ already per-game — hardcoded false; the prompt would spoil itself |
-| **Bubble Match** | ✳ its own persisted setting (the per-run latch is unchanged) |
-| **Hydra Bubbles** | ✳ its own persisted setting — **and its own track conversion**, see [HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md) |
 | **Match Speed** | ✳ its own persisted setting (display only — Match Speed stays `recognition`) |
 
 Follow the existing per-surface pattern — `useLocalGameSettings`
 (`src/games/shared/useLocalGameSettings.ts`) and `useDiscoverSettings`
 (`src/hooks/useDiscoverSettings.ts`): one hook per game over its own localStorage key,
-defaults merged on read so adding a knob later needs no migration. Four of the seven
+defaults merged on read so adding a knob later needs no migration. Four of the five
 surfaces are already there; this finishes the job rather than inventing a mechanism.
 
-**Defaults stay `true`** (pinyin shown) everywhere, so nobody's track changes silently
-on deploy day: a learner who had hidden pinyin globally is put back on `recognition` in
-Bubble Match until they hide it *in Bubble Match*. That reset is intended — the old
-global value was never a statement about any particular game.
+**Defaults stay `true`** (pinyin shown) everywhere. A learner who had hidden pinyin
+globally sees it again in Match Speed until they hide it there; that reset is intended —
+the old global value was never a statement about any particular game.
 
 **Language gating is unchanged.** Every pinyin control stays hidden for Latin-script
 languages (`isLatinScriptLang`), and `es` never switches track at all
 ([MASTERY_REWORK.md § 1a](./MASTERY_REWORK.md)).
 
 ⚠️ **A per-game setting must not become a per-game *track* by accident.** Match Speed
-gets its own toggle for display only and keeps marking `recognition`; the track rule
-applies to a game only where this doc says so (Bubble Match today, Hydra next). A game
-whose pool is bucketed and cooled on one track must never write marks on another —
-they are dropped by the § "next markable at" guard
-([HYDRA_BUBBLES.md § 8](./HYDRA_BUBBLES.md)).
+gets its own toggle for display only and keeps marking `recognition` on its own page
+(as an flp break, the reading flp's hidden pinyin switches it to `reading` —
+`GameDef.noPinyinMarkType`). A game whose pool is bucketed and cooled on one track must
+never write marks on another — they are dropped by the "next markable at" guard
+([FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md § "Cooldown is a hard next-markable-at"](./FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md)).
 
-### Bubble Match: pinyin picks the track
+## Game pool backend (`/api/onDeck/gamePool`)
 
-> Code: `src/games/GamesPage.tsx` (the hub's pinned `showPinyin: true`),
-> `src/games/flpBreak/candidates.ts` → `flpBreakCandidates` (`noPinyinMarkType` on the
-> reading flp), `BubbleMatchPage`'s `runTrack` / `lockRunTrack` / `boardShowPinyin`,
-> `foreignPromptTrack` (`server/contracts/wire.ts`).
-> Full rationale: [MASTERY_REWORK.md § 1a](./MASTERY_REWORK.md).
+Reuses the OnDeck vocab stack### Backend
 
-Bubble Match is a foreign → meaning drill: **pinyin shown ⇒ it marks `recognition`;
-pinyin hidden on a zh board ⇒ it marks `reading`**. (The flp's Chinese-side-one face
-followed the same rule until the 2026-09-25 know merge; it now always marks
-`recognition` — MASTERY_REWORK.md § 1a.) Bubble Match switches track because the
-player then reaches the meaning from the characters alone. Spanish is unaffected (nothing to hide; always recognition).
-
-Three consequences worth knowing before touching this game:
-
-1. **The choice is made by the LAUNCHING SURFACE, not in the game.** There is no
-   pinyin control in the game header, and since 2026-10-03 none on the hub either
-   (the `BubbleMatchTrackToggle` strip control was deleted). Each launch **pins**
-   the track for its run with `location.state.showPinyin` (`BubbleMatchPage` →
-   `pinnedShowPinyin`): the Games hub pins `true` (Recognition). Nothing launches the
-   Reading track today: its one launcher (the Reading Center carousel) was deleted, and
-   Bubble Match has no flp break adapter yet — `noPinyinMarkType` is declared so the reading
-   flp can offer it once one exists ([FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 3). Only an
-   unpinned launch (a Study Challenge round) still falls back to the shared `showPinyin`
-   setting.
-2. **The run latches the track at deal time** (`lockRunTrack`, called from the first
-   pool fetch and reused by every Play-Again refill). The pool is bucketed AND cooled
-   on that track when it is requested, so a board dealt on one track and marked on
-   another would write marks the server silently drops
-   ([HYDRA_BUBBLES.md § 8.1](./HYDRA_BUBBLES.md)). The board's own pinyin display is
-   derived from the latched track (`boardShowPinyin`), so display and mark cannot
-   drift apart mid-run either.
-3. **A reading run is SILENT.** No autoplay toggle in the header, no `onSpeak` on the
-   stage, and no TTS prefetch — narrating the word would hand the player the
-   pronunciation the run is asking them to read.
-
-Known wrinkle (being fixed): `showPinyin` is one shared setting. Bubble Match no
-longer writes it (both of its launchers pin the track, see 1.), but it is still the
-fallback for an unpinned challenge launch, and turning it off elsewhere also hides
-pinyin in **Hydra Bubbles** and **Match Speed**, neither of which changes track to
-match. Both halves are addressed above — the setting becomes
-per-game (§ "Pinyin is a per-game setting"), and Hydra converts to the reading track
-with it ([HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md)). Neither has shipped.
-
-### Gameplay
-
-- A game uses the **full pool**: the `GAME_DISTRIBUTION` mix (`constants.ts`)
-  of 2 Unfamiliar + 10 Target + 6 Comfortable + 2 Mastered library cards =
-  **20 pairs (`TOTAL_PAIRS`) → 40 bubbles**. That mix is *preferred*, not strict —
-  when a bucket can't fill its quota the server first **lends** the shortfall
-  (provisional cards, always `Unfamiliar`) and only then tops up from the fallback
-  buckets; see [PROVISIONAL_CARDS.md § 4b](./PROVISIONAL_CARDS.md). Each pair = one **word** bubble (cpcd) and one
-  **definition** bubble (the flashcard's dd, via `resolveDisplayDefinition` — so a bubble
-  shows the learner's chosen sense, matching the card face; see
-  [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) form #3).
-- Bubbles **spawn in place** on a per-level cadence — `planSpawn` (`physics.ts`)
-  picks a spot by the "20% rule" and the bubble inflates there from a seed radius
-  as an infinite-mass body, shoving the neighbors it overlaps aside. Once grown,
-  a bubble **drifts**: a small random wander (`WANDER_ACCEL`) nudges it, its speed
-  eases back toward `IDLE_SPEED`, and it reflects off the walls and off its
-  neighbors with a mass-weighted elastic impulse (`RESTITUTION`). Every drift
-  *magnitude* is scaled by the single `DRIFT_SCALE` knob in `constants.ts`,
-  currently **0.3** — i.e. 30% of the original tuning, so the field reads as a slow
-  shimmer rather than a lava lamp. Set it to `1` for the original float, or `0` for
-  a fully static field. Growing and held bubbles do not drift (each owns its own
-  position). Drag a bubble onto its partner to match (bidirectional). Correct →
-  green pop + removal; wrong → red shake + release.
-- **Air-hockey throw (2026-09-25, both bubble games).** An UNJUDGED release — onto
-  empty space, onto a same-kind bubble, or a cancel in the strip — hands the bubble
-  the drag's release velocity: `ThrowTracker` (`src/games/bubbles/throwTracker.ts`)
-  records the held bubble's center on every pointermove and measures displacement
-  over the trailing `THROW_SAMPLE_WINDOW_MS` (a pointer that paused `THROW_STALE_MS`
-  before lifting throws nothing), capped at `THROW_MAX_SPEED`. A release over an
-  opposite-kind bubble is **always judged**, however fast the flick; a thrown bubble
-  that strikes its partner mid-flight just bounces. In `stepPhysics` a bubble faster
-  than `DRIFT_MAX_SPEED` is **gliding**: wander and the idle-speed ease are off and
-  only exponential `THROW_FRICTION` acts (a 1500 px/s flick coasts ~830 px, ~2 s),
-  until it drops back into the drift regime. Collisions are the same mass-weighted
-  elastic impulse, so a throw knocks neighbors into their own glide. To keep fast
-  bodies from tunneling, the step is **substepped** — enough substeps that the
-  fastest body moves ≤ `SUBSTEP_TRAVEL_FRACTION` of the smallest radius each, capped
-  at `MAX_SUBSTEPS`; grow-in and velocity updates stay once-per-frame. Walls
-  **mirror** a body that its own motion carried out, and **glide** back (at
-  `MAX_PUSH_SPEED`) one that was already outside (released past an edge, or shoved).
-  Tests: `src/__tests__/bubbleThrowPhysics.test.ts`.
-- **A held bubble may be dragged clean off the field** — left, right and bottom
-  alike, by `HELD_OVERDRAG_RADII` of its own radius measured from the STAGE edge.
-  `clampHeldCenter` (`physics.ts`) is the single source for how far. What differs
-  between the three edges is not the distance but the MEANING on release: the
-  bottom's last 96 px are the cancel strip, real on-screen space carved out of the
-  play area, and releasing there *abandons the match*; the sides have no strip, so
-  the bubble is simply clipped and releasing there means nothing — the boundary has
-  give, it is not a second escape hatch. The **top is excluded**: in Bubble Match it
-  is the descending ceiling, and shoving bubbles through a mechanic is not the same
-  as tugging at a boundary. On release, `stepPhysics` **glides** the body back at
-  `MAX_PUSH_SPEED` rather than snapping it — over a whole bubble's width, teleporting
-  reads as a glitch where the same distance travelled reads as a spring. Both stages
-  call the one helper; they used to write the clamp out twice, identically.
-  Picking up / dropping **onto** a Chinese word triggers autoplay TTS.
-- **Post-loss cleanup** (`cleanupMode`, `BubbleStage.tsx`): after a loss, when the
-  player minimizes the game-over popup to its corner puck (`phase === "lost" &&
-  popupMinimized` in `BubbleMatchPage.tsx`), the packed field becomes a no-stakes
-  playground. Bubbles stay **draggable and matchable** so the player can clear the
-  board for satisfaction, but matches emit **no review marks** (`onMark` is
-  suppressed while `cleanupMode` is on). While a bubble is held, its correct
-  partner (if still on screen) lights up **light green** as a drop hint (the
-  `revealed` status; replaces the old tap-to-reveal study interaction). If the
-  grabbed bubble has **no** partner on the field (it was still queued when the run
-  was lost, so it can never be cleared), the bubble itself is tinted **light red**
-  (the `nomatch` status) for as long as it's held, instead of the usual grey held
-  dim — a grab-time "no match" cue, not a persistent marker. Colors:
-  `CORRECT_BUBBLE_BG` (`COLORS.grnM`, ink ring) and `NOMATCH_BUBBLE_BG` (`COLORS.red`,
-  the palest red, with a neutral `--line2` ring so it cannot pass for a red word bubble)
-  in `src/games/bubbles/constants.ts`; the louder `WRONG_BUBBLE_BG` (`COLORS.redMk`, the
-  red Mark tier) stays reserved for the wrong-drop shake. The rAF loop, which
-  self-stops on settle behind the full end popup, is **kept alive throughout
-  cleanup** so bubbles keep separating/settling as they're dragged and cleared.
-  Clearing the whole field triggers no win (the run is already decided). Autoplay
-  TTS still fires on pickup / drop-onto a Chinese word.
-  Cleanup also **retracts the ceiling**: `stepFrame` runs the descent in reverse
-  (same `shrinkSpeedPxPerSec`, `bounds.top` walked back to 0) while `cleanupMode`
-  is on. A loss to the ceiling leaves the play area crushed and over-packed, where
-  the separation solver can never satisfy every overlap and the field jitters
-  continuously; handing the room back lets it spread out and settle so the review
-  board is calm to read and drag on. The lid element follows `bounds.top` as it
-  already did, so the wall visibly rises back up.
-- **Restart (header):** during active play the header's right slot shows a
-  restart icon (`BubbleMatchHeaderControls.onRestart`, wired only while
-  `phase === "playing"`) that re-runs the **same level with the same words**
-  (reshuffled launch order) via `startLevel(level)`.
-- **Replay (end popup) — one "Play Again", partial card refresh:** the won/lost
-  card shows a single primary **Play Again** over a secondary **Back to Games**
-  (`replayActions` in `BubbleMatchPage.tsx`). Play Again replays the **same level**
-  on a **partially refreshed board**: every pair the player *matched during the
-  run* is retired and replaced with a fresh card, while every pair they *failed to
-  match* stays in the set, so a word keeps coming back until it's cleared. The page
-  records cleared cards in `matchedIdsRef` from `markBubbleMatch(entry, true)` —
-  post-loss cleanup drags don't count (`BubbleStage` suppresses `onMark` in
-  `cleanupMode`) — and `beginRun` resets that set each run. A second ref,
-  `clearedThisSessionRef`, accumulates every card cleared across ALL rounds while
-  the page stays mounted (capped to the newest `MAX_AVOID_IDS` = 200) and acts as a
-  client-side cooldown, so round 3 doesn't hand back what round 1 cleared. The
-  refill hits `gamePool?...&need=N&exclude=<kept ids>&avoid=<cleared ids>`:
-  **kept ids are a hard exclude** (returning one would duplicate a live bubble),
-  **cleared ids are a soft avoid** (last-resort tier). Nothing matched
-  (`need === 0`) replays with no round trip. If the
-  library shrank mid-session the refill may come up short — a smaller board still
-  plays (the stage sizes itself off the pool), below `MIN_REPLAY_PAIRS` (4) the page
-  blocks instead.
-  **Consequence:** leaving to the Games hub and re-entering always draws a wholly
-  new random pool (the page remounts and refetches); staying in the popup is what
-  preserves the unmatched words.
-- **Levels do not chain** — the level is picked **on the Games hub** (one
-  `GameCard` level tile per `LEVEL_CONFIGS` entry, built by
-  `src/games/bubble-match/bubbleMatchCard.ts` → `buildBubbleMatchCard`) and arrives via
-  `location.state.level`; there is no in-game picker any more, and a direct visit
-  with no valid level redirects back to the hub rather than defaulting. The level
-  sets difficulty only (launch cadence + ceiling-shrink speed); all levels use the
-  full pool. **There is no clock** — `LevelConfig` carries no duration. Once the
-  whole pool has launched, on the next launch-tick a **descending ceiling**
-  (`boundsRef.top`, rising at the level's `shrinkSpeedPxPerSec`) starts closing
-  in from the top, compressing the field. That instant is also reported upward as
-  **`onCeilingDrop`** (fires at most once per run): it is when a Study Challenge round's
-  +500 survival bonus becomes live and starts decaying, and the page cannot derive it —
-  it depends on the launcher draining, which only the stage knows about
-  ([STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 5.4). Win = clear all pairs. Lose = the field
-  over-packs under the ceiling (area ≥ `LOSE_FILL_RATIO`, currently a deliberately
-  lenient **0.94**, or residual pairwise overlap that stays above
-  `OVERFILL_RESIDUAL_PX` for `OVERFILL_SUSTAIN_MS`) — an intense pulsing red
-  vignette warns from `DANGER_FILL_RATIO` (0.72) onward, so the field can be
-  squeezed a long way while the alarm is up before the run actually ends. Tunables live
-  in `constants.ts` (`LEVEL_CONFIGS`, `GAME_DISTRIBUTION`, `MIN_PLAY_HEIGHT`,
-  sizes, physics).
-- Minute-points: `/games/bubble-match` is in `MINUTE_POINTS_ELIGIBLE_PAGES`
-  (`src/constants.ts`, alongside `/games/word-search`) and in the
-  start-on-entry subset, so time accrues from mount rather than from the first
-  tap; the header's `MinutePointsFireBadge` works as on flp.
-
-### Grab latency — what may NOT run inside the pointerdown handler
-
-Applies to both bubble games (they share `src/games/bubbles/Bubble.tsx` and the drag
-handlers are the same shape). Picking a bubble up must show the pickup on the very next
-frame, so the pointerdown handler is allowed to mutate physics state, force one layout
-read (the stage rect) and re-render the stage — and nothing else. Two things were doing
-more than that and made a grab feel a beat late:
-
-- **Subtree remounts.** `Bubble`'s inner node used `key={status}`, so *every* status
-  transition — pickup, each hover change, release — destroyed and rebuilt the bubble's
-  content. That content is a `CPCDRow`, whose `useLayoutEffect` runs a forced-layout
-  pinyin measuring pass (`Range.getBoundingClientRect`, `offsetLeft/Top/Width`) on
-  mount, and on a definition bubble an icons8 `<img>` that has to be re-fetched and
-  re-decoded. The key now only separates the two ANIMATED statuses
-  (`correct`/`wrong`) from everything else; the pop/shake still start correctly because
-  both are reached from `idle`, so the CSS `animation` property goes absent → present.
-  Side effect, and an improvement: the inner node's `background-color`/`border-color`
-  transition now actually runs on a pickup instead of being thrown away with the node.
-- **Narration.** `useTTS.autoSpeak` is synchronous up to its first `await`: it cancels
-  both providers (including `speechSynthesis.cancel()`) and pushes two `speakingKey`
-  state updates through the *owning page*, i.e. a full `BubbleMatchPage` re-render.
-  `BubbleStage.onPointerDown` now defers the call past the paint
-  (`requestAnimationFrame` → `setTimeout 0`; rAF alone is still pre-paint). This is safe
-  for autoplay policy because `CloudTTSProvider.ensureUnlockListener` installs a
-  capture-phase window `pointerdown` listener that primes both sinks on *every* tap, so
-  the same gesture has already unlocked playback whenever `speak()` gets to run.
-
-The pre-existing `willChange: animating ? "transform" : "auto"` rule in `Bubble` is part
-of the same budget — see its comment for why a permanent `willChange` on ~40 bubbles
-reads as input lag.
-
-### Drag latency — what a bubble status change may cost
-
-The same budget, further along the gesture. While a drag sweeps the field the hover
-target changes every time the held bubble crosses an opposite-kind bubble, and each
-change re-renders two `Bubble`s (old target → `idle`, new target → `hovered`). That
-re-render must stay a shell recolor. Two rules keep it one:
-
-- **The per-frame transform is inline `style`, never `sx`.** `sx` is hashed into an
-  emotion class, and the transform string is unique per render (sub-pixel x/y), so in
-  `sx` every status change inserted a new, permanent rule into the document stylesheet.
-  A rule insertion invalidates style page-wide, and the sheet only grows, so the cost
-  rose with session length. `Bubble`'s `sx` may hold only values from a small closed set
-  (status, kind, radius).
-- **The content subtree is memoized (`content` in `Bubble`).** `CPCDRow`'s
-  `useLayoutEffect` has no dependency list, so its forced-layout measuring pass runs on
-  every *render*, not only on mount (the bullet above understates it). Memoizing the
-  content means a status change no longer re-renders the `CPCDRow` at all.
-
-Referenced code: `src/games/bubbles/Bubble.tsx`,
-`src/games/bubble-match/BubbleStage.tsx` → `onPointerDown`,
-`src/components/CPCDRow.tsx` → `positionPinyins`,
-`src/services/tts/CloudTTSProvider.ts` → `ensureUnlockListener`/`unlock`.
-
-### Files
-
-- `src/games/bubble-match/` — `BubbleMatchPage.tsx` (flow: loading → (blocked) →
-  playing → (won | lost) → playing (replay)), `BubbleStage.tsx` (restartable rAF loop, launcher,
-  descending ceiling, drag/hover/match, post-loss cleanup mode, HUD, red glow),
-  `Bubble.tsx` (one bubble; outer
-  node carries the loop's transform, inner node carries CSS pop/shake),
-  `physics.ts`, `BubbleMatchHeader.tsx` (right-slot controls: restart button +
-  pinyin/autoplay toggles + fire badge), `BubbleMatchEndPopup.tsx` (won/lost card
-  + minimize-to-corner puck), `constants.ts`, `types.ts`.
-- `src/games/registry.ts` — registers the game.
-
-### Backend
-
-Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
+The OnDeck vocab stack (no tables of its own). Endpoints registered in
 `server/routes/onDeckRoutes.ts`:
 
 - `GET /api/onDeck/gamePool?Target=15&Comfortable=10` →
@@ -1707,7 +1250,7 @@ Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
   the working loop), enriches + pre-warms TTS, and reports availability so the
   client can block entry when the user lacks enough words.
   **Category buckets are per mark type**: each game passes the single mark type it
-  emits (Bubble Match `recognition`; Word Search `reading`/`production` by mode) and
+  emits (Match Speed `recognition`; Speed Reading `reading`) and
   candidates are bucketed by that track's own recent mark history
   (`compute_type_category`), not by the whole-card **core** mastery bar the flp
   and the Deck Tower use — so each game's difficulty distribution reflects the skill it
@@ -1720,9 +1263,8 @@ Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
   reports the queue *drained*, so it stays truthful when a short bucket is topped up
   from the fallback order. Match Speed sorts its per-category client-side card
   buffer by it (see [MATCH_SPEED_GAME.md](./MATCH_SPEED_GAME.md) § Backend change);
-  Bubble Match and Word Search ignore it, so the field is purely additive.
-  **Partial refill** (`&need=N&exclude=12,34&avoid=56,78`, added for Bubble Match's
-  single "Play Again"): returns only `N` cards. The per-bucket quotas are scaled by
+  other callers ignore it, so the field is purely additive.
+  **Partial refill** (`&need=N&exclude=12,34&avoid=56,78`): returns only `N` cards. The per-bucket quotas are scaled by
   `need / total` so a partial board keeps the same difficulty mix as a full one
   (need=10 of a 2/10/6/2 board → 1/5/3/1), `requested` echoes the scaled quotas,
   `total` stays the full board size, and `needed` / `sufficient` are both relative
@@ -1742,26 +1284,11 @@ Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
   | 4. avoided | ids passed as `avoid` (just cleared) | requested buckets, then fallback order |
   | 5. **lend** | **re-lent** — or newly minted — provisional cards | whatever is still missing |
 
-  ⚠️ **A strict-bucket request collapses tiers 2–4 to the requested buckets.** A caller
-  that sends **`?strictBuckets=1`** is not expressing a difficulty mix — it is asking a
-  question whose answer is the bucket. Substituting another bucket returns a card the
-  caller then misreports to the player. So the fresh-fallback tier is skipped entirely
-  and tiers 3–4 drop the fallback order; the request would rather come back short than
-  come back wrong. Hydra Bubbles is the only such caller today: it rolls a color,
-  requests the two bands that color is made of, and pays the player by that color
-  ([HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md) § 6.2d). Mix callers — every other game — are
-  unaffected.
-
-  ⚠️ **It became a flag on 2026-08-21; it used to be inferred** from
-  `Object.keys(distribution).length === 1`. That inference held only while Hydra asked
-  for one band per color; its two-color rework asks for two, which the old rule would
-  have read as "a mix, substitute freely". **The length-1 inference was removed on
-  2026-09-13**: it had kept a "backstop" for single-bucket callers, and Match Speed's
-  buffer top-up turned out to be one (it omits full buckets, so a learner with a single
-  Unfamiliar card sent `?Unfamiliar=5` alone). The backstop made that request strict, so
-  it skipped the cross-bucket tiers and lent cards to a learner with ~700 sorted cards.
-  **A request without the flag now always borrows across buckets before it lends**,
-  however many buckets it names (`OnDeckVocabService.getGameVocabPool` → `substituting`).
+  **A request always borrows across buckets before it lends**, however many buckets it
+  names (`OnDeckVocabService.getGameVocabPool` → `substituting`). (A single-bucket request
+  used to be treated as strict — no cross-bucket substitution — which lent cards to a
+  learner with ~700 sorted cards when Match Speed's buffer top-up asked for one bucket;
+  that inference was removed 2026-09-13.)
 
   ⚠️ **Lending is the LAST resort, below cooling cards** (2026-08-20). A learner whose
   cards are merely *resting* is not short of cards, so the board re-serves those instead
@@ -1783,13 +1310,8 @@ Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
 
   Tier 5 is **skipped for a focus-scoped round** (`opts.collection`, the
   `CollectionFilter` slot, which only focus mode fills — a focused round padded with words
-  outside the day's set is not that set; [FOCUS_MODE.md](./FOCUS_MODE.md) § 4) and,
-  historically, for any **partial refill**.
-  That second exemption is now per-game: a surface in `ROLLING_SUPPLY_SURFACES`
-  (`server/contracts/wire.ts`) may lend on a refill, because its whole supply model
-  IS the refill. Hydra Bubbles is the only one today. Such a surface may also send
-  `?lendLevelOffset=` to lend at a difficulty **tier** relative to the learner's
-  estimated level. Every lend, targeted or not, first **re-lends** provisional cards the
+  outside the day's set is not that set; [FOCUS_MODE.md](./FOCUS_MODE.md) § 4) and
+  for any **partial refill**. Every lend first **re-lends** provisional cards the
   learner already holds near that difficulty and off cooldown, and mints only the
   shortfall. See [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) §§ 3b, 4b.
 
@@ -1800,8 +1322,8 @@ Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
   and see no history move — and since 2026-08-20 that tier fires *ahead of* lending, so
   it happens more often, by design. This is **known, accepted and instrumented** — every
   dropped mark is logged as `[MarkSuppressed]`. Telling the learner is the open piece.
-  See [HYDRA_BUBBLES.md § 8.1](./HYDRA_BUBBLES.md) and
-  [DEFERRED_WORK.md](./DEFERRED_WORK.md).
+  See [FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md § "Known consequence: cooled-tier marks stop counting"](./FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md)
+  and [DEFERRED_WORK.md](./DEFERRED_WORK.md).
 
   `exclude` is enforced in SQL (`fetchGameCandidates`'s `excludeIds`) and is
   absolute; `avoid` is a *tier demotion*, so a library too small to fill the board
@@ -1813,132 +1335,3 @@ Reuses the OnDeck vocab stack (no new tables). Endpoints registered in
   handed back the cards the player had just cleared.
 - `GET /api/onDeck/categoryCounts` → `{ Unfamiliar, Target, Comfortable, Mastered }`,
   read by the Deck Tower's cards page (`useCardLibrary`) and the Account page.
-
----
-
-## Game: Hydra Bubbles (`/games/hydra-bubbles`)
-
-**Built 2026-08-18. Not yet validated by play** — the spawn numbers are a first
-tuning. Full spec: [HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md). This section is the
-summary and the cross-references; that doc owns the design.
-
-Named for the myth: cut off one head and more grow back.
-
-### Gameplay
-
-An **endless, clockless** recognition drill on Bubble Match's bubbles, built to be
-the opposite of it. Bubble Match's tension is a shrinking play area against a fixed
-pool of 20 pairs; Hydra's is a board that **grows on its own**.
-
-- The run opens with **3 bubbles** — one live pair plus one English stray.
-- Drag a bubble onto its partner to match. A match clears both and scores **+2**.
-- **The cleared Chinese bubble's color decides what you pay for it.** Two tiers, one
-  step either side of the two bubbles a match removes: **`drain` (dark blue) spawns 1
-  (net −1), `bloom` (light blue) spawns 3 (net +1)**. Drain is the only move that shrinks the
-  board, and drain is by construction the words the learner knows least well.
-  *(Reworked 2026-08-21 from a four-color ladder — red 1 / yellow 2 / green 3 / blue 4 —
-  because yellow was break-even and green a weaker blue; the player now reads one bit
-  off a bubble instead of a four-rung table.)*
-- **One wrong match ends the run**, immediately and without confirmation.
-- The other loss is **overflow**: the same fill-ratio measure Bubble Match uses
-  (`LOSE_FILL_RATIO` 0.94, danger vignette from 0.72), but with **no descending
-  ceiling** — the field only ever fills from spawns the player caused.
-- Score is bubbles cleared, **session-only**: nothing is persisted, and there is no
-  `wins` row, so no weekly badge and no level strip on the hub.
-
-### What Hydra introduced
-
-- **A deliberately non-self-stabilizing economy.** The spawn table keeps expected
-  payout above the break-even 2 everywhere below 0.75 fill, so a board left alone
-  always creeps up. At 0.75 it **steps** to drain-only — nothing but the hardest words,
-  each paying 1 against the 2 removed — which is the squeeze the player has to fight
-  out of. Under two colors that invariant reduces to one line: growth is
-  `2·bloomShare − 1`, so **bloom must be over half of every roll**, which is why the
-  steady state is bloom 55 / drain 45 and not the old 65%-hard mix. This is the one thing
-  in the game pinned by tests rather than left to tuning
-  (`src/__tests__/hydraSpawnTable.test.ts`).
-- **The spawn table is keyed on FILL RATIO, not bubble count**, so the system that
-  decides payouts and the system that decides loss read the same number and cannot
-  disagree about how full a board is on a phone versus a tablet.
-- **Color and mastery are allowed to disagree** — and since 2026-08-21 a color is not
-  even a band. Each Hydra tier is a **union of two utcm bands** (bloom = Mastered +
-  Comfortable, drain = Unfamiliar + Target), and a **lent** card is colored by its
-  difficulty tier instead of by mastery at all. Coloring lent cards by mastery would
-  make every one of them drain (a fresh row has no history), putting the whole board on
-  the shrinking side for exactly the learners most likely to be playing on lent cards.
-  Because a tier is a union and a lent card ignores it entirely, Hydra stopped wearing
-  the mastery hues **and then stopped wearing hues the ramp could be mistaken for**: an
-  ember/ocean pair was replaced the same day by **charcoal / gold**, because a
-  red-vs-blue bubble still decodes as hard-vs-known to a learner the rest of the app has
-  trained that way. A third pass followed within the hour: the field carries **three**
-  kinds of bubble (two payout tiers plus inert grey English), and the first charcoal was
-  one value step off that grey. A three-channel fix (value, temperature and ring weight)
-  shipped and held — and was then dropped whole on 2026-08-22, when the two bubble games
-  were unified on ONE style with Bubble Match as the source of truth. **Colour is now the
-  only thing a game varies, and Hydra's ladder is TWO SHADES OF ONE BLUE** (`#79B3EE` =
-  harder, `COLORS.blu` `#D2EBFF` = easier): hue encodes nothing, value is the whole
-  message, and both rungs take black text — a rung whose glyphs invert reads as a
-  different object rather than a darker one, which is why the darker, better-separating
-  `COLORS.bluA` was given up. Two costs are recorded, not hidden: blue is the hue the app
-  trains as "mastered", and a mid-value blue is the worst ground there is for tone-3
-  pinyin. Both exit the same way, via a purple ladder; docs/HYDRA_BUBBLES.md § 2.2 has the
-  numbers. The identifiers moved with it — `HydraColor` is
-  `"drain" | "bloom"`, named for the board effect, so the next palette pass renames
-  nothing. **2026-08-24 the ladder became yellow / blue** (drain `yel`, bloom `blu`), and
-  **v2 (2026-09-23) moved both rungs to the MID tier** (`COLORS.yelM` / `COLORS.bluM`) and
-  gave them the design's ink ring, with the grey English bubble ringed in `--line2` — the
-  same coloured-gets-ink / neutral-gets-line rule Bubble Match uses
-  (`COLOURED_BUBBLE_RING` / `NEUTRAL_BUBBLE_RING`, `src/games/bubbles/constants.ts`).
-  Current state and trade-offs: docs/HYDRA_BUBBLES.md § 2.2.
-- **Two client-side color buffers** (`useColorBuffers`), one per tier, popped at
-  spawn and topped up asynchronously. This is what makes the color system tractable:
-  the game never asks "what color is this card?", because the card came out of that
-  color's buffer. No table, no server state.
-- **The first rolling-supply surface.** Every spawn is a partial refill, which is the
-  one call shape that historically never lent. See the fill-tier table above.
-- **The first game with no card baseline of any kind** (Memory Map also has no
-  `CARD_BASELINES` entry, though since 2026-10-06 it lends to stay full). A run may lend
-  from the very first bubble, and there is no library size at which the hub row is
-  gated.
-- **Grey is reserved for English**, so Hydra could not reuse Bubble Match's grey
-  held/hovered wash. Its pickup cue is an **outline ring** instead — which is why the
-  shared `Bubble` takes a `heldCue` prop.
-
-### Files
-
-- `src/games/bubbles/` — the **shared** substrate, extracted from Bubble Match ahead
-  of this game: `types.ts`, `constants.ts`, `physics.ts`, `bodyFactory.ts`,
-  `Bubble.tsx`. Bubble Match was converted to import from it with no behavior change.
-- `src/games/hydra-bubbles/` — `HydraBubblesPage.tsx` (loading → playing → over →
-  playing), `HydraStage.tsx` (rAF loop, drag/hover/match, payout, HUD, danger glow),
-  `spawnTable.ts`, `spawnPlanner.ts`, `useColorBuffers.ts`, `constants.ts`, `types.ts`.
-  (`HydraLendNotice.tsx` was deleted 2026-09-05 — the mid-run lend popup became a
-  per-bubble hourglass badge; see HYDRA_BUBBLES.md § 6.4.)
-- Reuses Bubble Match's `BubbleMatchHeader` and `BubbleMatchEndPopup` unchanged.
-
-### Backend
-
-**No new tables, no new columns, no migration.** Reuses the OnDeck vocab stack:
-
-- `GET /api/onDeck/gamePool` with `?surface=hydra-bubbles` (opting into refill
-  lending) and `?lendLevelOffset=` (the rolled color's difficulty tier, resolved
-  against the learner's estimated level server-side — the client never sees `L`).
-- `POST /api/flashcards/mark` as every other game, with `?type=recognition`.
-
-### Study Challenge
-
-Challenge-eligible as a recognition game, but scored on a different axis from free
-play, because an endless run has no comparable length: **time to clear the ten
-challenge words**, which always ride the yellow slot. A wrong match still ends the
-run, banking what was matched and scoring zero for the rest. The
-`ChallengeScoringSpec` deliberately carries **no survival bonus** — Bubble Match's
-makes sense because its run has a fixed length; Hydra's does not.
-⚠️ How a partial run's time compares to a complete one is still open
-([HYDRA_BUBBLES.md § 11 O2](./HYDRA_BUBBLES.md)).
-
-## Game: Bucket Drop (`/games/bucket-drop`)
-
-Drag each word from the pile into the perimeter bucket holding its meaning, against a
-count-up clock; 20 words, speed + accuracy tiers (§ Run tiers). The whole design — perimeter geometry, the
-the free-roaming pile, marks, modes, challenge scoring — is
-[BUCKET_DROP_GAME.md](./BUCKET_DROP_GAME.md). Code: `src/games/bucket-drop/`.

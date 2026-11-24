@@ -40,10 +40,8 @@ export type ChallengeEvent =
     | { kind: "miss"; word: string; contested: boolean }
     /** A per-use penalty fired (Word Search's hint). */
     | { kind: "use"; ruleId: string }
-    /** A survival bonus became live (Bubble Match's ceiling started dropping). */
-    | { kind: "survivalStart"; ruleId: string }
     /**
-     * How much ACTIVE time has elapsed. Drives `elapsedPenalty` and survival decay.
+     * How much ACTIVE time has elapsed. Drives `elapsedPenalty`.
      *
      * ⚠️ ACCUMULATED ACTIVE TIME, never `now − startedAt`. The clock stops for
      * input-blocking popups and for backgrounding (docs/GAMES_FEATURE.md), and the
@@ -52,7 +50,11 @@ export type ChallengeEvent =
      * they were not playing.
      */
     | { kind: "tick"; activeMs: number }
-    /** The run ended. `won` decides whether an all-or-nothing survival bonus is kept. */
+    /**
+     * The run ended. `won` is reported by every game but read by no scoring rule since
+     * the all-or-nothing `survival` bonus left with Bubble Match / Hydra Bubbles
+     * (archived 2026-11-23, docs/ARCHIVED_FEATURES.md); kept so a future rule can.
+     */
     | { kind: "end"; won: boolean };
 
 interface Counters {
@@ -97,9 +99,7 @@ export function createChallengeScorer(spec: ChallengeScoringSpec): ChallengeScor
     const penalisedWords = new Set<string>();
 
     let activeMs = 0;
-    let survivalStartedAtMs: number | null = null;
     let ended = false;
-    let won = false;
 
     const apply = (event: ChallengeEvent): void => {
         // Everything after the end of a run is ignored, so a late event from a timer
@@ -126,13 +126,6 @@ export function createChallengeScorer(spec: ChallengeScoringSpec): ChallengeScor
                 counters.uses[event.ruleId] = (counters.uses[event.ruleId] ?? 0) + 1;
                 break;
 
-            case "survivalStart":
-                // First one wins: the decay is measured from when the ceiling STARTED
-                // dropping, and a repeated signal must not restart the clock (which
-                // would hand back points the player had already lost).
-                if (survivalStartedAtMs === null) survivalStartedAtMs = activeMs;
-                break;
-
             case "tick":
                 // Monotonic: a tick that goes backwards (a game resetting its clock on
                 // resume) would otherwise refund an elapsed penalty.
@@ -141,7 +134,6 @@ export function createChallengeScorer(spec: ChallengeScoringSpec): ChallengeScor
 
             case "end":
                 ended = true;
-                won = event.won;
                 break;
         }
     };
@@ -149,44 +141,6 @@ export function createChallengeScorer(spec: ChallengeScoringSpec): ChallengeScor
     /** Points and count for one bonus, at the current state. */
     const bonusLine = (bonus: ChallengeScoringBonus): ChallengeScoreLine | null => {
         switch (bonus.kind) {
-            case "survival": {
-                // Not live yet — the ceiling never started dropping, so there is nothing
-                // to award and no line to draw.
-                if (survivalStartedAtMs === null) return null;
-                // ALL-OR-NOTHING on a loss (Q68). Bubble Match IS a survival game, so a
-                // challenge score that ignored whether the player survived would be
-                // scoring a different game than the one they played. Drawn as an explicit
-                // 0 line rather than omitted, so the player can see what the loss cost.
-                if (ended && bonus.forfeitOnLoss && !won) {
-                    return {
-                        ruleId: bonus.ruleId,
-                        label: `${bonus.label} (lost)`,
-                        count: null,
-                        unitPoints: null,
-                        points: 0,
-                    };
-                }
-                // A HEAD START BEFORE THE DECAY BEGINS. Bubble Match sets no grace and
-                // is unaffected (`?? 0`); Hydra's clear bonus holds the full pot for
-                // its first minute, which is what stops a first-guess decay rate from
-                // punishing a run that was actually fast. Measured from when the pot
-                // was ARMED, not from the start of the run — the two coincide only for
-                // a `runStart` trigger.
-                const grace = bonus.graceMs ?? 0;
-                const interval = bonus.decayIntervalMs ?? 0;
-                const elapsedSinceArmed = Math.max(0, activeMs - survivalStartedAtMs - grace);
-                const steps = interval > 0 ? Math.floor(elapsedSinceArmed / interval) : 0;
-                const decayed = bonus.points + steps * (bonus.decayPoints ?? 0);
-                const floor = bonus.floor ?? 0;
-                return {
-                    ruleId: bonus.ruleId,
-                    label: bonus.label,
-                    count: null,
-                    unitPoints: null,
-                    points: Math.max(floor, decayed),
-                };
-            }
-
             case "elapsedPenalty": {
                 const interval = bonus.decayIntervalMs ?? 1000;
                 const grace = bonus.graceMs ?? 0;

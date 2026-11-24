@@ -370,7 +370,7 @@ switch left desktop rendering unchanged to within 0.004 em and moved only WebKit
   (Instrument Sans, a Latin face without the CJK em-box disagreement), and it is multi-line
   mixed-case prose with no single ink centre to measure.
 
-**Users of `IsoText`:** `IsoCard` (figure + caption), `IsoCardImprint` ("0" / "cards"),
+**Users of `IsoText`:** `IsoCard` (figure + caption), `IsoCardImprint` ("0" / "cards", or "↻" / "retry" for a failed count),
 `IsoPawn` (the emote "!"), `PawnIdleProps` (sing notes, doze Z's), acp's `SortBins` →
 `NumberPrint`.
 
@@ -562,7 +562,10 @@ platform).
 
 ### IsoCardImprint
 
-`{ rect, surface }`. The imprint a card stack leaves on its floor, printed "0" / "cards". A
+`{ rect, surface, variant? }`. The imprint a card stack leaves on its floor, printed "0" / "cards"
+(`variant` "count", the default) or "↻" / "retry" (`variant` "retry": the Deck Tower's count failed
+to load and the footprint is the re-fetch tap target, DECK_TOWER.md § "Loading feedback" →
+"Counts that fail"; one short word, to fit the card's width). A
 floor decal (like `IsoFloorLabel`): the card rect flat at the floor's height (`flatPath`),
 in the floor's tone one shadow step down, its print one step darker again (`shadowTone`
 twice). It is NOT a shadow — nothing casts it — so it does not slide along the light and is

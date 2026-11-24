@@ -124,7 +124,7 @@ POST /api/flashcards/mark
 - On marking incorrect: returns success with no replacement (the card stays in the loop).
 - On a mark whose track is still **cooling**: returns `suppressed: true` with
   `markTimestamp: null` and writes nothing. A success, not an error — see
-  [HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md) § 8.
+  § "Cooldown is a hard next-markable-at" below.
 - Otherwise the review is appended to that type's track in `typedMarkHistory`.
 
 ## Data Storage
@@ -172,6 +172,62 @@ POST /api/flashcards/mark
    [VELOCITY.md](./VELOCITY.md).
 8. Returns the response (with a replacement card if correct — see the refill note above)
 
+## Cooldown is a hard "next markable at"
+
+*Moved here 2026-11-23 from HYDRA_BUBBLES.md § 8 (that doc left `main` with the game —
+[ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)). The rule was agreed in that game's design
+pass on 2026-08-18 but was never specific to it.*
+
+> A mark on a card whose cooldown has not expired is **not recorded**.
+
+Enforcement is **server-side, at `POST /api/flashcards/mark`**
+(`server/services/FlashcardMarkService.ts` → `applyMark`). The endpoint checks the card's
+own cooldown on the mark's track and no-ops when it has not expired, returning success.
+Every present and future surface inherits the rule without having to know it exists, which
+is the point. The cooldown is therefore not an advisory scheduling hint but a hard
+**"next markable at"** timestamp.
+
+It needed a wire change, and both parts are contract-level:
+
+* **`markTimestamp` is the undo key.** `markFlashcard` (`src/api/flashcards.ts`) THROWS when
+  the response carries no timestamp, and the flp working loop treats a throw as a retryable
+  save failure. A silently-suppressed mark would have surfaced as **"Failed to save
+  progress."** on a healthy app. The response carries `suppressed: true` with a null
+  `markTimestamp`, and the loop leaves its state untouched instead of offering an undo for
+  a mark that was never written.
+* **The suppressed-mark log needs to know WHICH surface served the card**, and only the
+  client knows that. The request carries an optional `surface` string
+  (`src/api/flashcards.ts` → `MarkSurface`), sent by every call site. Nothing branches on
+  it; it exists so the log can tell cooled-tier suppression apart from focus-scoped
+  suppression (intended).
+
+Downstream of a suppressed mark: the game still scores the answer, minute points are
+unaffected (they accrue by time), and nothing else changes.
+
+### Known consequence: cooled-tier marks stop counting (accepted, instrumented)
+
+`getGameVocabPool` (`server/services/OnDeckVocabService.ts`) fills a game board in tiers:
+fresh cards from the requested buckets, fresh cards from the fallback buckets, **cooled
+cards**, avoided cards, then **lend**. The cooled tier fires on ordinary runs whenever the
+fresh tiers cannot fill the board — any learner playing two rounds back to back — and
+those marks are suppressed by the guard.
+
+**Resolved: ship the guard, and log every suppressed mark server-side.** The log line is
+`[MarkSuppressed]` in `FlashcardMarkService.applyMark`, carrying user (truncated), card id,
+language, mark type, the cooldown window in force, the serving surface, and whether the
+mark was positive. On 2026-08-20 the cooled tier was promoted ABOVE lending
+([PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) § 4b), which makes suppression more common
+by design: re-showing a resting card that earns nothing is the intended answer, and minting
+a word the learner never chose is not. Tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md).
+
+⚠️ A small-library learner can therefore play a full round and see no movement in their
+history, with no error and nothing visibly different in the UI.
+
+**Code:** `server/services/FlashcardMarkService.ts` → `applyMark`;
+`server/routes/flashcardRoutes.ts` (the `POST /api/flashcards/mark` handler);
+`src/api/flashcards.ts` → `markFlashcard`, `MarkSurface`;
+`server/services/OnDeckVocabService.ts` → `getGameVocabPool` (tier 3).
+
 ## Who emits marks
 
 Every surface below writes through the same `POST /api/flashcards/mark`; the `type`
@@ -180,7 +236,6 @@ field is what decides which track a mark lands in ([MASTERY_REWORK.md](./MASTERY
 | Surface | Track(s) |
 |---|---|
 | flp working loop | `recognition`, `production` (per face shown) |
-| Bubble Match | `recognition` |
 | Match Speed | `recognition` |
 | Word Search | `production` (Pinyin) / `reading` (No Pinyin) |
 | Speed Reading | `reading` — positive AND negative |

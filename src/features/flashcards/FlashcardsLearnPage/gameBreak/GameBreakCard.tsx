@@ -1,6 +1,5 @@
 import React from "react";
 import { Box, ButtonBase, Typography } from "@mui/material";
-import DelayedCircularProgress from "../../../../components/DelayedCircularProgress";
 import Icon from "../../../../components/Icon";
 import { flpBreakGameFor, type FlpBreakCandidate } from "../../../../games/flpBreak";
 import { COLORS, RAMP } from "../../../../theme/colors";
@@ -42,7 +41,10 @@ const GameBreakCard: React.FC<{
     candidate: FlpBreakCandidate;
     onSkip: () => void;
     onPlay: () => void;
-    /** The opening board is still loading: Play shows a spinner and waits. */
+    /**
+     * The opening board is still loading: Play is disabled and waits (at most
+     * useGameBreak's PLAY_WAIT_TIMEOUT_MS). The page shows the PawnLoader meanwhile.
+     */
     playPending: boolean;
 }> = ({ candidate, onSkip, onPlay, playPending }) => {
     const { game } = candidate;
@@ -101,9 +103,18 @@ const GameBreakCard: React.FC<{
                     className="game-break-card__play"
                     onClick={onPlay}
                     disabled={playPending}
-                    sx={{ ...plateButtonSx(tones), flex: 2 }}
+                    // Pending: greyed and inert like every disabled tower plate in the
+                    // session — opacity 0.32, default cursor (styled.ts → `MoreInfoPill`
+                    // `isDisabled`, WordToolsRail → `DISABLED_PILL_SX`; docs/DECK_TOWER.md
+                    // § "Studying the tower" → "The buttons"). ButtonBase's `disabled`
+                    // already drops pointer events, so the plate cannot press either.
+                    sx={{ ...plateButtonSx(tones), flex: 2, ...(playPending && { opacity: 0.32, cursor: "default" }) }}
                 >
-                    {playPending ? <DelayedCircularProgress className="game-break-card__play-spinner" size={18} /> : "Play"}
+                    {/* The label stays while Play waits: the wait is shown by the page's
+                        screen-centred PawnLoader (FlashcardsLearnPage → `breakPlayPending`),
+                        not inside the plate. The old in-plate DelayedCircularProgress drew
+                        nothing for its first second, so the plate went blank. */}
+                    Play
                 </ButtonBase>
             </Box>
         </Box>

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
  * A counter that bumps whenever a web font finishes loading (`document.fonts.ready`, then
  * every "loadingdone"), so text measured against a fallback face on first paint is
  * re-measured with the real one. Noto Sans SC / 975 Maru SC swap in late, and a
- * `--cjk-font` override (useChineseFont, the font lab) can load another face later still.
+ * `--cjk-font` override (useChineseFont) can load another face later still.
  *
  * Put the epoch in the measurement's memo/effect key; the value itself means nothing.
  *

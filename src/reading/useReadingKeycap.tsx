@@ -7,11 +7,17 @@ import ReaderMoreInfoKey from "./ReaderMoreInfoKey";
 import ReaderTapHint from "./ReaderTapHint";
 import ReaderKeycapPawn from "./ReaderKeycapPawn";
 import ReaderSentenceFace from "./ReaderSentenceFace";
+import ReaderPhraseSplitFace from "./ReaderPhraseSplitFace";
+import { wordsCoveringRange } from "./phraseChunking";
+import { pickPhraseWords, type PhraseWord } from "./phrasePick";
+import { resolveDisplayPronunciation } from "../utils/definitionUtils";
+import type { SegmentSpan } from "./documentSegmentation";
 import type { TapZoneFlash, TapZoneSide } from "./ReaderTapOverlay";
 import { useReaderWordActions } from "./useReaderWordActions";
 import { useReaderAudioPreload } from "./useReaderAudioPreload";
 import { findDictionaryMatch } from "./textSelection";
 import type { ReadingText } from "./useReadingText";
+import { readingOptionsFor, NO_OVERRIDE_LOOKUP, type OverrideLookup, type OverrideTarget } from "./pronunciationOverrides";
 
 // The minimum visible space above, between and below the dictionary keycap's two STACKED
 // header controls, px (they otherwise spread evenly from the face's top edge to the divider).
@@ -19,7 +25,7 @@ const KEYCAP_ACTIONS_GAP_PX = 6;
 
 interface UseReadingKeycapOptions {
     /** The text the keycap follows right now (useReadingText). */
-    text: ReadingText;
+    text: Pick<ReadingText, "spans" | "selection">;
     /** Its content — the selected sentence is sliced from it (Sentence Explain). */
     content: string;
     /**
@@ -43,6 +49,16 @@ interface UseReadingKeycapOptions {
     editing?: boolean;
     /** Extra moments tap-to-hear must stay quiet (the Reader: the search field has focus). */
     isQuiet?: () => boolean;
+    /**
+     * READING CHOICES (usePronunciationOverrides; docs/USER_DOCUMENT_FEATURE_SUMMARY.md
+     * § "Reading choices"). Given, a tap on the headword of a word with several readings
+     * cycles the selected occurrence's reading, and the headword, speaker, tap-to-hear and
+     * preloading all use the chosen one. Omitted (cyoa), the headword only copies.
+     */
+    readingChoices?: {
+        lookup: OverrideLookup;
+        cycle: (target: OverrideTarget, entry: DictionaryEntry | null | undefined) => boolean;
+    };
 }
 
 /**
@@ -52,12 +68,17 @@ interface UseReadingKeycapOptions {
  *   • the face — the selected word's det entry; the tap-to-navigate demo while nothing is
  *     selected (ReaderTapHint, its finger demo played only the first time); a resting pawn
  *     for a word with no entry (ReaderKeycapPawn); the Sentence Explain face while a whole
- *     sentence is selected (ReaderSentenceFace);
+ *     sentence is selected (ReaderSentenceFace); the SPLIT-SCREEN face while a phrase of two
+ *     or more words is selected (ReaderPhraseSplitFace — the two words phrasePick.ts keeps);
  *   • the keys — speaker, Add ⇄ Added! (EipAddKey, seeded from the vocabulary lookup) and
  *     More Info → the eip (useReaderWordActions; mount the sheet with ReadingEipHost);
- *   • TAP-TO-HEAR — moving the selection to a new word speaks it while `autoplay` is on,
+ *   • TAP-TO-HEAR — moving the selection to a new word speaks it while `autoplay` is on (a
+ *     selected phrase speaks the WHOLE phrase — owner's call 2026-11-23),
  *     and PRELOADING of the next words' clips (useReaderAudioPreload);
- *   • ZONE FLASH — the demo's zone taps, for the page's ReaderTapOverlay (`tapZoneFlash`).
+ *   • ZONE FLASH — the demo's zone taps, for the page's ReaderTapOverlay (`tapZoneFlash`);
+ *   • READING CHOICES — with `readingChoices`, a tap on the headword of a word with several
+ *     readings cycles the selected occurrence's reading (one reading → tap-to-copy), and
+ *     the headword, speaker, tap-to-hear and preloading use the chosen reading.
  *
  * Lifted unchanged out of ReaderDocumentPage (2026-11-21) so the cyoa play page shows the
  * same rdb (docs/CYOA_FEATURE.md § 4). The page's stand-downs come in as options
@@ -81,8 +102,10 @@ export function useReadingKeycap({
     readAloudPlaying = false,
     editing = false,
     isQuiet,
+    readingChoices,
 }: UseReadingKeycapOptions) {
     const { selection, spans } = text;
+    const readingLookup = readingChoices?.lookup ?? NO_OVERRIDE_LOOKUP;
 
     // The tap-to-navigate hint lives IN the dictionary keycap while nothing is selected
     // (NOTHING-SELECTED MODE, useTextSelection) — it replaced the 5 s `reader-tap-hint`
@@ -121,6 +144,42 @@ export function useReadingKeycap({
         [selectedSentenceText, language]
     );
 
+    // PHRASE (docs/READER_SEGMENTATION.md § "Phrase stepping"): a selection that is exactly a
+    // run of two or more whole gsa words — what a forward tap selects with the Phrase pill on,
+    // or a search match across words — has no det row of its own. The keycap splits instead:
+    // two compact entries, the words phrasePick.ts keeps. Not in SENTENCE MODE (the sentence
+    // face owns the keycap there). Each word resolves exactly as a lone word would: its det
+    // row, else (an English word) the Chinese entry it translates to.
+    const { start: rangeStart, end: rangeEnd } = selection.selectionRange;
+    const phraseWords = useMemo<PhraseWord[] | null>(() => {
+        if (selectedSentence) return null;
+        const words = wordsCoveringRange(spans, rangeStart, rangeEnd);
+        if (!words || words.length < 2) return null;
+        return words.map((span) => ({
+            span,
+            entry: findDictionaryMatch(span.text, dictionaryCards) ?? translateEnglish(span.text),
+        }));
+    }, [selectedSentence, spans, rangeStart, rangeEnd, dictionaryCards, translateEnglish]);
+    // A tap on a half selects that word in the text — the same narrowing as tapping it there.
+    const { selectRange } = selection;
+    const selectPhraseWord = useCallback((span: SegmentSpan) => selectRange(span.start, span.end), [selectRange]);
+    const splitFace = useMemo(
+        () => (phraseWords
+            ? <ReaderPhraseSplitFace words={pickPhraseWords(phraseWords)} language={language} onSelectWord={selectPhraseWord} />
+            : undefined),
+        [phraseWords, language, selectPhraseWord]
+    );
+    // The whole phrase for tap-to-hear: its text, and its reading when every word has one.
+    const phraseSpeech = useMemo(() => {
+        if (!phraseWords) return null;
+        // Each word's chosen reading (READING CHOICES), else its default.
+        const readings = phraseWords.map((word) => (
+            word.entry ? readingLookup(word.span) ?? resolveDisplayPronunciation(word.entry) : null
+        ));
+        const text = content.slice(rangeStart, rangeEnd);
+        return { text, pronunciation: readings.every(Boolean) ? readings.join(" ") : undefined };
+    }, [phraseWords, content, rangeStart, rangeEnd, readingLookup]);
+
     // The Add key's seed: the vocabulary lookup returns exactly the learner's Learning cards
     // among the text's words, so a selected word with a matching personal card is "Added!"
     // and one without is "Add" — known with no fetch. Undefined until that lookup has
@@ -128,6 +187,24 @@ export function useReadingKeycap({
     // usually not among the loaded cards, so a miss there proves nothing: its seed comes from
     // the English lookup itself (useEnglishTranslations → translationInLearning).
     const selectedDict = selection.selectedDictionaryCard;
+
+    // READING CHOICES: the selected occurrence, when it is exactly one gsa word of the
+    // text's own script (not an English word showing its translation, not a drilled-into
+    // part of a word — neither has a reading of its own to switch). `selectedReading` is
+    // its chosen reading (toned), undefined = the default.
+    const selectedTarget = useMemo<OverrideTarget | null>(() => {
+        if (!readingChoices || !selectedDict || selection.selectedByTranslation || rangeEnd <= rangeStart) return null;
+        const span = spans.find((s) => s.start === rangeStart && s.end === rangeEnd);
+        return span ? { start: span.start, end: span.end, text: span.text } : null;
+    }, [readingChoices, selectedDict, selection.selectedByTranslation, spans, rangeStart, rangeEnd]);
+    const selectedReading = selectedTarget ? readingLookup(selectedTarget) : undefined;
+    // Several readings → the headword cycles them; one → it keeps tap-to-copy (owner's
+    // call 2026-11-23).
+    const canCycleReading = !!selectedTarget && readingOptionsFor(selectedDict).length > 1;
+    const cycleReading = readingChoices?.cycle;
+    const handleHeadwordTap = useCallback(() => {
+        if (selectedTarget && cycleReading) cycleReading(selectedTarget, selectedDict);
+    }, [selectedTarget, cycleReading, selectedDict]);
     const selectedInLibrary = !selectedDict
         ? undefined
         : selection.selectedByTranslation && !selection.selectedPersonalCard
@@ -137,7 +214,7 @@ export function useReadingKeycap({
                 : selection.selectedPersonalCard?.entryKey === selectedDict.word1;
     // The read-aloud selects a new word ~4×/s; the Add key's per-word status fetch stands
     // down until it stops (the key reappears on the word it stopped on).
-    const wordActions = useReaderWordActions(selectedDict, language, selectedInLibrary, readAloudPlaying);
+    const wordActions = useReaderWordActions(selectedDict, language, selectedInLibrary, readAloudPlaying, selectedReading);
     const { openMoreInfo, learning: keycapLearning } = wordActions;
 
     // TAP-TO-HEAR (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Tap-to-hear"): moving the
@@ -151,8 +228,13 @@ export function useReadingKeycap({
     // changing an audio mode never makes a sound (useTTS → wasAutoplayOnRef). A switch of
     // ACTIVE text (`activeKey`) is not a move either. The latest values are read through a
     // ref so they need not be deps.
-    const tapToHearRef = useRef({ autoplay, readAloudPlaying, editing, isQuiet, speak: wordActions.autoSpeakSelected });
-    tapToHearRef.current = { autoplay, readAloudPlaying, editing, isQuiet, speak: wordActions.autoSpeakSelected };
+    // A phrase speaks as one clip (useTTS → surfaceAutoSpeakText), not word by word.
+    const { surfaceAutoSpeakText } = wordActions.tts;
+    const speakSelection = phraseSpeech
+        ? () => { void surfaceAutoSpeakText(phraseSpeech.text, phraseSpeech.pronunciation); }
+        : wordActions.autoSpeakSelected;
+    const tapToHearRef = useRef({ autoplay, readAloudPlaying, editing, isQuiet, speak: speakSelection });
+    tapToHearRef.current = { autoplay, readAloudPlaying, editing, isQuiet, speak: speakSelection };
     const { start: selectionStart, end: selectionEnd } = selection.selectionRange;
     const lastActiveKeyRef = useRef(activeKey);
     useEffect(() => {
@@ -179,6 +261,8 @@ export function useReadingKeycap({
         selectionStart,
         readAloudPlaying,
         prefetch: wordActions.tts.prefetch,
+        prefetchText: wordActions.tts.prefetchSentence,
+        readingAt: readingLookup,
     });
     // Muting stops a tapped word mid-clip, edge-triggered so a speaker press while muted is
     // not cut off (useTTS does the same for the app-wide chip).
@@ -243,7 +327,10 @@ export function useReadingKeycap({
         dictionaryEntry: selectedDict,
         idleHint: showNavigationHint ? navigationHint : null,
         emptyFace: keycapEmptyFace,
-        customFace: sentenceFace,
+        customFace: sentenceFace ?? splitFace,
+        // The chosen reading, and the tap that changes it (absent → tap-to-copy).
+        headwordPronunciation: selectedReading,
+        onHeadwordTap: canCycleReading ? handleHeadwordTap : undefined,
         onSpeak: wordActions.speakSelected,
         isSpeaking: wordActions.isSpeaking,
         renderHeaderActions: renderKeycapActions,

@@ -11,7 +11,7 @@ import {
  * same stock as the tower's IsoCards (docs/TOWER_STYLE_SHIFT.md § "Card stock").
  *
  * Every vet flashcard face is on this stock: the tower's flp card stack
- * (FlashCardSection) and the card detail page's hero card (VocabCardDetailPage). Until
+ * (FlashCardSection) and td's card view hero card (deckTower/cardView/TowerCardView). Until
  * 2026-11-04 there was also a plain, hairlined face for the standalone flp route and the
  * old Home page's world; both were deleted that day.
  *
@@ -29,7 +29,7 @@ import {
  *   --card-hint-band     the card's top band (the rim) — the flp's swipe/flip hint labels
  *
  * Layer: feature presentation helper (src/features/flashcards/card).
- * Depended on by: FlashcardsLearnPage/FlashCardSection.tsx, VocabCardDetailPage.tsx.
+ * Depended on by: FlashcardsLearnPage/FlashCardSection.tsx, deckTower/cardView/TowerCardView.tsx.
  */
 
 export function cardStockVars(widthCss: string) {

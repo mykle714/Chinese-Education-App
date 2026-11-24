@@ -36,13 +36,6 @@ describe('PersonalBestService', () => {
     expect(faster).toMatchObject({ isNewBest: true, previousValue: 60_000, best: { bestValue: 50_000 } });
   });
 
-  it('score games keep the HIGHER value; modes are separate', async () => {
-    const svc = new PersonalBestService(memoryDAL());
-    await svc.submit('u', 'zh', 'hydra-bubbles', '1', 6);
-    expect((await svc.submit('u', 'zh', 'hydra-bubbles', '1', 5)).isNewBest).toBe(false);
-    expect((await svc.submit('u', 'zh', 'hydra-bubbles', '2', 5)).isNewBest).toBe(true);
-  });
-
   it('match-speed-30 keeps the LOWER time, and the old count key is rejected', async () => {
     const svc = new PersonalBestService(memoryDAL());
     await svc.submit('u', 'zh', 'match-speed-30', 'mixed', 95_000);
@@ -50,7 +43,7 @@ describe('PersonalBestService', () => {
     await expect(svc.submit('u', 'zh', 'match-speed', 'mixed', 9)).rejects.toThrow();
   });
 
-  it('rejects games without a personal best (Bubble Match, Memory Map)', async () => {
+  it('rejects games without a personal best (Memory Map) and archived games (Bubble Match)', async () => {
     const svc = new PersonalBestService(memoryDAL());
     await expect(svc.submit('u', 'zh', 'bubble-match', '1', 3)).rejects.toThrow();
     await expect(svc.submit('u', 'zh', 'memory-map', '1', 3)).rejects.toThrow();

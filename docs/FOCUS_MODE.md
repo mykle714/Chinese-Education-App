@@ -225,7 +225,7 @@ Search's raw fetch calls it itself).
 
 **A game is refused** when, in every world it can mark (a moded game picks its mode in-game),
 focus is on and fewer than `focusGameMinimum(gameId)` cards remain: its `CARD_BASELINES` entry,
-or 1 for a game with none (Hydra Bubbles, Memory Map, Writing Grid). An flp break with a
+or 1 for a game with none (Memory Map, Writing Grid). An flp break with a
 smaller board than the game's own uses its adapter's `focusMinimum` instead: a Word Search
 break in a tower session needs 7 (`src/games/flpBreak/wordSearchBreak.ts`).
 

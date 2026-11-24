@@ -8,9 +8,7 @@ import { handle } from './asyncHandler.js';
  *
  * LAYER: HTTP route layer (registration only). See docs/MEMORY_MAP_GAME.md § 9.
  *
- * camelCase path per docs/BACKEND_LAYERING.md. Registered under its own namespace
- * rather than `/api/games/:gameId/...`, because those routes are the game-AGNOSTIC
- * framework endpoints (assets, progress) and these are specific to this game's tables.
+ * camelCase path per docs/BACKEND_LAYERING.md, under the game's own namespace.
  */
 const router = Router();
 

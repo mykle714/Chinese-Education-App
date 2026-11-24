@@ -150,28 +150,6 @@ export async function fetchVocabEntriesByTokens(tokens: string[]): Promise<Vocab
 }
 
 /**
- * Creates a new vocabulary entry and updates cache
- * @param entryData Entry data to create
- * @returns Promise resolving to created entry
- */
-export async function createVocabEntry(
-  entryData: { entryKey: string; difficulty?: string },
-): Promise<VocabEntry> {
-  try {
-    const newEntry = await apiPost<VocabEntry>('/api/vocabEntries', entryData);
-    
-    // Update cache with new entry
-    const { addCachedEntry } = await import('./vocabCache');
-    addCachedEntry(newEntry);
-    
-    return newEntry;
-  } catch (error) {
-    console.error('Error creating vocabulary entry:', error);
-    throw error;
-  }
-}
-
-/**
  * Updates a vocabulary entry and updates cache
  * @param entryId ID of entry to update
  * @param entryData Updated entry data
@@ -191,42 +169,6 @@ export async function updateVocabEntry(
     return updatedEntry;
   } catch (error) {
     console.error('Error updating vocabulary entry:', error);
-    throw error;
-  }
-}
-
-/**
- * Handles bulk import operations and invalidates cache
- * @param file CSV file to import
- * @returns Promise resolving to import results
- */
-export interface ImportCsvResult {
-  message: string;
-  results: {
-    total: number;
-    imported: number;
-    updated: number;
-    skipped: number;
-    errors: unknown[];
-  };
-}
-
-export async function importVocabFromCSV(file: File): Promise<ImportCsvResult> {
-  try {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    // FormData passes through src/api/http.ts untouched so the browser sets its own
-    // multipart boundary.
-    const result = await apiPost<ImportCsvResult>('/api/vocabEntries/import', formData);
-    
-    // Invalidate cache after bulk import
-    const { invalidateCache, CacheInvalidationReason } = await import('./vocabCache');
-    invalidateCache(CacheInvalidationReason.BULK_IMPORT);
-    
-    return result;
-  } catch (error) {
-    console.error('Error importing vocabulary from CSV:', error);
     throw error;
   }
 }
@@ -309,6 +251,8 @@ export async function getLibraryStatus(
 /**
  * Remove a word from Learning. Never a delete: the server demotes the row to
  * 'provisional', keeping its progress, so re-adding restores it in place.
+ * Quietly retried (`retry: true`, src/api/http.ts): a repeat answers 200
+ * `not-in-library` and changes nothing (VocabEntryService → removeFromLibrary).
  */
 export async function removeFromLibrary(
   entryKey: string,
@@ -316,7 +260,8 @@ export async function removeFromLibrary(
 ): Promise<{ status: 'removed' | 'not-in-library' }> {
   return apiPost<{ status: 'removed' | 'not-in-library' }>(
     '/api/vocabEntries/removeFromLibrary',
-    { entryKey, language }
+    { entryKey, language },
+    { retry: true }
   );
 }
 

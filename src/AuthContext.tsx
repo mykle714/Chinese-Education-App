@@ -427,7 +427,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
      */
     const updateGoals = (goals: { readingGoal?: boolean; writingGoal?: boolean }) =>
         withAuth('update your goals', async () => {
-            const data = await apiPut<Partial<GoalsFocusAutoEnabled>>('/api/users/goals', goals);
+            // Quietly retried (src/api/http.ts `retry`): it SETS the goal flags. One cost:
+            // when a first attempt landed but its response was lost, the repeat finds focus
+            // already on and returns no `focusAutoEnabled`, so that popup is not owed.
+            const data = await apiPut<Partial<GoalsFocusAutoEnabled>>('/api/users/goals', goals, { retry: true });
             setUser((current) => (current ? { ...current, ...goals } : current));
             return Array.isArray(data?.focusAutoEnabled) ? data.focusAutoEnabled : [];
         });

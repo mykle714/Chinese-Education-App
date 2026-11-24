@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@mui/material";
-import { readerPillButtonSx } from "./readerStyles";
+import { READER_PILL_OFF_OPACITY, readerPillButtonSx } from "./readerStyles";
 import type { ReaderDisplayMode } from "./useReaderDisplayMode";
 import type { Tier2Look } from "../timeOfDay/tier2Look";
 
@@ -9,7 +9,7 @@ import type { Tier2Look } from "../timeOfDay/tier2Look";
  * (ReaderDocumentPage → `.reader-document-display-strip`). One button, always labelled
  * "Pinyin", with two style states:
  *
- *   off (Text mode)   — the NEUTRAL surface pill, FADED (`OFF_OPACITY`).
+ *   off (Text mode)   — the NEUTRAL surface pill, FADED (readerStyles → READER_PILL_OFF_OPACITY).
  *   on  (Pinyin mode) — the same pill at full strength.
  *
  * The Reader's pill recipe (readerStyles → readerPillButtonSx, neutral: white by day,
@@ -21,10 +21,6 @@ import type { Tier2Look } from "../timeOfDay/tier2Look";
  * useReaderDisplayMode (`displayMode`, per device — one setting for the Reader and cyoa).
  * Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Display modes".
  */
-
-// How faded the pill sits while off (Text mode). The same 0.45 readerPillButtonSx uses for
-// a disabled pill — the pill is still tappable, it just recedes until switched on.
-const OFF_OPACITY = 0.45;
 
 interface ReaderDisplayToggleProps {
     // The page's time-of-day look (ReaderDocumentPage → useTier2Look) — the off pill's surface + ink.
@@ -84,7 +80,7 @@ function ReaderDisplayToggle({ look, value, onChange, className, hidden = false 
             aria-label="Show pinyin"
             sx={{
                 ...readerPillButtonSx(look),
-                opacity: pinyinOn ? 1 : OFF_OPACITY,
+                opacity: pinyinOn ? 1 : READER_PILL_OFF_OPACITY,
                 visibility: hidden ? "hidden" : "visible",
             }}
         >

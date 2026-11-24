@@ -71,8 +71,8 @@ not "why would the client lie" but "what does this value decide".
   which undiscoverable rows exist. A non-integer `cardId` is rejected with 400 by
   `StarterPacksController.sortCard` before any query runs.
   (`StarterPacksService.sortCard` → `NotFoundError`.)
-* **`gameId`** on `/api/games/:gameId/progress`. A raw path segment keying a
-  `(userId, gameId)` upsert. Now whitelisted against `KNOWN_GAME_IDS`.
+* **`gameId`** on `/api/games/:gameId/progress` — was whitelisted against
+  `KNOWN_GAME_IDS`; the route and its `gameprogress` table were deleted 2026-11-23.
 * **`entryKey`** on votes and writing-practice completions — unbounded `VARCHAR` with
   no foreign key. Now length-capped, and a vote additionally requires the design to
   exist.
@@ -86,7 +86,6 @@ mostly capped already; **counts** were not.
 |---|---|
 | `texts` | 500 user-created documents per user (`MAX_DOCUMENTS_PER_USER`); fields already capped at 200 / 500 / 50 000 |
 | `decks` | 100 per (user, language) — predates this work |
-| `gameprogress` | one row per known game — `KNOWN_GAME_IDS` |
 | `writing_practice_completions` | `entryKey` ≤ 8 chars, language validated |
 | `community_layout_votes` | `entryKey` ≤ 64 chars, design must exist |
 | `wins` | `varchar(64)` columns; count bounded only by the write limiter |

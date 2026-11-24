@@ -32,7 +32,8 @@ import WritingSourceWords from "./WritingSourceWords";
  *          (WritingSourceWords: up to 3 of the learner's words containing the character,
  *          masked, with "See all"), then the one cell, as large as the space left allows
  *          (`useCellSize`). Then a "Tap the card to submit" line at the bottom (the tap
- *          itself is the host's `handleCardClick`). A submit tap with the cell empty
+ *          itself is the host's `handleCardClick`); after a check that could not run it
+ *          reads "Couldn't check · tap to try again" (`checkFailed`). A submit tap with the cell empty
  *          wiggles the card and flashes the cell (`flashNonce`). The cell previews what
  *          the editor will first show at this level (`levelPreview`): the outline for
  *          Walk-through / Trace / Step-through, the first region for Sections,
@@ -63,6 +64,8 @@ export interface WritingCardFaceProps {
     /** Per-character verdicts once graded, else null. */
     results: boolean[] | null;
     checking: boolean;
+    /** The last submit's check could not run: the bottom line offers the retry (front only). */
+    checkFailed?: boolean;
     /** False for the peeking / flying card — draw only, no taps, no animation. */
     interactive: boolean;
     /** `el` is the tapped cell — the focus editor grows out of it (WritingPanel's morph). */
@@ -76,10 +79,17 @@ export interface WritingCardFaceProps {
     flashNonce?: number;
     /** Back face: the look-alike miss to explain (useWritingFlashcard → lookalikeFor), else null. */
     lookalike?: LookalikeMatch | null;
+    /**
+     * The cell's outline data loading (WritingStage → HanziGuide `onLoadingChange`); only
+     * fires when the face draws a guide. The host shows the loading mark for the front
+     * card (useWritingFlashcard → `guideLoadingFor`).
+     */
+    onGuideLoadingChange?: (loading: boolean) => void;
 }
 
 export default function WritingCardFace({
-    entry, side, level, inks, locked, results, checking, interactive, onOpenCell, onInspectCell, flashNonce = 0, lookalike = null,
+    entry, side, level, inks, locked, results, checking, checkFailed = false, interactive, onOpenCell, onInspectCell, flashNonce = 0, lookalike = null,
+    onGuideLoadingChange,
 }: WritingCardFaceProps) {
     const character = entry.entryKey;
     const spec = WRITING_LEVELS[level - 1];
@@ -230,6 +240,7 @@ export default function WritingCardFace({
                                 snap={preview.snap}
                                 initialInk={ink}
                                 result="idle"
+                                onGuideLoadingChange={onGuideLoadingChange}
                             />
                         </Box>
                         {!back && locked[0] && (
@@ -257,7 +268,13 @@ export default function WritingCardFace({
             <Box className="writing-card-face__hint" sx={{ fontSize: SIZE.caption, color: COLORS.textSecondary, minHeight: HINT_ROW_PX, display: "flex", alignItems: "center", gap: 0.5 }}>
                 {!notice && (
                     <>
-                        {back ? "Tap the card to continue" : checking ? "Checking…" : "Tap the card to submit"}
+                        {back
+                            ? "Tap the card to continue"
+                            : checking
+                              ? "Checking…"
+                              : checkFailed
+                                ? "Couldn't check · tap to try again"
+                                : "Tap the card to submit"}
                         {!checking && <TouchApp className="writing-card-face__hint-icon" sx={{ fontSize: 16, color: COLORS.textSecondary }} />}
                     </>
                 )}

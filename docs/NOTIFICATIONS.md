@@ -70,6 +70,36 @@ white, outlined bubble with `SHADOW.chip`, grows down out of its top edge
 - `notify` / `dismiss` keep one identity for the app's lifetime (the api and the stack are
   separate contexts), so they are safe in effect deps.
 
+## 3a. Failures
+
+How a failed server call reaches the learner (owner, 2026-11-23: "I don't see error popups
+like this a lot"). The aim is to show as few errors as possible, the way most apps do:
+
+1. **Retry quietly first.** `src/api/http.ts` retries a transient failure (a network error or
+   a 502/503/504) twice over ~2 s before the caller sees it (`RETRY_DELAYS_MS`). Every GET is
+   retried; a write only when its API function passes `retry: true`, which is allowed only
+   for an endpoint that is safe to receive twice (`RequestOptions.retry` lists them and the
+   rule — a flashcard mark is never retried). Most failures are a network blip this absorbs.
+2. **Say "No connection" once.** `ConnectionNoticeHost` (mounted in `src/App.tsx`) shows one
+   sticky warning banner, id `connection-lost`, while the device is offline (`offline` /
+   `online` events) or a request has failed at the network level after its retries
+   (`CONNECTION_EVENT`). The next request that gets any response takes it down. Individual
+   sites do not add their own banner for a network failure.
+3. **Otherwise, a failure is shown where it happened, or not at all.** A site whose screen
+   already shows the action did not happen (a switch snapping back, a card returning to its
+   slot, a button turning back on) adds nothing. A banner is used only when the screen would
+   otherwise claim success; an in-place line when the failing control has room for one.
+
+| Site | How a failure shows |
+|---|---|
+| Focus lever save (`useFocusLever` → `onConfirm`) | Banner `focus-mode-save-error` (error): the dialog closes as if the switch went through. Not raised for a network failure (`TypeError`), which the connection notice covers. |
+| Writing flp check (`useWritingFlashcard` → `handleSubmit`) | In place: the card's bottom line reads "Couldn't check · tap to try again" (`checkFailed`). |
+| Writing Grid / Practice Writing check, acp sort / skip / undo, goal switch, card removal, notebook summary and next-empty jump | Nothing of their own: the screen already shows the action did not happen. |
+| Deck Tower counts (`DeckTowerPage` → `countsFailed`) | In place: the stack's ↻ retry imprint (DECK_TOWER.md § "Counts that fail"). |
+
+*Code:* `src/api/http.ts` → `request`, `RETRY_DELAYS_MS`, `CONNECTION_EVENT`;
+`src/components/notifications/ConnectionNoticeHost.tsx`.
+
 ## 4. Call sites
 
 | Site | Id | Tone / lifetime | What |
@@ -77,7 +107,9 @@ white, outlined bubble with `SHADOW.chip`, grows down out of its top edge
 | `src/features/flashcards/FlashcardsLearnPage/useEipOverflowNotice.ts` (flp + `EipSheet`) | `eip-too-many-tabs` | info, 2.5 s | eip trail at `MAX_EIP_TABS` |
 | `EipSheet.tsx` | `eip-sheet-learning-error` | error, 2.5 s | Learning add/remove failed |
 | `FlashcardsLearnPage.tsx` | `flp-eip-learning-error` | error, 2.5 s | eip Add key failed |
-| `FlashcardsLearnPage.tsx`, `VocabCardDetailPage.tsx` | `card-icon-save-error` | error, 4 s | fie layout save/reset failed |
+| `FlashcardsLearnPage.tsx`, `features/deckTower/cardView/TowerCardView.tsx` | `card-icon-save-error` | error, 4 s | fie layout save/reset failed |
+| `src/components/notifications/ConnectionNoticeHost.tsx` (app-wide, `src/App.tsx`) | `connection-lost` | warning (`wifi_off`), sticky until the connection is back | offline, or a request unreachable after its quiet retries (§ 3a) |
+| `src/features/deckTower/useFocusLever.tsx` | `focus-mode-save-error` | error, 4 s | focus lever switch failed to save (§ 3a) |
 | `src/pages/settings/SettingsBody.tsx` | `settings-language-result` | success 3 s / error 5 s | language preference saved / failed |
 | `src/features/reader/ReaderDocumentPage.tsx` | `reader-edit-save-error` | error, 4 s | inline edit failed to save |
 | `src/features/discover/useDeckFillNotices.ts` (acp) | `acp-deck-fill-goal` | info (`style`), sticky | "Sort at least N…" goal, counting down |

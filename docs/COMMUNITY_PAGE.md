@@ -190,7 +190,7 @@ Indexed per table (`idx_vocabentries_{zh,es}_author`) for the feed dedupe groupi
 | DAL (write) | `server/dal/implementations/VocabEntryDAL.ts` `updateIconLayout` | the `author` tri-state: id = force, `null` = clear, omitted = self-attribute iff the layout changed |
 | Service | `server/services/CommunityLayoutService.ts` | once-a-week vote guard delegation; `applyDesign` (reuses `VocabEntryService.addToLibrary` + `updateIconLayout`) |
 | Controller | `server/controllers/CommunityLayoutController.ts` | request parsing (exclude arrays, page clamp, language resolution) |
-| Routes | `server/routes/gamesRoutes.ts` (`/api/community/*`); wired in `server/dal/setup.ts` | |
+| Routes | `server/routes/communityRoutes.ts` (`/api/community/*`); wired in `server/dal/setup.ts` | |
 | Types | `server/types/community.ts`, client `src/types.ts` (`CommunityDesign`, `VotedDesignKey`, `VoteResult`, `ApplyDesignResult`, `designKey`) | |
 | Client | `src/features/community/` — `CommunityPage`, `CommunitySearchBar`, `CommunityFeedRow`, `CommunityDesignCard`, `CommunityDesignZoom`, `ApplyDesignButton`, `VoteButton`, `CommunityCardView`, `communityApi.ts` | |
 | Menu/route | `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations` (the `community` row), `src/routes/registry.ts` + `src/routes/routeMeta.ts` (`/community`, `footerTab: "menu"`) | |

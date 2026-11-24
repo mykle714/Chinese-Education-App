@@ -200,18 +200,18 @@ When fetching flashcards from `/api/onDeck/distributedWorkingLoop`, each Chinese
 
 ### Where each field renders
 
-The data arrives on `currentEntry` (flp/eip) or `entry` (cdp). Every field has exactly
+The data arrives on `currentEntry` (flp/eip) or `entry` (td's card view). Every field has exactly
 one renderer, shared by all surfaces:
 
 | Field | Component | Hosts |
 |---|---|---|
-| **Synonyms** (+ `synonymsMetadata` pronunciation/gloss) and **Related Words** | `src/features/flashcards/SynonymsRelatedSection.tsx` | the eip's **definition tab** when the host passes `showSynonymsRelated` (`InfoCardTabContent`) — the saved-card cdp and the Dictionary page do (both through `EipSheet`). Gated with `hasSynonymsOrRelated` (`src/utils/definitionUtils.ts`) so the tab draws no empty section. Synonyms are AI-enriched with no validation field, so the whole list always carries the AI treatment. |
-| **Example Sentences** | `src/features/flashcards/ExampleSentenceList.tsx` — per-token `ForeignText`/cpcd from `sentence.segmentMetadata` | eip examples tab, on every eip host incl. the saved-card cdp (docs/EXAMPLE_SENTENCES.md) |
-| **Breakdown** | `src/features/flashcards/BreakdownRow.tsx` | eip breakdown tab, on every eip host incl. the saved-card cdp (docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md) |
+| **Synonyms** (+ `synonymsMetadata` pronunciation/gloss) and **Related Words** | `src/features/flashcards/SynonymsRelatedSection.tsx` | the eip's **definition tab** when the host passes `showSynonymsRelated` (`InfoCardTabContent`) — td's card view and the Dictionary page do (both through `EipSheet`). Gated with `hasSynonymsOrRelated` (`src/utils/definitionUtils.ts`) so the tab draws no empty section. Synonyms are AI-enriched with no validation field, so the whole list always carries the AI treatment. |
+| **Example Sentences** | `src/features/flashcards/ExampleSentenceList.tsx` — per-token `ForeignText`/cpcd from `sentence.segmentMetadata` | eip examples tab, on every eip host incl. td's card view (docs/EXAMPLE_SENTENCES.md) |
+| **Breakdown** | `src/features/flashcards/BreakdownRow.tsx` | eip breakdown tab, on every eip host incl. td's card view (docs/BREAKDOWN_FEATURE_IMPLEMENTATION.md) |
 
 The flp and acp deliberately do **not** pass `showSynonymsRelated`: on those surfaces the
-panel is the reading view for a word mid-drill, while the cdp is the reference page those
-two lists belong to.
+panel is the reading view for a word mid-drill, while td's card view (the cdp until
+2026-11-23) is the reference surface those two lists belong to.
 
 Because the extra section is what pushes the definition tab past one screen, that tab gets
 the same bottom run-out the examples tab has (`PANE_SCROLL_SPACER_PX` /

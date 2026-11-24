@@ -8,7 +8,9 @@ import type { Tier2Look } from "../timeOfDay/tier2Look";
 /**
  * ReaderReadAloudButton — the play/stop pill at the LEFT of the Reader's display strip
  * (ReaderDocumentPage → `.reader-document-display-strip`), opposite the Pinyin
- * pill (ReaderDisplayToggle). Starts useReaderReadAloud from the caret.
+ * pill (ReaderDisplayToggle). Starts useReaderReadAloud from the caret — or, in the Reader
+ * with a sentence selected, reads just that sentence (useReaderReadAloud → "A selected
+ * sentence is read alone").
  *
  * The Reader's pill recipe (readerStyles → readerPillButtonSx): the neutral surface pill
  * (white by day, slate at night — the page's time-of-day `look`) with "Read" while idle, and the Reader's own blue mid tier (`COLORS.bluM`, the toolbar Save's fill)

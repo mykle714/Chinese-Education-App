@@ -11,7 +11,7 @@ import { isMinutePointsAutoActivePath, isMinutePointsEligiblePath } from '../eli
  */
 describe('isMinutePointsEligiblePath', () => {
   it('earns on the study surfaces', () => {
-    expect(isMinutePointsEligiblePath('/flashcards/card/7')).toBe(true);
+    expect(isMinutePointsEligiblePath('/flashcards/writing/notebook')).toBe(true);
     expect(isMinutePointsEligiblePath('/reader')).toBe(true);
     expect(isMinutePointsEligiblePath('/games/word-search')).toBe(true);
   });
@@ -29,7 +29,9 @@ describe('isMinutePointsEligiblePath', () => {
   });
 
   it('does not earn on the bare /flashcards parent or its browse screens', () => {
-    // Only named children (`/flashcards/card`, `/flashcards/writing/notebook`) are listed.
+    // Only named children (`/flashcards/writing/notebook`) are listed. The card detail
+    // (`/flashcards/card`, deleted 2026-11-23) is now td's card view, which earns by claiming
+    // the study surface (minutePoints/studySurface.ts), not by its path.
     expect(isMinutePointsEligiblePath('/flashcards')).toBe(false);
     expect(isMinutePointsEligiblePath('/flashcards/collection/3')).toBe(false);
   });
@@ -38,7 +40,7 @@ describe('isMinutePointsEligiblePath', () => {
 
 describe('isMinutePointsAutoActivePath', () => {
   it('is games and only games', () => {
-    expect(isMinutePointsAutoActivePath('/games/hydra-bubbles')).toBe(true);
-    expect(isMinutePointsAutoActivePath('/flashcards/card/7')).toBe(false);
+    expect(isMinutePointsAutoActivePath('/games/match-speed')).toBe(true);
+    expect(isMinutePointsAutoActivePath('/flashcards/writing/notebook')).toBe(false);
   });
 });

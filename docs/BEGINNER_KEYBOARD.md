@@ -3955,4 +3955,3 @@ measured against the same 200-character set rather than argued.
 - [PRACTICE_WRITING.md](./PRACTICE_WRITING.md) /
   [HANDWRITING_RECOGNITION.md](./HANDWRITING_RECOGNITION.md) — the level-4
   (stroke) path and the existing Hanzi Writer dependency
-- [CJK_TYPEFACE_LAB.md](./CJK_TYPEFACE_LAB.md) — typeface choices for CJK glyphs

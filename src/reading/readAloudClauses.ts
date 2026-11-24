@@ -1,4 +1,5 @@
 import type { SegmentSpan } from "./documentSegmentation";
+import type { OverrideLookup } from "./pronunciationOverrides";
 
 /**
  * READ-ALOUD CLAUSES — splits a Reader document into the pieces the read-aloud speaks one
@@ -151,11 +152,16 @@ function splitLongRange(start: number, end: number, spans: SegmentSpan[]): Array
     return pieces;
 }
 
-function buildPronunciation(spans: SegmentSpan[], pronunciations: Map<string, string>): string | undefined {
+function buildPronunciation(
+    spans: SegmentSpan[],
+    pronunciations: Map<string, string>,
+    readingAt?: OverrideLookup,
+): string | undefined {
     const parts: string[] = [];
     for (const span of spans) {
         if (!HAN.test(span.text)) continue;
-        const p = pronunciations.get(span.text);
+        // The occurrence's chosen reading (READING CHOICES), else the word's default.
+        const p = readingAt?.(span) ?? pronunciations.get(span.text);
         if (!p) return undefined;
         parts.push(p);
     }
@@ -169,6 +175,7 @@ function buildClause(
     spans: SegmentSpan[],
     pronunciations: Map<string, string> | null,
     voice: ReadAloudVoice,
+    readingAt?: OverrideLookup,
 ): ReadAloudClause | null {
     if (spans.length === 0) return null; // punctuation / blank line only — nothing to say
     let totalWeight = 0;
@@ -193,7 +200,7 @@ function buildClause(
         spanStartFractions,
         totalWeight,
         // An English run has no Han words, so it never gets a pinyin hint.
-        pronunciation: pronunciations && voice === "document" ? buildPronunciation(spans, pronunciations) : undefined,
+        pronunciation: pronunciations && voice === "document" ? buildPronunciation(spans, pronunciations, readingAt) : undefined,
     };
 }
 
@@ -260,7 +267,8 @@ function splitVoiceRuns(
  * Reading starts AT `fromPos` (the caret's word), not at the start of its clause.
  *
  * `pronunciations` is the Pinyin display mode's word → pinyin map; pass null for a
- * language without a pinyin hint (anything but zh).
+ * language without a pinyin hint (anything but zh). `readingAt` (READING CHOICES) gives a
+ * span's chosen reading, which outranks the map.
  *
  * `splitEnglishRuns` turns on the English voice runs (see the file doc). Pass true only for
  * a zh document: in a Latin-script language every word would count as "English".
@@ -271,6 +279,7 @@ export function buildReadAloudClauses(
     fromPos: number,
     pronunciations: Map<string, string> | null,
     splitEnglishRuns = false,
+    readingAt?: OverrideLookup,
 ): ReadAloudClause[] {
     const clauses: ReadAloudClause[] = [];
     // Spans are sorted; walk them alongside the clause ranges.
@@ -292,7 +301,7 @@ export function buildReadAloudClauses(
                 : [{ start, end, spans: pieceSpans, voice: "document" as const }];
             let previousRun: ReadAloudClause | null = null;
             for (const run of runs) {
-                const clause = buildClause(content, run.start, run.end, run.spans, pronunciations, run.voice);
+                const clause = buildClause(content, run.start, run.end, run.spans, pronunciations, run.voice, readingAt);
                 if (!clause) continue;
                 // A seam: the previous run of this same piece ends on a word, not punctuation.
                 if (previousRun && WORD_END.test(previousRun.text)) {

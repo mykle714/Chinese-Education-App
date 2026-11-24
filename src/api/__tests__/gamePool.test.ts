@@ -15,9 +15,9 @@ describe('gamePoolParams', () => {
   it('builds a full board: markType, surface and the band quotas, nothing else', () => {
     expect(gamePoolParams({
       markType: 'recognition',
-      surface: 'bubble-match',
+      surface: 'match-speed',
       distribution: { Unfamiliar: 2, Target: 10 },
-    })).toEqual({ markType: 'recognition', surface: 'bubble-match', Unfamiliar: 2, Target: 10 });
+    })).toEqual({ markType: 'recognition', surface: 'match-speed', Unfamiliar: 2, Target: 10 });
   });
 
   it('adds refill params, joining id lists and dropping empty ones', () => {
@@ -44,12 +44,6 @@ describe('gamePoolParams', () => {
 
   it('keeps need=0 (a real value, not "absent")', () => {
     expect(gamePoolParams({ markType: 'recognition', need: 0 }).need).toBe(0);
-  });
-
-  it('serializes strictBuckets and lendLevelOffset (including offset 0)', () => {
-    const params = gamePoolParams({ markType: 'recognition', strictBuckets: true, lendLevelOffset: 0 });
-    expect(params.strictBuckets).toBe(1);
-    expect(params.lendLevelOffset).toBe(0);
   });
 
   it('passes the challenge suffix through verbatim, including the anytime hatch', () => {

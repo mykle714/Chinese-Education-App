@@ -34,23 +34,28 @@ export class TextDAL implements ITextDAL {
 
   async updateFields(id: string, fields: TextFieldUpdate): Promise<Text | null> {
     // Column names come from this fixed map, never from the caller.
-    const columns: Array<[keyof TextFieldUpdate, string]> = [
+    const columns: Array<[Exclude<keyof TextFieldUpdate, 'touchUpdatedAt'>, string]> = [
       ['title', 'title'],
       ['content', 'content'],
       ['characterCount', '"characterCount"'],
       ['iconId', '"iconId"'],
+      // jsonb: node-postgres would send a JS array as a Postgres ARRAY literal, so the
+      // value is stringified below and cast here.
+      ['pronunciationOverrides', '"pronunciationOverrides"'],
     ];
     const sets: string[] = [];
     const values: unknown[] = [];
     for (const [key, column] of columns) {
       if (fields[key] === undefined) continue;
-      values.push(fields[key]);
-      sets.push(`${column} = $${values.length}`);
+      const isJson = key === 'pronunciationOverrides';
+      values.push(isJson ? JSON.stringify(fields[key]) : fields[key]);
+      sets.push(`${column} = $${values.length}${isJson ? '::jsonb' : ''}`);
     }
     if (sets.length === 0) throw new ValidationError('No fields to update');
-    // Every save stamps the last-edited time (texts."updatedAt", migration 194) — the
-    // Reader list's "Recently edited" sort. An icon change counts as an edit too.
-    sets.push('"updatedAt" = now()');
+    // A save stamps the last-edited time (texts."updatedAt", migration 194) — the
+    // Reader list's "Recently edited" sort. An icon change counts as an edit too; a
+    // reading-choice-only update does not (TextService passes touchUpdatedAt: false).
+    if (fields.touchUpdatedAt !== false) sets.push('"updatedAt" = now()');
     values.push(id);
 
     const { rows } = await this.run<Text>(

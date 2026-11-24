@@ -404,4 +404,10 @@ export interface TextUpdateData {
   language?: Language;
   /** icons8 id to set, `null` to clear, `undefined` to leave as is. */
   iconId?: string | null;
+  /**
+   * The document's full READING CHOICES list (migration 207), replacing the stored one;
+   * `undefined` leaves it (re-checked against new content when `content` changes).
+   * Untrusted shape: TextService.normalizePronunciationOverrides validates it.
+   */
+  pronunciationOverrides?: unknown;
 }

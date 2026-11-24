@@ -16,9 +16,9 @@ export type { FlpBreakCandidate, FlpBreakContext, FlpBreakGame, FlpBreakPersonal
 /**
  * Every game that can run as an flp break, by gameId (docs/FLP_GAME_BREAKS.md § 6).
  * A game joins the rotation by getting an entry here — once its Stage is extracted.
- * Extraction order: Match Speed ✓, Word Search ✓, Writing Grid ✓, Superposition ✓ (built as a
- * Stage), Speed Reading ✓, Memory Map ✓, Bucket Drop (adapter built, deliberately left out
- * of this map), Bubble Match, Hydra Bubbles.
+ * Every registry game has one: Match Speed, Word Search, Writing Grid, Superposition, Speed
+ * Reading, Memory Map. (Bubble Match, Hydra Bubbles and Bucket Drop, the games still
+ * without a live break, were archived 2026-11-23 — docs/ARCHIVED_FEATURES.md.)
  */
 // `any`: the map holds each game's own prefetch payload type; the host only threads
 // an adapter's `prefetch` result back into that SAME adapter's Stage.

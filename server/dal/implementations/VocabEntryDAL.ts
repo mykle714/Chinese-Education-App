@@ -1,11 +1,11 @@
-import { PoolClient, QueryResult } from 'pg';
+import { PoolClient } from 'pg';
 import { BaseDAL } from '../base/BaseDAL.js';
 import { IVocabEntryDAL, VetMarkState, MasteredAtWrite, CharacterMarkState } from '../interfaces/IVocabEntryDAL.js';
 import { dbManager as defaultDbManager, DatabaseManager } from '../base/DatabaseManager.js';
 import type { StarterPackBucket } from '../../contracts/wire.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig, TextColors, TextLayout, TypedMarkHistory, DefinitionCluster } from '../../types/index.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, UsedInItem, IconLayoutItem, SnapConfig, TextColors, TextLayout, TypedMarkHistory, DefinitionCluster } from '../../types/index.js';
 import { resolveDisplayDefinition, resolveDisplayPronunciation } from '../../utils/definitions.js';
-import { ValidationError, NotFoundError, BulkResult, ITransaction, DALError } from '../../types/dal.js';
+import { ValidationError, NotFoundError, ITransaction, DALError } from '../../types/dal.js';
 import db from '../../db.js';
 import { DICT_COLS, DICT_JOIN } from '../shared/dictJoin.js';
 import { vetTableForLanguage, vetReadFrom, VET_PHYSICAL_TABLES, vetSortedClause, WRITING_MASTERY_SELECT, VET_TRACKED_BUCKET } from '../shared/vetTable.js';
@@ -595,32 +595,6 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   }
 
   /**
-   * Find vocabulary entries by user ID and language with pagination.
-   * Sorted cards only — provisional cards are not part of the user's deck.
-   */
-  async findByUserIdAndLanguage(userId: string, language: string, limit: number = 100, offset: number = 0): Promise<VocabEntry[]> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-    if (!language) {
-      throw new ValidationError('Language is required');
-    }
-
-    const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
-      return await client.query(`
-        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}
-        FROM ${vetReadFrom(language)} ${DICT_JOIN}
-        WHERE ve."userId" = $1 AND ve."language" = $2
-        AND ${vetSortedClause()}
-        ORDER BY ve."createdAt" DESC
-        LIMIT $3 OFFSET $4
-      `, [userId, language, limit, offset]);
-    });
-
-    return result.recordset;
-  }
-
-  /**
    * Run one statement on the caller's transaction client when given, else on a pooled
    * client of its own (docs/BACKEND_LAYERING.md § 3 — the client moves up a layer, the
    * SQL never does).
@@ -811,90 +785,6 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   }
 
   /**
-   * Count vocabulary entries for a user by language
-   */
-  async countByUserIdAndLanguage(userId: string, language: string): Promise<number> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-    if (!language) {
-      throw new ValidationError('Language is required');
-    }
-
-    const result = await this.dbManager.executeQuery<{ count: string }>(async (client) => {
-      // Deck size as shown to the user, so sorted cards only.
-      return await client.query(`
-        SELECT COUNT(*) as count FROM ${vetTableForLanguage(language)} ve
-        WHERE ve."userId" = $1 AND ve."language" = $2 AND ${vetSortedClause()}
-      `, [userId, language]);
-    });
-
-    return parseInt(result.recordset[0].count);
-  }
-
-  /**
-   * Search vocabulary entries by term
-   */
-  async searchEntries(userId: string, searchTerm: string, language: string, limit: number = 50): Promise<VocabEntry[]> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-    if (!searchTerm) {
-      throw new ValidationError('Search term is required');
-    }
-    if (!language) {
-      throw new ValidationError('Language is required');
-    }
-
-    // Search matches on entryKey OR any individual definition phrase from det.
-    // det.definitions is a JSONB array already pre-split into one phrase per
-    // element (see scripts/backfill-split-semicolon-definitions.js), so
-    // unnesting it via jsonb_array_elements_text gives per-phrase matching.
-    // Scoped to the user's active language so results don't mix languages.
-    const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
-      return await client.query(`
-        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}
-        FROM ${vetReadFrom(language)} ${DICT_JOIN}
-        WHERE ve."userId" = $1 AND ve."language" = $4
-        AND ${vetSortedClause()}
-        AND (
-          ve."entryKey" ILIKE $2
-          OR EXISTS (
-            SELECT 1 FROM jsonb_array_elements_text(de.definitions) AS d(def)
-            WHERE d.def ILIKE $2
-          )
-        )
-        ORDER BY ve."createdAt" DESC
-        LIMIT $3
-      `, [userId, `%${searchTerm}%`, limit, language]);
-    });
-
-    return result.recordset;
-  }
-
-  /**
-   * Find entries by HSK level
-   */
-  async findByDifficultyLevel(userId: string, difficulty: DifficultyLevel): Promise<VocabEntry[]> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-
-    // HSK levels are a Chinese-only concept, so this query is hard-pinned to zh.
-    const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
-      return await client.query(`
-        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}
-        FROM ${vetReadFrom('zh')} ${DICT_JOIN}
-        WHERE ve."userId" = $1 AND ve."language" = 'zh' AND de."difficulty" = $2
-        AND ${vetSortedClause()}
-        ORDER BY ve."createdAt" DESC
-      `, [userId, difficulty]);
-    });
-
-    return result.recordset;
-  }
-
-  /**
    * Find vocabulary entries by a list of entry keys
    */
   async bulkFindByKeys(userId: string, entryKeys: string[], language: string): Promise<VocabEntry[]> {
@@ -1081,119 +971,6 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
 
       throw error;
     }
-  }
-
-  /**
-   * Bulk create vocabulary entries
-   */
-  async bulkCreate(entries: VocabEntryCreateData[]): Promise<VocabEntry[]> {
-    if (!entries || entries.length === 0) {
-      return [];
-    }
-
-    return await this.dbManager.executeInTransaction(async (transaction) => {
-      const results: VocabEntry[] = [];
-      
-      for (const entry of entries) {
-        const result = await this.createWithTransaction(entry, transaction);
-        results.push(result);
-      }
-      
-      return results;
-    });
-  }
-
-  /**
-   * Bulk upsert vocabulary entries (insert or update)
-   */
-  async bulkUpsert(entries: VocabEntryCreateData[]): Promise<BulkResult> {
-    if (!entries || entries.length === 0) {
-      return {
-        total: 0,
-        inserted: 0,
-        updated: 0,
-        skipped: 0,
-        errors: []
-      };
-    }
-
-    return await this.dbManager.executeInTransaction(async (transaction) => {
-      const result: BulkResult = {
-        total: entries.length,
-        inserted: 0,
-        updated: 0,
-        skipped: 0,
-        errors: []
-      };
-
-      const client = transaction.getClient();
-
-      for (let i = 0; i < entries.length; i++) {
-        const entry = entries[i];
-        
-        // Identity is (userId, entryKey, language) — default to 'zh' if the
-        // import didn't tag a language so legacy single-language data still works.
-        const entryLanguage = entry.language || 'zh';
-        // Route to the per-language vet table (vocabentries_zh / _es).
-        const vetTable = vetTableForLanguage(entryLanguage);
-
-        try {
-          // Check if entry exists for this user + key + language
-          const existingResult = await client.query(
-            `SELECT id FROM ${vetTable} WHERE "userId" = $1 AND "entryKey" = $2 AND "language" = $3`,
-            [entry.userId, entry.entryKey, entryLanguage]
-          );
-
-          if (existingResult.rows.length > 0) {
-            // Row already present — nothing on vet to update now that the
-            // definition lives on det. Count as skipped.
-            result.skipped++;
-          } else {
-            await client.query(`
-              INSERT INTO ${vetTable} ("userId", "entryKey", "language")
-              VALUES ($1, $2, $3)
-            `, [
-              entry.userId,
-              entry.entryKey,
-              entryLanguage
-            ]);
-            result.inserted++;
-          }
-        } catch (error: any) {
-          result.errors.push({
-            row: i + 1,
-            data: entry,
-            error: error.message
-          });
-        }
-      }
-
-      return result;
-    });
-  }
-
-  /**
-   * Find entries created after a specific date
-   */
-  async findEntriesCreatedAfter(userId: string, date: Date, language: string): Promise<VocabEntry[]> {
-    if (!userId) {
-      throw new ValidationError('User ID is required');
-    }
-    if (!language) {
-      throw new ValidationError('Language is required');
-    }
-
-    const result = await this.dbManager.executeQuery<VocabEntry>(async (client) => {
-      return await client.query(`
-        SELECT ve.*, ${DICT_COLS}, ${WRITING_MASTERY_SELECT}
-        FROM ${vetReadFrom(language)} ${DICT_JOIN}
-        WHERE ve."userId" = $1 AND ve."language" = $3 AND ve."createdAt" > $2
-        AND ${vetSortedClause()}
-        ORDER BY ve."createdAt" DESC
-      `, [userId, date, language]);
-    });
-
-    return result.recordset;
   }
 
   /**
@@ -1448,51 +1225,6 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
   }
 
   /**
-   * Bulk upsert with progress tracking for large imports
-   */
-  async bulkUpsertWithProgress(
-    entries: VocabEntryCreateData[],
-    progressCallback?: (processed: number, total: number) => void
-  ): Promise<BulkResult> {
-    if (!entries || entries.length === 0) {
-      return {
-        total: 0,
-        inserted: 0,
-        updated: 0,
-        skipped: 0,
-        errors: []
-      };
-    }
-
-    const batchSize = 100; // Process in batches for better performance
-    const result: BulkResult = {
-      total: entries.length,
-      inserted: 0,
-      updated: 0,
-      skipped: 0,
-      errors: []
-    };
-
-    for (let i = 0; i < entries.length; i += batchSize) {
-      const batch = entries.slice(i, i + batchSize);
-      const batchResult = await this.bulkUpsert(batch);
-      
-      // Aggregate results
-      result.inserted += batchResult.inserted;
-      result.updated += batchResult.updated;
-      result.skipped += batchResult.skipped;
-      result.errors.push(...batchResult.errors);
-      
-      // Report progress
-      if (progressCallback) {
-        progressCallback(Math.min(i + batchSize, entries.length), entries.length);
-      }
-    }
-
-    return result;
-  }
-
-  /**
    * Override create to handle vocabulary-specific validation
    */
   protected validateCreateData(data: VocabEntryCreateData): void {
@@ -1575,17 +1307,4 @@ export class VocabEntryDAL extends BaseDAL<VocabEntry, VocabEntryCreateData, Voc
     return await this.bulkFindByKeys(userId, entryKeys, language);
   }
 
-  /**
-   * Bulk create with transaction support
-   */
-  async bulkCreateWithTransaction(entries: VocabEntryCreateData[], transaction: ITransaction): Promise<VocabEntry[]> {
-    const results: VocabEntry[] = [];
-    
-    for (const entry of entries) {
-      const result = await this.createWithTransaction(entry, transaction);
-      results.push(result);
-    }
-    
-    return results;
-  }
 }

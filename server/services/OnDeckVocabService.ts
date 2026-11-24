@@ -185,7 +185,7 @@ export class OnDeckVocabService {
   //
   //   1. the clock of the bar that mark lands in has run out. For a recognition or
   //      production game that is the shared KNOW clock, so a card just answered in
-  //      the flp is resting for Bubble Match too (docs/MASTERY_REWORK.md § 6);
+  //      the flp is resting for Match Speed too (docs/MASTERY_REWORK.md § 6);
   //   2. the mark is not flp-only — once a card's core pbh reaches 6 its know marks
   //      count only from the flp (`isFlpOnlyMark`), so for a recognition/production
   //      game the card is filed as COOLED, playable only as backfill.
@@ -276,7 +276,7 @@ export class OnDeckVocabService {
    * history of `markType` alone (compute_type_category), NOT from the core-bar
    * compute_core_category the flp and decks page use. A card with a maxed
    * Recognition window but an empty Reading window is a Mastered candidate for
-   * Bubble Match and an Unfamiliar one for Word Search No-Pinyin — which is the
+   * Match Speed and an Unfamiliar one for Word Search No-Pinyin — which is the
    * point: each game drills the track it is actually training.
    *
    * The row's core category is still selected (as `category`) so downstream
@@ -287,8 +287,8 @@ export class OnDeckVocabService {
    * can place; omit for no length cap.
    *
    * `excludeIds` drops specific vocab-entry ids from every bucket. Used by the
-   * partial-refill game pool (Bubble Match's "Play Again" keeps the cards the
-   * player failed to match, so those must not come back as replacements).
+   * partial-refill game pool (a Speed Reading queue top-up excludes every
+   * card still on screen or queued, so none comes back as a duplicate).
    */
   private async fetchGameCandidates(
     userId: string,
@@ -376,7 +376,8 @@ export class OnDeckVocabService {
      * the round's score is measured against.
      *
      * The accepted consequence is the app-wide one: a mark on a still-cooling card
-     * is dropped at POST /api/flashcards/mark (docs/HYDRA_BUBBLES.md § 8), so those
+     * is dropped at POST /api/flashcards/mark (docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md
+     * § "Cooldown is a hard next-markable-at"), so those
      * cards play and score but do not advance mastery.
      */
     ignoreCooldown = false
@@ -462,9 +463,7 @@ export class OnDeckVocabService {
    * holds, then mint only the remainder — so this method is just the translation
    * between "how many cards does the board still need" and "rows to drain".
    *
-   * `levelOffset` pins the DIFFICULTY to lend around: Hydra maps a rolled colour to a
-   * tier relative to the learner (docs/HYDRA_BUBBLES.md § 6.2), and only the server
-   * knows their level. Absent, lending centres on the learner's own estimated level.
+   * Lending centres on the learner's own estimated level.
    *
    * Returns [] when supply is exhausted, so the caller simply comes back short — a
    * short board is always the correct answer, never a refusal.
@@ -476,19 +475,12 @@ export class OnDeckVocabService {
     markType: MarkType,
     now: number,
     maxEntryKeyLen: number | undefined,
-    excludeIds: number[],
-    levelOffset?: number
+    excludeIds: number[]
   ): Promise<VocabEntry[]> {
     if (need <= 0) return [];
 
-    // Resolve the tier ONCE, so re-lend and mint agree about what this colour means
-    // and the learner's level is estimated a single time.
-    const level = levelOffset !== undefined
-      ? await this.provisionalCardService.resolveLendLevel(userId, language, levelOffset)
-      : undefined;
-
     const { lentIds } = await this.provisionalCardService.acquireLentCards(
-      userId, language, need, 'default', { level, excludeIds }
+      userId, language, need, 'default', { excludeIds }
     );
     return this.fetchRowsByIds(userId, language, lentIds, markType, now, maxEntryKeyLen);
   }
@@ -1230,8 +1222,8 @@ export class OnDeckVocabService {
    * order — read the split straight off the payload. The games classify by WORD
    * against the set they already hold, never by position.
    *
-   * `includeContested: false` is the rolling top-up form — Match Speed's buffer and
-   * Hydra's colour buffers refill mid-run, and those refills are pure filler
+   * `includeContested: false` is the rolling top-up form — Match Speed's buffer
+   * refills mid-run, and those refills are pure filler
    * because the contested set was dealt once, up front, and is never recycled
    * (§ 5.3).
    *
@@ -1331,7 +1323,7 @@ export class OnDeckVocabService {
   }
 
   /**
-   * Build the bubble-match game pool. The game needs `total` (= sum of the
+   * Build a game pool (`GET /api/onDeck/gamePool`). The game needs `total` (= sum of the
    * requested distribution) cards to function, so this is a best-effort fill
    * rather than a hard per-category gate:
    *
@@ -1350,16 +1342,16 @@ export class OnDeckVocabService {
    *
    * PER-TYPE SELECTION (docs/MASTERY_REWORK.md § "Games select by their own mark
    * type" + § 6 "Games honor the same clock"): `gameMarkType` is the mark type this
-   * game emits (bubble-match = 'recognition'). It drives BOTH which category
+   * game emits (Match Speed = 'recognition', Speed Reading = 'reading'). It drives BOTH which category
    * bucket each candidate falls in (banded off that track's own 8-mark window) and
    * freshness (the clock of the bar it lands in, plus the flp-only line). The pool is filled FRESH-FIRST — cards whose game mark
    * type is off cooldown, drawn from the requested categories then the fallback
    * categories — and only tops up with COOLED cards (same category order) as a
    * last resort, so a recently-played library still yields a full board.
    *
-   * PARTIAL REFILL (`opts.need` + `opts.excludeIds`): Bubble Match's "Play Again"
-   * keeps the pairs the player failed to match and only swaps out the ones they
-   * cleared, so it asks for `need` (< total) cards while excluding the kept ids.
+   * PARTIAL REFILL (`opts.need` + `opts.excludeIds`): a mid-run top-up (Speed Reading's
+   * queue) asks for `need` (< total) cards while excluding
+   * every id it already holds.
    * The requested per-bucket quotas are scaled down by `need / total` so a partial
    * refill keeps roughly the same difficulty mix as a full board instead of being
    * front-loaded with whichever bucket happens to be listed first.
@@ -1387,21 +1379,6 @@ export class OnDeckVocabService {
       excludeIds?: number[];
       avoidIds?: number[];
       collection?: CollectionFilter | null;
-      /** Let this call lend even though it is a partial refill. Set only for a
-          ROLLING-SUPPLY surface (`ROLLING_SUPPLY_SURFACES`, contracts/wire.ts),
-          whose every spawn is a refill and which would otherwise never lend. */
-      lendOnRefill?: boolean;
-      /** Lend this many levels away from the learner's estimated level, instead of
-          at it — Hydra rolls a color and maps it to a tier offset
-          (docs/HYDRA_BUBBLES.md § 6.2). Resolved to an absolute level by
-          `ProvisionalCardService.resolveLendLevel`, and ignored unless lending
-          actually fires. */
-      lendLevelOffset?: number;
-      /** Never fill from outside the requested buckets. Set by callers for whom the
-          bucket IS the answer rather than a preference — Hydra pays the player by the
-          band a card came from (docs/HYDRA_BUBBLES.md § 6.2d). Such a request comes
-          back short rather than wrong. */
-      strictBuckets?: boolean;
       /** Vet ids the caller's baseline top-up lent this round
           (`ProvisionalCardService.ensureBaseline`). Selection is sorted-only, so
           without these the lent cards are invisible to the pool. */
@@ -1504,9 +1481,9 @@ export class OnDeckVocabService {
     // Distinct entries routinely resolve to the SAME dd — 高兴 / 开心 both "happy",
     // any two measure words both "measure word". Every game shows its cards at once,
     // so two same-dd cards on one board give a prompt two correct-looking answers of
-    // which only one scores. The pool is the single place all four gamePool games
-    // (Bubble Match, Match Speed, Speed Reading, Hydra) get their cards, so the guard
-    // lives here rather than four times over on the client.
+    // which only one scores. The pool is the single place the gamePool games
+    // (Match Speed, Speed Reading) get their cards, so the guard lives here rather
+    // than once per game on the client.
     // See docs/GAMES_FEATURE.md § "No two cards may share a dd in one round".
     //
     // SEEDED with the dds of the cards the caller is KEEPING (`excludeIds` = on the
@@ -1536,13 +1513,12 @@ export class OnDeckVocabService {
     }
 
     // HARD everywhere except the two cases lending itself can't run — must mirror
-    // `mayLend` exactly (declared again, unchanged, at tier 5 below) so the two can
-    // never drift apart: a focus-scoped round, and a partial refill that
-    // isn't a rolling-supply surface, both have no fallback to grow into if the
+    // `mayLend` exactly (read again, unchanged, at tier 5 below) so the two can
+    // never drift apart: a focus-scoped round, and a partial refill, both have no fallback to grow into if the
     // near-miss guard shortens the board, so those two admit a same-meaning-group
     // card rather than come back short. Exact-dd collisions (`takenDds` above) stay
     // hard in both cases — identical strings collide regardless.
-    const mayLend = opts.need === undefined || opts.lendOnRefill === true;
+    const mayLend = opts.need === undefined;
     const groupGuardHard = !opts.collection && mayLend;
 
     // Pop up to `limit` not-yet-selected cards off one category queue.
@@ -1584,44 +1560,13 @@ export class OnDeckVocabService {
       if (cards.length >= target) break;
       drain(eligible[category] ?? [], Math.min(count, target - cards.length));
     }
-    // STRICT-BUCKET REQUESTS NEVER SUBSTITUTE A BUCKET (2026-08-18; made explicit
-    // 2026-08-21).
-    //
-    // A caller can ask for a set of categories in one of two spirits. Usually it is
-    // describing a difficulty MIX it would like, and topping one quota up from a
-    // neighbouring bucket is exactly the best-effort fill it wants. But Hydra
-    // Bubbles rolls a COLOR, requests the bands that color is made of, and pays the
-    // player according to that color (docs/HYDRA_BUBBLES.md § 2, § 5) — for it the
-    // request is a question whose answer is the bucket itself, and a card from
-    // outside the set is one the caller then misreports to the player and misprices.
-    // `strictBuckets` collapses the fallback ORDER to the requested buckets alone:
-    // such a caller would rather come back SHORT — it can wait or skip the slot —
-    // than come back WRONG.
-    //
-    // ⚠️ IT IS A FLAG NOW, NOT AN INFERENCE, and that is the point. This used to be
-    // inferred as `requested.length === 1`, which worked only while Hydra asked for
-    // exactly one band per color. Hydra's two-color rework asks for TWO bands per
-    // color (BUCKETS_BY_COLOR, src/games/hydra-bubbles/constants.ts), which the old
-    // inference would have read as "a mix, please substitute freely" — silently
-    // reintroducing the mispricing it was written to stop. An intent this load-
-    // bearing has to be stated by the caller, not guessed from the shape of what it
-    // asked for.
-    //
-    // THE FLAG IS THE ONLY WAY IN (2026-09-13). A length-1 inference used to sit
-    // underneath as a "backstop" for single-bucket callers, and it turned out to have
-    // a real, unintended caller: Match Speed's buffer top-up omits every bucket that
-    // is already full (`topUpQuery`), so a learner with one Unfamiliar card routinely
-    // sent `?Unfamiliar=5` alone. The backstop read that as strict, skipped tier 2 and
-    // the fallback half of tiers 3–4, came back short, and fell straight through to
-    // tier 5 — LENDING to an account with ~700 sorted cards it could have borrowed
-    // from. The rule is: a non-strict request borrows across buckets before it lends,
-    // however many buckets it happened to name.
+    // Every request is a difficulty MIX: a short quota borrows from the neighbouring
+    // buckets (tier 2) before anything cooling, avoided or lent is reached, however
+    // many buckets the caller named. (Hydra Bubbles' "these bands or nothing"
+    // `strictBuckets` mode left with the game, archived 2026-11-23.)
     const requested = Object.keys(distribution);
-    const substituting = !opts.strictBuckets;
-    const fallbackOrder = substituting ? OnDeckVocabService.GAME_FALLBACK_ORDER : requested;
-    const lastResortOrder = substituting
-      ? [...requested, ...OnDeckVocabService.GAME_FALLBACK_ORDER]
-      : requested;
+    const fallbackOrder = OnDeckVocabService.GAME_FALLBACK_ORDER;
+    const lastResortOrder = [...requested, ...OnDeckVocabService.GAME_FALLBACK_ORDER];
 
     // 2. Still short → top up to `target` with FRESH cards from the fallback
     //    buckets (Target → Comfortable → Unfamiliar → Mastered).
@@ -1641,13 +1586,10 @@ export class OnDeckVocabService {
     // 3. Still short → COOLING cards (requested buckets first, then fallback), so a
     //    just-played library still assembles a full board.
     //
-    //    For a single-bucket caller this is the tier that MATTERS, and it is
-    //    deliberately allowed to break the cooldown: a genuinely Mastered
-    //    card that is merely resting is a truthful `bloom` bubble (Hydra's +1 tier),
-    //    whereas a minted HSK-1 word placed in that tier by its lend level is not.
-    //    Note the consequence —
+    //    Deliberately allowed to break the cooldown. Note the consequence —
     //    a mark on a still-cooling card is dropped by the guard at
-    //    POST /api/flashcards/mark (docs/HYDRA_BUBBLES.md § 8), so these cards are
+    //    POST /api/flashcards/mark (docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md
+    //    § "Cooldown is a hard next-markable-at"), so these cards are
     //    playable but do not advance mastery. That is the accepted trade: the
     //    cooldown exists precisely so re-answering a Mastered card inside its
     //    window earns nothing.
@@ -1681,29 +1623,21 @@ export class OnDeckVocabService {
     //    large the library is — and a minted row is itself Unfamiliar, so lending
     //    could never close them. Every load lent another ~18 cards, forever.
     //
-    //    In practice this tier is reached by exactly two callers: a genuinely
-    //    under-supplied learner whose baseline top-up could not cover the board
-    //    (dictionary exhausted), and Hydra Bubbles, whose every spawn is a refill and
-    //    whose colour ladder is built on lending (docs/HYDRA_BUBBLES.md § 6.2).
-    //    Hydra now pulls cooling cards before it lends, like everything else.
+    //    In practice this tier is reached only by a genuinely under-supplied learner
+    //    whose baseline top-up could not cover the board (dictionary exhausted).
     //
     //    Two sessions never reach it at all:
     //      * a FOCUS-scoped pool (docs/FOCUS_MODE.md § 4) — a focused round padded
     //        with words outside the day's set is not that set (same rule as
     //        canLendProvisional);
-    //      * a PARTIAL REFILL (`opts.need`) — Bubble Match's Play Again is mid-session
-    //        with a board in hand, and lending there would grow the player's deck on
-    //        every tap. EXCEPT for a rolling-supply surface (`opts.lendOnRefill`),
-    //        whose every spawn is a refill and which would otherwise never lend at
-    //        all. See ROLLING_SUPPLY_SURFACES in contracts/wire.ts.
-    //
-    //    The focus exemption has NO opt-out: a scoped round plays its set, rolling
-    //    supply or not (docs/HYDRA_BUBBLES.md § 6.3).
+    //      * a PARTIAL REFILL (`opts.need`) — a mid-session top-up (Speed Reading's
+    //        queue) already has a board in hand, and lending there would grow the
+    //        player's deck on every refill.
     //    (`mayLend` declared once, above — see the near-miss guard comment there.)
     if (cards.length < target && !opts.collection && mayLend) {
       const lent = await this.lendGameCandidates(
         userId, language, target - cards.length, gameMarkType, now,
-        undefined, [...excludeIds, ...selectedIds], opts.lendLevelOffset
+        undefined, [...excludeIds, ...selectedIds]
       );
       // The re-query is unaware of the soft-avoid tier, so filter those back out.
       drain(lent.filter((card) => !avoidIds.has(card.id)), target - cards.length);
@@ -1741,7 +1675,7 @@ export class OnDeckVocabService {
    * `board` picks the grid (WORD_SEARCH_BOARDS): 9 words on 7×6, or 7 on 6×5 for a Deck
    * Tower break.
    *
-   * Selection reuses the bubble-match pool shape (requested distribution + the
+   * Selection reuses the game pool's shape (requested distribution + the
    * same fallback top-up order), restricted to `entryKey` <= 4 characters (the
    * template fallback in wordSearchGrid.ts guarantees a fit only up to that
    * length — see docs/WORD_SEARCH_TEMPLATES.md), then adds a de-dup pass
@@ -1899,7 +1833,7 @@ export class OnDeckVocabService {
 
     // PHASE 2 NEAR-MISS GUARD (docs/GLOSS_CONFUSABILITY.md § 6), mirroring
     // `getGameVocabPool`'s `takenGroups`/`glossKeyToGroup`. Word Search has no
-    // `need`/`lendOnRefill` split — a focus-scoped grid is the only round
+    // `need` split — a focus-scoped grid is the only round
     // that never lends — so the guard is hard unless `collection` is set. Unlike
     // `takenDds`, `glossKeyToGroup` grows over the method's lifetime: challenge
     // filler and lent rows are fetched AFTER this initial batch (below), so
@@ -2042,7 +1976,7 @@ export class OnDeckVocabService {
     if (selected.length < total && !collection && !challenge) {
       const lent = await this.lendGameCandidates(
         userId, language, total - selected.length, gameMarkType, now,
-        4, [...selectedIds], undefined
+        4, [...selectedIds]
       );
       // Unshift: freshly lent words go to the FRONT of the Unfamiliar queue, ahead
       // of any Unfamiliar card the quota pass left behind.

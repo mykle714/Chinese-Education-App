@@ -32,7 +32,6 @@ Referenced code: `src/routes/routeMeta.ts` → `ROUTE_META`, `FLAGGED_OFF_PATHS`
 | `/` | `DeckTowerPage` (td) | — the home page; footer **Flashcards** tab | 2026-11-10 |
 | `/lessons` | `LessonsPage` (placeholder) | footer **Lessons** tab (`MobileFooter`) | 2026-11-10 |
 | `/dictionary` | Dictionary | footer **Dictionary** tab | 2026-11-11 |
-| `/flashcards/card/:id` | `VocabCardDetailPage` (cdp) | td cards page → a card (`DeckTowerPage` → `slideNavigate(withLens(...))`) | 2026-11-10 |
 | `/discover/sort/:language` | acp | td's sort platform (`DeckTowerPage` → `useDiscoverNavigation().sortPath`) | 2026-11-10 |
 | `/flashcards/writing/notebook` | `WritingNotebookPage` | td writing world → notebook stack (`DeckTowerPage` → `NOTEBOOK_PATH`) | 2026-11-10 |
 | `/reader` | `ReaderPage` | Menu popover → **Reader** | 2026-11-10 |
@@ -60,6 +59,7 @@ Rendered in place, with no URL of their own. Everything they render is active du
 | Menu popover (hp) | footer **Menu** tab | 2026-11-10 |
 | AccountSheet (Account / Friends / Settings tabs) | td header avatar (`DeckTowerAvatar`) | 2026-11-10 |
 | td launch screen | td, once per launch | 2026-11-11 |
+| td card view (`TowerCardView`, the saved-card detail — the routed cdp until 2026-11-23) and its eip / Compare / fie | td cards page → a card (`DeckTowerPage` → `onOpenTowerCard` → `useTowerCardView().open`) | 2026-11-23 |
 | Superposition (game break) | wflp → a game break (`src/games/flpBreak/index.ts` → `FLP_BREAK_GAMES`; `GAME_FLAGS.superposition` on) | 2026-11-22 |
 
 ## Flagged off (reachable once the flag flips)
@@ -71,7 +71,8 @@ is the decision.
 |---|---|---|
 | `/community` | `community` | Menu popover → Community |
 | `/friends/challenges`, `/friends/challenges/history`, `/friends/challenges/:challengeId` | `studyChallenge` | AccountSheet → Friends tab → Challenges |
-| Routed game pages (`src/games/registry.ts`) | `standaloneGames` | none today: the Games hub was deleted 2026-11-06. Games run as flp breaks inside td. |
+| `/voice`, `/voice/:sessionId` | `voiceAssistant` | Menu popover → Voice |
+| Routed game pages (`src/games/registry.ts`: `/games/word-search`, `/games/match-speed`) | `standaloneGames` | none today: the Games hub was deleted 2026-11-06. Both games run as flp breaks inside td. (Bubble Match, Hydra Bubbles and Bucket Drop, which had no break, were archived 2026-11-23 — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md).) |
 
 ## Orphans (no entry point; awaiting a decision)
 
@@ -80,5 +81,6 @@ Pages with a route but no way to reach them from td. Record the user's decision 
 
 | Route | Page | Finding | Decision |
 |---|---|---|---|
-| `/font-lab` | `FontLabPage` | Dev-only type lab, reachable only by typing the URL (by design, per its `ROUTE_META` note). | keep (dev tool), until told otherwise |
-| `/gravity-lab` | `GravityLabPage` | Dev-only gravity lab (docs/GRAVITY_LAB.md), reachable only by typing the URL (by design, per its `ROUTE_META` note). | keep (dev tool), until told otherwise |
+| `/gravity-lab` | `GravityLabPage` | Dev-only gravity lab (docs/GRAVITY_LAB.md), reachable only by typing the URL (by design, per its `ROUTE_META` note). | keep — owner still working on it (2026-11-23) |
+
+`/font-lab` (FontLabPage) was deleted 2026-11-23 by owner decision.

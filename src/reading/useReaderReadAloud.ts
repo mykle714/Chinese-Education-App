@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { OverrideLookup } from "./pronunciationOverrides";
 import { useBackgroundPause } from "../games/runtime/useBackgroundPause";
 import { useTTS } from "../hooks/useTTS";
 import type { TTSLang } from "../services/tts";
 import type { SegmentSpan } from "./documentSegmentation";
+import type { SentenceRange } from "./readerSentences";
 import { buildReadAloudClauses, type ReadAloudClause } from "./readAloudClauses";
 import { scrollSelectionIntoView } from "./textSelectionUtils";
 
@@ -21,6 +23,18 @@ import { scrollSelectionIntoView } from "./textSelectionUtils";
  * When the provider cannot report a length (the browser-voice fallback), the clause is
  * paced on `learnedMsPerUnit`: the average speaking speed of the cloud clips this
  * session.
+ *
+ * ── A selected sentence is read alone ──────────────────────────────────────────────
+ * When the page passes `getSelectedSentence` and a sentence is selected (SENTENCE MODE,
+ * useTextSelection → `selectedSentence`) at the press, the run starts at the sentence and
+ * stops at its end instead of reading on to the end of the document (owner's call
+ * 2026-11-23). Exact, because a sentence end is always a clause end (readerSentences.ts:
+ * the sentence rules are a subset of the clause rules), so the run is just the clauses
+ * that begin before the sentence ends. The word highlight ends sentence mode as any
+ * selection does while it plays; when the run ENDS ON ITS OWN, `reselectSentence` puts the
+ * sentence back (owner's call 2026-11-23), so the keycap returns to the sentence face and
+ * another press replays it. A stop mid-sentence (any input, backgrounding) leaves the caret
+ * on the current word, like every stop.
  *
  * ── The selection IS the highlight ─────────────────────────────────────────────────
  * Each word is selected in the reading textarea through `selectRange`, exactly as a
@@ -102,6 +116,8 @@ interface UseReaderReadAloudArgs {
     spans: SegmentSpan[];
     // Word → pinyin (the Pinyin display mode's map), or null for a language without a hint.
     pronunciations: Map<string, string> | null;
+    // READING CHOICES: a span's chosen reading, which outranks `pronunciations`.
+    readingAt?: OverrideLookup;
     inputRef: React.RefObject<HTMLTextAreaElement | null>;
     // useTextSelection.selectRange — selects a word as if the learner had placed it.
     selectRange: (start: number, end: number) => void;
@@ -111,16 +127,26 @@ interface UseReaderReadAloudArgs {
     // Whether the textarea is the visible view. In the Pinyin mode ReaderCpcdView scrolls
     // itself to the selection, so only the text mode needs the textarea scrolled.
     textareaVisible: boolean;
+    // The sentence selected right now (SENTENCE MODE), or null. When it returns a range at
+    // the press, only that sentence is read (see "A selected sentence is read alone").
+    // Optional: a caller without sentence mode (or that wants the old behaviour) omits it.
+    getSelectedSentence?: () => SentenceRange | null;
+    // Re-select the sentence a sentence-only run read, once it finishes on its own
+    // (useTextSelection → selectSentenceAtOffset). Paired with `getSelectedSentence`.
+    reselectSentence?: (sentence: SentenceRange) => void;
 }
 
 export function useReaderReadAloud({
     content,
     spans,
     pronunciations,
+    readingAt,
     inputRef,
     selectRange,
     documentLanguage,
     textareaVisible,
+    getSelectedSentence,
+    reselectSentence,
 }: UseReaderReadAloudArgs) {
     const tts = useTTS();
     const { speakSentence, prefetchSentence, cancel, unlockAudio } = tts;
@@ -143,8 +169,8 @@ export function useReaderReadAloud({
     const isFollowPaused = useCallback(() => performance.now() < followPausedUntilRef.current, []);
 
     // Latest values for the async loop and timers, which outlive the render that started them.
-    const latestRef = useRef({ selectRange, textareaVisible });
-    latestRef.current = { selectRange, textareaVisible };
+    const latestRef = useRef({ selectRange, textareaVisible, getSelectedSentence, reselectSentence });
+    latestRef.current = { selectRange, textareaVisible, getSelectedSentence, reselectSentence };
 
     const clearWordTimers = useCallback(() => {
         for (const t of wordTimersRef.current) clearTimeout(t);
@@ -187,13 +213,22 @@ export function useReaderReadAloud({
         // every clip after the first plays from code that runs after an await.
         unlockAudio();
         const runId = ++runIdRef.current;
-        const caret = inputRef.current?.selectionStart ?? 0;
         const splitEnglishRuns = documentLanguage === "zh";
         const documentLang = documentTTSLang(documentLanguage);
         const clipLang = (clause: ReadAloudClause) => (clause.voice === "english" ? ENGLISH_TTS_LANG : documentLang);
-        let clauses = buildReadAloudClauses(content, spans, caret, pronunciations, splitEnglishRuns);
-        // Caret after the last word: read from the top instead of doing nothing.
-        if (clauses.length === 0) clauses = buildReadAloudClauses(content, spans, 0, pronunciations, splitEnglishRuns);
+        // Read the sentence once it is captured here: the first word highlight ends sentence mode.
+        const sentence = latestRef.current.getSelectedSentence?.() ?? null;
+        let clauses: ReadAloudClause[];
+        if (sentence) {
+            // Only the selected sentence: its clauses, cut off at its end (see the hook doc).
+            clauses = buildReadAloudClauses(content, spans, sentence.start, pronunciations, splitEnglishRuns, readingAt)
+                .filter((clause) => clause.start < sentence.end);
+        } else {
+            const caret = inputRef.current?.selectionStart ?? 0;
+            clauses = buildReadAloudClauses(content, spans, caret, pronunciations, splitEnglishRuns, readingAt);
+            // Caret after the last word: read from the top instead of doing nothing.
+            if (clauses.length === 0) clauses = buildReadAloudClauses(content, spans, 0, pronunciations, splitEnglishRuns, readingAt);
+        }
         if (clauses.length === 0) return;
         setPlaying(true);
 
@@ -228,12 +263,26 @@ export function useReaderReadAloud({
                 // Land on the clause's last word, in case its timer had not fired yet.
                 selectWord(clause.spans[clause.spans.length - 1]);
             }
-            if (runIdRef.current === runId) setPlaying(false);
+            if (runIdRef.current !== runId) return;
+            const reselect = latestRef.current.reselectSentence;
+            if (sentence && reselect) {
+                // Back to the sentence it read (see "A selected sentence is read alone").
+                // `playing` drops a frame LATER, so the selection change commits while it is
+                // still true and tap-to-hear (useReadingKeycap, which stands down during a
+                // read) does not speak the sentence's selection — e.g. a one-word title line
+                // that matches a det entry.
+                reselect(sentence);
+                requestAnimationFrame(() => {
+                    if (runIdRef.current === runId) setPlaying(false);
+                });
+                return;
+            }
+            setPlaying(false);
         })().catch((err) => {
             console.warn("[useReaderReadAloud] read-aloud run failed:", err);
             if (runIdRef.current === runId) setPlaying(false);
         });
-    }, [content, spans, pronunciations, documentLanguage, inputRef, unlockAudio, prefetchSentence, speakSentence, selectWord, scheduleWords, clearWordTimers, setPlaying]);
+    }, [content, spans, pronunciations, readingAt, documentLanguage, inputRef, unlockAudio, prefetchSentence, speakSentence, selectWord, scheduleWords, clearWordTimers, setPlaying]);
 
     // ANY INPUT STOPS IT, AND STILL DOES ITS OWN JOB (owner's call 2026-11-17): a tap, click
     // or key press while playing stops the reading and then reaches its target as usual, so

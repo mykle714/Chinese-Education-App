@@ -133,9 +133,8 @@ export const FEATURE_FLAGS = {
   superpositionStoredGroups: true,
 
   /**
-   * Standalone game pages: the ROUTED games' own pages (`/games/bubble-match`,
-   * `/games/word-search`, `/games/match-speed`, `/games/hydra-bubbles`,
-   * `/games/bucket-drop`). A CLIENT-ONLY route gate. Off, `ROUTED_GAMES`
+   * Standalone game pages: the ROUTED games' own pages (`/games/word-search`,
+   * `/games/match-speed`). A CLIENT-ONLY route gate. Off, `ROUTED_GAMES`
    * (src/games/registry.ts) is empty, so no game route is mounted and nothing in the
    * route table, `originLabelFor` or the route tests enumerates one. The Games hub that
    * launched them (`/games`, GamesPage) was deleted 2026-11-06 along with its Menu row,
@@ -143,11 +142,11 @@ export const FEATURE_FLAGS = {
    * Challenge's `challengeLaunch`, itself flagged off).
    *
    * NOT gated: the games themselves as flp BREAKS (src/games/flpBreak, played inside the
-   * Deck Tower's study session). Match Speed and Word Search stay playable there. Bubble
-   * Match and Hydra Bubbles have no break adapter, and Bucket Drop's adapter is not in
-   * the rotation, so with this off those three are dormant (code kept, not reachable).
-   * Also not gated: the server's `/api/games/*` endpoints, which the breaks still use.
-   * This is why it is a feature flag and not five `GAME_FLAGS` entries: a game flag
+   * Deck Tower's study session). Match Speed and Word Search stay playable there. (Bubble
+   * Match, Hydra Bubbles and Bucket Drop, which had no live break, were archived
+   * 2026-11-23 — docs/ARCHIVED_FEATURES.md.) Also not gated: the server's
+   * `/api/games/speedReading/*` endpoint, which the Speed Reading break uses.
+   * This is why it is a feature flag and not per-game `GAME_FLAGS` entries: a game flag
    * would also remove the game's break.
    *
    * ⚠️ CURRENTLY OFF.
@@ -220,8 +219,8 @@ export type GameFlagId = (typeof KNOWN_GAME_IDS)[number];
  * and every other game untouched.
  *
  * ── Why a separate record instead of more `FEATURE_FLAGS` keys ───────────────
- * Games are keyed by a slug that ALREADY exists (`GameDef.gameId`, and the
- * `gameassets.gameId` column), so a `gameBubbleMatch`-style key would be a second
+ * Games are keyed by a slug that ALREADY exists (`GameDef.gameId`), so a
+ * `gameWordSearch`-style key would be a second
  * spelling of an id the app already has, and the two could drift. Keying by the
  * real slug means the gate can be applied by id wherever a game is identified.
  *
@@ -234,14 +233,11 @@ export type GameFlagId = (typeof KNOWN_GAME_IDS)[number];
  * prevent for routes.
  */
 export const GAME_FLAGS: Record<GameFlagId, boolean> = {
-  'bubble-match': true,
   'word-search': true,
   'match-speed': true,
   'speed-reading': true,
-  'hydra-bubbles': true,
   'memory-map': true,
   'writing-grid': true,
-  'bucket-drop': true,
   superposition: true,
 };
 
@@ -250,9 +246,8 @@ export const GAME_FLAGS: Record<GameFlagId, boolean> = {
  *
  * Takes a plain `string` because callers hold a raw `:gameId` path segment or a
  * registry slug, not a narrowed union. An UNRECOGNISED id returns false — the
- * fail-closed direction. On the server that is only ever reached alongside
- * `isKnownGameId`, which rejects unknown slugs first with a clearer 404; the
- * fallback here is the backstop, not the gate.
+ * fail-closed direction. Server callers: server.ts, which mounts a game's own
+ * router only when its flag is on (writing-grid, superposition).
  */
 export const isGameEnabled = (gameId: string): boolean =>
   (GAME_FLAGS as Record<string, boolean>)[gameId] ?? false;

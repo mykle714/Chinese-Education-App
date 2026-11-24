@@ -115,7 +115,7 @@ is otherwise underused. Reading is a tracked mastery bar with no dedicated teach
   — CLAUDE.md requires new columns be confirmed.**
 - Quality bar: a bad mnemonic is worse than none, because it is memorable. Human review
   before display, or ship and flag?
-- Where does it surface — the bt tab, the cdp, or a dedicated drill?
+- Where does it surface — the bt tab, td's card view (the cdp's in-place replacement since 2026-11-23), or a dedicated drill?
 
 ---
 
@@ -180,7 +180,8 @@ place a learner is *told* which of the two they are doing. The bar they already 
 called **"Know"** (`WORLD_LABELS.core`, `src/utils/masteryCompute.ts`) and blends the
 two; the split leaks out around it in: `MARK_TYPE_LABELS` / `MARK_TYPE_COLORS` (the
 cdp `.msb` window paints recognition blue and production green, `MasteryWindow.tsx`
-— note its per-track **cooldown rows** are the same leak), the mini-card two-mark strip
+— note its per-track **cooldown rows** are the same leak; the cdp and `MasteryWindow` were
+both deleted 2026-11-23 — td's card view shows one Know bar in `TowerMasteryPanel`), the mini-card two-mark strip
 (`MiniVocabCard.tsx`), the Word Search hub sub-tile chip ("Reading & Production",
 `WordSearchHubItem.tsx` — dormant since the Games hub, `src/games/GamesPage.tsx`, and its
 tile subtitles were deleted 2026-11-06), and the Account page Goals copy (`src/pages/AccountSheet.tsx`,
@@ -209,8 +210,8 @@ windows for one bar.
   (`ReviewMark`) does not record where a mark came from today — **this is the one piece
   of new stored state the item probably needs, and it needs confirming.**
 - **What does a capped card look like on screen?** A filled window that visibly cannot
-  finish is a dead end unless the UI says why. Does the cdp gain a "review this on the
-  flp to finish" affordance?
+  finish is a dead end unless the UI says why. Does td's card view (`TowerMasteryPanel`)
+  gain a "review this on the flp to finish" affordance?
 - **Does the cap apply retroactively** to cards already Mastered off game marks, or
   only from the ship date forward? (Retroactive demotion writes `category_promotions`
   rows downward — [VELOCITY.md](./VELOCITY.md) — and un-masters cards in the Mastered
@@ -218,7 +219,9 @@ windows for one bar.
 - **(b): does the cdp still show two windows** for the core bar, or one merged 8-slot
   window? Merging is a real design question, not a rename — the two tracks have
   independent windows and independent cooldowns, so a merged window has to pick what a
-  cell means.
+  cell means. *(2026-11-23: the cdp is gone; td's card view's `TowerMasteryPanel` shows ONE
+  Know bar filled to pbh/8 with no per-slot cells, so the "what a cell means" part is moot
+  there.)*
 - ~~**(b): what happens to the Bubble Match track toggle**~~ — moot: it was deleted
   2026-10-03 (the hub pins Recognition; reading is played as reading-flp breaks).
 

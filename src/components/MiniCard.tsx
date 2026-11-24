@@ -3,7 +3,7 @@ import { Box, Typography, useTheme, type BoxProps } from "@mui/material";
 import ForeignText from "./ForeignText";
 import GlossText from "./GlossText";
 import { iconImageUrl } from "../cardIcons/cardIconLayout";
-import { masteryWindowCells, type MasteryBar } from "../utils/masteryCompute";
+import { masteryFillFraction, type MasteryBar } from "../utils/masteryCompute";
 import { getBandMark } from "../utils/categoryColors";
 import type { Language } from "../types";
 import { COLORS } from "../theme/colors";
@@ -104,91 +104,59 @@ export interface MiniCardProps extends Omit<BoxProps, "children"> {
 // constants live in miniCardFace.ts, beside the tile's geometry, so MiniCardSvg — this
 // card's SVG twin — places its contents on the same numbers.
 
-// ── Mastery window strip (docs/MASTERY_REWORK.md § "Mini cards") ────────────────
-// The cdp's eight-mark window (`MasteryWindow`, the design's `.msb .cells`) shrunk to a
-// hairline along the bottom of the card: **`PBH_FULL` discrete cells, one per mark**, for
-// the surface's lens bar. Same shape, same `masteryWindowCells` geometry, same partial
-// trailing cell — so a learner who has read the cdp already knows how to read this.
+// ── Mastery strip (docs/MASTERY_REWORK.md § "Mini cards — the mastery strip") ─────
+// The card view's mastery bar (`TowerMasteryPanel`, deckTower/cardView) shrunk to a hairline along the bottom of the
+// card: ONE track filled to `pbh / PBH_FULL` (`masteryFillFraction`, the same helper the
+// cdp uses, so the two never disagree on where the fill ends) for the surface's lens bar.
 //
-// Cells rather than a continuous fill because pbh IS a count, not a percentage. One bad
-// mark turns a cell off; it does not drain a fraction of a tank. The thumbnail should not
-// invite an estimate the detail page spent a whole component refusing to invite.
+// It was `PBH_FULL` discrete cells (one per mark) until 2026-11-23, when the owner
+// replaced the cells with a single long fill here and on the cdp. No ticks at this scale
+// — at 3.5px tall they would be noise; the cdp carries them.
 //
-// COLOR is the lens bar's utcm band in the MARK tier (`getBandMark`), one hue for every
-// filled cell — the same rule and the same colour as the cdp window: "mastery bars are
-// colored by mastery progress, not the mark type" (2026-09-23). The per-type split
-// survives in the tooltip.
+// COLOR is the lens bar's utcm band in the MARK tier (`getBandMark`) — the same rule and
+// the same colour as the cdp bar: "mastery bars are colored by mastery progress, not the
+// mark type" (2026-09-23). Saturated enough to need no `markOutline` ring (the design
+// draws these `box-shadow:none`).
 //
-// No small-size variant any more. Target used to take a deeper `--yelMkD` here because
-// full-strength `--yelMk` dissolved into the cream face at 3.5px; the 2026-09-28 darkening
-// of the whole Mark tier (5% L) made `--yelMk` itself that deep, so the strip and the cdp
-// now paint identical hexes. The Mark tier is saturated enough to need no `markOutline`
-// ring (the design draws these `box-shadow:none`), which is what a 3.5px cell needs.
-//
-// LINEAGE. Frame 17 draws this strip as cells in the MARK tier; only the strip's
-// PLACEMENT (full width, 8px inset, bottom of the card) and its hue rule are the frame's.
-// Geometry: MINI_CARD_BAR_STRIP (miniCardFace.ts).
+// LINEAGE. Only the strip's PLACEMENT (full width, 8px inset, bottom of the card) and its
+// hue rule are v2 frame 17's. Geometry: MINI_CARD_BAR_STRIP (miniCardFace.ts).
 
-const MasteryStrip: React.FC<{ bar: MasteryBar }> = ({ bar }) => {
-    // The same eight-cell geometry the cdp window draws, from the same helper — the two
-    // surfaces must not drift on where the partial cell falls.
-    const cells = masteryWindowCells(bar);
-    const bandMark = getBandMark(bar.category);
+const MasteryStrip: React.FC<{ bar: MasteryBar }> = ({ bar }) => (
     // No hover tooltip. It used to spell out the recognition/production split
     // ("Recognition 5, Production 2"); that split is a backend modelling detail, not a
     // learner concept (docs/BACKLOG.md § 9b, docs/MASTERY_REWORK.md § "Mini cards").
-    return (
+    <Box
+        className="mini-card__mastery-strip"
+        sx={{
+            position: "absolute",
+            bottom: MINI_CARD_BAR_STRIP.bottom,
+            left: MINI_CARD_BAR_STRIP.inset,
+            right: MINI_CARD_BAR_STRIP.inset,
+            height: MINI_CARD_BAR_STRIP.height,
+            borderRadius: MINI_CARD_BAR_STRIP.height / 2,
+            // Frame 17's empty-track tint, `.mcd .mk i{background:var(--outline)}`.
+            // Deliberately NOT the cdp's 6% fill: it vanishes on the cream face at 3.5px.
+            backgroundColor: COLORS.markOutline,
+            // Clips the fill to the strip's rounded ends.
+            overflow: "hidden",
+            zIndex: 1,
+        }}
+    >
         <Box
-            className="mini-card__mastery-window"
+            className="mini-card__mastery-strip-fill"
             sx={{
-                position: "absolute",
-                bottom: MINI_CARD_BAR_STRIP.bottom,
-                left: MINI_CARD_BAR_STRIP.inset,
-                right: MINI_CARD_BAR_STRIP.inset,
-                display: "flex",
-                gap: `${MINI_CARD_BAR_STRIP.cellGap}px`,
-                zIndex: 1,
+                // Exact, not rounded — two genuinely different cards must not read the same.
+                width: `${masteryFillFraction(bar) * 100}%`,
+                height: "100%",
+                borderRadius: MINI_CARD_BAR_STRIP.height / 2,
+                backgroundColor: getBandMark(bar.category),
+                // Color transitions too: crossing a band boundary should read as the
+                // strip changing state.
+                transition: "width 240ms ease, background-color 240ms ease",
             }}
-        >
-            {cells.map((cell, i) => (
-                <Box
-                    key={i}
-                    className={`mini-card__mastery-cell${cell.fill > 0 ? " mini-card__mastery-cell--filled" : ""}`}
-                    sx={{
-                        // Equal share of the row, so the eight cells always span the card
-                        // whatever its width — no pixel math to keep in step with 92px.
-                        flex: 1,
-                        height: MINI_CARD_BAR_STRIP.height,
-                        borderRadius: MINI_CARD_BAR_STRIP.height / 2,
-                        // Frame 17's empty-track tint, `.mcd .mk i{background:var(--outline)}`.
-                        // Deliberately NOT the cdp's 6% fill + 12% inset ring: at 3.5px
-                        // tall that ring would be most of the cell.
-                        backgroundColor: COLORS.markOutline,
-                        overflow: "hidden",
-                    }}
-                >
-                    {/* A partial trailing cell is rendered partial, not rounded — rounding
-                        would make two genuinely different cards read the same. Every
-                        filled cell takes the band's mark colour; `cell.type` is
-                        deliberately unused (the cdp window does the same). */}
-                    {cell.fill > 0 && (
-                        <Box
-                            className="mini-card__mastery-cell-fill"
-                            sx={{
-                                width: `${cell.fill * 100}%`,
-                                height: "100%",
-                                backgroundColor: bandMark,
-                                // Color transitions too: crossing a band boundary should
-                                // read as the strip changing state, not one more cell.
-                                transition: "width 240ms ease, background-color 240ms ease",
-                            }}
-                        />
-                    )}
-                </Box>
-            ))}
-        </Box>
-    );
-};
+        />
+    </Box>
+);
 
 /**
  * forwardRef so the acp can wrap it in react-spring's `animated()` (which drives the

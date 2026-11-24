@@ -20,11 +20,10 @@ import { cjkFontStack, ensureCjkFontLoaded, resolveCjkFont } from "../theme/cjkF
  * (the write is idempotent) but pointless.
  *
  * ── This is the ONLY writer of `--cjk-font` at :root ─────────────────────────
- * /font-lab used to carry a dev-only "Use app-wide" override that also wrote this
- * property, and this effect stood down whenever that override was set. It was removed
- * (2026-09-05) because a debugging affordance silently and permanently outranked a
- * real account setting. The lab now only re-faces its own compare columns. Do not
- * reintroduce a second writer of this property.
+ * The dev font lab (deleted 2026-11-23) once carried a "Use app-wide" override that
+ * also wrote this property; it was removed (2026-09-05) because a debugging affordance
+ * silently and permanently outranked a real account setting. Do not reintroduce a
+ * second writer of this property.
  */
 export function useChineseFont(): void {
     useEffect(() => {

@@ -56,7 +56,7 @@ export interface MinimizablePopupProps {
      * parent (the phone frame, since the scrim is portaled there). The scrim still
      * covers the whole screen; only the puck (and the card's collapse target) moves.
      * Omitted, or no match, docks to the scrim's own corner — the SCREEN's corner.
-     * GameEndPopup and ProvisionalSortOffer pass `.game-frame` so the puck sits in the
+     * ProvisionalSortOffer passes `.game-frame` so the puck sits in the
      * game panel's corner rather than over the header's back arrow.
      */
     puckAnchorSelector?: string;
@@ -97,7 +97,7 @@ function findPuckAnchor(scrim: HTMLElement, selector: string): HTMLElement | nul
  * that can be clicked to bring the menu back.
  *
  * The puck docks into the scrim's corner by default, or into the corner of
- * `puckAnchorSelector`'s element (GameEndPopup: the game frame) when one is given.
+ * `puckAnchorSelector`'s element (ProvisionalSortOffer: the game frame) when one is given.
  *
  * ⚠️ THE SCRIM COVERS THE ENTIRE SCREEN. It is written in place but PORTALED to the
  * phone frame (`useScreenOverlayHost`, src/hooks/useScreenOverlayHost.ts) and pinned
@@ -108,12 +108,11 @@ function findPuckAnchor(scrim: HTMLElement, selector: string): HTMLElement | nul
  * sealed inside the transformed page Surface, under the footer (acp's done popup).
  * Rule: src/components/overlayHost.ts § "THE RULE FOR A DIM".
  *
- * Two of these can be on screen at once (a game's end popup in the top-right, the
- * provisional sort offer in the top-left); `corner`, `puckColor` and `zIndex` are
- * what keep the pair readable as two separate things.
+ * `corner`, `puckColor` and `zIndex` let two of these share a screen as separate things
+ * (that pairing — a game's end popup beside the sort offer — left with the archived
+ * GameEndPopup, 2026-11-23).
  *
- * Referenced by: src/games/runtime/GameEndPopup.tsx (the games' end-of-run popup),
- * src/components/ProvisionalSortOffer.tsx. See docs/PROVISIONAL_CARDS.md § 5.
+ * Referenced by: src/components/ProvisionalSortOffer.tsx. See docs/PROVISIONAL_CARDS.md § 5.
  */
 const MinimizablePopup: React.FC<MinimizablePopupProps> = ({
     minimized = false,

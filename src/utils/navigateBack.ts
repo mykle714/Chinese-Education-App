@@ -14,8 +14,7 @@ import type { NavigateFunction } from "react-router-dom";
  * Friends drill-ins
  * (Sent, Requests, Remove, Challenges — opened from the AccountSheet's Friends tab). Since
  * the `/menu`, `/games` and `/friends` pages were deleted (2026-11-06) these have no fixed
- * parent, so Back returns to whatever page they were opened over. Also used by the saved-card
- * cdp's delete (VocabCardDetailPage → `handleDelete`) and acp's exit
+ * parent, so Back returns to whatever page they were opened over. Also used by acp's exit
  * (AddCardsPage → `exitToOrigin`).
  *
  * Docs: docs/BACK_NAVIGATION.md, docs/NAVIGATION.md.

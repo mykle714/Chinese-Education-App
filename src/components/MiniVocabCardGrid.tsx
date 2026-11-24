@@ -104,7 +104,8 @@ interface MiniVocabCardGridProps {
     emptyMessage: string;
     // Tap handler for an individual card (should be referentially stable so the
     // memoized cards don't all re-render — pass a useCallback).
-    onCardClick: (entry: VocabEntry) => void;
+    // Also receives the tapped card's root element (MiniVocabCard `onClick`).
+    onCardClick: (entry: VocabEntry, element: HTMLElement) => void;
     // Class on the grid container itself (e.g. "decks-cards-preview").
     containerClassName: string;
     // Prefix for the loading/error/empty element class names so each usage keeps

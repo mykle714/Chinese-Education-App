@@ -39,8 +39,6 @@ import { SentenceExplanationService } from '../services/SentenceExplanationServi
 import { SentenceExplanationController } from '../controllers/SentenceExplanationController.js';
 import { ValidationController } from '../controllers/ValidationController.js';
 import { StarterPacksController } from '../controllers/StarterPacksController.js';
-import { GameAssetDAL } from './implementations/GameAssetDAL.js';
-import { GameProgressDAL } from './implementations/GameProgressDAL.js';
 import { Icons8DAL } from './implementations/Icons8DAL.js';
 import { Icons8Controller } from '../controllers/Icons8Controller.js';
 import { WinsDAL } from './implementations/WinsDAL.js';
@@ -59,9 +57,6 @@ import { WritingNotebookController } from '../controllers/WritingNotebookControl
 import { CommunityLayoutDAL } from './implementations/CommunityLayoutDAL.js';
 import { CommunityLayoutService } from '../services/CommunityLayoutService.js';
 import { CommunityLayoutController } from '../controllers/CommunityLayoutController.js';
-import { GameAssetService } from '../services/GameAssetService.js';
-import { GameProgressService } from '../services/GameProgressService.js';
-import { GamesController } from '../controllers/GamesController.js';
 import { SpeedReadingDAL } from './implementations/SpeedReadingDAL.js';
 import { SpeedReadingService } from '../services/SpeedReadingService.js';
 import { SpeedReadingController } from '../controllers/SpeedReadingController.js';
@@ -123,8 +118,6 @@ const sortPacksDAL = new SortPacksDAL();
 const starterPacksDAL = new StarterPacksDAL();
 const textDAL = new TextDAL();
 const validationDAL = new ValidationDAL();
-const gameAssetDAL = new GameAssetDAL();
-const gameProgressDAL = new GameProgressDAL();
 const icons8DAL = new Icons8DAL();
 const winsDAL = new WinsDAL();
 const communityLayoutDAL = new CommunityLayoutDAL();
@@ -190,8 +183,6 @@ const starterPacksService = new StarterPacksService(vocabEntryDAL, dictionaryDAL
 const textService = new TextService(userDAL, dictionaryDAL, textDAL);
 const validationService = new ValidationService(userDAL, validationDAL);
 const userMinutePointsService = new UserMinutePointsService(userMinutePointsDAL, userDAL, userLanguagesDAL, arenaService);
-const gameAssetService = new GameAssetService(gameAssetDAL);
-const gameProgressService = new GameProgressService(gameProgressDAL);
 // Community shared-layout feeds + votes; reuses vocabEntryService for the apply-to-card flow.
 const communityLayoutService = new CommunityLayoutService(communityLayoutDAL, vocabEntryService);
 // Read-only aggregate over four DALs; streak is masked for non-public users. Deliberately
@@ -276,13 +267,11 @@ const voiceSessionService = new VoiceSessionService(
 const voiceSessionController = new VoiceSessionController(voiceSessionService);
 const validationController = new ValidationController(validationService);
 const starterPacksController = new StarterPacksController(starterPacksService, provisionalCardService, cardAudioService);
-const gamesController = new GamesController(gameAssetService, gameProgressService);
-// Speed Reading is game-SPECIFIC and so gets its own controller rather than
-// growing the game-agnostic GamesController.
+// Speed Reading is game-SPECIFIC and so gets its own controller.
 const speedReadingService = new SpeedReadingService(speedReadingDAL);
 const speedReadingController = new SpeedReadingController(speedReadingService);
 // Memory Map likewise owns tables of its own (migration 151), so it gets the full
-// DAL/Service/Controller stack rather than joining the game-agnostic GamesController.
+// DAL/Service/Controller stack.
 // The service's `rng` argument is left at its Math.random default here; it exists so a
 // test can pin every spawn (docs/MEMORY_MAP_GAME.md § 9).
 const memoryMapDAL = new MemoryMapDAL();
@@ -371,11 +360,6 @@ export {
   sentenceExplanationController,
   validationController,
   starterPacksController,
-  gameAssetDAL,
-  gameProgressDAL,
-  gameAssetService,
-  gameProgressService,
-  gamesController,
   speedReadingDAL,
   speedReadingService,
   memoryMapDAL,

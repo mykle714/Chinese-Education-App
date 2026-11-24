@@ -41,19 +41,27 @@ export function useReaderWordActions(
     // (useReaderReadAloud): the Add key's per-word status fetch would fire ~4×/s, so it
     // stands down (the key is not drawn) until reading stops.
     suspendLearningStatus = false,
+    // READING CHOICES (docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Reading choices"): the
+    // toned reading the learner picked for this occurrence; undefined = the entry's own.
+    // Spoken as text + pinyin hint (the same clip key useReaderAudioPreload warms).
+    pronunciationOverride?: string,
 ) {
     const tts = useTTS();
     const vocabEntry = useMemo(() => (selected ? dictionaryEntryToVocabEntry(selected) : null), [selected]);
 
-    const { speak, surfaceAutoSpeak } = tts;
+    const { speak, surfaceAutoSpeak, speakSentence, surfaceAutoSpeakText } = tts;
     const speakSelected = useCallback(() => {
-        if (vocabEntry) void speak(vocabEntry);
-    }, [speak, vocabEntry]);
+        if (!vocabEntry) return;
+        if (pronunciationOverride) void speakSentence(vocabEntry.entryKey, pronunciationOverride);
+        else void speak(vocabEntry);
+    }, [speak, speakSentence, vocabEntry, pronunciationOverride]);
     // Tap-to-hear: the same word, spoken automatically — gated by the CALLER on the Reader's
     // own audio chip (useReaderAudioSettings), not on the app-wide autoplay flag.
     const autoSpeakSelected = useCallback(() => {
-        if (vocabEntry) void surfaceAutoSpeak(vocabEntry);
-    }, [surfaceAutoSpeak, vocabEntry]);
+        if (!vocabEntry) return;
+        if (pronunciationOverride) void surfaceAutoSpeakText(vocabEntry.entryKey, pronunciationOverride);
+        else void surfaceAutoSpeak(vocabEntry);
+    }, [surfaceAutoSpeak, surfaceAutoSpeakText, vocabEntry, pronunciationOverride]);
 
     const eip = useEipTabs({ language });
     const [eipOpen, setEipOpen] = useState(false);

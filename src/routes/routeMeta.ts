@@ -215,10 +215,9 @@ const PAGE_ROUTES: RouteMeta[] = [
     note: "The one FOOTERLESS node page (docs/UX_AND_NAVIGATION.md § Reader) — it still slides in from the right.",
   },
 
-  // The card detail page is a drill-in from the Deck Tower's cards page, so it keeps the
-  // Flashcards tab. (The Dictionary's read-only `/dictionary/card/:word` was deleted
-  // 2026-11-10 — a dictionary word is shown only in the eip sheet.)
-  { path: "/flashcards/card/:id", access: "any", shell: "frame", chrome: "node", footerTab: "deck" },
+  // No card detail route: a saved card opens IN PLACE over td's cards page (the card view,
+  // docs/DECK_TOWER.md § "The card view"; `/flashcards/card/:id` deleted 2026-11-23), and a
+  // dictionary word only in the eip sheet (`/dictionary/card/:word` deleted 2026-11-10).
 
   // Add Cards — the Discover hub (`/discover`) was deleted 2026-10-17, so acp is a
   // drill-in from the Deck Tower (the main world's sort platform) and lights the Flashcards tab. The
@@ -252,13 +251,6 @@ const PAGE_ROUTES: RouteMeta[] = [
   },
 
 
-  {
-    path: "/font-lab",
-    access: "any",
-    shell: "plain",
-    chrome: "none",
-    note: "Dev-only type labs (src/pages/fontLab/FontLabPage.tsx) — a shell over two modes: Chinese (FONTS.cjk) and Info type (FONTS.label, the overline voice). Not linked from any menu; reachable by typing the URL. Plain shell because each lab owns its own scroll container and needs the width for the compare grid.",
-  },
   {
     path: "/gravity-lab",
     access: "any",

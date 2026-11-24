@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams, useLocation } from "react-rout
 import { readExit } from "../../games/runtime/gameExit";
 import { readDashLaunch } from "../../utils/pageTransition";
 import { Box, Typography, ButtonBase, CircularProgress } from "@mui/material";
-import DelayedCircularProgress from "../../components/DelayedCircularProgress";
+import PawnLoader from "../../components/PawnLoader";
 import { styled, keyframes } from "@mui/material/styles";
 import { useDrag } from "@use-gesture/react";
 import { useSpring, animated } from "@react-spring/web";
@@ -730,9 +730,8 @@ const sortedBandSx = (size: MiniCardSize) => {
     } as const;
 };
 
-// The picked-up card's lift — the same value as Bubble Match's SCALE_HELD
-// (src/games/bubbles/constants.ts), and like it applied ONCE at pickup and held for the
-// whole drag: being over a bin does not change the card at all — the bin itself grows
+// The picked-up card's lift, applied ONCE at pickup and held for the whole drag (the
+// value came from the archived bubble games' SCALE_HELD): being over a bin does not change the card at all — the bin itself grows
 // (SortBins → ACTIVE_SCALE). The card is never washed or dimmed while held (user request
 // 2026-10-29; it used to take Bubble Match's scrim wash over a bin).
 // Kept local rather than imported: features/ must not reach into games/.
@@ -1609,6 +1608,22 @@ const AddCardsPage: React.FC = () => {
         [isResolved]
     );
 
+    // packBucketsRef writers: record / forget the bucket one card was sorted into this
+    // session (the input to applyPackSignal).
+    const recordPackBucket = useCallback((packKey: string, cardId: number, bucketId: string) => {
+        packBucketsRef.current = {
+            ...packBucketsRef.current,
+            [packKey]: { ...(packBucketsRef.current[packKey] ?? {}), [cardId]: bucketId },
+        };
+    }, []);
+    const forgetPackBucket = useCallback((packKey: string, cardId: number) => {
+        const buckets = packBucketsRef.current[packKey];
+        if (!buckets || !(cardId in buckets)) return;
+        const rest = { ...buckets };
+        delete rest[cardId];
+        packBucketsRef.current = { ...packBucketsRef.current, [packKey]: rest };
+    }, []);
+
     const pushUndo = useCallback((entry: UndoEntry) => {
         setUndoStack((prev) => [...prev, entry].slice(-UNDO_DEPTH));
     }, []);
@@ -1639,80 +1654,29 @@ const AddCardsPage: React.FC = () => {
         // nothing to do (§5.1).
     }, []);
 
-    const handleSortCard = useCallback(async (cardId: number, bucketId: string) => {
-        const pack = currentPack;
-        if (!pack) return;
-        pushUndo({ action: "sort", cardId, bucket: bucketId, pack });
-        markResolved(pack.packKey, [cardId]);
-        adjustTally(bucketId, pack.cards.find((c) => c.id === cardId), 1);
-        packBucketsRef.current = {
-            ...packBucketsRef.current,
-            [pack.packKey]: { ...(packBucketsRef.current[pack.packKey] ?? {}), [cardId]: bucketId },
-        };
-        const lastInPack = isPackComplete(pack);
+    // The live queue, for the failure rollbacks below: they run after an await, when the
+    // `queue` / `currentPack` their closure captured may no longer be what is on deck
+    // (a completing sort has already advanced the conveyor by then).
+    const queueRef = useRef(queue);
+    queueRef.current = queue;
 
-        // Update the auto target as soon as the pack completes, BEFORE the
-        // network round-trip — advancePack must see the new target immediately so the
-        // very next replenish request already reflects it (only the pack already queued
-        // behind this one lags by one card, per docs §6).
-        if (lastInPack) applyPackSignal(pack);
-
-        const sorted = sortCard({
-            cardId,
-            bucket: bucketId,
-            language: language as Language,
-            packId: pack.packId,
-            lastInPack,
-        });
-        // The completing drop starts the pack exit NOW, in parallel with its fall; only
-        // the replenish request inside advancePack waits for this POST (see there).
-        if (lastInPack) advancePack(pack.packKey, { afterSorted: sorted });
-        try {
-            await sorted;
-        } catch (error) {
-            console.error("Error sorting card:", error);
-        }
-    }, [currentPack, pushUndo, markResolved, adjustTally, isPackComplete, applyPackSignal, advancePack, language]);
-
-    // Skip the whole on-deck pack: defer every remaining unsorted card at once.
-    const handleSkipPack = useCallback(async () => {
-        const pack = currentPack;
-        if (!pack) return;
-        const toSkip = pack.cards.filter((c) => !c.sorted && !isResolved(pack.packKey, c.id));
-        if (toSkip.length === 0) return;
-
-        // Enqueue one undo action per skipped card (Undo reverses them one at a time).
-        for (const c of toSkip) pushUndo({ action: "skip", cardId: c.id, bucket: "skip", pack });
-        markResolved(pack.packKey, toSkip.map((c) => c.id));
-
-        try {
-            await skipPack({
-                cardIds: toSkip.map((c) => c.id),
-                language: language as Language,
-                packId: pack.packId,
-            });
-            // Only now that the server has recorded the skip is it safe to request the
-            // replacement pack — same race as handleSortCard's advancePack call.
-            advancePack(pack.packKey);
-        } catch (error) {
-            console.error("Error skipping pack:", error);
-        }
-    }, [currentPack, isResolved, pushUndo, markResolved, advancePack, language]);
-
-    // Undo the most recent card action (sort or skip). Un-resolves the card and, if its
-    // pack has advanced off-deck, brings the pack back on deck.
-    const handleUndo = useCallback(async () => {
-        const entry = undoStack[undoStack.length - 1];
-        if (!entry) return;
-        setUndoStack((prev) => prev.slice(0, -1));
-
+    // Put one card action back on deck LOCALLY: un-resolve the card, forget the bucket it
+    // was sorted into, play the put-back motion, take the card off its bin's session deck
+    // and bring its pack to the front.
+    // Shared by Undo (before its server call) and the failed-sort rollback, so a rolled
+    // back sort looks exactly like an Undo of it. `onDeck` is the pack on deck right now.
+    const restoreActionLocally = useCallback((entry: UndoEntry, onDeck: SortPack | undefined) => {
         unmarkResolved(entry.pack.packKey, entry.cardId);
-        // Two undo shapes. A card re-shown inside the on-deck pack "rises" back into its
-        // slot. Undo reaching back into the PREVIOUS pack plays the conveyor backwards
+        // The card is undecided again, so its bucket must not count toward the pack's
+        // leveling signal (applyPackSignal reads packBucketsRef when the pack completes).
+        // Without this, Undo a sort then Skip the pack, and the undone bucket still steered
+        // the level. A no-op for a skip (skips record no bucket).
+        forgetPackBucket(entry.pack.packKey, entry.cardId);
+        // Two shapes. A card re-shown inside the on-deck pack "rises" back into its
+        // slot. Reaching back into the PREVIOUS pack plays the conveyor backwards
         // (docs §4.1 "Undo across packs"): the on-deck pack un-docks to the right, then the
         // previous pack "returns" from the left. Reduced motion, or no row to measure:
         // just swap (the "rise" path, itself motionless under reduced motion).
-        const onDeck = currentPack;
         const row = cardsRowRef.current;
         const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
         if (onDeck && onDeck.packKey !== entry.pack.packKey && row && !reducedMotion) {
@@ -1727,17 +1691,128 @@ const AddCardsPage: React.FC = () => {
         }
         // Give the tally back the card this action added (no-op for a skip).
         adjustTally(entry.bucket, entry.pack.cards.find((c) => c.id === entry.cardId), -1);
-        // Bring the undone pack back to the FRONT so it is on deck again. It may already
-        // be the head (undoing a card within the on-deck pack — leave the queue as-is),
-        // or it may still be sitting in the buffer (the server can re-serve a just-sorted
-        // pack when the pool is small); in the latter case we must MOVE it to the front,
-        // not skip it because it happens to exist somewhere in the queue.
+        // Bring the pack back to the FRONT so it is on deck again. It may already be the
+        // head (a card within the on-deck pack — leave the queue as-is), or it may still be
+        // sitting in the buffer (the server can re-serve a just-sorted pack when the pool
+        // is small); in the latter case we must MOVE it to the front, not skip it because
+        // it happens to exist somewhere in the queue.
         setQueue((prev) => {
             if (prev[0]?.packKey === entry.pack.packKey) return prev;
             const without = prev.filter((p) => p.packKey !== entry.pack.packKey);
             return [entry.pack, ...without];
         });
         setExhausted(false);
+    }, [unmarkResolved, forgetPackBucket, adjustTally]);
+
+    const handleSortCard = useCallback(async (cardId: number, bucketId: string) => {
+        const pack = currentPack;
+        if (!pack) return;
+        const undoEntry: UndoEntry = { action: "sort", cardId, bucket: bucketId, pack };
+        pushUndo(undoEntry);
+        markResolved(pack.packKey, [cardId]);
+        adjustTally(bucketId, pack.cards.find((c) => c.id === cardId), 1);
+        recordPackBucket(pack.packKey, cardId, bucketId);
+        const lastInPack = isPackComplete(pack);
+
+        // Update the auto target as soon as the pack completes, BEFORE the
+        // network round-trip — advancePack must see the new target immediately so the
+        // very next replenish request already reflects it (only the pack already queued
+        // behind this one lags by one card, per docs §6).
+        const levelBefore = autoLevelRef.current;
+        if (lastInPack) applyPackSignal(pack);
+        const levelAfter = autoLevelRef.current;
+
+        // A failed completing sort takes its leveling signal back INSIDE the promise that
+        // advancePack awaits (`afterSorted`), so the replenish request — which reads
+        // autoLevelRef only after that promise settles — can never see the withdrawn level.
+        // (Restoring it in the catch below instead relied on microtask order to beat that
+        // read.) Only when no later signal has moved the level since: a newer pack's verdict wins.
+        const sorted = sortCard({
+            cardId,
+            bucket: bucketId,
+            language: language as Language,
+            packId: pack.packId,
+            lastInPack,
+        }).catch((error: unknown) => {
+            if (lastInPack && autoLevelRef.current === levelAfter) autoLevelRef.current = levelBefore;
+            throw error;
+        });
+        // The completing drop starts the pack exit NOW, in parallel with its fall; only
+        // the replenish request inside advancePack waits for this POST (see there).
+        if (lastInPack) advancePack(pack.packKey, { afterSorted: sorted });
+        try {
+            await sorted;
+        } catch (error) {
+            console.error("Error sorting card:", error);
+            // ROLL BACK, with no message of its own (only after sortCard's quiet retries;
+            // a lost connection is said once by the shared notice — docs/NOTIFICATIONS.md
+            // § 3a "Failures"; docs/SORT_CARDS_REQUIREMENTS.md § 4.6 "A failed action rolls back"): the server never recorded the sort, so
+            // the card must not stay on its bin's deck. Put it back on deck exactly as Undo
+            // would (a completing sort's pack is brought back from its exit), drop its undo
+            // entry and forget its bucket (the pack's leveling signal was already withdrawn
+            // inside `sorted`, above).
+            setUndoStack((prev) => prev.filter((e) => e !== undoEntry));
+            forgetPackBucket(pack.packKey, cardId);
+            // Only if the card is still resolved by THIS sort: an Undo pressed meanwhile has
+            // already put it back (and popped the entry).
+            if (isResolved(pack.packKey, cardId)) restoreActionLocally(undoEntry, queueRef.current[0]);
+        }
+    }, [currentPack, pushUndo, markResolved, adjustTally, recordPackBucket, forgetPackBucket, isPackComplete, isResolved, applyPackSignal, advancePack, restoreActionLocally, language]);
+
+    // Skip the whole on-deck pack: defer every remaining unsorted card at once.
+    const handleSkipPack = useCallback(async () => {
+        const pack = currentPack;
+        if (!pack) return;
+        const toSkip = pack.cards.filter((c) => !c.sorted && !isResolved(pack.packKey, c.id));
+        if (toSkip.length === 0) return;
+
+        // Enqueue one undo action per skipped card (Undo reverses them one at a time).
+        // Kept as one batch so a failed skip can take exactly these entries back off — and,
+        // when nothing else touched the stack meanwhile, restore the older entries the
+        // UNDO_DEPTH cap pushed out.
+        const stackBefore = undoStack;
+        const skipEntries: UndoEntry[] = toSkip.map((c) => ({ action: "skip", cardId: c.id, bucket: "skip", pack }));
+        const stackAfter = [...stackBefore, ...skipEntries].slice(-UNDO_DEPTH);
+        setUndoStack(stackAfter);
+        markResolved(pack.packKey, toSkip.map((c) => c.id));
+
+        try {
+            await skipPack({
+                cardIds: toSkip.map((c) => c.id),
+                language: language as Language,
+                packId: pack.packId,
+            });
+            // Only now that the server has recorded the skip is it safe to request the
+            // replacement pack — same race as handleSortCard's advancePack call.
+            advancePack(pack.packKey);
+        } catch (error) {
+            console.error("Error skipping pack:", error);
+            // ROLL BACK, with no message of its own (after skipPack's quiet retries; § 4.6): the
+            // server never recorded the skip and no replacement is coming, so leaving the cards
+            // resolved stranded the learner on a row of empty wells. Put the pack's cards
+            // back in their slots (the "rise" put-back, as Undo shows a card) and take the
+            // skip's undo entries back off.
+            setUndoStack((prev) => {
+                const untouched = prev.length === stackAfter.length && prev.every((e, i) => e === stackAfter[i]);
+                return untouched ? stackBefore : prev.filter((e) => !skipEntries.includes(e));
+            });
+            // A card an Undo already put back is not resolved; unmarking it again is a no-op.
+            for (const c of toSkip) unmarkResolved(pack.packKey, c.id);
+            setUndoRestore({ packKey: pack.packKey, entrance: "rise", delayMs: 0 });
+        }
+    }, [currentPack, undoStack, isResolved, markResolved, unmarkResolved, advancePack, language]);
+
+    // Undo the most recent card action (sort or skip). Un-resolves the card and, if its
+    // pack has advanced off-deck, brings the pack back on deck.
+    const handleUndo = useCallback(async () => {
+        const entry = undoStack[undoStack.length - 1];
+        if (!entry) return;
+        setUndoStack((prev) => prev.slice(0, -1));
+        // Was the pack on deck when Undo was pressed? If not, Undo is bringing a previous
+        // pack back, and a rollback must send it off again (below).
+        const wasOnDeck = currentPack?.packKey === entry.pack.packKey;
+        const exhaustedBefore = exhausted;
+        restoreActionLocally(entry, currentPack);
 
         try {
             await undoSort({
@@ -1748,8 +1823,31 @@ const AddCardsPage: React.FC = () => {
             });
         } catch (error) {
             console.error("Error undoing action:", error);
+            // ROLL BACK, with no message of its own (after undoSort's quiet retries; § 4.6): the
+            // server still holds the action, so re-apply it locally — the card leaves its slot
+            // again, goes back on its bin's deck, and the entry returns to the undo stack.
+            // Skipped when the learner already re-acted on the card meanwhile (it is
+            // resolved again by that newer action).
+            if (isResolved(entry.pack.packKey, entry.cardId)) return;
+            markResolved(entry.pack.packKey, [entry.cardId]);
+            if (entry.action === "sort") recordPackBucket(entry.pack.packKey, entry.cardId, entry.bucket);
+            adjustTally(entry.bucket, entry.pack.cards.find((c) => c.id === entry.cardId), 1);
+            setUndoStack((prev) => [...prev, entry].slice(-UNDO_DEPTH));
+            setExhausted(exhaustedBefore);
+            // A previous pack brought back is complete again: send it back off deck the
+            // way the conveyor moves forward (left exit), revealing the pack it displaced
+            // (still next in the queue). No replenish — nothing was consumed.
+            if (!wasOnDeck && isPackComplete(entry.pack)) {
+                const row = cardsRowRef.current;
+                const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+                if (row && !reducedMotion && queueRef.current[0]?.packKey === entry.pack.packKey) {
+                    exitIdRef.current += 1;
+                    setLeavingPack({ pack: entry.pack, rowTop: row.offsetTop, exitId: exitIdRef.current, direction: "left", durationMs: PACK_EXIT_MS });
+                }
+                setQueue((prev) => (prev[0]?.packKey === entry.pack.packKey ? prev.slice(1) : prev));
+            }
         }
-    }, [undoStack, currentPack, unmarkResolved, adjustTally, language]);
+    }, [undoStack, currentPack, exhausted, restoreActionLocally, isResolved, markResolved, recordPackBucket, adjustTally, isPackComplete, language]);
 
     // Every branch paints the same ground and header ink, so the page never flashes the
     // app's paper between the spinner and the board. The header wears the tower's type
@@ -1766,7 +1864,7 @@ const AddCardsPage: React.FC = () => {
         return (
             <NodePage title="Add Cards" onBack={leave} exitDash={dashBack} backOnFooterTab={backOnFooterTab} {...groundChrome}>
                 <Box className="add-cards__loading-wrapper" sx={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
-                    <DelayedCircularProgress className="add-cards__spinner" />
+                    <PawnLoader label="Loading cards" />
                 </Box>
             </NodePage>
         );
@@ -1796,7 +1894,7 @@ const AddCardsPage: React.FC = () => {
                     <Box className="add-cards__no-cards-error" sx={{ display: "flex", flex: 1, alignItems: "center", justifyContent: "center" }}>
                         {exhausted
                             ? <Typography className="add-cards__no-cards-error-text" sx={{ color: look.ink }}>Error: no cards found</Typography>
-                            : <DelayedCircularProgress className="add-cards__spinner" />}
+                            : <PawnLoader label="Loading cards" />}
                     </Box>
                 </ContentArea>
             </NodePage>

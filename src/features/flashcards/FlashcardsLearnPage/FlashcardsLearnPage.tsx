@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import { Box, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
-import DelayedCircularProgress from "../../../components/DelayedCircularProgress";
+import PawnLoader from "../../../components/PawnLoader";
 import { useAuth } from "../../../AuthContext";
 import type { Language } from "../../../types";
 import ProvisionalSortOffer from "../../../components/ProvisionalSortOffer";
@@ -63,16 +63,16 @@ import { useFlashcardLearnSettings } from "../../../hooks/useFlashcardLearnSetti
 import type { VocabEntry, SideOneLanguage } from "../types";
 
 /**
- * The game-break phases in which the hint pawn is `away` — thrown off the left edge, back
- * when the cards return (docs/HINT_PAWN.md § "Game breaks"). The title phase joins them only
- * once Start is tapped (`playPending`); `skipping` uncovers the cards, so it is not here.
- */
-/**
  * The word-tools band's height (its 18px top margin + the pills) before it is first measured
  * — only for a session that opens with the rail hidden (a dry visit's out-of-ready-cards
  * card). Once the rail has shown, its measured height is used.
  */
 const WORD_TOOLS_BAND_FALLBACK = 54;
+/**
+ * The game-break phases in which the hint pawn is `away` — thrown off the left edge, back
+ * when the cards return (docs/HINT_PAWN.md § "Game breaks"). The title phase joins them only
+ * once Play is tapped (`playPending`); `skipping` uncovers the cards, so it is not here.
+ */
 const PAWN_AWAY_PHASES: ReadonlySet<GameBreakPhase> = new Set(["growing", "playing", "shrinking", "results", "leaving"]);
 
 interface FlashcardsLearnPageProps {
@@ -89,6 +89,12 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
     // Part of the Deck Tower page, whose tab title the session leaves alone.
     // Mounted under the tower but not being studied (FlpTowerHost `parked`).
     const parked = tower.parked;
+    // Whether a PawnLoader mounted from inside the session may show. PawnLoader portals to
+    // the phone frame, out of a parked layer's clip, so a background session's loader would
+    // draw over the tower; and while the count card covers the cards the tower's own loader
+    // speaks for the wait. The whole-page loading branch below applies the same gate
+    // (docs/DECK_TOWER.md § "Loading feedback").
+    const loaderAllowed = !parked && !tower.cardsCovered;
     const { token, user } = useAuth();
     // The arrival notice for lent cards. Shown once per session: it opens as soon as
     // the loop reports a lent card and stays dismissed for the rest of the session,
@@ -218,6 +224,7 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
         isAnimating,
         flip: () => setIsFlipped(true),
         dismiss: (direction, attempt) => void handleCardDismiss(direction, attempt),
+        loaderAllowed,
     });
 
     // Keep the bridge ref pointing at the live drag controls every render. Its `resetCard`
@@ -830,7 +837,12 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     backgroundColor: "transparent",
                 }}
             >
-                <DelayedCircularProgress />
+                {/* PawnLoader portals to the phone frame, so it would escape a parked layer's
+                    clip and show over the tower: only the studied session, and only once the
+                    count card is off its deck — while the card is covered (preparing, diving,
+                    climbing) the Deck Tower's own loader speaks for the wait instead
+                    (DeckTowerPage → `loadingLabel`, docs/DECK_TOWER.md § "Loading feedback"). */}
+                {!parked && !tower.cardsCovered && <PawnLoader label="Loading your cards" />}
             </Box>
         );
     }
@@ -877,6 +889,13 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                 // Sorting navigates away from an unsaved icon-layout edit, so tear the
                 // editor down first exactly as leaving normally would.
                 onNavigate={() => { if (editMode) exitEdit(); }}
+                // The Back tap waits on this lookup (it decides whether there is anything
+                // to offer): show the loading mark meanwhile, and when it comes back empty
+                // — nothing lent is left, OR the request failed — carry the Back tap
+                // through instead of swallowing it. Before this the empty case left the
+                // offer "open" but invisible, so the first Back tap did nothing at all.
+                showLoader={loaderAllowed}
+                onNothingToOffer={leaveSession}
             />
             {/* Parked: the Deck Tower's own header is up (one PageHeader at a time). Undo
                 stays live on the break's title card (it cancels the break and brings the
@@ -1277,8 +1296,16 @@ const FlashcardsLearnPage: React.FC<FlashcardsLearnPageProps> = ({ tower }) => {
                     stack). It portals to the phone frame, over the flp header and the
                     footer, so its own back arrow is the way out. docs/FLP_GAME_BREAKS.md § 2. */}
                 {gameBreak.areaMounted && (
-                    <GameBreakArea gameBreak={gameBreak} onCardCleared={onBreakCardCleared} />
+                    <GameBreakArea gameBreak={gameBreak} onCardCleared={onBreakCardCleared} loaderAllowed={loaderAllowed} />
                 )}
+                {/* Play tapped, the break's board still coming (useGameBreak → playPending,
+                    which gives up after PLAY_WAIT_TIMEOUT_MS and re-enables Play). */}
+                {loaderAllowed && gameBreak.phase === "title" && breakPlayPending && (
+                    <PawnLoader label="Loading the game" />
+                )}
+                {/* A breakdown / used-in / example word tapped in the eip: its lookup is in
+                    flight (useEipTabs → drillPending). A failed lookup stays silent. */}
+                {loaderAllowed && isEicOpen && eip.drillPending && <PawnLoader label="Looking up the word" />}
             </ContentArea>
 
             {/* Add-icon search dialog (download-on-select). docs/CARD_ICON_LAYOUT.md */}

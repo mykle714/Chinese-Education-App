@@ -266,7 +266,7 @@ export function resolveSelectedSenseIndex(
  * any future re-scoring of which sense is the most common one.
  *
  * Shared by every sense picker host — the flp card face (FlashCardSection), the cdp
- * (VocabCardDetailPage) and the eip header (FlashcardsLearnPage / AddCardsPage) — so the
+ * (deckTower/cardView/TowerCardView) and the eip header (FlashcardsLearnPage / AddCardsPage) — so the
  * index→label conversion can't drift between them. See docs/DEFINITION_CLUSTERS.md.
  */
 export function senseLabelForIndex(

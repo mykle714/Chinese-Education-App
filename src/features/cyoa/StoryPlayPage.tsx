@@ -13,6 +13,9 @@ import type { Language } from "../../types";
 import TextArea from "../../reading/TextArea";
 import ReaderCpcdView from "../../reading/ReaderCpcdView";
 import ReaderDisplayToggle from "../../reading/ReaderDisplayToggle";
+import ReaderIconKey from "../../reading/ReaderIconKey";
+import ReaderPhraseToggle from "../../reading/ReaderPhraseToggle";
+import { useReaderStepMode } from "../../reading/useReaderStepMode";
 import ReaderReadAloudButton from "../../reading/ReaderReadAloudButton";
 import { buildReaderPronunciationMap, type SpanRange } from "../../reading/documentSegmentation";
 import { useReaderDisplayMode } from "../../reading/useReaderDisplayMode";
@@ -21,7 +24,7 @@ import { useSegmentOverrides } from "../../reading/useSegmentOverrides";
 import { useFlashcardLearnSettings } from "../../hooks/useFlashcardLearnSettings";
 import ReadingEipHost from "../../reading/ReadingEipHost";
 import ReadingTapRegion from "../../reading/ReadingTapRegion";
-import { readerSearchColors, readerSelectionColor } from "../../reading/readerStyles";
+import { READER_PAGE_PAD_PX, readerSearchColors, readerSelectionColor } from "../../reading/readerStyles";
 import { useContentVocabulary } from "../../reading/useContentVocabulary";
 import { useEnglishTranslations } from "../../reading/useEnglishTranslations";
 import { useReaderAudioSettings } from "../../reading/useReaderAudioSettings";
@@ -47,13 +50,16 @@ import { ADVENTURES_LIST_PATH, storyEditPath } from "./adventuresPaths";
  * Layout, top → bottom (§ 3.1):
  *   header        — back arrow (→ where the reader came from: `location.state.from`,
  *                   set by the editor's Preview; else /adventures), NO title text (more
- *                   room for the passage); Read aloud, the tap-to-hear chip, the Pinyin
- *                   pill; for the story's own author, an Edit icon (→ /adventures/:id/edit, § 5)
+ *                   room for the passage); the tap-to-hear chip (where the Reader keeps
+ *                   it); for the story's own author, an Edit icon (→ /adventures/:id/edit, § 5)
  *   rdb           — the Reader's dictionary keycap, the same component and wiring
  *                   (src/reading/useReadingKeycap): tap demo, entry, speaker, Add,
- *                   More Info → the eip, Sentence Explain
- *   top tab       — StoryEdgeTab, the rdb's show/hide, hanging from the rdb's lower
- *                   edge so it slides with it; under the header when folded (§ 3.4)
+ *                   More Info → the eip, Sentence Explain, the split-screen phrase face
+ *   toolbar       — the Reader's display strip, rebuilt (2026-11-23, in the space the
+ *                   rdb's pull-down tab used to take): Read aloud and the rdb's fold key
+ *                   at the left, the Phrase pill (Chinese) and the Pinyin pill at the
+ *                   right. It rides the rdb's lower edge, so it slides with it and sits
+ *                   under the header when the rdb is folded (§ 3.1, § 3.4)
  *   passage       — the Reader's reading box (src/reading/TextArea + ReadingTapRegion):
  *                   gsa words, tap-to-navigate over the full width, long-press word jump
  *                   and sentence press; scrolls internally for a long passage
@@ -72,11 +78,13 @@ import { ADVENTURES_LIST_PATH, storyEditPath } from "./adventuresPaths";
  * Like the Reader, the active text's textarea always holds focus (useTextSelection's
  * blur → refocus); the other one stands down. Entering inspect mode parks the passage's
  * word and starts the label in nothing-selected mode; leaving restores the passage word.
- * The Reader's display-strip controls sit in the header instead of a strip (owner's call
- * 2026-11-21, "just the rdb"): Read aloud (useReaderReadAloud, over the passage), the
- * tap-to-hear chip (ReaderAudioChip over useReaderAudioSettings, `reader.audio`) and the
- * Pinyin pill (ReaderDisplayToggle over useReaderDisplayMode, `reader.displayMode`). The
- * two settings are the Reader's own, so the pages share them. Pinyin mode draws the
+ * The Reader's display-strip controls sit in the toolbar under the rdb, laid out like the
+ * Reader's strip (owner's call 2026-11-23, reversing 2026-11-21's "just the rdb" header
+ * placement): Read aloud (useReaderReadAloud, over the passage), the Phrase pill
+ * (ReaderPhraseToggle over useReaderStepMode, `reader.stepMode`) and the Pinyin pill
+ * (ReaderDisplayToggle over useReaderDisplayMode, `reader.displayMode`); the tap-to-hear
+ * chip (ReaderAudioChip over useReaderAudioSettings, `reader.audio`) stays in the header,
+ * as on the Reader. The settings are the Reader's own, so the pages share them. Pinyin mode draws the
  * passage as ReaderCpcdView; the inspected label stays plain text. Search stays Reader-only.
  *
  * State: useStoryPlay (server round trips). Local UI state: inspect mode, the two folds.
@@ -111,11 +119,10 @@ const FOLD_SLIDE_DOWN_SX = {
 } as const;
 
 /**
- * The content padding, as the Reader's (`reader-document-content`: 16 / 24px). The reading
- * box adds READER_TEXT_GUTTER_PX inside it, and the tap region reaches back out over it to
- * the screen's edges.
+ * The content padding, the Reader's (readerStyles → READER_PAGE_PAD_PX: 16 / 24px). The
+ * passage runs full-bleed instead and folds it into the reading box's own padding.
  */
-const CONTENT_PAD_PX = { xs: 16, sm: 24 };
+const CONTENT_PAD_PX = READER_PAGE_PAD_PX;
 
 function StoryPlayPage() {
     const { id: storyId } = useParams<{ id: string }>();
@@ -152,18 +159,26 @@ function StoryPlayPage() {
     const english = useEnglishTranslations(vocabContent ?? undefined, language);
     // Tiebreak switches made in the Pinyin view (the passage only; dropped per passage).
     const { overrides: passageOverrides, switchToAlternative: applyAlternative } = useSegmentOverrides(passageContent);
+    // PHRASE STEPPING (docs/READER_SEGMENTATION.md § "Phrase stepping"): the toolbar's Phrase
+    // pill — the Reader's own per-device setting. Chinese stories only (the rules are
+    // Chinese grammar). The passage and the inspected label both follow it.
+    const { stepMode, setStepMode } = useReaderStepMode();
+    const phraseStepping = language === "zh";
+    const stepByPhrase = phraseStepping && stepMode === "phrase";
     const passageText = useReadingText({
         content: passageContent,
         dictionaryCards: vocab.loadedDictionaryCards,
         personalCards: vocab.loadedPersonalCards,
         translateEnglish: english.translate,
         overrides: passageOverrides,
+        stepByPhrase,
     });
     const labelText = useReadingText({
         content: inspectedChoice?.label ?? "",
         dictionaryCards: vocab.loadedDictionaryCards,
         personalCards: vocab.loadedPersonalCards,
         translateEnglish: english.translate,
+        stepByPhrase,
     });
     useReadingVocabSync(vocabContent, vocab.setLoadedPersonalCards, [passageText.selection, labelText.selection]);
     const passageSelection = passageText.selection;
@@ -171,7 +186,7 @@ function StoryPlayPage() {
 
     const inspecting = inspectedChoice !== null;
 
-    // ── The header's reading controls (§ 3.1) — the Reader's own, on the Reader's settings ──
+    // ── The toolbar's reading controls (§ 3.1) — the Reader's own, on the Reader's settings ──
     // Pinyin display mode (ReaderCpcdView over the passage): the same per-device
     // `reader.displayMode` as the Reader's pill, the pinyin from the loaded cards, tinted by
     // the device's "Color pinyin by tone" preference. The inspected label stays plain text.
@@ -297,7 +312,7 @@ function StoryPlayPage() {
                 size="inline"
                 selectedText={labelTextValue}
                 autoSelectEnabled
-                segmentSpans={labelText.spans}
+                segmentSpans={labelText.stepSpans}
                 selectionColors={selectionColors}
                 onTextChange={labelSelection.handleTextChange}
                 onAutoWordSelect={labelSelection.handleAutoWordSelect}
@@ -305,7 +320,6 @@ function StoryPlayPage() {
                 inputRef={labelSelection.inputRef}
                 onBlur={handleLabelBlur}
                 onUserInteraction={labelSelection.noteUserInteraction}
-                selectedSentence={labelSelection.selectedSentence}
                 onSelectSentenceAtOffset={labelSelection.selectSentenceAtOffset}
             />
             <ReadingTapRegion
@@ -315,6 +329,7 @@ function StoryPlayPage() {
                 onSelectSpanAtOffset={labelSelection.selectSpanAtOffset}
                 onClearSelection={labelSelection.clearSelection}
                 onSelectSentence={labelSelection.selectSentenceAtSelection}
+                onTapInsideSelection={labelText.drillAtOffset}
                 flash={tapZoneFlash}
                 onFlashEnd={clearTapZoneFlash}
                 night={look.dark}
@@ -336,43 +351,24 @@ function StoryPlayPage() {
                 titleColor={look.ink}
                 rightContent={
                     <Box className="story-play__header-actions" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                        {/* The Reader's display-strip controls, in the header (§ 3.1): Read
-                        aloud, the tap-to-hear chip and the Pinyin pill — the same components on
-                        the same per-device settings, so a change here is a change in the
-                        Reader too. Each keeps focus on the reading box on a desktop
-                        mousedown (no blur → refocus loop). */}
+                        {/* The tap-to-hear chip, in the header as on the Reader (§ 3.1); the
+                        other reading controls are in the toolbar under the rdb. Keeps focus
+                        on the reading box on a desktop mousedown (no blur → refocus loop). */}
                         {status === "ready" && (
-                            <>
-                                <ReaderReadAloudButton
-                                    look={look}
-                                    playing={readAloud.playing}
-                                    onStart={readAloud.start}
-                                    onStop={readAloud.stop}
-                                    // Reads the passage; while a label is inspected the
-                                    // keycap follows the label, so there is nothing to read.
-                                    disabled={passageText.spans.length === 0 || inspecting}
+                            <Box
+                                className="story-play__audio-chip-wrapper"
+                                onMouseDown={(event) => event.preventDefault()}
+                                sx={{ display: "flex" }}
+                            >
+                                <ReaderAudioChip
+                                    className="story-play__audio-chip"
+                                    // `look.ink`, the pills' text ink, as on the Reader's header
+                                    // chip (owner's call 2026-11-18).
+                                    ink={look.ink}
+                                    mode={readerAudio.mode}
+                                    onCycle={readerAudio.cycleMode}
                                 />
-                                <Box
-                                    className="story-play__audio-chip-wrapper"
-                                    onMouseDown={(event) => event.preventDefault()}
-                                    sx={{ display: "flex" }}
-                                >
-                                    <ReaderAudioChip
-                                        className="story-play__audio-chip"
-                                        // `look.ink`, the pills' text ink, as in the Reader's strip
-                                        // (owner's call 2026-11-18), so the neighbours letter alike.
-                                        ink={look.ink}
-                                        mode={readerAudio.mode}
-                                        onCycle={readerAudio.cycleMode}
-                                    />
-                                </Box>
-                                <ReaderDisplayToggle
-                                    look={look}
-                                    className="story-play__display-mode-toggle"
-                                    value={displayMode}
-                                    onChange={setDisplayMode}
-                                />
-                            </>
+                            </Box>
                         )}
                         {play?.story.isOwn && storyId && (
                             <HeaderIconButton
@@ -405,7 +401,7 @@ function StoryPlayPage() {
                 {status === "ready" && play && (
                     <>
                         {/* The rdb's fold: the keycap slides down from under the header and
-                        its tab rides on its lower edge, so the tab travels with it (§ 3.4). */}
+                        the toolbar rides on its lower edge, so it travels with it (§ 3.4). */}
                         <Collapse
                             className="story-play-rdb-fold"
                             in={rdbOpen}
@@ -418,18 +414,67 @@ function StoryPlayPage() {
                             </Box>
                         </Collapse>
 
-                        <StoryEdgeTab
-                            look={look}
-                            edge="top"
-                            open={rdbOpen}
-                            onToggle={() => setRdbOpen((open) => !open)}
-                            panelName="dictionary card"
-                            className="story-play-rdb-tab"
-                        />
+                        {/* THE TOOLBAR (§ 3.1): the Reader's display strip, in the space the
+                        rdb's pull-down tab used to take — Read aloud and the rdb's fold key at
+                        the left (where the Reader has Read and Search), the Phrase and Pinyin
+                        pills at the right. Same components on the same per-device settings, so
+                        a change here is a change in the Reader too. A press on the bar itself
+                        keeps focus on the reading box (the Reader strip's rule). */}
+                        <Box
+                            className="story-play-toolbar"
+                            onMouseDown={(event) => event.preventDefault()}
+                            sx={{
+                                flexShrink: 0,
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                px: { xs: `${CONTENT_PAD_PX.xs}px`, sm: `${CONTENT_PAD_PX.sm}px` },
+                                // Folded, the keycap is gone: keep the bar clear of the header.
+                                pt: rdbOpen ? 0 : 1,
+                            }}
+                        >
+                            <Box className="story-play-toolbar__left" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                                <ReaderReadAloudButton
+                                    look={look}
+                                    playing={readAloud.playing}
+                                    onStart={readAloud.start}
+                                    onStop={readAloud.stop}
+                                    // Reads the passage; while a label is inspected the
+                                    // keycap follows the label, so there is nothing to read.
+                                    disabled={passageText.spans.length === 0 || inspecting}
+                                />
+                                {/* The rdb's show/hide (§ 3.4) — the chevron points where the
+                                card goes next: ▴ folds it up, ▾ drops it back down. */}
+                                <ReaderIconKey
+                                    look={look}
+                                    className="story-play-toolbar__rdb-fold-key"
+                                    icon={rdbOpen ? "expand_less" : "expand_more"}
+                                    label={rdbOpen ? "Hide dictionary card" : "Show dictionary card"}
+                                    ariaExpanded={rdbOpen}
+                                    onClick={() => setRdbOpen((open) => !open)}
+                                />
+                            </Box>
+                            <Box className="story-play-toolbar__modes" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                                {phraseStepping && (
+                                    <ReaderPhraseToggle
+                                        look={look}
+                                        className="story-play-toolbar__phrase-toggle"
+                                        value={stepMode}
+                                        onChange={setStepMode}
+                                    />
+                                )}
+                                <ReaderDisplayToggle
+                                    look={look}
+                                    className="story-play-toolbar__display-mode-toggle"
+                                    value={displayMode}
+                                    onChange={setDisplayMode}
+                                />
+                            </Box>
+                        </Box>
 
-                        {/* The passage — the Reader's reading box. Its tap region reaches over
-                        the side padding to the screen's edges (the Reader's TAP REGION), down
-                        to the foot. */}
+                        {/* The passage — the Reader's reading box, full-bleed so its scrollbar
+                        sits on the screen's edge. Its tap region spans it (the Reader's TAP
+                        REGION), down to the foot. */}
                         <Box
                             className="story-passage"
                             sx={{
@@ -438,7 +483,9 @@ function StoryPlayPage() {
                                 display: "flex",
                                 flexDirection: "column",
                                 position: "relative",
-                                mx: { xs: `${CONTENT_PAD_PX.xs}px`, sm: `${CONTENT_PAD_PX.sm}px` },
+                                // No side margin: full-bleed so the scrollbar sits on the
+                                // screen's edge; the reading box folds the page padding into
+                                // its own (readerStyles → READER_TEXT_PADDING_SX).
                                 pt: 1,
                                 // While a choice is inspected the keycap follows its label, so
                                 // the passage takes no clicks either (desktop has no overlay).
@@ -450,7 +497,8 @@ function StoryPlayPage() {
                                 look={look}
                                 selectedText={passageTextValue}
                                 autoSelectEnabled
-                                segmentSpans={passageText.spans}
+                                // Arrow keys walk the step units (phrases with the Phrase pill on).
+                                segmentSpans={passageText.stepSpans}
                                 selectionColors={selectionColors}
                                 onTextChange={passageSelection.handleTextChange}
                                 onAutoWordSelect={passageSelection.handleAutoWordSelect}
@@ -458,7 +506,6 @@ function StoryPlayPage() {
                                 inputRef={passageSelection.inputRef}
                                 onBlur={handlePassageBlur}
                                 onUserInteraction={passageSelection.noteUserInteraction}
-                                selectedSentence={passageSelection.selectedSentence}
                                 onSelectSentenceAtOffset={passageSelection.selectSentenceAtOffset}
                                 searchColors={searchColors}
                                 cpcdView={showCpcd ? (
@@ -478,6 +525,8 @@ function StoryPlayPage() {
                                         searchColors={searchColors}
                                         selectedSentence={passageSelection.selectedSentence}
                                         onSelectSentenceAtOffset={passageSelection.selectSentenceAtOffset}
+                                        stepSpans={passageText.stepSpans}
+                                        onTapInsideSelection={passageText.drillAtOffset}
                                     />
                                 ) : undefined}
                             />
@@ -486,14 +535,13 @@ function StoryPlayPage() {
                             {!inspecting && (
                                 <ReadingTapRegion
                                     className="story-passage__tap-region"
-                                    left={{ xs: -CONTENT_PAD_PX.xs, sm: -CONTENT_PAD_PX.sm }}
-                                    right={{ xs: -CONTENT_PAD_PX.xs, sm: -CONTENT_PAD_PX.sm }}
                                     inputRef={passageSelection.inputRef}
                                     scrollRef={showCpcd ? cpcdScrollRef : undefined}
                                     wordSource={showCpcd ? "pinyin" : "text"}
                                     onSelectSpanAtOffset={passageSelection.selectSpanAtOffset}
                                     onClearSelection={passageSelection.clearSelection}
                                     onSelectSentence={passageSelection.selectSentenceAtSelection}
+                                    onTapInsideSelection={passageText.drillAtOffset}
                                     flash={tapZoneFlash}
                                     onFlashEnd={clearTapZoneFlash}
                                     night={look.dark}
@@ -513,7 +561,6 @@ function StoryPlayPage() {
                             {hasFoldablePanel && (
                                 <StoryEdgeTab
                                     look={look}
-                                    edge="bottom"
                                     open={choicesOpen}
                                     onToggle={() => {
                                         // Folding mid-inspection would hide the ✕; leave inspect mode too.

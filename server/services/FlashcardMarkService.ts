@@ -68,7 +68,7 @@ import { FLP_MARK_SURFACE } from '../contracts/wire.js';
  * treats every trailing mark carrying the undo timestamp as one review.
  *
  * Referenced by: docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md,
- * docs/MASTERY_REWORK.md, docs/HYDRA_BUBBLES.md § 8, docs/VELOCITY.md.
+ * docs/MASTERY_REWORK.md, docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md § "Cooldown is a hard next-markable-at", docs/VELOCITY.md.
  */
 
 /** One review mark, as the caller states it. */
@@ -81,7 +81,7 @@ export interface ApplyMarkInput {
    * Which surface produced this mark ("bubble-match", "flp", …). ONE rule branches on
    * it: a know mark on a card at core pbh ≥ 6 is recorded only when this is
    * `FLP_MARK_SURFACE` (`isFlpOnlyMark`, docs/MASTERY_REWORK.md § 6). Otherwise it
-   * feeds the suppressed-mark log (docs/HYDRA_BUBBLES.md § 8.1).
+   * feeds the suppressed-mark log (docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md § "Known consequence: cooled-tier marks").
    *
    * Client-asserted and not verified — acceptable because the only thing a forged
    * 'flp' buys is a mark on the learner's OWN card, which the flp could write anyway.
@@ -115,7 +115,7 @@ export interface WritingCharacterOutcome {
 export interface ApplyMarkResult {
   /**
    * The mark was NOT recorded — either its bar's clock had not finished cooling
-   * (docs/HYDRA_BUBBLES.md § 8), or it is a know mark from a non-flp surface on a card
+   * (docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md § "Cooldown is a hard next-markable-at"), or it is a know mark from a non-flp surface on a card
    * at core pbh ≥ 6 (docs/MASTERY_REWORK.md § 6). A success, not an error — the review
    * genuinely happened, it just changed no history.
    */
@@ -223,7 +223,7 @@ export class FlashcardMarkService {
       // Enforced here, at the single chokepoint every surface writes through, so no
       // game and no future surface has to know the rules exist — which is the design.
       //
-      //   cooldown — cooldown is a hard "next markable at" (docs/HYDRA_BUBBLES.md § 8).
+      //   cooldown — cooldown is a hard "next markable at" (docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md § "Cooldown is a hard next-markable-at").
       //              Timed per BAR: recognition and production share the know clock,
       //              so a correct mark on either rests both (docs/MASTERY_REWORK.md § 6).
       //   flp-only — once core pbh ≥ 6 a recognition/production mark counts only from
@@ -243,7 +243,7 @@ export class FlashcardMarkService {
             ? 'flp-only'
             : null;
       if (suppressedBy) {
-        // ⚠️ INSTRUMENTED, NOT SILENT (docs/HYDRA_BUBBLES.md § 8.1,
+        // ⚠️ INSTRUMENTED, NOT SILENT (docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md § "Known consequence: cooled-tier marks",
         // docs/DEFERRED_WORK.md). `getGameVocabPool` fill tier 4 hands out COOLED
         // cards whenever the fresh tiers cannot fill a board, so this guard drops
         // marks that are recorded today. The frequency is unknown, which is why it

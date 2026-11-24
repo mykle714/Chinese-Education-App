@@ -69,7 +69,7 @@ names (`onAddToLibrary`, `totalLibraryCards`, `flashcards-decks__library-*`) rem
 → Moved to [docs/UX_AND_NAVIGATION.md](./docs/UX_AND_NAVIGATION.md) — default components to `touchAction: "none"` (scrolling is opt-in per page via an inner container); the app shell never scrolls; text is app-wide `user-select: none` (cpcd is the desktop-only exception); every game page must call `useBlockEdgeSwipe(true)`.
 
 ## Buttons & cards
-Every tappable button and card entity (game cards and their option tiles, the tip box, resume tiles, etc.) carries the app's outline: `border: 1px solid ${COLORS.border}` (--line2). Exceptions: Bento tiles/sub-tiles (large pastel tiles separated by their drop shadow — see docs/BENTO_SYSTEM.md), the Word Search game card's outer frame (`GameCardData.outlined: false` in `buildWordSearchCard`; its resume tile stays outlined), solid-ink controls (e.g. the round play button), and selected tiles that already show a stronger ink ring. Small content-free pastel marks keep the separate inset `COLORS.markOutline` ring.
+Every tappable button and card entity (game cards and their option tiles, the tip box, resume tiles, etc.) carries the app's outline: `border: 1px solid ${COLORS.border}` (--line2). Exceptions: Bento tiles/sub-tiles (large pastel tiles separated by their drop shadow — see docs/BENTO_SYSTEM.md), solid-ink controls (e.g. Superposition's exit pill), and selected tiles that already show a stronger ink ring. Small content-free pastel marks keep the separate inset `COLORS.markOutline` ring.
 Every rectangular raised object (keycaps, plates, cards, slabs, iso solids) also draws the hairline **rounded edge** (`src/theme/roundedEdge.ts`) → see [docs/designGuidelines.md](./docs/designGuidelines.md) § "The rounded edge".
 
 ## Writing .md files
@@ -189,7 +189,7 @@ An hourly Postgres cron on the PPE server. For each **(user, language)** balance
 → See [docs/STREAK_EXPIRATION_CRON.md](./docs/STREAK_EXPIRATION_CRON.md)
 
 ### Flashcards & Review History
-→ See [docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md](./docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md)
+→ See [docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md](./docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md) — includes the app-wide rule that **cooldown is a hard "next markable at"**: a mark inside a track's cooldown is not recorded (`POST /api/flashcards/mark` returns `suppressed: true`, logged as `[MarkSuppressed]`).
   → Mastery rework (typed marks, goals, progress bar): [docs/MASTERY_REWORK.md](./docs/MASTERY_REWORK.md) — **DESIGN/DRAFT**: four typed mark tracks (Recognition/Production/Reading/Writing, 8 each in `typedMarkHistory`), per-account reading/writing goals, the goal-weighted progress-bar-height (pbh) formula that replaces the generated `category` column with a service-layer utcm compute, and the cdp stacked progress bar.
 
 ### Vocabulary Enrichment
@@ -218,28 +218,10 @@ An hourly Postgres cron on the PPE server. For each **(user, language)** balance
 → See [docs/BENTO_SYSTEM.md](./docs/BENTO_SYSTEM.md) — the shared `Bento`/`BentoTile`/`BentoStrip` primitive, whose one live caller is the AccountSheet's Friends tab (`FriendsBody`; the Menu/Games hub pages built on it were deleted 2026-11-06): the 2-column mosaic, the hero/base/low tile weights, ramp-hue tiles (`RAMP`, hue keys not hex), the ghost glyph, and the Bento-vs-Shelf choice rule. Replaced `HubMenu` (deleted 2026-08-21) — the old `docs/HUB_MENU_SYSTEM.md` was renamed into this file.
 
 ### Feature Flags
-→ See [docs/FEATURE_FLAGS.md](./docs/FEATURE_FLAGS.md) — the app's one on/off registry, `FEATURE_FLAGS` + `GAME_FLAGS` in `server/contracts/featureFlags.ts`, read by BOTH halves (the server declines to mount a router; the client drops the route from `ROUTE_META` and hides its entry points). Covers the per-feature flags, the per-game flags, the chokepoint checklist — and specifically **the second entry point each feature leaks through**, which is the part that gets missed (community is also served by `GET /api/users/:userId/designs` in `userRoutes.ts`; a challenge board is also served by `?challengeId=` on `/api/onDeck/*`) — why DI wiring in `dal/setup.ts` is deliberately never gated, and why a flip needs BOTH containers rebuilt. **Study Challenge, Community and `standaloneGames` are currently the only flags switched OFF.**
+→ See [docs/FEATURE_FLAGS.md](./docs/FEATURE_FLAGS.md) — the app's one on/off registry, `FEATURE_FLAGS` + `GAME_FLAGS` in `server/contracts/featureFlags.ts`, read by BOTH halves (the server declines to mount a router; the client drops the route from `ROUTE_META` and hides its entry points). Covers the per-feature flags, the per-game flags, the chokepoint checklist — and specifically **the second entry point each feature leaks through**, which is the part that gets missed (community is also served by `GET /api/users/:userId/designs` in `userRoutes.ts`; a challenge board is also served by `?challengeId=` on `/api/onDeck/*`) — why DI wiring in `dal/setup.ts` is deliberately never gated, and why a flip needs BOTH containers rebuilt. **Study Challenge, Community, `standaloneGames` and `voiceAssistant` are currently the only flags switched OFF.**
 
 ### Games
 → See [docs/GAMES_FEATURE.md](./docs/GAMES_FEATURE.md)
-  → Hydra Bubbles: [docs/HYDRA_BUBBLES.md](./docs/HYDRA_BUBBLES.md) — **BUILT 2026-08-18,
-    TWO-COLOR REWORK 2026-08-21, no migration**: an endless, clockless recognition drill on
-    Bubble Match's bubbles. The color→payout ladder — now just **`drain` = 1 spawn (net −1)
-    and `bloom` = 3 (net +1)**, each tier a union of two utcm bands, painted **charcoal /
-    gold** rather than any hue the mastery ramp could be mistaken for (and named for the
-    board effect, so a repaint renames nothing), separated from the inert grey English
-    bubbles on three channels — value, temperature and **ring weight** (`BubbleFill.ringWidth`) — a deliberately non-self-stabilizing spawn
-    table keyed on **fill ratio** (the same number the overflow loss reads) that **steps** to
-    drain-only at 0.75, the bloom-majority constraint the two-tier ladder imposes (growth is
-    `2·bloomShare − 1`, so the steady state inverted to bloom 55 / drain 45), the
-    spawn/ratio/anti-zero algorithm, HSK-tier lending where a lent card's tier comes from
-    difficulty rather than mastery (drain = L, bloom = L−1), two client-side color buffers,
-    the `?strictBuckets=1` pool contract that keeps a tier's request from being filled with
-    the other tier's cards, and challenge mode (challenge words ride the bloom slot, scored
-    on time-to-clear). Shipped alongside `src/games/bubbles/` — the bubble field extracted out
-    of Bubble Match — and the app-wide rule it introduces: **cooldown is now a hard "next
-    markable at"** enforced at `POST /api/flashcards/mark`, which silently drops fill-tier-4
-    marks that count today (§ 8.1 — ships logged, tracked in DEFERRED_WORK.md).
   → Gloss confusability: [docs/GLOSS_CONFUSABILITY.md](./docs/GLOSS_CONFUSABILITY.md) —
     **PHASE 1 BUILT 2026-08-22 (no migration), PHASE 2 DESIGN ONLY**: the rule that no game
     may show two cards meaning the same thing at once. Phase 1 is the shipped exact-dd guard
@@ -352,7 +334,9 @@ belong in the owning doc's question log).
 ### Archived features (removed from main, code kept on a branch)
 → See [docs/ARCHIVED_FEATURES.md](./docs/ARCHIVED_FEATURES.md) — features deleted from `main` with
 their code, docs and schema frozen on an `archive/*` git branch for a quick revival. Currently
-**Night Market + Immersive World** (removed 2026-11-09; tables dropped by migration 185). Do not
+**Night Market + Immersive World** (removed 2026-11-09; tables dropped by migration 185), the
+**Home Screen** (removed 2026-11-11), and **Bubble Match + Hydra Bubbles + Bucket Drop** (removed
+2026-11-23 with the shared bubble field; their rows deleted by migration 206). Do not
 reintroduce their names, tables or routes piecemeal — revive from the branch's `archive/REVIVAL.md`.
 
 ### Data Sync (refreshing a dev box from PPE)

@@ -36,8 +36,6 @@ import type { FlpWorld } from '../../server/contracts/studyMode';
  */
 export type MarkSurface =
     | typeof FLP_MARK_SURFACE
-    | "bubble-match"
-    | "hydra-bubbles"
     | "match-speed"
     | "memory-map"
     | "speed-reading"
@@ -49,8 +47,6 @@ export type MarkSurface =
     // The Writing Grid game, now played only as an flp game break
     // (docs/WRITING_PRACTICE_REWORK.md § 2).
     | "writing-grid"
-    // Bucket Drop (docs/BUCKET_DROP_GAME.md).
-    | "bucket-drop"
     // Superposition (docs/SUPERPOSITION_GAME.md).
     | "superposition";
 
@@ -85,7 +81,7 @@ export interface MarkFlashcardRequest {
      * (recognition/production) marks are recorded only from `"flp"`
      * (`FLP_MARK_SURFACE`, docs/MASTERY_REWORK.md § 6) — so a know-writing surface
      * that omits it has its marks dropped above the line. Otherwise diagnostic: the
-     * suppressed-mark log (docs/HYDRA_BUBBLES.md § 8.1) uses it to tell apart the
+     * suppressed-mark log (docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md § "Known consequence: cooled-tier marks") uses it to tell apart the
      * reasons a mark gets dropped: a card served by fill tier 4 (cooled cards on an
      * ordinary run — the collision we do NOT want and are measuring), versus a
      * round that deliberately ignores cooldown (§ 6.3 — intended).
@@ -110,7 +106,7 @@ export interface MarkFlashcardResponse {
     newCard: VocabEntry | null;
     /**
      * The server DECLINED to record this mark because the card's track had not
-     * finished cooling down (docs/HYDRA_BUBBLES.md § 8 — cooldown is a hard
+     * finished cooling down (docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md § "Cooldown is a hard next-markable-at" — cooldown is a hard
      * "next markable at"). Not an error: the review happened, it just did not
      * change any history, so `markTimestamp` is null and there is nothing to undo.
      *

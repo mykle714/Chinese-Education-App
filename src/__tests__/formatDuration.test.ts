@@ -78,7 +78,7 @@ const WEEK = 7 * DAY;
 const MONTH = 30 * DAY;
 
 /**
- * Tests for the cdp cooldown countdown (src/components/mastery/MasteryWindow.tsx).
+ * Tests for the card view's cooldown countdown (src/features/deckTower/cardView/TowerMasteryPanel.tsx).
  *
  * Same "which units may vanish" question as the balance formatter above, one unit
  * wider at each end: a leading zero unit must go, a middle one must stay (otherwise

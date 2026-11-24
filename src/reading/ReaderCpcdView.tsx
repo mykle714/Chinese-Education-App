@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import type { OverrideLookup } from "./pronunciationOverrides";
 import { Box } from "@mui/material";
 import ForeignText, { type CPCDRowGroup, type CPCDRowItem } from "../components/ForeignText";
 import { cpcdNaturalSize } from "../components/cpcdLayout";
@@ -6,8 +7,8 @@ import { applyYiBuSandhi } from "../utils/toneSandhi";
 import type { Language } from "../types";
 import type { SegmentSpan, SpanRange } from "./documentSegmentation";
 import type { SentenceRange } from "./readerSentences";
-import { READER_TEXT_GUTTER_PX, type ReaderSearchColors, type ReaderSearchMatch } from "./readerStyles";
-import { ALTERNATIVE_CELL_ATTR, findAlternativeCellAt } from "./readerAlternatives";
+import { READER_TEXT_PADDING_SX, type ReaderSearchColors, type ReaderSearchMatch } from "./readerStyles";
+import { ALTERNATIVE_CELL_ATTR, READER_OFFSET_ATTR, findAlternativeCellAt, findOffsetAt } from "./readerAlternatives";
 
 /**
  * READER CPCD VIEW — the Reader's **Pinyin** display mode (useReaderSettings →
@@ -53,6 +54,16 @@ import { ALTERNATIVE_CELL_ATTR, findAlternativeCellAt } from "./readerAlternativ
  * mode only — the Text mode draws no alternatives. docs/READER_SEGMENTATION.md
  * § "Tiebreak alternatives".
  *
+ * ── Ranges wider or narrower than a word ─────────────────────────────────────────
+ * A selection that is not exactly one gsa word — a PHRASE (the Phrase pill; several words)
+ * or a drilled sub-word / CHARACTER (readerDrill.ts) — is painted per cell in the selection
+ * colour, its cells joined into one box: the sentence highlight's recipe (`highlightRange`).
+ * Every cell carries its character's content offset (READER_OFFSET_ATTR), so a tap or click
+ * resolves to a character: a click inside the selection narrows it (`onTapInsideSelection`,
+ * desktop; ReaderTapOverlay does the same on mobile), and a click on another word selects
+ * the step unit holding it (`stepSpans` — the phrase with the pill on).
+ * docs/READER_SEGMENTATION.md § "Phrase stepping".
+ *
  * Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Display modes"; docs/READER_SEGMENTATION.md.
  */
 
@@ -71,9 +82,11 @@ const LINE_PX = cpcdNaturalSize(WORD_SIZE).height;
 const HIGHLIGHT_BLEED_PX = 2;
 
 // Breathing room kept between the selected word and the scroll box's top/bottom
-// edges — the same "one line" the text mode keeps (textSelectionUtils.ts →
-// scrollSelectionIntoView).
-const SCROLL_MARGIN_PX = LINE_PX;
+// edges: TWO rendered lines, so tapping through a doc scrolls before the selection
+// reaches the edge and the reader can always see the next lines coming (owner's call
+// 2026-11-23). Same margin as text mode (textSelectionUtils.ts →
+// SCROLL_MARGIN_LINES / scrollSelectionIntoView).
+const SCROLL_MARGIN_PX = 2 * LINE_PX;
 
 // ── Document → paragraph rows ────────────────────────────────────────────────────
 //
@@ -118,6 +131,7 @@ function buildParagraphs(
     spans: SegmentSpan[],
     pronunciations: Map<string, string>,
     useToneColor: boolean,
+    readingAt?: OverrideLookup,
 ): ReaderParagraph[] {
     const paragraphs: ReaderParagraph[] = [];
     let items: CPCDRowItem[] = [];
@@ -131,7 +145,7 @@ function buildParagraphs(
     // A pinyin-less, text-width item (punctuation, spaces, Latin words). It keeps the
     // pinyin band so every line is one cpcd line tall (LINE_PX).
     const pushPlain = (text: string, tag: ItemTag, start: number) => {
-        items.push({ character: text, autoWidth: true, reservePinyinBand: true });
+        items.push({ character: text, autoWidth: true, reservePinyinBand: true, attrs: { [READER_OFFSET_ATTR]: start } });
         offsets.push({ start, end: start + text.length });
         tags.push(tag);
         sandhiChars.push(SANDHI_BREAK);
@@ -193,11 +207,12 @@ function buildParagraphs(
         const start = items.length;
         if (HAN_REGEX.test(span.text)) {
             // A cpcd word: one fixed-column item per character, zipped with its reading.
-            const pronunciation = pronunciations.get(span.text);
+            // The occurrence's chosen reading (READING CHOICES), else the word's default.
+            const pronunciation = readingAt?.(span) ?? pronunciations.get(span.text);
             const syllables = pronunciation ? pronunciation.trim().split(/\s+/) : [];
             let offset = span.start;
             [...span.text].forEach((character, i) => {
-                items.push({ character, pinyin: syllables[i] ?? "", showPinyin: true, useToneColor, reservePinyinBand: true });
+                items.push({ character, pinyin: syllables[i] ?? "", showPinyin: true, useToneColor, reservePinyinBand: true, attrs: { [READER_OFFSET_ATTR]: offset } });
                 offsets.push({ start: offset, end: offset + character.length });
                 offset += character.length;
                 tags.push("word");
@@ -254,10 +269,11 @@ interface ReaderCpcdParagraphProps {
     alternatives: ParagraphAlternative[];
     // The highlight washes (readerStyles → readerSearchColors), shared with the Text mode.
     searchColors: ReaderSearchColors;
-    // SENTENCE MODE: the highlighted sentence when it lies in THIS paragraph, else null (a
-    // sentence never crosses a newline — readerSentences.ts). Painted in the selection
-    // colour across all its cells, joined into one box like a search match.
-    sentence: SentenceRange | null;
+    // A range painted cell by cell in the selection colour, joined into one box like a
+    // search match, when it lies in THIS paragraph (else null): SENTENCE MODE's sentence (a
+    // sentence never crosses a newline — readerSentences.ts), or a selection that is not
+    // exactly one word — a phrase, or a drilled character (see "Ranges wider or narrower").
+    highlightRange: SentenceRange | null;
 }
 
 // Memoised: each cpcd row runs a layout pass of its own on render (CPCDRow →
@@ -273,7 +289,7 @@ const ReaderCpcdParagraph = memo(function ReaderCpcdParagraph({
     currentMatchCellRef,
     alternatives,
     searchColors,
-    sentence,
+    highlightRange: sentence,
 }: ReaderCpcdParagraphProps) {
     // The items with search highlights and tiebreak alternatives laid on (the paragraph's
     // own items when there are neither).
@@ -297,7 +313,8 @@ const ReaderCpcdParagraph = memo(function ReaderCpcdParagraph({
         };
         return paragraph.items.map((item, i) => {
             const alternative = alternatives.find((a) => inAlternative(i, a));
-            const tapTarget = alternative ? { attrs: { [ALTERNATIVE_CELL_ATTR]: alternative.index } } : {};
+            // Merged over the cell's own offset attribute (READER_OFFSET_ATTR), which must survive.
+            const tapTarget = alternative ? { attrs: { ...item.attrs, [ALTERNATIVE_CELL_ATTR]: alternative.index } } : {};
             const match = matches.find((m) => inMatch(i, m));
             if (!match) {
                 if (!alternative) {
@@ -395,6 +412,9 @@ interface ReaderCpcdViewProps {
     segmentSpans: SegmentSpan[];
     // word → pronunciation (documentSegmentation.ts → buildReaderPronunciationMap).
     pronunciations: Map<string, string>;
+    // READING CHOICES (usePronunciationOverrides → lookup): a span's chosen reading,
+    // which outranks `pronunciations`. Absent → every word shows its default.
+    readingAt?: OverrideLookup;
     // The reading textarea's recorded selection (useTextSelection → selectionRange).
     selectionRange: { start: number; end: number };
     highlightColor: string;
@@ -426,6 +446,13 @@ interface ReaderCpcdViewProps {
     // Desktop double-click on a word: select its sentence (useTextSelection →
     // selectSentenceAtOffset). Mobile uses the tap overlay's second-tier long-press instead.
     onSelectSentenceAtOffset?: (offset: number) => void;
+    // The step units (useReadingText → `stepSpans`: the phrases with the Phrase pill on, else
+    // the words). A desktop click — and the mobile long-press WORD JUMP, which clicks the
+    // word — selects the unit holding the word. Absent → the word itself.
+    stepSpans?: SpanRange[];
+    // Desktop click inside the selection: narrow it (useReadingText → `drillAtOffset`).
+    // Returns true when the click was inside the selection. Absent → clicks only select.
+    onTapInsideSelection?: (offset: number) => boolean;
 }
 
 function ReaderCpcdView({
@@ -433,6 +460,7 @@ function ReaderCpcdView({
     language,
     segmentSpans,
     pronunciations,
+    readingAt,
     selectionRange,
     highlightColor,
     showPinyinColor,
@@ -446,10 +474,12 @@ function ReaderCpcdView({
     searchColors,
     selectedSentence = null,
     onSelectSentenceAtOffset,
+    stepSpans,
+    onTapInsideSelection,
 }: ReaderCpcdViewProps) {
     const paragraphs = useMemo(
-        () => buildParagraphs(content, segmentSpans, pronunciations, showPinyinColor),
-        [content, segmentSpans, pronunciations, showPinyinColor]
+        () => buildParagraphs(content, segmentSpans, pronunciations, showPinyinColor, readingAt),
+        [content, segmentSpans, pronunciations, showPinyinColor, readingAt]
     );
 
     // span start offset → span index, for mapping the textarea's range to a word.
@@ -473,14 +503,33 @@ function ReaderCpcdView({
     // the latest spans through a ref.
     const spansRef = useRef(segmentSpans);
     spansRef.current = segmentSpans;
+    const stepSpansRef = useRef(stepSpans);
+    stepSpansRef.current = stepSpans;
     const onSelectRangeRef = useRef(onSelectRange);
     onSelectRangeRef.current = onSelectRange;
+    // A word's click selects its STEP UNIT: the phrase holding it with the Phrase pill on.
     const selectSpan = useMemo(() => (spanIndex: number) => {
         const span = spansRef.current[spanIndex];
-        if (span) onSelectRangeRef.current(span.start, span.end);
+        if (!span) return;
+        const unit = stepSpansRef.current?.find((u) => u.start <= span.start && span.end <= u.end) ?? span;
+        onSelectRangeRef.current(unit.start, unit.end);
     }, []);
 
-    // Keep the selected word in view, with one line of margin — the textarea gets this
+    // A selection that is not exactly one word (a phrase, a drilled character) is painted
+    // cell by cell, like a sentence; SENTENCE MODE's own range wins when both apply.
+    const rangeSelection = useMemo<SentenceRange | null>(() => {
+        const { start, end } = selectionRange;
+        return start === end || selectedSpanIndex >= 0 ? null : { start, end };
+    }, [selectionRange, selectedSpanIndex]);
+    const paintedRange = selectedSentence ?? rangeSelection;
+    // The word to keep in view: the selected word, else the word the painted selection starts in.
+    const scrollSpanIndex = useMemo(() => {
+        if (selectedSpanIndex >= 0) return selectedSpanIndex;
+        if (!rangeSelection) return -1;
+        return segmentSpans.findIndex((span) => span.end > rangeSelection.start);
+    }, [selectedSpanIndex, rangeSelection, segmentSpans]);
+
+    // Keep the selected word in view, with two lines of margin — the textarea gets this
     // from selectRelativeSpan → scrollSelectionIntoView; here the textarea is invisible,
     // so the view scrolls itself. Measured against the scroll box rather than via
     // `scrollIntoView`, which would also scroll the page's overflow-hidden ancestors.
@@ -503,10 +552,10 @@ function ReaderCpcdView({
     }, [scrollRef]);
     useEffect(() => {
         const box = scrollRef.current;
-        if (!box || selectedSpanIndex < 0 || isAutoScrollPausedRef.current?.()) return;
-        const word = box.querySelector<HTMLElement>(`[data-span-index="${selectedSpanIndex}"]`);
+        if (!box || scrollSpanIndex < 0 || isAutoScrollPausedRef.current?.()) return;
+        const word = box.querySelector<HTMLElement>(`[data-span-index="${scrollSpanIndex}"]`);
         if (word) scrollIntoBox(word);
-    }, [selectedSpanIndex, scrollRef, scrollIntoBox]);
+    }, [scrollSpanIndex, scrollRef, scrollIntoBox]);
 
     // ── Search matches → paragraphs ──
     // Each paragraph gets only the matches that overlap it (NO_MATCHES otherwise, so the
@@ -528,15 +577,15 @@ function ReaderCpcdView({
         });
     }, [paragraphs, searchMatches, currentMatchIndex]);
 
-    // ── Sentence → paragraph ──
-    // Only the paragraph holding the sentence gets it; the rest keep null and their memo.
-    const paragraphSentences = useMemo(() => paragraphs.map((paragraph) => {
+    // ── Painted range (sentence / phrase / character) → paragraph ──
+    // Only the paragraph(s) holding it get it; the rest keep null and their memo.
+    const paragraphRanges = useMemo(() => paragraphs.map((paragraph) => {
         const { offsets } = paragraph;
-        if (!selectedSentence || offsets.length === 0) return null;
+        if (!paintedRange || offsets.length === 0) return null;
         const first = offsets[0].start;
         const last = offsets[offsets.length - 1].end;
-        return selectedSentence.start < last && selectedSentence.end > first ? selectedSentence : null;
-    }), [paragraphs, selectedSentence]);
+        return paintedRange.start < last && paintedRange.end > first ? paintedRange : null;
+    }), [paragraphs, paintedRange]);
 
     // Desktop double-click: the word under the pointer → the sentence containing it. (The
     // double-click's first click already selected the word through its own onClick.)
@@ -576,11 +625,28 @@ function ReaderCpcdView({
         const box = event.currentTarget;
         const cell = (event.target as HTMLElement).closest<HTMLElement>(`[${ALTERNATIVE_CELL_ATTR}]`)
             ?? findAlternativeCellAt(box, event.clientX, event.clientY);
-        if (!cell || !onSwitchToAlternative) return;
+        if (!cell || !onSwitchToAlternative) {
+            handleDrillClickCapture(event);
+            return;
+        }
         const alternative = selectedAlternatives[Number(cell.getAttribute(ALTERNATIVE_CELL_ATTR))];
         if (!alternative) return;
         event.stopPropagation();
         onSwitchToAlternative(alternative);
+    };
+
+    // A desktop click on a character INSIDE the selection narrows it (readerDrill.ts) instead
+    // of re-selecting the word. Only a real pointer click: the mobile overlay's programmatic
+    // `word.click()` (WORD JUMP) carries no coordinates and targets the word group, not a
+    // cell, so it never resolves to a character here.
+    const handleDrillClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
+        if (!onTapInsideSelection) return;
+        const cell = (event.target as HTMLElement).closest<HTMLElement>(`[${READER_OFFSET_ATTR}]`);
+        const offset = cell
+            ? Number(cell.getAttribute(READER_OFFSET_ATTR))
+            : event.detail > 0 ? findOffsetAt(event.currentTarget, event.clientX, event.clientY) : null;
+        if (offset === null || !Number.isFinite(offset)) return;
+        if (onTapInsideSelection(offset)) event.stopPropagation();
     };
 
     // The current match's first cell (ParagraphMatch → `cellRef`), kept in view like the
@@ -614,9 +680,9 @@ function ReaderCpcdView({
                 overflowY: "auto",
                 overscrollBehavior: "contain",
                 touchAction: "pan-y",
-                // The textarea's gutter (readerStyles → READER_TEXT_GUTTER_PX), so both
+                // The textarea's padding (readerStyles → READER_TEXT_PADDING_SX), so both
                 // display modes break their lines at the same margin.
-                padding: `${READER_TEXT_GUTTER_PX.y}px ${READER_TEXT_GUTTER_PX.x}px`,
+                ...READER_TEXT_PADDING_SX,
                 boxSizing: "border-box",
                 // Each paragraph row's line is exactly one cpcd cell tall; pinning the
                 // strut to the same height keeps it from adding any.
@@ -644,7 +710,7 @@ function ReaderCpcdView({
                         matches={paragraphMatches[index]}
                         currentMatchCellRef={setCurrentMatchCell}
                         alternatives={paragraphAlternatives[index]}
-                        sentence={paragraphSentences[index]}
+                        highlightRange={paragraphRanges[index]}
                     />
                 );
             })}

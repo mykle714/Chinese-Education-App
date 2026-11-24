@@ -31,32 +31,20 @@ export const MINUTE_POINTS_CONFIG = {
 export const DICTIONARY_AI_DAILY_LIMIT = parseInt(process.env.DICTIONARY_AI_DAILY_LIMIT || '10');
 
 /**
- * Every game slug the app recognises — the whitelist for `/api/games/:gameId/*`.
+ * Every game slug the app recognises. Its one job today is typing `GAME_FLAGS`
+ * (server/contracts/featureFlags.ts → `GameFlagId`), so adding a game is a compile
+ * error until the game is given a flag. (It was also the whitelist for the generic
+ * `/api/games/:gameId/*` assets/progress routes, deleted 2026-11-23 with no caller.)
  *
- * `gameprogress` is keyed `(userId, gameId)` and `gameId` arrives as a raw path
- * segment, so without this list a caller can mint an unbounded number of save rows
- * on their own account simply by varying the slug. The table is not the point; the
- * point is that "which games exist" is a fixed, known set and an endpoint that
- * accepts anything else is accepting garbage.
- *
- * Mirrors the client registry (`src/games/registry.ts` → `GAMES`). Adding a game
- * means adding its slug here — the 404 is the reminder.
+ * Mirrors the client registry (`src/games/registry.ts` → `ALL_GAMES`).
  */
 export const KNOWN_GAME_IDS = [
-  'bubble-match',
   'word-search',
   'match-speed',
   'speed-reading',
-  'hydra-bubbles',
   'memory-map',
   // Played only as an flp game break since 2026-11-04 (docs/WRITING_PRACTICE_REWORK.md § 2).
   'writing-grid',
-  // Drag the stack's top word into its meaning's bucket (docs/BUCKET_DROP_GAME.md).
-  'bucket-drop',
   // Stack scrambled stroke tiles back into characters (docs/SUPERPOSITION_GAME.md).
   'superposition',
 ] as const;
-
-export function isKnownGameId(value: unknown): value is (typeof KNOWN_GAME_IDS)[number] {
-  return typeof value === 'string' && (KNOWN_GAME_IDS as readonly string[]).includes(value);
-}

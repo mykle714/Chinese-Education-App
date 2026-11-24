@@ -168,7 +168,7 @@ both clean.
   would have been stranded off-ramp): `src/features/flashcards/collectionRef.ts`
   (the two deck-palette arrays); `src/features/flashcards/constants.ts` →
   `TAB_COLORS` (aliased to `MARK_TYPE_COLORS` at the time; it names its own ramp members since 2026-10-02); `src/pages/SettingsPage.tsx`
-  (danger color); `src/games/hydra-bubbles/HydraStage.tsx` → `FILL_BY_COLOR`.
+  (danger color); Hydra Bubbles' `FILL_BY_COLOR` (archived 2026-11-23).
 - **Stragglers deliberately NOT converted** — the design spells these values out
   literally, so aliasing them to the ramp moves them off the design rather than onto
   it (see D2b): `src/utils/toneColors.ts` → `TONE_COLORS`;
@@ -226,11 +226,12 @@ real ramp entry to build from.
   remains but nothing reads it. The var's fallback only renders before that first
   effect runs. Setting `--cjk-font` on any element re-faces every Chinese glyph
   beneath it without touching the token or its 11 call sites.
-  → [CJK_TYPEFACE_LAB.md](./CJK_TYPEFACE_LAB.md) (the disabled setting's path, the
-  `/font-lab` compare page, and the 1em han-advance constraint cpcd imposes).
+  The offered faces are `src/theme/cjkFontOptions.ts`; the 1em han-advance constraint
+  cpcd imposes is [CPCD_PINYIN_SHIFT.md](./CPCD_PINYIN_SHIFT.md). (The `/font-lab`
+  compare page was deleted 2026-11-23.)
 - **Material Symbols loads with `display=block`, not `swap`** — it renders ligatures,
   so a swap period would flash the literal string `nights_stay`.
-- **Hydra's Target-yellow deviation survives, and is now better justified.** Its file
+- **Hydra's Target-yellow deviation survived (game archived 2026-11-23).** Its file
   carried an escape hatch reading "if the app-wide Target band is ever retuned to a
   true yellow, go back to `CATEGORY_COLORS.Target`". Target was retuned — to `--org`
   `#FFE6C8`, a pale peach that is a fill tier and cannot carry a ring. The hatch is
@@ -248,7 +249,7 @@ real ramp entry to build from.
   take the `*A` members even though the categories take pastels. Tones are their own
   semantic axis — a tone color does not mean "this syllable is comfortable"; the hue
   sharing is palette economy only.
-- **Hydra's bubbles needed the full pair.** `bg: pastel / border: CATEGORY_COLORS` no
+- **Hydra's bubbles needed the full pair** (game archived 2026-11-23). `bg: pastel / border: CATEGORY_COLORS` no
   longer works now that `CATEGORY_COLORS` is itself pastel — that is a pastel ring on
   a pastel fill. Bubbles are `bg: COLORS.red / border: COLORS.redA`, because the
   player reads the payout tier off a moving bubble and needs the separation.
@@ -263,8 +264,8 @@ real ramp entry to build from.
   mark cells at 8px, the flp's tone-colored pinyin, and the three category chips
   that flipped from white-on-saturated to ink-on-pastel. Two of the three are now
   **gone**: CardFace's `CategoryChip` was deleted on 2026-08-28 with the card-back
-  category, and MiniVocabCard's corner badge was replaced by the eight-mark mastery
-  window (see [MASTERY_REWORK.md](./MASTERY_REWORK.md) § "Mini cards — the eight-mark window").
+  category, and MiniVocabCard's corner badge was replaced by the mastery
+  strip (see [MASTERY_REWORK.md](./MASTERY_REWORK.md) § "Mini cards — the mastery strip").
   Only VocabCardDetailBody's chip remained, and that file was deleted 2026-11-10.
 
 <details><summary>oklch → sRGB hex, for re-deriving a value</summary>
@@ -317,7 +318,7 @@ def gamut_map(L, C, H):              # returns (hex, chroma actually used)
 > ⚠️ **The mono half of this decision was revisited on 2026-09-04.** JetBrains Mono is
 > gone: overlines moved to `FONTS.label` (**Public Sans**) and data to `FONTS.mono`
 > (**Azeret Mono**) — and on 2026-11-13 the mono face went entirely: data is now
-> `DATA_TYPE` (Instrument Sans with tabular figures, `src/theme/fonts.ts`). See [INFO_TYPE_LAB.md](./INFO_TYPE_LAB.md). D1's Instrument
+> `DATA_TYPE` (Instrument Sans with tabular figures, `src/theme/fonts.ts`). D1's Instrument
 > Sans / Instrument Serif choices are unchanged.
 
 **Type.** Design wants Instrument Sans (UI), Instrument Serif (display), JetBrains
@@ -415,7 +416,8 @@ the v1 `{fill, ink, tint}` shape is gone); `src/utils/categoryColors.ts` → `BA
    ⚠️ **Open collision:** Learning / Study Mix are also yellow (`LEARNING_HUE`). The
    design avoids it by drawing Learning purple; the user kept Learning yellow. One
    constant to change if it reads badly on device.
-4. **Mastery cells are coloured by BAND, not mark type** — the cdp `MasteryWindow` and
+4. **Mastery cells are coloured by BAND, not mark type** — the cdp `MasteryWindow` (since
+   2026-11-23 td's card view's `TowerMasteryPanel`) and
    the mini-card strip both use `getBandMark` (identical colours since 2026-09-28, when
    the mini strip's deeper-Target variant was retired). `MARK_TYPE_COLORS` survives only for
    surfaces that name a SKILL (Bubble Match's track toggle, the eip `TAB_COLORS`), and
@@ -763,7 +765,7 @@ Hydra want for their in-header toggles (see entries 13 and 16).
   see. `dense` is therefore the only size that must be **asked for**; the other three
   keep falling out of `showBack` / `arrowDirection`.
   Reached via `size` (`PageHeader`, `MobileDemoHeader`) or `headerSize`
-  (`MobileTabScreen`, `NodePage`). Applied to `VocabCardDetailPage` and
+  (`MobileTabScreen`, `NodePage`). Applied to `VocabCardDetailPage` (deleted 2026-11-23) and
   `DictionaryCardDetailPage` (deleted 2026-11-10; and to the flp's `FlashcardsLearnHeader` until it was
   deleted 2026-11-04 — the flp now uses `TowerStudyHeader`).
   Deriving it by counting `rightContent`'s children was the obvious alternative and is
@@ -774,7 +776,7 @@ Hydra want for their in-header toggles (see entries 13 and 16).
   question, not a skin question, so it stays as-is for entry 12.
 
 **Not yet converted** (their own entries own them): the hand-rolled `IconButton`s in
-`VocabCardDetailPage`,
+`VocabCardDetailPage` (since deleted, 2026-11-23 — td's card view uses `HeaderIconButton`),
 `UserProfilePage` and `AddCardsPage` header slots. They should
 become `HeaderIconButton`s when entries 2 / 18 convert those pages.
 
@@ -782,7 +784,6 @@ become `HeaderIconButton`s when entries 2 / 18 convert those pages.
 `SIZE_SPEC`, `HeaderMetaLabel`, `HeaderIconButton`, `HeaderToggleChip`;
 `src/components/MobileDemoHeader.tsx`; `src/components/MobileTabScreen.tsx`;
 `src/components/LeafPageHeader.tsx`; `src/components/NodePageHeader.tsx`;
-`src/games/bubble-match/BubbleMatchHeader.tsx`;
 `src/games/word-search/WordSearchHeader.tsx`;
 `src/games/match-speed/MatchSpeedHeader.tsx`; `src/pages/AccountSheet.tsx`.
 **Docs:** `docs/LEAF_NODE_PAGES.md`, `docs/MOBILE_TAB_SCREEN_LAYOUT.md`,
@@ -1132,7 +1133,7 @@ a count, it is a spine.*
 `HubMenuRow`, `HubMenuArrayItem`, `HubMenuGroup`, `HubMenuGroupHeader`,
 `HubMenuCardTitle`, `HubMenuCardEdgeSlot`, `HubMenuRowIconTile`,
 `HubMenuStatBadge`; `src/components/hubMenuCardBase.ts` → `cardBaseSx`,
-`CARD_PADDING_PX`; `src/games/word-search/WordSearchHubItem.tsx`.
+`CARD_PADDING_PX`; `WordSearchHubItem` (all deleted since).
 **Docs:** `docs/BENTO_SYSTEM.md` (this entry effectively rewrites it).
 **Size: L.**
 
@@ -1159,13 +1160,12 @@ tracked in [DEFERRED_WORK.md](./DEFERRED_WORK.md).
 
 ### The primitives
 
-> ⚠️ **The `.lab` face is under review (2026-09-04).** `Label` now reads `FONTS.label`
-> rather than `FONTS.mono` — a new token whose default stack is byte-identical to the old
-> one, so nothing moved. The split exists because that one token was setting both PROSE
+> **The `.lab` face.** `Label` reads `FONTS.label` rather than `FONTS.mono`. The split
+> (2026-09-04) exists because that one token was setting both PROSE
 > (`sense 1 · to be located at`) and DATA (`×12 wins`), and mono is only right for the
-> second. `/font-lab` → Info type is where the replacement face is being chosen; ~19
-> hand-rolled copies of this flavour still sit on `FONTS.mono` and are listed for
-> conversion in [INFO_TYPE_LAB.md](./INFO_TYPE_LAB.md) § 5.
+> second. `FONTS.label` is now a plain Public Sans stack (`src/theme/fonts.ts`); the
+> `--label-font` override hook and the `/font-lab` page that chose it were deleted
+> 2026-11-23.
 
 **`src/components/primitives/Label.tsx`** → `Label`, `SectionRule`, `SectionHeader`.
 
@@ -1381,13 +1381,11 @@ swipe out of this game" invisible to whoever reads the page.
 | Game | State |
 |---|---|
 | Match Speed | Framed. `MatchSpeedTimerBar` now **delegates to `GameTimer`** and keeps only what is Match-Speed-specific: `RUN_DURATION_MS`, the 10s urgency threshold, its colours. ~60 lines of duplicated clock styling gone. |
-| Bubble Match | Framed. `BubbleStage` measures its own container, so this just re-bounds the field — no constant changed. |
-| Hydra Bubbles | Framed, same as Bubble Match. |
 | Word Search | Framed, with no HUD since 2026-11-01: the clock runs out of sight — see docs/WORD_SEARCH_GAME.md "The play panel, top to bottom". |
 | Memory Map | Framed. No artboard, but the design anticipated it — `.mapw` is in the stylesheet. |
 | Speed Reading | Framed, and the one to **eyeball first**: it is the only game whose panel sits inside a ROTATED stage that draws its own header. The frame took the place of the play box that was already there, so the change is small, but the geometry is bespoke. |
 
-In every case the popups (`GameEndPopup`, `ProvisionalSortOffer`, the
+In every case the popups (`ProvisionalSortOffer`, the
 lend notice) stay **outside** the panel: each covers the whole content area and must not be
 clipped by the panel's radius.
 
@@ -1421,11 +1419,9 @@ the panel from a card on a page into a board.
 
 | Game | Hub row (`GameDef.hue`) | Artboard | Ground shipped |
 |---|---|---|---|
-| Bubble Match | red | red | **red** |
 | Word Search | pur | purple | **pur** |
 | Match Speed | blu | blue | **blu** |
 | Speed Reading | yel | yellow | **yel** |
-| Hydra Bubbles | grn | green | **grn** |
 | Memory Map | blu (org until 2026-10-06) | — | **blu** |
 
 The ground is still DERIVED from the hub hue, so a hub row and the screen it opens cannot
@@ -1502,7 +1498,7 @@ claim and get the paper default declared in `index.html`.
   icon just made the button look like a warning) and a banked charge dot is the game's
   accent ink, per `#ws .hintbar .chg i{background:var(--purA)}`.
 
-**Not adopted: artboard 16's Hydra bubble ink** (`.bub.zh` muted, `.py` at full ink). That
+**Not adopted: artboard 16's Hydra bubble ink** (game archived 2026-11-23) (`.bub.zh` muted, `.py` at full ink). That
 artboard's bubble colours are already recorded as stale in entry 16, its Chinese/English
 assignment is inverted from what ships, and `Bubble`'s ink is DERIVED from the fill
 (`inkOnFill`) precisely so a palette change cannot strand dark text on a dark bubble. A
@@ -1627,6 +1623,11 @@ rows would go missing.
 > (`getBandMark`), not by mark type; the band pill is the Mid tier (`getBandMid`); cells
 > are 20px tall. The app's Mark tier is 5% L darker than the artboard's (2026-09-28). See § A1b decision 4.
 
+> **Superseded 2026-11-23:** `MasteryWindow` was deleted; td's card view's
+> `src/features/deckTower/cardView/TowerMasteryPanel.tsx` is the mastery visualization now —
+> a raised plate bar without ticks or `n / 8`, and raised latch keys for only the tracks whose
+> goals are on (see § 18's banner). The paragraph below is the record.
+
 `src/components/mastery/MasteryWindow.tsx` → the eight-cell window, its `.tick` cut-point
 markers, the `.hd4` heading (track name + band pill + inline cooldown timer + figure), plus the
 `Segmented` track switch above it. (The `.cd3` cooldown legend under the cells and the
@@ -1678,7 +1679,7 @@ only widgets two different FEATURES consume.
 1. Restyle `CPCDRow` / `CPCDBlock` in place. (The only item left in A7.)
 
 **Code:** `src/components/leaderboard/Board.tsx` (done);
-`src/components/mastery/MasteryWindow.tsx` (done); `src/components/CPCDRow.tsx`;
+`src/components/mastery/MasteryWindow.tsx` (done; deleted 2026-11-23, replaced by `deckTower/cardView/TowerMasteryPanel.tsx`); `src/components/CPCDRow.tsx`;
 `src/components/CPCDBlock.tsx`; `src/components/ForeignText.tsx` (the `.cpcd` restyle,
 still to do). **Deleted:** `src/features/flashcards/MasteryProgressBar.tsx`.
 **Docs:** `docs/MASTERY_REWORK.md`, `docs/ARENA_FEATURE.md`,
@@ -1774,7 +1775,8 @@ isn't drawn around data that doesn't exist.
 **Status: DONE (2026-08-21).** Bubble Match and Word Search are `BentoStrip`s, the
 other four are tiles (since superseded: Word Search is a `hero` banner, and on
 2026-10-03 Bubble Match became a full-row `GameCard` — see
-[GAMES_FEATURE.md](./GAMES_FEATURE.md)). The collection selector (`GamesCollectionSelector`
+[GAMES_FEATURE.md](./GAMES_FEATURE.md); the hub was deleted 2026-11-06, its `GameCard`
+family 2026-11-23, and Bubble Match / Hydra archived the same day). The collection selector (`GamesCollectionSelector`
 on a `CollectionChip`) was deleted 2026-11-04 with collection-scoped launches.
 `WordSearchHubItem` was rewritten on the bento primitive (390 → ~300 lines) with its
 confirm-before-clobber, resume tile, in-place erase confirmation and leave animation
@@ -2253,9 +2255,27 @@ results*. It **supersedes several decisions above** — the full-bleed rows, the
     a Tier 2 page is up; claims are counted so a slide between two Tier 2 pages never clears
     the newcomer's look. `useTier2Look` also claims the browser-chrome strip (`useThemeColor`).
   - **Other Tier 2 pages** wear the same look through the same hook: Lessons
-    (`LessonsPage.tsx`), the vocab cdp (`VocabCardDetailPage.tsx`), and — since 2026-11-17 —
+    (`LessonsPage.tsx`), the vocab cdp until its deletion 2026-11-23 (see "The cdp at night"
+    below), and — since 2026-11-17 —
     both Reader pages (`/reader`, `/reader/:id`; USER_DOCUMENT_FEATURE_SUMMARY.md § Look,
     which lists what the Reader leaves unthemed: its pastels and its dictionary keycap).
+  - **The cdp at night** (2026-11-23). *Superseded the same day: the routed cdp was deleted
+    and td's card view replaced it with no night / Tier 2 theming — it sits on td's sky and
+    takes td's `skyInk` (DECK_TOWER.md § "The card view"). The record follows.*
+    `VocabCardDetailPage` passed its look as `tones` to
+    the shared pieces on the page **only when `look.dark`** (`nightTones`), so by day they stay
+    the exact paper versions the flp and eip draw: `MasteryWindow` → `tones`
+    (`MasteryWindowTones`: track name, cooldown, ticks, `n / 8` count, empty cells, and the
+    Know / Read / Write switch via `Segmented` → `tones`), `SheetPill` → `tones` (the More Info
+    pill), and `WordToolsRail` → `pillSx` (`nightRailPillSx`, slate pills, icons reached via
+    `.ms`). The header's delete button takes `look.ink` at night (`COLORS.dangerInk` is plain
+    ink in v2). Left as they are on purpose: the hero card (the tower's cream card stock), the
+    mastery cells and band pill (pastels carrying their own ink), the fie panel and the eip
+    (Settings theme), and the spinner / error alert.
+    Code: `src/features/flashcards/VocabCardDetailPage.tsx` → `nightTones`, `nightRailPillSx`;
+    `src/components/mastery/MasteryWindow.tsx` → `MasteryWindowTones`;
+    `src/components/primitives/Segmented.tsx` → `SegmentedTones`;
+    `src/components/SheetPill.tsx` → `SheetPillTones`.
   - **Not themed:** the slab footer + Menu popover (Settings theme only since 2026-11-15), the beginner keyboard (always grey since 2026-11-15), the es `PinyinKeypad`, the AI suggestion card (its own AI surface) and
     the `DelayedCircularProgress` spinner. (The read-only card page `/dictionary/card/:word`
     that also wore the ground was deleted 2026-11-10.)
@@ -2681,6 +2701,11 @@ missing) — nothing else. `routeMeta` is also what tells `pageTransition` and
 
 ## 12 · Bubble Match — `/games/bubble-match` — **Size: M**
 
+> **Archived 2026-11-23.** Bubble Match and the shared bubble field (`src/games/bubbles/`)
+> were removed from main; the code is on the `archive/bubble-match-hydra-bucket-drop`
+> branch ([ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)). This entry is design history —
+> its code paths no longer exist on main.
+
 **Status: DONE (2026-08-21).**
 
 **What landed.**
@@ -2925,6 +2950,10 @@ paragraph is the reason.
 
 ## 16 · Hydra Bubbles — `/games/hydra-bubbles` — **Size: S**
 
+> **Archived 2026-11-23.** Hydra Bubbles was removed from main; its code and its design
+> doc (`HYDRA_BUBBLES.md`, cited below) are on the `archive/bubble-match-hydra-bucket-drop`
+> branch ([ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)). This entry is design history.
+
 **Status: DONE (2026-08-21).** Restyle only, as scoped.
 
 **What landed.**
@@ -3028,6 +3057,23 @@ Hydra's pinyin display genuinely is a live toggle.
 
 ## 18 · Card Detail — `/flashcards/card/:id` — **Size: L**
 
+> **Superseded 2026-11-23 by td's card view.** The routed cdp (`/flashcards/card/:id`,
+> `VocabCardDetailPage`) and `MasteryWindow` were deleted; a saved card now opens in place over
+> td's cards page (`src/features/deckTower/cardView/TowerCardView.tsx`, DECK_TOWER.md § "The
+> card view"), and its mastery section is `TowerMasteryPanel`. This is a design change, not a
+> rename: the panel's bar is itself a raised plate (straight-down wall) in the band's Mark
+> tier that GROWS with pbh from a short red bar to a full blue one, with the cooldown timer
+> kept but the track name, the band pill, the band cut-point ticks,
+> the "target"/"comfortable" captions and the `n / 8` count DROPPED; the Know/Read/Write
+> `Segmented` switch became one raised keycap that cycles through only Know plus the goals
+> the account has on (`users.readingGoal` / `writingGoal`), and is hidden entirely when only
+> Know is on — reversing "all three tracks regardless of goals". The section below is kept as
+> the record.
+> The same day the rail lost `Write it` (Compare + Customize only, the flp session's plates),
+> More Info became the flp's `MoreInfoPill` at the flp's position, delete became an outlined
+> trash button top-right of the view's header, and the slab footer / Tier 2 ground went (the
+> footer is hidden while the view is open; the view sits on td's sky).
+
 **Status: DONE (2026-08-24).** Typecheck, lint, build and the 557-test suite clean.
 
 **What landed.**
@@ -3043,7 +3089,8 @@ Hydra's pinyin display genuinely is a live toggle.
   not a percentage, so it is drawn as eight discrete cells with the Target and
   Comfortable cut points ticked between them. The core bar's fractional pbh renders as a
   PARTIAL last cell rather than rounding, because rounding makes two genuinely different
-  cards read the same. The cooldown survived as the `.cd3` legend — one row per bar
+  cards read the same. *(⚠️ Superseded 2026-11-23: the cells became one long fill to
+  `pbh / 8`, ticks kept — see D7's amendment and docs/MASTERY_REWORK.md § 5.)* The cooldown survived as the `.cd3` legend — one row per bar
   since the 2026-09-25 know merge (docs/MASTERY_REWORK.md § 6) — until 2026-09-28, when
   the legend was dropped and the countdown moved inline beside the band pill.
 - **A `Know / Read / Write` switcher.** See the **D6 amendment** below.
@@ -3433,6 +3480,14 @@ Built as `MasteryWindow` + the `Segmented` primitive. The rule in
 its hairline were dropped; the switch now stands alone, right-aligned (class
 `mastery-window__switch-row`).
 
+**Superseded 2026-11-23 (owner's call).** `MasteryWindow` is deleted; td's card view's
+`TowerMasteryPanel` (`src/features/deckTower/cardView/TowerMasteryPanel.tsx`) offers **Know
+plus only the goals the account has on** (`users.readingGoal` / `writingGoal`, the tower's own
+world rule), and hides the switch entirely when only Know is on — reversing "all three tracks
+are always offered". The switch is now latch-style raised plate keys, not `Segmented`. One
+track on screen at a time still holds; the panel opens on the world (core / reading / writing)
+whose cards page the card was tapped in, passed as a prop.
+
 ### D7 · One mastery rendering: `.msb` — **HONOURED 2026-08-24**
 
 Of the design's three (`.trk2` bar, `.msb` segmented cells, `.mst` thermometer), **only
@@ -3447,6 +3502,19 @@ rendering. Its header comment carries the argument for the shape: pbh is a posit
 eight-mark window, not a percentage, and a liquid level invites "89% of the way to
 mastered", which is the wrong mental model — one bad mark does not evaporate a fraction
 of a tank, it turns one cell off.
+
+**Amended 2026-11-23 (owner's call): the cells are gone.** `MasteryWindow` and the mini
+card's `MasteryStrip` both draw ONE horizontal track filled to `pbh / PBH_FULL`
+(`src/utils/masteryCompute.ts` → `masteryFillFraction`; `masteryWindowCells` deleted). The
+"one rendering, scaled down" half of D7 still holds — both surfaces share the helper, the
+band colour and the horizontal shape. The "counting, not estimating" half is relaxed:
+the cdp keeps the Target / Comfortable ticks and the printed `n / 8`; the mini strip has
+neither. Code: `src/components/mastery/MasteryWindow.tsx` → `MasteryBarTrack`;
+`src/components/MiniCard.tsx` → `MasteryStrip`.
+*Superseded later on 2026-11-23:* `MasteryWindow` was deleted with the cdp. Its successor,
+td's card view's `TowerMasteryPanel`, drops the ticks, captions, `n / 8`, track name and band
+pill — a raised plate bar in the band's Mark tier whose length grows with
+`masteryFillFraction`; only the cooldown is kept.
 
 ### D8 · `HubMenu` is deleted
 `HubMenu.tsx` (439 lines) and `hubMenuCardBase.ts` are removed, all **10** importers
@@ -3519,7 +3587,7 @@ same way as the decks page's menu card items, with the same border.
 > [TOWER_STYLE_SHIFT.md](./TOWER_STYLE_SHIFT.md) § "Card stock"). From this recipe the face
 > keeps only the radius (`CARD_SURFACE.borderRadius`, read through `--card-radius`, which
 > `cardStockVars` sets). The flp card casts no shadow (`FlashCardSection` → `cardShadow`
-> is `"none"`); the cdp hero's wrapper still casts `CARD_SURFACE.boxShadow`. The flp's
+> is `"none"`); the hero wrapper of td's card view (`TowerCardView`, the cdp's 2026-11-23 replacement) still casts `CARD_SURFACE.boxShadow`. The flp's
 > empty-state card and `BreakCardLayer` still read the recipe. The text below is the
 > recipe's history.
 
@@ -3547,7 +3615,7 @@ is revisited"; it is now `SHADOW.cardRest` (`0 5px 16px` @ .14 — between `rais
 **Who draws which half.** A flashcard FLIPS, so the hairline and radius live on each FACE
 (`CardFaceSide`, `card/CardFace.tsx`) — a border on the transparent flip wrapper would stay
 put while the faces rotate. The shadow lives on the WRAPPER (`FlashCardSection`'s `Card`,
-the cdp's `*__hero-card` box), which is what the page lays out; those wrappers repeat
+td's card view's `tower-card-view__hero-card` box, formerly the cdp's `*__hero-card`), which is what the page lays out; those wrappers repeat
 `borderRadius` so the cast shadow takes the card's shape. Applying both halves in both
 places would double the shadow.
 
@@ -3566,9 +3634,9 @@ and the fie's two canvas layers (`CardIconCanvas`).
 `flpCardRadiusCss`) sets `--card-radius` to `FLP_CARD_CORNER_RATIO` (0.09375) × the card's
 width, so its corners match the Deck Tower's card, which the study camera lays exactly over
 it (docs/DECK_TOWER.md § "Studying the tower"); ≈ 28px at the nominal 295px width. Every
-Since 2026-11-04 the cdp hero sets it too (`cardStockVars`), so both vet card surfaces
+Since 2026-11-04 the cdp hero set it too (`cardStockVars`; td's card view's hero since 2026-11-23), so both vet card surfaces
 share the tower card's corner ratio; no other card surface sets it.
-Surfaces that are NOT cards keep their own radii: the eip `InfoCard` and the cdp's `SectionCard` stay 12/16px.
+Surfaces that are NOT cards keep their own radii: the eip `InfoCard` and the cdp's `SectionCard` (gone with the cdp, 2026-11-23) stay 12/16px.
 
 ### D13 · Elevation is the design's shadow system, and it lives in one token file
 **Decided 2026-08-24, on the user's ruling.** The design has a shadow system; the app had
@@ -3708,5 +3776,5 @@ the only entry that adds a route), and A7's **`.cpcd`** restyle.
 `docs/DECK_TOWER.md`, `docs/TOWER_STYLE_SHIFT.md`, `docs/DISCOVER_FLOW.md`, `docs/GAMES_FEATURE.md`,
 `docs/MASTERY_REWORK.md`, `docs/COMMUNITY_PAGE.md`, `docs/FRIENDS_FEATURE.md`,
 `docs/ARENA_FEATURE.md`, `docs/VELOCITY.md`, `docs/WORD_SEARCH_GAME.md`,
-`docs/MATCH_SPEED_GAME.md`, `docs/SPEED_READING_GAME.md`, `docs/HYDRA_BUBBLES.md`,
+`docs/MATCH_SPEED_GAME.md`, `docs/SPEED_READING_GAME.md`,
 `docs/USER_DOCUMENT_FEATURE_SUMMARY.md`, `docs/designGuidelines.md`.

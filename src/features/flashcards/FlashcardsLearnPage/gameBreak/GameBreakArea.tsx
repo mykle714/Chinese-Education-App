@@ -2,7 +2,7 @@ import React, { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useR
 import { createPortal } from "react-dom";
 import { Box } from "@mui/material";
 import { SAFE_BOTTOM, SAFE_TOP } from "../../../../theme/safeArea";
-import DelayedCircularProgress from "../../../../components/DelayedCircularProgress";
+import PawnLoader from "../../../../components/PawnLoader";
 import { useBlockEdgeSwipe } from "../../../../hooks/useBlockEdgeSwipe";
 import { useScreenOverlayHost } from "../../../../hooks/useScreenOverlayHost";
 import { flpBreakGameFor } from "../../../../games/flpBreak";
@@ -56,7 +56,13 @@ const GameBreakArea: React.FC<{
      * the tower and out of the working loop (docs/FLP_GAME_BREAKS.md § 4a).
      */
     onCardCleared?: (cardId: number) => void;
-}> = ({ gameBreak, onCardCleared }) => {
+    /**
+     * Whether the PawnLoader may show while the game's code loads. The page passes its
+     * `!parked && !tower.cardsCovered` gate: the loader portals out of a parked session's
+     * clip, so it would otherwise show over the tower.
+     */
+    loaderAllowed: boolean;
+}> = ({ gameBreak, onCardCleared, loaderAllowed }) => {
     const { anchorRef, host } = useScreenOverlayHost();
     const areaRef = useRef<HTMLDivElement | null>(null);
     const circleRef = useRef<HTMLDivElement | null>(null);
@@ -231,13 +237,10 @@ const GameBreakArea: React.FC<{
                             className="flp-game-break__stage"
                             sx={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}
                         >
-                            <Suspense
-                                fallback={
-                                    <Box className="flp-game-break__loading" sx={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                        <DelayedCircularProgress className="flp-game-break__spinner" />
-                                    </Box>
-                                }
-                            >
+                            {/* The game's lazy chunk (rarely: startPlan preloads it). The area's
+                                white ground shows meanwhile, the header row (Leave) over it; the
+                                app's loading mark centres on the screen after its usual delay. */}
+                            <Suspense fallback={loaderAllowed ? <PawnLoader label="Loading the game" /> : null}>
                                 <adapter.Stage
                                     candidate={planned.candidate}
                                     context={planned.context}

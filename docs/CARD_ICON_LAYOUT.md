@@ -45,13 +45,13 @@ The arrangement is **per user, per word** because it is stored on the vet row
 ### Entry point: the `Customize` pill
 
 The editor is opened from the **`Customize`** pill on the word-tools rail above the card
-(`src/components/WordToolsRail.tsx` → `onCustomize`, beside `Compare`, and `Write it` on the cdp only), on both
-card surfaces:
+(`src/components/WordToolsRail.tsx` → `onCustomize`, beside `Compare`; no card surface shows
+`Write it` any more), on both card surfaces:
 
 | Surface | Handler | Behaviour |
 |---|---|---|
 | flp (Deck Tower study session) | `FlashcardsLearnPage` → `handleCustomizeCard` | If the question face is up, the rail's capture-phase `onToolPress` (`revealAnswer`) flips the card first and the editor opens once the flip lands (`TOWER_CARD_FLIP_MS`), because `enterEdit` measures the answer face's text blocks and a mid-flip card measures edge-on. Ignored mid-animation; the delayed open is dropped if the front card changes during the wait. While the editor is open the rail stays drawn but **greyed + inert** (`disabled={editMode || railDisabled}`, the More Info pill's treatment); it is hidden only on the writing flp. |
-| cdp (`VocabCardDetailPage`) | `handleCustomize` | The hero card IS the answer face — opens immediately. While the editor is open the rail's `Compare` / `Customize` are greyed + inert (`disabled={editMode}`); `Write it` stays live. |
+| td's card view (`deckTower/cardView/TowerCardView`; replaced the routed cdp 2026-11-23) | `handleCustomize` | The hero card IS the answer face — opens immediately. While the editor is open the rail's `Compare` / `Customize` are greyed + inert (`disabled={editMode}`). The rail is the flp session's plate rail with `showWriteIt={false}` — the cdp's `Write it` was removed. |
 | Dictionary page eip | — | No pill (no card to customize; its rail at the bottom of the definition tab omits `onCustomize`). |
 
 It used to sit behind a `•••` on the card's own top edge (`CardOpsRail`), which was deleted
@@ -88,7 +88,7 @@ clipped. (`CardFaceSide` now lives in `src/features/flashcards/card/CardFace.tsx
 and the canvas's `card-icon-canvas__clip` take `clipPath: var(--card-panel-clip, none)`.
 `CardFaceSide` always sets it (to
 `inset(var(--card-stock-inset) round var(--card-panel-radius))` — every vet card face is on
-card stock: the flp and the cdp hero card), so everything in the inner box (icons, text
+card stock: the flp and td's card view's hero card), so everything in the inner box (icons, text
 blocks, sense chip, speaker) is cut at the beige printed panel rather than the card edge. The
 rim width comes from the frame's `cardStockVars` (`src/features/flashcards/card/cardStock.ts`). Text also
 **wraps** inside the panel: `textBlockMaxWidth` (`src/cardIcons/cardTextLayout.ts`) caps a block at
@@ -252,7 +252,7 @@ white/black literals); the resolver
 arg was added so text-only advanced designs count). `CardFaceSide` (`FlashCardSection.tsx` —
 `faceBg`) takes `isUsingAdvancedLayout` as a per-face prop that the **caller** decides:
 
-- **flp back / answer side** and the **card-detail hero** pass the entry verdict directly (the hero
+- **flp back / answer side** and the **card-detail hero** (td's card view, `TowerCardView`) pass the entry verdict directly (the hero
   is an un-rotated back face — this gate is intentionally independent of the `rotated` flip
   transform, which only the flp flip-pair uses).
 - **flp front / question side** passes `entryVerdict && sideOneLanguage === 'en'` — the **Chinese
@@ -368,7 +368,7 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    below every modal sheet/scrim (1200+) and MUI menu (1300), so the icon picker, the reset
    confirm and the toolbar's portaled dropdowns still open over it. React events bubble
    through the portal, so both hosts' outside-tap deselect (`closest(".card-edit-toolbar")`)
-   is unchanged. Both hosts mount the same panel: the flp and the cdp (the old flat
+   is unchanged. Both hosts mount the same panel: the flp and td's card view (the old flat
    page-ground bar is gone from both).
 
    Because the panel starts at the frame top instead of under the header, its bottom edge sits
@@ -407,10 +407,10 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    `CARD_EDIT_ANIM_MS` entry animation settles (the toolbar's `<Slide>` transform isn't caught
    by `ResizeObserver`).
 
-   **The cdp reserves the BASIC row, and only that** (`VocabCardDetailPage.tsx`). There the
-   card is not centered in a slot but sits under the word-tools rail at the top of a content
-   column, so the reservation is the column's `paddingTop` (`CONTENT_PADDING + toolbarInset`,
-   transitioned in lockstep) and the hook is given `.card-edit-toolbar__row` — the toolbar's
+   **td's card view reserves the BASIC row, and only that** (`deckTower/cardView/TowerCardView.tsx`,
+   the rule carried over from the routed cdp it replaced on 2026-11-23). There the
+   card is not centered in a slot but sits under the word-tools rail, so the reservation is
+   the view body's `paddingTop` (`toolbarInset`, transitioned in lockstep; `bodyRef`) and the hook is given `.card-edit-toolbar__row` — the toolbar's
    primary row — as the band to clear (`clearSelector`), measured against ContentArea's top
    plus its own padding:
 
@@ -419,7 +419,7 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
      top (over the header), the row normally ends inside the header band and the push is 0.
      (`enabled` is plain `editMode`, not `editMode && advMode`.)
    - **Advanced mode pushes no further.** The advanced rows are sized to land on the rail
-     (`Write it` / `Compare`) — covering it is the intent. The primary row's bottom edge does
+     (`Compare` / `Customize`) — covering it is the intent. The primary row's bottom edge does
      not move when the menu opens (the toolbar is anchored at its top), so the reservation is
      identical in both modes and nothing shifts on the adv toggle.
 
@@ -489,7 +489,8 @@ All in `src/features/flashcards/FlashcardsLearnPage/`.
    The 2026-08-24 redesign briefly replaced it with `InfoPeek` (a resting sheet lip); the
    flp was reverted to the pill the same day, and the cdp followed onto the shared
    `SheetPill` capsule, so `InfoPeek` is gone (see docs/SHELF_REDESIGN.md artboard 19).
-   The cdp greys its own pill while the editor is open for the same reason.
+   td's card view (the cdp's replacement, 2026-11-23) uses the flp's own `MoreInfoPill`
+   and greys it while the editor is open for the same reason.
    In advanced mode the card slides down **over** it: the card slot is raised
    (`zIndex: 3` when `editMode && advMode` in `FlashCardSection.tsx`) above the pill's
    `zIndex: 2`, so the card paints over the pill rather than the pill floating on top.
@@ -1148,7 +1149,7 @@ flex column they can't grow), so the gap clears a multi-line English definition.
 `measureDefaultTextCenters(cardElement)` (`cardTextLayout.ts`) reads each block wrapper's
 (`.mobile-demo-flashcard-text-block--<block>`) rect against the card's own rect and converts it
 to a normalized center. The page supplies the measurement as a callback to `enterEdit`
-(flp: `cardRef`; cdp: `heroCardRef`), because only the page knows which element is the card.
+(flp: `cardRef`; td's card view: `heroCardRef`), because only the page knows which element is the card.
 A block that HAS a saved placement is left alone — that coordinate is authoritative and both
 renderers already honour it.
 
@@ -1298,7 +1299,7 @@ SnapConfig | null`, and `TextColors` (`{foreign,english}` of `TextColorMode =
   `CardEditPanel.tsx`, `CardEditToolbar.tsx`, `CardIconOrderList.tsx`, `useToolbarMenus.ts`,
   `toolbarDropdownSelector.ts`. It used to sit in
   `src/features/flashcards/FlashcardsLearnPage/`, but the editor is consumed by **two**
-  pages (flp and the cdp `VocabCardDetailPage`), so owning it from one page's folder was
+  surfaces (flp and td's card view `TowerCardView`, before 2026-11-23 the cdp `VocabCardDetailPage`), so owning it from one page's folder was
   wrong — `features/<x>/` is for code exclusive to that feature. It now sits beside the
   rest of the icon subsystem (`cardIconLayout.ts`, `cardTextLayout.ts`, `cardIconApi.ts`).
   See [ARCHITECTURE_REVIEW.md](./ARCHITECTURE_REVIEW.md) finding 7.

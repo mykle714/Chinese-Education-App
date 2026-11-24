@@ -48,7 +48,7 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
 
    | Lights | Routes |
    | --- | --- |
-   | `deck` | `/`, `/flashcards/card/:id`, `/discover/sort/:language` |
+   | `deck` | `/`, `/discover/sort/:language` |
    | `menu` | `/community`, `/friends/challenges*`, `/reader` |
    | `arena` | `/arena` |
    | `dictionary` | `/dictionary` |
@@ -126,13 +126,17 @@ There is **no hamburger / nav drawer** and **no desktop sidebar** (both removed 
    - Friends drill-in (`/friends/challenges`), opened from the AccountSheet's Friends tab → back one history
      entry (`navigateBackOr(navigate, "/")`), landing on the page the sheet was over with
      the sheet closed. (They used to `slideNavigate("/friends")`.)
-   - Deck (td) drill-ins → back to `/`: Card Detail (`/flashcards/card/:id`, the
-     saved-card cdp, opened from td's cards page), Add Cards
+   - Deck (td) drill-ins → back to `/`: Add Cards
      (`/discover/sort/:language`, node; set mode exits to its origin instead —
      [DISCOVER_FLOW.md](./DISCOVER_FLOW.md)) and the Writing Notebook (leaf, back to the
-     writing world). The flp has no route: it runs inside td. The cdp's
+     writing world). The flp has no route: it runs inside td. Neither does card detail
+     since 2026-11-23 (the routed cdp, `/flashcards/card/:id`, was deleted): a card tapped
+     in td's cards page opens **td's card view** in place over it
+     (`features/deckTower/cardView/TowerCardView`, [DECK_TOWER.md](./DECK_TOWER.md) § "The
+     card view"). Opening pushes a history entry on `/` (route state `{ towerCard: <vet id> }`),
+     so any Back closes the view; the footer is hidden while it is up. Its
      breakdown/used-in/example drill-ins do not navigate: they push the tapped word as a
-     crumb on the eip's word trail in the cdp's own sheet (`EipSheet`).
+     crumb on the eip's word trail in the view's own sheet (`EipSheet`).
    - Dictionary result tap → **no navigation**: the eip rises as a bottom sheet over the
      results (`EipSheet`, 2026-10-10); its drill-ins (breakdown/used-in rows, example and
      long-definition segments, Compare) open as eip TABS, not pages. Closing the sheet
@@ -160,7 +164,7 @@ became a sheet (2026-10-09) they are:
   `MOBILE_DEMO_PATHS` array; includes `/`, and `/login` + `/register` since 2026-11-14) → wrapped in `MobileDemoFrame` (full-bleed on mobile, centered phone card on desktop).
 - Everything else (the font lab, 404) → full-height, no chrome; each owns its
   `PageHeader`. (Reader / Settings / Tester Dashboard render inside
-  the frame as leaf pages; both card-detail cdps render inside the frame as node pages;
+  the frame as leaf pages; card detail is td's in-place card view, not a page;
   Dictionary is a footer tab.)
 - Both modes mount a `BootCoverSlot` (the app-opening cover, [LOGIN_REWORK.md](./LOGIN_REWORK.md) § 1).
 

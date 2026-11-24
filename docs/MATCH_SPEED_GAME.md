@@ -27,8 +27,7 @@ definition. Tap one card, then tap a card in the *other* column to attempt a
 match. **How fast can you complete 30 pairs?** No timer is shown during play; the
 finish time appears on the end card.
 
-Where Bubble Match is a spatial/physical game (drag bubbles through a packing
-field) and Word Search is a scanning game, Match Speed is a pure **read-and-recall
+Where Word Search is a scanning game, Match Speed is a pure **read-and-recall
 throughput** test. There is no physics, no grid generation, and no drag — only
 taps and a board that refills until the run's 30 pairs have all been dealt.
 
@@ -412,7 +411,7 @@ being fed would hang forever. Three rules in `topUpBuffer` and `refill` close th
 | `REFILL_TICK_MS` | 3_000 | board refill cadence |
 | `FADE_IN_MAX_DELAY_MS` | 500 | upper bound of the per-card random fade delay |
 | `FADE_IN_DURATION_MS` | ~260 | the fade itself |
-| `POP_DURATION_MS` | ~280 | match pop before removal (mirrors Bubble Match) |
+| `POP_DURATION_MS` | ~280 | match pop before removal |
 | `WRONG_FEEDBACK_MS` | ~400 | red flash on a wrong attempt; **board stays live** |
 | `CLEAR_BANNER_MS` | 1_400 | "Board Cleared!" banner lifetime (cosmetic only) |
 
@@ -503,9 +502,7 @@ Each pair drawn for the board rolls a category **independently**, weighted
 | Comfortable | 20% |
 | Mastered | 8% |
 
-This is a **per-draw roll**, not a fixed board quota — unlike Bubble Match's
-`GAME_DISTRIBUTION` (`src/games/bubble-match/constants.ts`), which requests
-a fixed 2/10/6/2 mix for a whole run. A Match Speed board can legitimately come
+This is a **per-draw roll**, not a fixed board quota for a whole run. A Match Speed board can legitimately come
 up 5 Target cards.
 
 ⚠️ These categories are the **per-mark-type** categories (recognition, the track
@@ -525,9 +522,9 @@ board and in the buffer, cannot cover it.
 ⚠️ **This holds even for a one-bucket top-up** (since 2026-09-13). `topUpDistribution` omits
 buckets that are already full, so a learner with almost no Unfamiliar cards routinely
 sends `?Unfamiliar=5` alone. The server used to treat any one-bucket request as
-strict (a Hydra-era fallback check), skip the cross-bucket tiers, and lend. PPE account
+strict, skip the cross-bucket tiers, and lend. PPE account
 `11bee9ad…`, with 699 sorted zh cards and one Unfamiliar card, was dealt lent cards
-mid-run because of it. Only an explicit `strictBuckets=1` (Hydra) is strict now; see
+mid-run because of it. No request is strict now; see
 `OnDeckVocabService.getGameVocabPool` → `substituting`.
 
 ⚠️ **A top-up sends no `need`.** `MatchSpeedStage` → `fetchPool` (via `fetchGamePool`,
@@ -584,8 +581,6 @@ is the correct behavior and the client must not block it. There is deliberately
 `exclude` exists to prevent a **duplicate on screen**. A card that is currently on
 the board or in the buffer has *not been marked yet*, so it is not on cooldown and
 a top-up would happily return it — putting the same word in two rows at once.
-Bubble Match has the identical case and solves it the identical way with its
-`keepIds` hard exclude (`BubbleMatchPage.tsx`, `playAgain`).
 
 `exclude` is enforced in SQL and is absolute (`fetchGameCandidates`'s
 `excludeIds`, `server/services/OnDeckVocabService.ts`).
@@ -643,10 +638,8 @@ docs/PROVISIONAL_CARDS.md § 5.
 **The notice fires ONCE, before the run, and never again.** `beginRun` is the only caller
 of `setNoticeOpen`; the mid-run `topUpBuffer` path records lent words but deliberately
 opens nothing. This is a rule for a reaction-time game, not an accident of the code: a
-modal mid-run costs the player clock and lands over a board they are mid-tap on. Hydra
-Bubbles used to afford a mid-run popup (`HydraLendNotice`) because it has no clock, but
-**as of 2026-09-05 it does not show one either** — it adopted this surface's badge
-instead (HYDRA_BUBBLES.md § 6.4). No game now interrupts a run to announce lending.
+modal mid-run costs the player clock and lands over a board they are mid-tap on. No game
+interrupts a run to announce lending.
 
 What replaces it is the **lent badge** — the icons8 hourglass in the top-right corner of
 every borrowed card (`LentCardBadge`, docs/PROVISIONAL_CARDS.md § 5). Mid-run lending is
@@ -725,8 +718,8 @@ GET /api/onDeck/gamePool?Unfamiliar=5&Target=5&Comfortable=5&Mastered=5
 
 Properties:
 
-- **Additive and backwards-compatible.** Bubble Match and Word Search ignore the
-  new field; no existing behavior changes.
+- **Additive and backwards-compatible.** Other callers ignore the new field; no
+  existing behavior changes.
 - **Truthful under fallback.** When a bucket is short and the fill tops up from
   the fallback order, the card is stamped with the bucket it *actually* came
   from, so the client's buffer never silently mislabels a card.
@@ -747,8 +740,7 @@ exists to control.
 
 ## Marks
 
-Match Speed is a **recognition** drill (foreign → meaning), same track as Bubble
-Match. Marks go to `POST /api/flashcards/mark` with
+Match Speed is a **recognition** drill (foreign → meaning). Marks go to `POST /api/flashcards/mark` with
 `{ cardId, isCorrect, type: "recognition", excludeIds: [] }`.
 
 **Exception — the reading flp's game break** marks **`reading`** instead: the board
@@ -812,10 +804,9 @@ The card also shows the **accuracy line** — `Accuracy {score}/{attempts} ({pct
 `recordWin(WIN_LEVEL)` fires on **every finished run** (`useGameWins`,
 `src/hooks/useGameWins.ts`, `GAME_KEY = "matchSpeed"`, `WIN_LEVEL` 1 — the game's one
 difficulty, § One difficulty). Until 2026-11-10 it was gold-only. The hub tile showed the
-**game-wide win count** as its corner badge (no live surface since the Games hub was
-deleted 2026-11-06; wins are still recorded) — the shared trophy `WinCountPill`
-(`src/games/shared/GameCard.tsx`), passed as a `pinBare` BentoTile pin in the tile's
-top-left (`pinSide="left"`).
+**game-wide win count** as its corner badge. No surface shows it since the Games hub
+was deleted 2026-11-06 (its `GameCard` / `WinCountPill` went 2026-11-23); wins are
+still recorded.
 
 ### Personal best
 
@@ -857,8 +848,7 @@ slides up on enter. Same as both shipped games. Do **not** add a per-page
 swipe would otherwise navigate away mid-run.
 
 Header right slot (`MatchSpeedHeader`, filling `LeafPage`'s `rightContent`) is
-deliberately **thin** — modeled on `WordSearchHeader.tsx`, not on
-`BubbleMatchHeader.tsx`:
+deliberately **thin** — modeled on `WordSearchHeader.tsx`:
 
 | Control | Notes |
 |---|---|
@@ -905,16 +895,14 @@ Two consequences worth carrying forward:
   header chip leaves the board playable. A chip that paused the clock would be a free
   stopwatch stop.
 - **The settings are still the SHARED ones.** `showPinyin` remains
-  `useFlashcardLearnSettings`', so toggling it here also changes Bubble Match, Hydra
-  and the flp; the audio mode is `useTTSSettings`', shared with everything. That was
+  `useFlashcardLearnSettings`', so toggling it here also changes the flp; the audio mode is `useTTSSettings`', shared with everything. That was
   true when they lived in the sheet and is unchanged — only where they are edited moved.
 
 **Language gating survived the move.** For a Latin-script language the pinyin control
 is meaningless (`ForeignText` ignores the flag entirely) and must be **hidden**, not
 merely inert. `MatchSpeedHeader` takes the active language and renders the chip only
 for character-based languages, via `isLatinScriptLang` imported from `ForeignText` —
-the canonical owner of that set — rather than re-testing `=== "es"`. (Bubble Match's
-header had the same latent bug; it was fixed in the same pass.)
+the canonical owner of that set — rather than re-testing `=== "es"`.
 
 ---
 
@@ -938,7 +926,7 @@ when pinyin is hidden". Code: `src/games/match-speed/MatchSpeedCard.tsx`.
 The gloss **must** come from `resolveDisplayDefinition(entry)`
 (`src/utils/definitionUtils.ts`) — never `entry.definition` or `definitions[0]`.
 The `game-pool` payload carries `definitionClusters` + `selectedSense`, so this
-resolves client-side, exactly as Bubble Match does. Showing a different gloss than
+resolves client-side. Showing a different gloss than
 the flashcard the player learned the word from reads as the game not knowing their
 word. See
 [GAMES_FEATURE.md § Sense correctness](./GAMES_FEATURE.md#sense-correctness--every-game-must-honor-the-learners-selected-sense)
@@ -948,14 +936,11 @@ and [DEFINITION_MAPPING.md](./DEFINITION_MAPPING.md) form #3 (dd).
 
 Three steps, in order:
 
-1. **Strip parentheticals** — run the same `stripParentheses` pass Bubble Match
-   uses when sizing definition bubbles, dropping "(literary)"-style asides before
+1. **Strip parentheticals** — run `stripParentheses` (`src/utils/definitionUtils.ts`), dropping "(literary)"-style asides before
    anything else. This buys room for the part of the gloss that actually
    distinguishes it.
 2. **Scale the font by length** — interpolate the font size down as the stripped
-   gloss gets longer, between a `DEF_LEN_MIN`/`DEF_LEN_MAX` character band, the
-   same length→size idea Bubble Match applies to bubble radius
-   (`DEFINITION_LEN_MIN`/`MAX`, `src/games/bubble-match/constants.ts`). Clamp at
+   gloss gets longer, between a `DEF_LEN_MIN`/`DEF_LEN_MAX` character band. Clamp at
    both ends.
 3. **Clamp at 3 lines** with an ellipsis.
 
@@ -1060,9 +1045,7 @@ src/games/match-speed/
   types.ts                 BoardCard, Slot, Phase, GameCategory, CardPair
 ```
 
-`cardBuffer.ts` is **pure and injectable-rng**, the way
-`spawnSelection.ts` is for Bubble Match
-(`src/games/bubble-match/spawnSelection.ts` — `Rng = () => number`, defaulting to
+`cardBuffer.ts` is **pure and injectable-rng** (`Rng = () => number`, defaulting to
 `Math.random`). The weighted roll and the fallback walk are exactly the kind of
 logic that is miserable to verify through the UI and trivial to verify as a pure
 function — see `src/__tests__/matchSpeedCardBuffer.test.ts`, which pins the weight
@@ -1087,7 +1070,6 @@ Edits outside that folder:
 | `server/contracts/wire.ts` | `gameCategory?: FlashcardCategory` on `VocabEntryBase` — one declaration serves both sides |
 | `docs/GAMES_FEATURE.md` | register the game in its game list |
 | `src/utils/timeUtils.ts` | `formatTimeMs` hoisted here out of word-search constants; both word-search importers re-pointed |
-| `src/games/bubble-match/BubbleMatchHeader.tsx` | takes `language`, hides the pinyin toggle for Latin-script languages (same latent bug, fixed in this pass) |
 | `src/games/match-speed/MatchSpeedClearBanner.tsx` | the "Board Cleared!" pop-and-fade banner (decorative; no scoring) |
 | `src/__tests__/matchSpeedCardBuffer.test.ts` | unit coverage for the weighted roll, the fallback walk, and the run tiers |
 
@@ -1098,8 +1080,8 @@ Edits outside that folder:
 All steps complete — kept as the build order a similar game should follow.
 
 1. ✅ Backend: stamp `gameCategory` in `fetchGameCandidates`; declare the field on
-   `VocabEntryBase`. Bubble Match and Word Search verified unaffected (they never
-   read it; the response shape is otherwise unchanged).
+   `VocabEntryBase`. Other callers verified unaffected (they never read it; the
+   response shape is otherwise unchanged).
 2. ✅ `constants.ts` + `types.ts` + `cardBuffer.ts` (pure, injectable rng), covered
    by `src/__tests__/matchSpeedCardBuffer.test.ts`.
 3. ✅ `MatchSpeedCard.tsx` — `ForeignText`, `resolveDisplayDefinition`, strip →
@@ -1125,7 +1107,7 @@ All steps complete — kept as the build order a similar game should follow.
 | **Timer start** (was #1, #2) | A **3·2·1 countdown**, the shared one (`src/games/shared/useGameCountdown.ts` → `COUNTDOWN_STEPS` at `COUNTDOWN_STEP_MS` each; GAMES_FEATURE.md § "The countdown"). The board is primed and fully readable behind a screen-wide dim during it, so the opening board gets a beat to be read and the clock starts from an identical state every run — nobody is billed for reading time. The board is `frozen` (renders, ignores taps, no refill tick) until the release. It starts only once the lent-cards notice is dismissed. Until 2026-11-10 it was 3·2·1·Go (four steps) under a panel-only scrim, with no sound. |
 | **Buffer under-supply mid-run** (was #3) | **Just gaps**, no placeholder. `takePairs` short-returns, the tick fills what it can, and the rest wait for the next tick. A placeholder would advertise a network problem the player can do nothing about, and the hole is already the game's normal resting state right after a match. |
 | **Tap on an empty slot** (was #4) | **No-op**; the selection is preserved. An empty slot has no `MatchSpeedCard` to receive the tap, so this is the natural behavior rather than a coded rule. Clearing the selection would punish a near-miss on a card that had just popped out. |
-| **Bubble Match's pinyin toggles** (was #5) | **Fixed in the same pass.** `BubbleMatchHeader` now takes `language` and hides the toggle for Latin-script languages, same as `MatchSpeedHeader`. Both import `isLatinScriptLang` from `ForeignText` rather than re-testing `=== "es"`. |
+| **Bubble Match's pinyin toggles** (was #5) | Fixed in the same pass (game archived 2026-11-23). |
 | **Accuracy on the end card** (was #6) | **Shown**, as `Accuracy {score}/{attempts} ({pct}%)` under the score, and graded as the accuracy tier since 2026-11-10. Without it a wrong match leaves no trace at all on the end card. |
 | **Sound** (was #7) | **None**, consistent with both other shipped games. |
 
@@ -1158,7 +1140,6 @@ it reads from.
 | Card sizing (2.4:1; 2:1 in a break) | `src/games/match-speed/MatchSpeedBoard.tsx` (`gridElRef` / `cardSize` measurement block); `constants.ts` (`CARD_ASPECT`, `BREAK_CARD_ASPECT`, `BREAK_CARD_SCALE`, `ROW_GAP_PX`, `COL_GAP_PX`) |
 | Registry, minute points | `src/games/registry.ts`; `src/constants.ts` |
 | Win badge | `src/hooks/useGameWins.ts` |
-| Pure-selection precedent | `src/games/bubble-match/spawnSelection.ts` |
 
 Docs updated when this shipped:
 

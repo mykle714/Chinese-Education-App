@@ -15,7 +15,7 @@ on reading in context. See
 [§ The last round is a sentence](#the-last-round-is-a-sentence).
 
 Because both options are real characters of the same length, the player cannot get
-there by shape alone — they have to actually **read**. Where Bubble Match tests
+there by shape alone — they have to actually **read**. Where Match Speed tests
 meaning-recall and Word Search tests scanning, this tests **reading speed**: how
 fast a known word is recognised under a clock. It emits **reading** marks.
 
@@ -690,15 +690,9 @@ GET /api/games/speedReading/distractors
 Authenticated, language-scoped, derived from the player's library — one request at
 game load, no top-ups (the pool doesn't shrink).
 
-Registered in `server/routes/speedReadingRoutes.ts`, **before** `gamesRoutes` in
-`server.ts`: those routes are parameterized on `/api/games/:gameId/...`, and
-ordering the specific namespace first keeps a future `:gameId` route from silently
-shadowing this one.
-
-**Why its own controller and not `GamesController`:** that controller is
-deliberately game-agnostic — one controller for all games, each request scoped by
-`:gameId` — and serves only framework-level assets/progress endpoints. This
-endpoint is specific to one game's data model.
+Registered in `server/routes/speedReadingRoutes.ts` (`SpeedReadingController`). There
+is no generic `/api/games/:gameId/*` router any more (deleted 2026-11-23), so nothing
+can shadow it; if one is ever added, mount it after this router.
 
 ---
 
@@ -797,8 +791,8 @@ It still sends `surface` — dropping it, as this hook used to, changed nothing,
 ⚠️ **Why this game over-lent, and the fix.** Speed Reading kept lending ~18 cards on
 *every* load even to learners with hundreds of playable cards. Two facts combined: it
 buckets by the READING track, on which a typical learner has almost no history and
-therefore bands ~100% `Unfamiliar`; and it inherited Bubble Match's `GAME_DISTRIBUTION`
-of 2/10/6/2, whose `Target`/`Comfortable`/`Mastered` quotas are then unfillable at any
+therefore bands ~100% `Unfamiliar`; and it inherited the (now archived) Bubble Match's
+distribution of 2/10/6/2, whose `Target`/`Comfortable`/`Mastered` quotas are then unfillable at any
 library size. The pool's fill tier 2 lent that 18-card shortfall before the fresh
 fallback tier could borrow from the learner's own (large) `Unfamiliar` pile — and since
 a minted row is *itself* `Unfamiliar`, the shortfall could never close, so it recurred
@@ -818,7 +812,7 @@ a best-effort fill. See [PROVISIONAL_CARDS.md § 4b](./PROVISIONAL_CARDS.md).
 ## `markType` on the game pool
 
 `getGamePool` used to **hardcode** `'recognition'` when calling
-`getGameVocabPool`, back when Bubble Match was its only caller. This game emits
+`getGameVocabPool`, back when the (now archived) Bubble Match was its only caller. This game emits
 **reading** marks, so pooling through it unchanged would gate on the wrong
 cooldown track and bucket by the wrong per-type category — a card just read
 correctly here would come straight back, while a card weak in reading would be
@@ -826,7 +820,7 @@ treated as strong because recognition of it is good.
 
 The endpoint now accepts `?markType=` (`server/controllers/OnDeckVocabController.ts`),
 validated against `MARK_TYPES` with `'recognition'` as a safety net only.
-**Bubble Match's call site passes `markType=recognition` explicitly**, so no caller
+Every caller passes its `markType` explicitly (`fetchGamePool`), so no caller
 depends on the default and the endpoint reads as parameterized rather than
 recognition-with-an-escape-hatch. This is the same parameterization Word Search
 does via `?mode=`.
@@ -945,8 +939,7 @@ are not gated on a tier), guarded by a ref so it fires once per run.
   (the studySurface claim), not through a route of this game's own.
 - **Definitions:** the prompt's definition **must** resolve through
   `resolveDisplayDefinition(entry)` (`src/utils/definitionUtils.ts`) — `gamePool`
-  ships `definitionClusters` + `selectedSense`, so resolve client-side as Bubble
-  Match does. See `GAMES_FEATURE.md` § Sense correctness.
+  ships `definitionClusters` + `selectedSense`, so resolve client-side. See `GAMES_FEATURE.md` § Sense correctness.
 - **Audio:** `useTTS().speakSentence(entry.entryKey, entry.pronunciation)` behind
   the shared `SpeakerButton`, with `isLoading={tts.speakingKey === entry.entryKey}`.
   **Autoplays every round** — see § Auto-narration.

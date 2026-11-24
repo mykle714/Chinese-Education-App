@@ -121,7 +121,7 @@ boundary. `email` is deliberately **not** returned — it is private to the acco
   - `gameWins` — `[{ game, wins }]` from `wins`, most-won first. ⚠️ **Wins, not
     plays.** No table records a game round being started or lost: `wins` is written
     only on a win (`src/hooks/useGameWins.ts` → `recordWin`), Match Speed writes one
-    only for a gold run, and Hydra Bubbles and Memory Map write nothing. A per-game
+    only for a gold run, and Memory Map writes nothing. A per-game
     play count needs a play log that does not exist yet.
 - `lastSeenAt` is `null` for a learner with minutes but no token row in the window
   (only possible at the UTC / streak-day edge); the UI shows "no session".

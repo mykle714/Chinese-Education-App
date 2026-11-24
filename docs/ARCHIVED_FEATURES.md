@@ -4,6 +4,43 @@ Features that were built, then deliberately removed from `main` with their code 
 frozen git branch so they can be revived quickly. Nothing here is live: no route, no
 table, no cron step. Start from the archive branch's `archive/REVIVAL.md`, not from this file.
 
+## Bubble Match, Hydra Bubbles, Bucket Drop (removed 2026-11-23)
+
+| | |
+|---|---|
+| **Branch** | `archive/bubble-match-hydra-bucket-drop` (local only so far; push with `git push origin archive/bubble-match-hydra-bucket-drop`) |
+| **Base commit** | `f4664c6`: the last `main` commit that contained all three games |
+| **Revival guide** | `archive/REVIVAL.md` on that branch: what each game was, every file deleted, every wiring point in shared files, the data deleted, the revival checklist |
+| **Schema** | None dropped for the games themselves (`wins` / `game_personal_bests` are game-keyed). Their stored rows were deleted by `database/migrations/206-drop-game-framework-and-archived-game-rows.sql` |
+| **Docs** | `docs/HYDRA_BUBBLES.md` and `docs/BUCKET_DROP_GAME.md` live only on the branch. Bubble Match's design sections were in `docs/GAMES_FEATURE.md` on that branch |
+
+```bash
+git show archive/bubble-match-hydra-bucket-drop:archive/REVIVAL.md
+```
+
+**What they were.** Three routed games with no live host. *Bubble Match* was a physics
+bubble field where you drag a word onto its meaning. *Hydra Bubbles* was an endless,
+clockless drill on the same field, with a two-colour payout ladder that lent cards by tier.
+*Bucket Drop* sent the stack's top word into its meaning's bucket. Their pages sat behind the
+OFF `standaloneGames` flag, the Games hub that linked them was deleted 2026-11-06, and none
+had a live flp break, so no user could reach them.
+
+**Moved, not removed:** the app-wide rule "cooldown is a hard next-markable-at" (formerly
+HYDRA_BUBBLES.md § 8) now lives in
+[FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md](./FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md)
+§ "Cooldown is a hard next-markable-at".
+
+**Removed with them, because it had no caller once they were gone:**
+- `src/games/bubbles/`, the bubble field the two bubble games shared, and
+  `src/games/runtime/GameEndPopup.tsx`.
+- Hydra's card-pool options (`strictBuckets`, `lendLevelOffset`, rolling supply).
+- The challenge scorer's `survival` bonus kind.
+- The dead Games-hub launcher cluster (`GameCard`, `RoundPlayButton`, Word Search's hub
+  tile/resume tile/launcher).
+
+**Left on `main` without its caller:** `GET /api/onDeck/gamePool`'s `avoid` parameter
+(Bubble Match's "Play Again").
+
 ## Home Screen (removed 2026-11-11)
 
 | | |

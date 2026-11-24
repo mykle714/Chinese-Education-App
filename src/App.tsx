@@ -7,6 +7,7 @@ import { ThemeContextProvider } from "./contexts/ThemeContext";
 import { VocabularyUpdateProvider } from "./contexts/VocabularyUpdateContext";
 import BeginnerKeyboardProvider from "./features/beginnerKeyboard/BeginnerKeyboardProvider";
 import FocusEndedNoticeHost from "./features/focusMode/FocusEndedNoticeHost";
+import ConnectionNoticeHost from "./components/notifications/ConnectionNoticeHost";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { APP_ROUTES, type AppRoute } from "./routes/registry";
@@ -18,6 +19,8 @@ import { BootCoverProvider, BootRouteMounted } from "./components/bootCover/Boot
 import NotificationProvider from "./components/notifications/NotificationProvider";
 import type { BootCoverRenderProps, BootSceneRenderProps } from "./hooks/useBootCover";
 import { BOOT_COVER_GROUND } from "./components/bootCover/bootCoverGround";
+import PawnLoader from "./components/PawnLoader";
+import { useBootCover } from "./hooks/useBootCover";
 
 /**
  * Render one registry row as a <Route>.
@@ -32,15 +35,16 @@ function renderRoute(route: AppRoute) {
   // Suspense boundary — unconditionally, rather than from a per-row `lazy` flag
   // that could be forgotten on a new page and would then throw at runtime.
   //
-  // The fallback is intentionally null so the parent MobileDemoFrame stays visible
-  // during the brief fetch instead of flashing a spinner inside the phone card.
+  // The fallback is RouteChunkFallback (below): nothing, so the parent MobileDemoFrame stays
+  // visible, until the fetch has run past PawnLoader's show delay; then the loader, so a
+  // first visit on a slow link does not read as an ignored tap.
   //
   // BootRouteMounted sits beside the page INSIDE the boundary, so it commits only once the
   // page's chunk has loaded: the boot cover's "the page underneath exists" signal
   // (src/hooks/useBootCover.ts, gate 2). Inside ProtectedRoute too, so a protected page
   // signals only once auth has let it render.
   const page = (
-    <Suspense fallback={null}>
+    <Suspense fallback={<RouteChunkFallback />}>
       {createElement(route.Component)}
       <BootRouteMounted />
     </Suspense>
@@ -55,6 +59,17 @@ function renderRoute(route: AppRoute) {
     );
 
   return <Route key={route.path} path={route.path} element={element} />;
+}
+
+/**
+ * A route's Suspense fallback while its page's code-split chunk downloads (T5,
+ * docs/DECK_TOWER.md § "Loading feedback"). PawnLoader's own show delay keeps the usual
+ * cached/fast fetch blank. Nothing while the boot cover is up: on a cold start the cover
+ * already speaks for that wait, and the loader (z 1300) would paint over it (BOOT_COVER_Z 200).
+ */
+function RouteChunkFallback() {
+  const { up: bootCoverUp } = useBootCover();
+  return bootCoverUp ? null : <PawnLoader label="Loading page" />;
 }
 
 /**
@@ -143,6 +158,8 @@ function App() {
               {/* Focus mode's "it turned itself off" popup, on whatever page is up
                   (docs/FOCUS_MODE.md § 4). */}
               <FocusEndedNoticeHost />
+              {/* The one shared "No connection" notice (docs/NOTIFICATIONS.md § 3a "Failures"). */}
+              <ConnectionNoticeHost />
               </NotificationProvider>
             </BeginnerKeyboardProvider>
           </ConfirmationProvider>

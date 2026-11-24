@@ -10,10 +10,8 @@ bento (`MenuPage`, `/menu`; the Menu tab now raises a popover of ROWS,
 `src/components/menuPopover/MenuPopover.tsx`), the Games hub (`GamesPage`, `/games`;
 games are flp breaks now, their pages off behind the `standaloneGames` flag) and the
 `/friends` page (`FriendsPage`; `FriendsBody` lives on in the AccountSheet). The Games
-hub's `GameCard` family (`src/games/shared/GameCard.tsx`, `gameCards.ts`,
-`bubble-match/bubbleMatchCard.ts`, `word-search/WordSearchHubItem.tsx` and friends) is
-still in the tree with **no live caller**; the sections below that describe it describe
-dormant code.
+hub's `GameCard` launcher family (`GameCard`, `gameCards`, `WinCountPill`,
+`RoundPlayButton`, Word Search's hub item) was deleted 2026-11-23; it is in git history.
 
 Introduced by the shelf redesign (see [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § A4
 and entries 1/3/4). It **replaced `HubMenu`**, a 439-line vertical list of
@@ -75,11 +73,11 @@ exists for the one shape the artboards also draw (Friends, artboard 8) — a row
 ACTIONS named in one word each. At three columns there is no room for a subtitle, so pair
 it with `variant="compact"` and let the ghost glyph carry what the one-word label
 compresses. Do not reach for it to fit more destinations on a hub; group a SET of launch
-options inside one full-width card instead (the Games hub's `GameCard`).
+options inside one full-width card instead.
 
 A tile spans the full grid via `gridColumn: "1 / -1"`, **not** `span 2` — a hero is "the
 full width of whatever grid it is in", and spelling it as a span silently means *two
-thirds* in a 3-column bento. A full-row `GameCard` uses the same.
+thirds* in a 3-column bento.
 
 `hero` already implies full width. `fullWidth` is the other combination: a SHORT tile that
 still owns its row (Friends' Challenges bar). Width and height are separate decisions, and
@@ -102,14 +100,10 @@ from a deck count. An alert pin also needs the explicit `minWidth`: a one-digit 
 pill sized only by its padding renders as an oval, not the circle a badge is read as.
 
 **`pinBare`** — the pin node brings its own chrome and the slot only positions it (no
-mono font, padding or background; `pinTone` is ignored). It exists for the games' win
-badge: the Games hub's Match Speed tile passes `WinCountPill`
-(`src/games/shared/GameCard.tsx` → `WinCountPill`) with `pinBare`, so its win count is
-the same trophy pill the `GameCard`s (Bubble Match, Word Search) wear rather than a
-`×N` mono pin. It also passes **`pinSide="left"`** (default
-`"right"`), putting the pill in the tile's top-LEFT corner, clear of the ghost glyph that
-bleeds off the top-right. Code: `src/components/bento/Bento.tsx` →
-`BentoTile`; `src/games/GamesPage.tsx`.
+mono font, padding or background; `pinTone` is ignored). It was built for the deleted
+Games hub's win-count pill and has no caller today. **`pinSide="left"`** (default
+`"right"`) puts the pin in the tile's top-LEFT corner, clear of the ghost glyph that
+bleeds off the top-right. Code: `src/components/bento/Bento.tsx` → `BentoTile`.
 
 **`pressed` + `sx`** — for a tile that is a TOGGLE rather than a destination: the Friends
 tab's Send / Accept / Remove tiles (`src/features/friends/FriendActionTiles.tsx`). `pressed`
@@ -145,13 +139,11 @@ pastel needs an outline unless it is large and occupied.**
 
 Bento tiles are also an exception to the app-wide button/card outline
 (`1px solid COLORS.border`, CLAUDE.md § "Buttons & cards"): `CardShellProps.outlined`
-defaults to `false` and `BentoTile` never sets it. `GameCard`'s `card` variant DOES set it
-(game cards are outlined), except Word Search's (`GameCardData.outlined: false`). `TipBox`
+defaults to `false` and `BentoTile` never sets it. `TipBox`
 used to share the tile exception but now wears the outline
 (`src/components/TipBox.tsx` → `TipCard`).
 
-Code: `src/components/bento/CardShell.tsx` → `CardShell` (`outlined`);
-`src/games/shared/GameCard.tsx` → `GameCard`.
+Code: `src/components/bento/CardShell.tsx` → `CardShell` (`outlined`).
 
 ### Tiles are real anchors
 
@@ -167,19 +159,12 @@ optional outline (above), the `SHADOW.rest` drop shadow, the 14px padding, the g
 (ink, 15%, bleeding off the top-right) and the corner pin slot (`pin` / `pinTone` /
 `pinBare` / `pinSide`, all described above). It owns NO inner layout.
 
-Two entities render through it, so a change to any shell number moves both:
-
-| Entity | Inner layout |
-|---|---|
-| `BentoTile` | foot-aligned title + subtitle, geometry from `TILE_VARIANTS` |
-| `GameCard` `variant="card"` (`src/games/shared/GameCard.tsx`) | header (name + `WinCountPill`) over a row of launch-option slots + a `RoundPlayButton`; uses `TILE_VARIANTS.base`'s ghost and `CARD_TITLE_SX`, so a game card's name reads exactly like a base tile's — except a card with an EMPTY options row, whose title takes the hero tier's size (`TILE_VARIANTS.hero.title`) |
-
-`GameCard`'s other variant, `tile`, IS a `BentoTile` (see
-[GAMES_FEATURE.md](./GAMES_FEATURE.md) § "Games hub").
+`BentoTile` (foot-aligned title + subtitle, geometry from `TILE_VARIANTS`) is its one
+caller since the Games hub's `GameCard` was deleted.
 
 *(Removed 2026-10-03: `BentoStrip` / `BentoSubTile`, a captioned row of sub-tiles, and
-`BentoStripProps.control`. Their last callers were the Games hub's Bubble Match / Word
-Search strips, which became `GameCard`s. `SectionHeader`'s `meta` slot,
+`BentoStripProps.control`. Their last callers were the Games hub's game strips, which
+became `GameCard`s. `SectionHeader`'s `meta` slot,
 `src/components/primitives/Label.tsx`, still carries the "fact about the set, never a
 control" meaning the strip header had.)*
 
@@ -188,16 +173,11 @@ control" meaning the strip header had.)*
 | Page | Shape |
 |---|---|
 | ~~**Menu**~~ | Deleted 2026-11-06 with `/menu`. Its destinations (and their hues) moved to `src/components/menuPopover/menuDestinations.ts` → `useMenuDestinations`, drawn as popover rows (docs/NAVIGATION.md § 3). |
-| ~~**Games**~~ | Deleted 2026-11-06 with `/games`. Its `GameCard` tiles (Bubble Match / Word Search full-row cards, the rest half-width tiles) remain as dormant code. |
+| ~~**Games**~~ | Deleted 2026-11-06 with `/games`; its `GameCard` tiles were deleted 2026-11-23. |
 | **Friends** (`src/features/friends/FriendsBody.tsx`, shown in the AccountSheet's Friends tab) | The one `columns={3}` caller, and the one that is a MENU OF ACTIONS rather than of destinations: Send / Accept / Remove as `compact` tiles (blu / grn / red — valence, not decoration), then Challenges as `low` + `fullWidth` with a subtitle. Both counted tiles use `pinTone="alert"`. Its tiles pass `to` **and** an `onClick` that intercepts the plain-click to run the drill-in slide, so they keep real link behaviour for modified clicks. |
 | **Reader list** (`src/features/reader/TextSidebar.tsx`, the `/reader` list body) | A single `compact` tile — **New document** (blu, `edit_note`, title only, no subtitle — the Friends action tiles' dress) — one column wide in the default 2-column grid, so it sits in the LEFT column and the right stays empty. `onClick` only (it navigates to `/reader/new` through its host). |
 
-*(Dormant since the hub's deletion:)* Bubble Match's and Word Search's cards were **special-cased in the page**, not
-driven by generic `GameDef` fields. Word Search's card is owned by
-`src/games/word-search/WordSearchHubItem.tsx` rather than the page, because it holds
-word-search-specific state (the saved board, the confirm dialog).
-
-## Registry fields the hub reads
+## Registry fields the hub read
 
 `GameDef` (`src/games/types.ts`):
 
@@ -205,13 +185,8 @@ word-search-specific state (the saved board, the confirm dialog).
 * `glyph: string` — the ghost glyph's Material Symbols name. *(Was `iconAsset`, an
   optional image URL that no game ever set.)*
 * *(no `subtitle`)* — Games hub tiles are **name-only** since 2026-10-03: `GameDef.subtitle`
-  was deleted, and no `GameCard` carries a subtitle (Bubble Match's level options read
-  just "Level N"). `BentoTile`'s own
+  was deleted. `BentoTile`'s own
   `subtitle` prop still exists for other hubs.
-
-Bubble Match's `hue` is only a fallback: its card is white and its level options take
-their own hues from `LEVEL_HUES` (`src/games/bubble-match/constants.ts`, a difficulty
-ramp), via `buildBubbleMatchCard`.
 
 ## Known gaps
 
@@ -230,5 +205,5 @@ ramp), via `buildBubbleMatchCard`.
   primitive this one pairs with.
 * [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) — footer tabs, Leaf/Node archetypes,
   the `MobileTabScreen` layout these hubs sit inside.
-* [GAMES_FEATURE.md](./GAMES_FEATURE.md) — the Games hub's gating and collection
-  selector.
+* [GAMES_FEATURE.md](./GAMES_FEATURE.md) — game gating (`isGameAvailable`) and the
+  `GameDef` registry.

@@ -31,7 +31,6 @@ interface TipDef {
 const ALL_TIPS: TipDef[] = [
     { text: "Tap a flashcard's icon to jump straight to its detail page." },
     { text: "Use Add Cards to sort new words into your decks before they pile up." },
-    { text: "Bubble Match gets harder each level — Torture drops the ceiling fast!", game: "bubble-match" },
     { text: "Word Search hides your vocab in a grid — words can run in any direction.", game: "word-search" },
     { text: "Your streak resets if a full day passes without any study activity." },
     { text: "The Community page shows card designs other learners have upvoted.", feature: "community" },

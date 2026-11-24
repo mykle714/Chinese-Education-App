@@ -6,6 +6,7 @@ import { Box } from "@mui/material";
 import LeafPage from "../../../components/LeafPage";
 import { HeaderActionChip } from "../../../components/PageHeader";
 import Icon from "../../../components/Icon";
+import PawnLoader from "../../../components/PawnLoader";
 import { FIRE_COUNT_INK } from "../../../minutePoints/FireCount";
 import { OUTLINED_CHIP_ICON_PX, OUTLINED_CHIP_PAD_Y_PX, OUTLINED_CHIP_TEXT_PX } from "../../../components/pageHeaderSizing";
 import { useAuth } from "../../../AuthContext";
@@ -219,13 +220,22 @@ export default function WritingNotebookPage() {
 
     // Reopen the last word. Keyed on the account (never the token — CLAUDE.md "never
     // reload on a silent token refresh").
+    //
+    // `summarySettled` holds the empty sheet's "Tap Choose" hint back until this lookup has
+    // answered: before it, the page cannot know whether a word is about to reopen, and the
+    // hint flashed up and was replaced a moment later. A FAILED lookup settles too — the
+    // hint is still true then (Choose works without the summary), so it has no message of
+    // its own; the GET is retried quietly first (docs/NOTIFICATIONS.md § 3a "Failures").
     const userId = user?.id;
+    const [summarySettled, setSummarySettled] = useState(false);
     useEffect(() => {
         if (!userId || !language) return;
         let cancelled = false;
+        setSummarySettled(false);
         fetchNotebookSummary(language)
             .then((summary) => { if (!cancelled && summary.lastWord) setWord((w) => w ?? summary.lastWord); })
-            .catch((err) => console.error("Writing Notebook: summary failed", err));
+            .catch((err) => console.error("Writing Notebook: summary failed", err))
+            .finally(() => { if (!cancelled) setSummarySettled(true); });
         return () => { cancelled = true; };
     }, [userId, language]);
 
@@ -332,6 +342,10 @@ export default function WritingNotebookPage() {
                             {word ? (
                                 // Keyed on the word: a new word is a new sheet, scrolled to its top.
                                 <NotebookGrid key={word} ref={gridRef} sheet={sheet} onOpenCell={openCell} onScrolledAwayChange={setScrolledAway} />
+                            ) : !summarySettled ? (
+                                // The last word may be about to reopen: no hint yet, and the
+                                // loader if the lookup is slow (docs/DECK_TOWER.md § "Loading feedback").
+                                <PawnLoader label="Opening your notebook" />
                             ) : (
                                 <Box className="writing-notebook-page__empty" sx={{ padding: "40px 24px", textAlign: "center", fontFamily: FONTS.sans, fontSize: 14, color: COLORS.textSecondary }}>
                                     Tap Choose above to pick a word to practice.

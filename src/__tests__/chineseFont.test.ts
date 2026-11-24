@@ -20,8 +20,6 @@ import { CHINESE_FONT_IDS, DEFAULT_CHINESE_FONT_ID } from "../types";
  * if it returns and the two have drifted, a typeface the user can tap would be rejected
  * by the server with a 400. This test makes that drift a red build.
  * Same guard `cardColor.test.ts` provides for CARD_COLOR_VALUES.
- *
- * See docs/CJK_TYPEFACE_LAB.md.
  */
 describe("Chinese typeface catalog", () => {
     it("offers exactly the faces the server accepts", () => {
@@ -36,7 +34,7 @@ describe("Chinese typeface catalog", () => {
     });
 
     it("lists the default first", () => {
-        // The lab leads with the default, so it must actually BE first.
+        // The default leads the catalog, so it must actually BE first.
         // Asserted rather than trusted to comment, so a future reshuffle of the
         // catalog cannot silently bury it mid-list.
         expect(CJK_FONT_OPTIONS[0]?.id).toBe(DEFAULT_CHINESE_FONT_ID);

@@ -8,11 +8,8 @@ import { requireUserId, getUserLanguage, handleControllerError } from '../utils/
  * LAYER: controller. Parses/validates request shape, delegates every decision to
  * SpeedReadingService, and does no SQL.
  *
- * WHY NOT GamesController: that controller is deliberately game-AGNOSTIC — "one
- * controller serves all games, each request scoped by :gameId" — and serves only
- * the framework-level assets/progress endpoints. This endpoint is specific to one
- * game's data model, so folding it in would break that invariant and make the
- * shared controller grow per game. See docs/SPEED_READING_GAME.md.
+ * One controller per game: this endpoint is specific to Speed Reading's data model.
+ * See docs/SPEED_READING_GAME.md.
  */
 export class SpeedReadingController {
   constructor(private speedReadingService: SpeedReadingService) {}

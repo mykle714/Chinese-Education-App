@@ -23,9 +23,9 @@ import { useCompareSheet } from "../compare/useCompareSheet";
  * drill-in chain; `openForRoot` reseeds when the root word changes.
  *
  * Hosts: acp (`AddCardsPage`), the Dictionary page (`features/dictionary/DictionaryPage`,
- * the only host that turns on `showWordTools`) and the saved-card cdp
- * (`features/flashcards/VocabCardDetailPage`, which since 2026-11-10 drills in through
- * this trail instead of navigating; with the Dictionary page it turns on
+ * the only host that turns on `showWordTools`) and td's card view
+ * (`features/deckTower/cardView/TowerCardView`, which replaced the routed cdp 2026-11-23;
+ * it drills in through this trail instead of navigating; with the Dictionary page it turns on
  * `showSynonymsRelated` + `showLearning`), and the Reader document page
  * (`features/reader/ReaderDocumentPage`, the Dictionary page's configuration plus
  * `sharedLearning`, so its keycap's Add key and the eip's are one state). The flp mounts `InfoCardSection` itself: it
@@ -42,8 +42,8 @@ interface EipSheetProps {
     onSpeak?: (entry: VocabEntry) => void;
     onSpeakSentence?: (text: string, pronunciation?: string) => void;
     speakingKey?: string | null;
-    // Append Synonyms + Related Words to the bottom of the definition tab (the cdp's
-    // treatment — InfoCardTabContent `showSynonymsRelated`). Dictionary page + saved-card cdp.
+    // Append Synonyms + Related Words to the bottom of the definition tab (the routed cdp's
+    // treatment — InfoCardTabContent `showSynonymsRelated`). Dictionary page + td's card view.
     showSynonymsRelated?: boolean;
     // Put the word-tools rail (`Write it` · `Compare`, WordToolsRail) at the very bottom
     // of the definition tab, under the synonyms. Compare CLOSES this eip and raises the
@@ -52,11 +52,11 @@ interface EipSheetProps {
     // reference lookup has no card to hang the rail above.
     showWordTools?: boolean;
     // Put the Learning key (raised "Add" ⇄ "Added!", EipAddKey) in the sheet's trail row
-    // at the right end of the trail row, tracking whichever entry tab is showing. Dictionary page + saved-card cdp. A
+    // at the right end of the trail row, tracking whichever entry tab is showing. Dictionary page + td's card view. A
     // failed add/remove raises this sheet's own error snackbar.
     showLearning?: boolean;
     // With `showLearning`: hide the Learning key while the trail's ROOT is showing (it
-    // appears on every word drilled into from it). The saved-card cdp: its root is the
+    // appears on every word drilled into from it). td's card view: its root is the
     // saved card the page is about, so the key there would only offer to un-save it.
     learningSkipsRoot?: boolean;
     // With `showLearning`: a host's own Learning toggle for one word. While the showing

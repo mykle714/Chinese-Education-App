@@ -51,14 +51,6 @@ export interface ChallengeLaunch {
  * needs to restate it.
  */
 const LAUNCHES: Record<string, { route: string; title: string; state: Record<string, unknown> }> = {
-    "bubble-match": {
-        route: "/games/bubble-match",
-        title: "Bubble Match",
-        // Hustle — the middle level. Chill barely ever loses (so the survival bonus
-        // would be free for both players and stop separating them), Torture loses
-        // too often for a once-a-week scored round.
-        state: { level: 2 },
-    },
     "match-speed": {
         route: "/games/match-speed",
         title: "Match Speed",
@@ -71,18 +63,6 @@ const LAUNCHES: Record<string, { route: string; title: string; state: Record<str
         title: "Word Search",
         // Overwritten with the challenge's own mode below; stated here so a future
         // gameId with no mode still gets a valid launch.
-        state: { mode: "pinyin" },
-    },
-    "hydra-bubbles": {
-        route: "/games/hydra-bubbles",
-        title: "Hydra Bubbles",
-        state: {},
-    },
-    "bucket-drop": {
-        route: "/games/bucket-drop",
-        title: "Bucket Drop",
-        // Overwritten with the challenge's own mode below (always "pinyin" — the only
-        // eligible mode), exactly as Word Search's is.
         state: { mode: "pinyin" },
     },
 };

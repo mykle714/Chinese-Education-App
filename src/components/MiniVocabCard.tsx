@@ -15,7 +15,11 @@ import { MINI_CARD_RING } from "./miniCardFace";
 
 interface MiniVocabCardProps {
     entry: VocabEntry;
-    onClick?: (entry: VocabEntry) => void;
+    /**
+     * Tap handler. Also receives the card's root element, for a host that animates out of
+     * the tapped card (td's card view zooms from it — deckTower/cardView/TowerCardView).
+     */
+    onClick?: (entry: VocabEntry, element: HTMLElement) => void;
     onDelete?: (entry: VocabEntry) => void;
     onCycle?: (entry: VocabEntry) => void;
     /**
@@ -93,7 +97,7 @@ const MiniVocabCardComponent: React.FC<MiniVocabCardProps> = ({ entry, onClick, 
     return (
         <MiniCard
             className="mini-vocab-card"
-            onClick={() => onClick?.(entry)}
+            onClick={(e: React.MouseEvent<HTMLElement>) => onClick?.(entry, e.currentTarget)}
             language={entry.language}
             entryKey={entry.entryKey}
             // Sense-resolved, matching the dd printed below the word.

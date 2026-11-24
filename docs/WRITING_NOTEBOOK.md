@@ -53,6 +53,11 @@ the Deck Tower's writing world (§ Entry point).
   (all-Han; `NOTEBOOK_MAX_WORD_LENGTH`, enforced by the picker and the server).
   - Before any word has ever been chosen the page opens nothing on its own. Later visits
     reopen the most recently opened word, at the top of its sheet.
+  - **While that lookup is out** (`GET /summary`) the empty sheet shows no hint: the "Tap
+    Choose above…" line waits until the lookup has answered, so it never flashes up before
+    the last word reopens. A slow lookup shows `PawnLoader` ("Opening your notebook") after
+    its delay. A failed lookup also ends the wait and shows the hint, because Choose still
+    works (`WritingNotebookPage` → `summarySettled`).
   - Stays lit but is ignored while a cell is open (a word switch mid-edit would land the
     pending save on the new sheet).
 - **Word bar** (`NotebookWordBar`) — renders nothing until a word is chosen; the shadow grid
@@ -297,7 +302,9 @@ spacer always reaches a page past the deepest row seen (`rowCountFor`), so it ne
   works however out of order the learner has filled the sheet, and holes left further up stay
   put. It then **animates a real scroll** to that index (`jumpScrollTop`), landing with two
   rows of filled cells above the target's row. Because the scroll is real, the index landed on
-  IS the cell whose stored ink is shown.
+  IS the cell whose stored ink is shown. While the lookup is out the button stays up but
+  disabled, and `PawnLoader` ("Finding the next empty cell") shows after its delay. A failed
+  lookup just ends the wait (`NotebookGrid` → `jump`, `seeking`).
 - Fetching pauses during the flight, so the pages flown past are never requested; the landing
   pages are requested at take-off. **Scrolling back up** into skipped rows fetches their pages
   then. A touch, wheel or key during the flight hands the scroll back to the learner.

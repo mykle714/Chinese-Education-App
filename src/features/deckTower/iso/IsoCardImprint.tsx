@@ -19,6 +19,11 @@ import { WEIGHT } from "../../../theme/scale";
  * is empty: the stack covers it, and whatever clears the floor (a collapse to 0, the trap
  * door's fall, an empty deck) reveals it already there.
  *
+ * The `retry` variant prints "↻ retry" in the same figure-over-caption layout: the deck's
+ * count failed to load (useFlpReadyCounts `failed`), and the footprint is the tap target
+ * that re-fetches it (docs/DECK_TOWER.md § "Loading feedback" → "Counts that fail"). Kept
+ * to one short word because the caption must fit the card's 4.8-unit width.
+ *
  * Used by: DeckTowerPlatform (`decals`).
  */
 interface IsoCardImprintProps {
@@ -26,16 +31,25 @@ interface IsoCardImprintProps {
     rect: WorldRect;
     /** The floor it is pressed into. */
     surface: IsoSurface;
+    /** "count" prints "0 cards" (the default); "retry" prints "↻ retry" for a failed count. */
+    variant?: "count" | "retry";
 }
 
-const IsoCardImprint: React.FC<IsoCardImprintProps> = ({ rect, surface }) => {
+/** Each variant's figure (large) and caption (under it). */
+const IMPRINT_TEXT = {
+    count: { figure: "0", caption: "cards" },
+    retry: { figure: "↻", caption: "retry" },
+} as const;
+
+const IsoCardImprint: React.FC<IsoCardImprintProps> = ({ rect, surface, variant = "count" }) => {
+    const text = IMPRINT_TEXT[variant];
     const proj = useIsoProjector();
     const imprintTone = shadowTone(surface.color);
     const printTone = shadowTone(imprintTone);
     const cx = rect.x + rect.w / 2;
     const cy = rect.y + rect.d / 2;
     return (
-        <g className="iso-card-imprint">
+        <g className={`iso-card-imprint iso-card-imprint--${variant}`}>
             <path className="iso-card-imprint__outline" d={flatPath(proj, rect, surface.z)} fill={imprintTone} />
             {/* Same figure-over-caption layout as a card face (IsoCard), but the caption is
                 far larger: here it is the whole message, not a footnote under the figure. */}
@@ -48,7 +62,7 @@ const IsoCardImprint: React.FC<IsoCardImprintProps> = ({ rect, surface }) => {
                     fontWeight={WEIGHT.bold}
                     textAnchor="middle"
                 >
-                    0
+                    {text.figure}
                 </IsoText>
                 <IsoText
                     className="iso-card-imprint__caption"
@@ -58,7 +72,7 @@ const IsoCardImprint: React.FC<IsoCardImprintProps> = ({ rect, surface }) => {
                     fontWeight={WEIGHT.bold}
                     textAnchor="middle"
                 >
-                    cards
+                    {text.caption}
                 </IsoText>
             </g>
         </g>

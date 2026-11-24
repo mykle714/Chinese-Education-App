@@ -84,9 +84,9 @@ so the guard lives where cards are *chosen*, not in rendering:
 
 | Chokepoint | Covers | Symbol |
 | --- | --- | --- |
-| Game pool | Bubble Match, Match Speed, Speed Reading, Hydra | `OnDeckVocabService.getGameVocabPool` → `takenDds` in `drain` |
+| Game pool | Match Speed, Speed Reading | `OnDeckVocabService.getGameVocabPool` → `takenDds` in `drain` |
 | Word Search grid | Word Search | `OnDeckVocabService.getWordSearchGrid` → `takenDds` in `drain` |
-| Memory Map spawn | Memory Map | `MemoryMapService.spawnInto` → `takenDds` |
+| Memory Map fill | Memory Map | `MemoryMapService.selectOccupants` → `takenDds` |
 
 Partial refills seed `takenDds` from the dds of the cards the caller is keeping, via
 `OnDeckVocabService.fetchDdKeys` over the `exclude` id list. **No client change was needed
@@ -487,7 +487,7 @@ has not run). No new chokepoints. The three sets in § 2 change key type:
    | Case | Guard in code | Behaviour |
    | --- | --- | --- |
    | Collection-restricted round (deck / builtin) | `opts.collection` set | **soft** — admit a same-group card rather than shorten the board |
-   | Partial refill on a non-rolling-supply surface | `opts.need` set and not `opts.lendOnRefill` | **soft** |
+   | Partial refill | `opts.need` set (a refill never lends) | **soft** |
    | Everything else | — | **hard** |
 
    Implement this as one predicate next to the existing `mayLend` computation in
@@ -726,9 +726,7 @@ Replay real learner libraries through `getGameVocabPool` with the constraint on 
 - how often the shortfall is rescued by **lending** (the stated rationale for hard) versus
   left short;
 - the two **soft-exception** paths of § 6 rule 4 — collection-restricted rounds and
-  non-rolling-supply refills — where no rescue exists;
-- **Hydra specifically**, whose `strictBuckets` requests already come back short by design and
-  which will therefore compound.
+  partial refills — where no rescue exists.
 
 If lending turns out not to rescue as reliably as assumed, that reopens § 10 Q1.
 
@@ -1201,7 +1199,7 @@ would need the C16 near-homograph guard built first. Filed as **C19**.
 - **Q1 — soft or hard?** **HARD.** Rationale: lending is the fallback — the last fill tier
   draws from the whole dictionary, not the learner's deck.
 - **Q1b — but lending does not always run.** Correction raised during the decision: lending
-  is skipped for collection-restricted rounds and for non-rolling-supply partial refills.
+  is skipped for collection-restricted rounds and for partial refills.
   **Answer: degrade to SOFT in exactly those two cases** (§ 6 rule 4), hard everywhere else.
 - **Q2 — hypernyms?** **IGNORE.** Only mutual entailment suppresses.
 - **Q3 — retroactive merges on Memory Map?** **Do not apply phase 2 to Memory Map at all.**

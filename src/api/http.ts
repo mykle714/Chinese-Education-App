@@ -19,7 +19,11 @@
  *     silent token refresh never changes a caller's function identity (see
  *     utils/authHeader.ts and CLAUDE.md "Never reload on token refresh"),
  *   - throw-on-non-2xx with an ApiError that mirrors axios's `err.response.data`
- *     shape, so the error bodies callers already read keep working.
+ *     shape, so the error bodies callers already read keep working,
+ *   - a QUIET RETRY of transient failures (see `RETRY_DELAYS_MS`) — GETs always, writes
+ *     only when the caller opts in with `retry: true`,
+ *   - the app-wide connection signal (`CONNECTION_EVENT`) the "No connection" notice
+ *     listens to (src/components/notifications/ConnectionNoticeHost.tsx).
  *
  * Callers should therefore NOT pass an Authorization header themselves, and should
  * NOT list `token` in the deps of a callback that calls these functions.
@@ -44,6 +48,74 @@ export interface RequestOptions {
    * requests), so use it only for short payloads.
    */
   keepalive?: boolean;
+  /**
+   * Quietly retry a transient failure (a network error, or a 502 / 503 / 504) before
+   * throwing — see `RETRY_DELAYS_MS`. Defaults to true for GET and false for every write.
+   *
+   * ⚠️ Pass `true` on a write ONLY when the endpoint is safe to receive twice: the first
+   * attempt may have been applied with only its response lost, so the retry repeats it.
+   * Safe = it SETS a state rather than adding to one (a toggle to a given value, an upsert,
+   * a delete that answers 2xx when already gone). Never for a flashcard mark or anything
+   * that counts: a repeated mark is a second mark.
+   * Opted-in writes (keep this list current): src/api/focusMode.ts → setFocusMode,
+   * src/utils/vocabApi.ts → removeFromLibrary, src/features/discover/starterPacksApi.ts →
+   * sortCard / skipPack / undoSort, src/components/handwriting/recognize.ts (a read sent as
+   * POST), AuthContext → updateGoals.
+   * Ignored with `keepalive` (a page-leaving write has no time to wait).
+   */
+  retry?: boolean;
+}
+
+/**
+ * The quiet retry's waits, in ms: one entry per extra attempt, so a failing request is
+ * tried 3 times over ~2 s plus its own round-trips before the caller sees a failure. Most
+ * app failures are a blip of a phone switching networks, which this absorbs unseen
+ * (docs/NOTIFICATIONS.md § 3a "Failures"). Only transient failures are retried — a network
+ * error or a gateway status — never a 4xx (the request itself is wrong; it will fail again)
+ * nor a 500 (usually a deterministic server bug).
+ */
+const RETRY_DELAYS_MS = [500, 1500] as const;
+const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+
+/**
+ * Window event fired when the app's reachability to the server CHANGES:
+ * `detail.lost === true` once a request has failed at the network level after every quiet
+ * retry; `false` again at the next request that gets any response at all. Listened to by
+ * ConnectionNoticeHost, which shows the one shared "No connection" notice.
+ * Only requests made through this module feed it.
+ */
+export const CONNECTION_EVENT = 'connection-status';
+export interface ConnectionEventDetail {
+  lost: boolean;
+}
+let connectionLost = false;
+function noteConnection(lost: boolean): void {
+  if (lost === connectionLost) return;
+  connectionLost = lost;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent<ConnectionEventDetail>(CONNECTION_EVENT, { detail: { lost } }));
+  }
+}
+
+/** True when fetch rejected because the caller aborted, which is never retried. */
+function isAbort(err: unknown, signal?: AbortSignal): boolean {
+  return signal?.aborted === true || (err instanceof DOMException && err.name === 'AbortError');
+}
+
+/** Wait `ms`, cut short (rejecting with the abort reason) if `signal` aborts. */
+function wait(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason);
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 /**
@@ -91,12 +163,41 @@ async function request<T>(
   body: unknown,
   options: RequestOptions = {}
 ): Promise<T> {
+  const retry = !options.keepalive && (options.retry ?? method === 'GET');
+  const attempts = retry ? RETRY_DELAYS_MS.length + 1 : 1;
+  for (let attempt = 0; ; attempt++) {
+    const last = attempt === attempts - 1;
+    let res: Response;
+    try {
+      res = await send(method, path, body, options);
+    } catch (err) {
+      // fetch rejects only on a network failure (or an abort). A retry may fix the former.
+      if (isAbort(err, options.signal)) throw err;
+      if (last) {
+        noteConnection(true);
+        throw err;
+      }
+      await wait(RETRY_DELAYS_MS[attempt], options.signal);
+      continue;
+    }
+    // Any response at all — even an error status — proves the server is reachable.
+    noteConnection(false);
+    if (!last && RETRYABLE_STATUSES.has(res.status)) {
+      await wait(RETRY_DELAYS_MS[attempt], options.signal);
+      continue;
+    }
+    return readResponse<T>(res);
+  }
+}
+
+/** One attempt: the fetch itself. Rebuilt per attempt so a refreshed token is read fresh. */
+function send(method: string, path: string, body: unknown, options: RequestOptions): Promise<Response> {
   const hasBody = body !== undefined;
   // FormData (file upload) must go over the wire untouched: the browser sets its own
   // multipart Content-Type WITH the boundary parameter, so we must neither stringify
   // the body nor declare a Content-Type ourselves.
   const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
-  const res = await fetch(buildUrl(path, options.params), {
+  return fetch(buildUrl(path, options.params), {
     method,
     credentials: 'include', // cookie-based auth (matches the retired axios client)
     headers: {
@@ -111,7 +212,10 @@ async function request<T>(
     signal: options.signal,
     keepalive: options.keepalive,
   });
+}
 
+/** Parse a final response: the body on 2xx, an ApiError otherwise. */
+async function readResponse<T>(res: Response): Promise<T> {
   noteFocusEnded(res);
   const data = await parseBody(res);
 

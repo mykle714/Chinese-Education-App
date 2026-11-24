@@ -316,8 +316,8 @@ parity bugs — headword underline, English-gloss underline, and the per-sentenc
 speaker button had each drifted onto only the eip):
 
 - **eip Examples tab** — `InfoCardTabContent.tsx` (`tabIndex === 1`), mounted by
-  `InfoCardPanelBody`. This is now the ONLY host: it covers the flp, acp, the saved-card
-  cdp and the Dictionary page (the last three through `EipSheet` → `InfoCardSection`).
+  `InfoCardPanelBody`. This is now the ONLY host: it covers the flp, acp, td's card
+  view (`deckTower/cardView/TowerCardView`) and the Dictionary page (the last three through `EipSheet` → `InfoCardSection`).
   Tapping a segment pushes that word as a crumb on the eip word trail on every host.
 
 Each per-sentence card carries: a top-right `SpeakerButton` (gated on
@@ -336,8 +336,8 @@ dd since 2026-11-05; the full sense list opens the Definition tab — `EipSenseL
 `.shelfhd` "sense N · <sense>" / "N examples" caption was removed 2026-10-10. The cdp used
 to pass `compact` and omit `showSegmentSpaces`, and the dictionary cdp used to wrap the
 list in its own "EXAMPLE SENTENCES" section; all gone.)
-(`SegmentedSentenceDisplay`/`CPCDRow` still accept `compact`; other cdp sections
-use it. `ExampleSentenceList` just never passes it.)
+(`SegmentedSentenceDisplay`/`CPCDRow` still accept `compact`; `ExampleSentenceList`
+just never passes it.)
 
 ### Word spacing is an account setting
 

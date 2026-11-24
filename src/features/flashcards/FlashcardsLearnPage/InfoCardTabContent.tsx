@@ -75,7 +75,7 @@ export interface InfoCardTabContentProps {
     /**
      * Append the Synonyms + Related Words lists to the bottom of the DEFINITION tab.
      *
-     * Passed by the saved-card cdp's eip (VocabCardDetailPage) and the Dictionary page's
+     * Passed by td's card view eip (TowerCardView) and the Dictionary page's
      * eip (both via EipSheet). The eip has three
      * tabs and none of them is synonyms, and those two lists are the one thing the
      * cdps' old stacked-`SectionCard` bodies showed that the panel does not. They ride under the definition rather than becoming a fourth tab because a

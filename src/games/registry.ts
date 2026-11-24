@@ -6,18 +6,11 @@ import type { GameDef, RoutedGameDef } from "./types";
 // modules (not their pages) keeps this cycle-free — a constants file never imports
 // the registry. Word Search is absent on purpose: its mark type is per-mode, on
 // MODE_CONFIGS instead.
-import { GAME_HUE as BUBBLE_MATCH_HUE, MARK_TYPE as BUBBLE_MATCH_MARK_TYPE } from "./bubble-match/constants";
 import { GAME_HUE as MATCH_SPEED_HUE, MARK_TYPE as MATCH_SPEED_MARK_TYPE } from "./match-speed/constants";
 import { GAME_HUE as SPEED_READING_HUE, MARK_TYPE as SPEED_READING_MARK_TYPE } from "./speed-reading/constants";
 import { GAME_HUE as MEMORY_MAP_HUE, MARK_TYPE as MEMORY_MAP_MARK_TYPE } from "./memory-map/constants";
-import { GAME_HUE as HYDRA_HUE, MARK_TYPE as HYDRA_MARK_TYPE } from "./hydra-bubbles/constants";
 // Word Search has no shared mark type (it is per-mode), but it does have a hue.
 import { GAME_HUE as WORD_SEARCH_HUE, MODE_CONFIGS as WORD_SEARCH_MODES } from "./word-search/constants";
-import {
-    GAME_HUE as BUCKET_DROP_HUE,
-    GAME_ID as BUCKET_DROP_GAME_ID,
-    MODE_CONFIGS as BUCKET_DROP_MODES,
-} from "./bucket-drop/constants";
 // The challenge-eligible pool and its scoring numbers (docs/STUDY_CHALLENGE.md § 5.4).
 // They live in the shared wire contract rather than here because THE SERVER draws each
 // challenge's game sequence and cannot load this module (it imports lazy React
@@ -58,23 +51,6 @@ export function challengeScoringFor(gameId: string, mode: string | null = null):
  * game requires no edits to those files.
  */
 const ALL_GAMES: GameDef[] = [
-    {
-        gameId: "bubble-match",
-        glyph: "bubble_chart",
-        title: "Bubble Match",
-        route: "/games/bubble-match",
-        // Always shown in the hub. The game page itself handles the
-        // unauthenticated case ("Sign in to play") and the not-enough-cards case
-        // (shortfall message).
-        Component: lazy(() => import("./bubble-match/BubbleMatchPage")),
-        hue: BUBBLE_MATCH_HUE,
-        markType: BUBBLE_MATCH_MARK_TYPE,
-        // Pinyin hidden on a zh board marks READING (constants.ts → MARK_TYPE; the run's
-        // `runTrack`). Stated here so the flp game-break picker can offer Bubble Match on
-        // the reading flp (docs/FLP_GAME_BREAKS.md § 3).
-        noPinyinMarkType: "reading",
-        challengeScoring: challengeScoringFor("bubble-match"),
-    },
     {
         gameId: "word-search",
         glyph: "grid_on",
@@ -120,24 +96,6 @@ const ALL_GAMES: GameDef[] = [
         languages: ["zh"],
     },
     {
-        gameId: "hydra-bubbles",
-        glyph: "water_drop",
-        title: "Hydra Bubbles",
-        route: "/games/hydra-bubbles",
-        Component: lazy(() => import("./hydra-bubbles/HydraBubblesPage")),
-        hue: HYDRA_HUE,
-        markType: HYDRA_MARK_TYPE,
-        challengeScoring: challengeScoringFor("hydra-bubbles"),
-        // No `languages` gate: levels 1..6 exist for every language and nothing in
-        // the payout or spawn logic is zh-specific (docs/HYDRA_BUBBLES.md § 9).
-        //
-        // No `unlock` and NO LEVELS: Hydra has one mode — board size is its difficulty
-        // curve — so it takes a single hub tile rather than a level card (`GameCard`).
-        // It also declares no card baseline at all (it is absent from CARD_BASELINES,
-        // following Memory Map's precedent), so there is nothing to gate on: a run may
-        // lend from the very first bubble (§ 6.5).
-    },
-    {
         gameId: "memory-map",
         glyph: "map",
         title: "Memory Map",
@@ -162,21 +120,6 @@ const ALL_GAMES: GameDef[] = [
         markType: "writing",
         // zh-only: the recognizer is zh_CN and the board is hanzi.
         languages: ["zh"],
-    },
-    {
-        gameId: BUCKET_DROP_GAME_ID,
-        glyph: "move_to_inbox",
-        title: "Bucket Drop",
-        route: "/games/bucket-drop",
-        Component: lazy(() => import("./bucket-drop/BucketDropPage")),
-        hue: BUCKET_DROP_HUE,
-        // MODED, like Word Search: the hub tile launches Pinyin (production — the
-        // challenge-eligible mode, `challengeScoringFor("bucket-drop", "pinyin")`). No
-        // Pinyin (reading) has a break adapter (`BUCKET_DROP_BREAK`) but is NOT in the
-        // flp break rotation (`FLP_BREAK_GAMES`), so it is currently unreachable. So no
-        // `markType` and no `challengeScoring` on the game itself (docs/BUCKET_DROP_GAME.md § 1).
-        modes: BUCKET_DROP_MODES.map(({ mode, markType }) => ({ mode, markType })),
-        // No `languages` gate: es plays the hub's Pinyin mode as plain words.
     },
     {
         gameId: SUPERPOSITION_GAME_ID,
@@ -205,8 +148,8 @@ const ALL_GAMES: GameDef[] = [
  * registry's boot-time "row with no component" check cannot fire, and its dev-only
  * orphan warning has nothing to report either.
  *
- * The server half is `isGameEnabled` in `GamesController` — a hidden tile does not
- * stop a saved bookmark from POSTing progress.
+ * The server half is server.ts, which mounts a flagged-off game's own router not at
+ * all (writing-grid, superposition) — a hidden tile alone would not stop a request.
  */
 export const GAME_REGISTRY: GameDef[] = ALL_GAMES.filter((g) => isGameEnabled(g.gameId));
 

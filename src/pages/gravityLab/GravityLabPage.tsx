@@ -42,8 +42,8 @@ const LaunchScreen = lazy(() => import("../../features/deckTower/launch/LaunchSc
  * Layout: the stage on the left, sticky, and the fall-type cards on the right, so a fall can be
  * tuned and replayed without scrolling; on a narrow window they stack.
  *
- * Layer: page (dev lab). Not linked from any menu; reachable by typing the URL, like
- * /font-lab. Docs: docs/GRAVITY_LAB.md.
+ * Layer: page (dev lab). Not linked from any menu; reachable by typing the URL.
+ * Docs: docs/GRAVITY_LAB.md.
  */
 
 /** Tower sizes the stage can be reset to (cards). */

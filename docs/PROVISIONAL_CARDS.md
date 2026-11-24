@@ -18,7 +18,7 @@ punished exactly the learner who most needed to practise — the new one:
 
 | Surface | Old block | File it lived in |
 |---|---|---|
-| Bubble Match | 20 (distribution sum) | `src/games/bubble-match/constants.ts` |
+| Bubble Match (archived 2026-11-23) | 20 (distribution sum) | `src/games/bubble-match/constants.ts` |
 | Match Speed | 20 (`ENTRY_GATE_CARDS`) + "no on-mode cards" | `src/games/match-speed/constants.ts` |
 | Speed Reading | 20 (`ENTRY_GATE_CARDS`) | `src/games/speed-reading/constants.ts` |
 | Word Search | 9 distinct-character words | `src/games/word-search/constants.ts` |
@@ -119,7 +119,7 @@ Current classification (all call sites):
 | `getRecentUsers` (tdp usage stats: "sorted" = not hidden) | NOT HIDDEN | `UsageStatsDAL.ts` |
 | `getLibraryCards` / `getMastered…` / `getNonMastered…` | SORTED | `OnDeckVocabService.ts` |
 | `getCategoryCounts` (band figures: td's cards page filter keys, Account) | SORTED | `OnDeckVocabService.ts` |
-| `findByUserIdAndLanguage`, `countByUserIdAndLanguage`, `searchEntries`, `findByDifficultyLevel`, `bulkFindByKeys`, `findByTokens`, `findEntriesCreatedAfter`, `findRelatedBySharedCharacters`, `findUsedInForCharacter` | SORTED | `VocabEntryDAL.ts` |
+| `bulkFindByKeys`, `findByTokens`, `findRelatedBySharedCharacters`, `findUsedInForCharacter` | SORTED | `VocabEntryDAL.ts` |
 | community feed | SORTED | `CommunityLayoutDAL.ts` |
 | `estimateLevel`, discover supply, quick-mark supply, `_hydrateCards.sorted`, `getProgress` | SORTED | `StarterPacksService.ts` |
 
@@ -193,7 +193,7 @@ Every lend is now two steps, in order:
 is seeing for the first time; a re-lent row was announced when it was first minted.
 
 **Why it became unconditional.** Until 2026-08-20 re-lending ran only for a
-*tier-targeted* draw (Hydra asking for a colour), on the reasoning that every other
+*tier-targeted* draw (the now-archived Hydra Bubbles asking for a colour), on the reasoning that every other
 caller could already reach its held provisional rows through the ordinary pool query,
 which was `vetPlayableClause`. That reasoning died with § 4b: selection is sorted-only
 now, so a held row is invisible to every ordinary query, and mint-only lending would
@@ -212,32 +212,17 @@ caller says the ids are an obligation — see its `ignoreCooldown`, which only a
 Challenge board passes), exactly
 as `fetchGameCandidates` splits fresh from cooled.
 
-**Status: BUILT.** Tier-targeted since 2026-08-18 (with Hydra Bubbles), unconditional
-since 2026-08-20. `OnDeckVocabService.fetchRelendable` is gone — its SQL moved to the
+**Status: BUILT.** Unconditional since 2026-08-20. `OnDeckVocabService.fetchRelendable` is gone — its SQL moved to the
 DAL as `findHeldProvisional`, which is where a query belongs.
 
-### 3c. A lent card keeps its lend tier while it is lent
+### 3c. (Removed) Tier-targeted lending
 
-A provisional card's **difficulty tier** is what a caller means when it asks to lend
-"an easier card" (Hydra's `bloom` tier asks for `L-1`, its `drain` tier for `L`). The tier is *not stored* — there is no new column — it is derived at
-read time from the det row's existing `difficulty` (1..6, already joined by
-`dictJoin.ts` and already present on `VocabEntry`) relative to the learner's estimated
-level `L` (`StarterPacksService.estimateLevel`).
-
-**While a card is lent, its tier is what the caller sees, even after it has marks.**
-A card lent as a level-3 "green" stays green for as long as it is provisional, and does
-not switch to its real utcm category once mark history accumulates. Payouts and pool
-membership stay stable across a run, which is what the caller asked for when it drew
-from that tier.
-
-The card's real `typedMarkHistory` is untouched by this and keeps banding normally —
-the tier is a *serving* label, not a mastery claim. On promotion (§ 7) the tier stops
-applying and the card bands like any library card, off the history it accumulated while
-lent.
-
-> Consequence: tiers move when `L` moves. A learner whose estimated level rises
-> re-labels their whole holding one step easier. That is accepted — the tier is
-> relative to the learner by definition.
+Lending by difficulty **tier** relative to the learner's level (`?lendLevelOffset=`,
+`ProvisionalCardService.resolveLendLevel`, and the "a lent card keeps its lend tier"
+serving rule) existed only for Hydra Bubbles and was removed when it was archived on
+2026-11-23 ([ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)). Every lend now centres on the
+learner's own estimated level; `acquireLentCards` / `lendCards` still accept an optional
+`level` pin, which no caller passes today.
 
 ---
 
@@ -264,18 +249,7 @@ nobody else.
 
 `level` is a **centre, not a filter**. `findCandidates` orders by
 `ABS(difficulty - level)`, so an exhausted level widens outward instead of returning
-nothing — which is both Hydra's documented "pull from the next level up" fallback
-(docs/HYDRA_BUBBLES.md § 6.2) and the reason a nonsense level can never starve a round.
-
-**Callers that think in TIERS pass an offset, not a level**, and resolve it with
-`resolveLendLevel(userId, language, offset)` first. The split is deliberate: only the
-server knows the learner's estimated level `L` (`StarterPacksService.estimateLevel` is
-not exposed to the client and there is no reason to expose it), while the per-color
-offsets are the calling game's own design. Hydra sends `?lendLevelOffset=` and the
-server resolves it — the alternative was an endpoint whose only job was to ship `L`
-out so the client could send a level back that the server already had. The clamp into
-1..6 inside `resolveLendLevel` is also what implements Hydra's floor — at `L = 1` both
-of its colours land on level 1 — with no special case for a beginner.
+nothing — which is the reason a nonsense level can never starve a round.
 
 **The cooldown-exhaustion case no longer lends** (2026-08-20). A learner with 400 sorted
 cards is far past the 20-card flp baseline, so `ensureBaseline` no-ops — and if every one
@@ -293,30 +267,16 @@ The end-of-session "sort these cards" CTA remains the pressure valve.
 
 | Endpoint | Surface | Notes |
 |---|---|---|
-| `GET /api/onDeck/gamePool?surface=…` | Bubble Match, Match Speed, Speed Reading, Bucket Drop | Skipped when `need` is set (a partial refill — see below) |
+| `GET /api/onDeck/gamePool?surface=…` | Match Speed, Speed Reading | Skipped when `need` is set (a partial refill — see below) |
 | `GET /api/onDeck/wordSearchGrid?surface=word-search` | Word Search | Escalating retry, see §6 |
 | `GET /api/onDeck/distributedWorkingLoop` | flp | Always `'flp'`, and **only with `?lend=1`** — the session's lend switch, on once the learner's own off-cooldown cards are spent (DECK_TOWER.md § Running out of ready cards). Called when a Deck Tower study session deals its loop (`useWorkingLoop`); an unplayed lent card is re-lent next time (§ 3b), not re-minted |
 
-**Partial refills provision only if the game opts in.** Bubble Match's *Play Again*
-sends `need=N` to swap out only the pairs the player matched; lending on every tap
-would quietly grow their deck, so it does not provision, and a refill that comes back
-below `MIN_REPLAY_PAIRS` falls back to a **full** pool fetch, which does.
-
-That exemption used to be a blanket rule on `need` being set. It is now **per game**,
-because a game whose whole supply model is the partial refill — Hydra Bubbles, which
-fetches every spawn that way (docs/HYDRA_BUBBLES.md § 6) — would otherwise be unable
-to lend at all, at any point in a run. Games that roll their board once keep the
-exemption; games with a rolling supply declare out of it.
-
-A game declares out by naming itself in **`ROLLING_SUPPLY_SURFACES`**
-(`server/contracts/wire.ts`) and sending `?surface=<its id>`; the controller turns that
-into `lendOnRefill` on the pool call, and `getGameVocabPool` widens its fill-tier-2
-guard from `need === undefined` to `need === undefined || lendOnRefill`. Hydra Bubbles
-is the only such surface today (built 2026-08-18). This is
-deliberately a **separate list from `CardBaselineSurface`**: "how many cards do you need
-up front" and "may you lend mid-run" are orthogonal, and Hydra answers the first with
-"none". The focus restriction has **no** opt-out — a focused round plays
-the day's set, rolling supply or not.
+**Partial refills never provision.** A request with `need=N` (a mid-run top-up) is
+skipped by the baseline check: the player is mid-session with a board already in hand.
+(A per-game opt-out, `ROLLING_SUPPLY_SURFACES` / `lendOnRefill`, existed for Hydra
+Bubbles and was removed with it on 2026-11-23.) Note that Match Speed's buffer top-ups
+send no `need`, so they do run the baseline check (docs/GAMES_FEATURE.md § "Game pool
+request").
 
 An unrecognized or missing `surface` param (an older client) falls back to the requested
 distribution's own total, so it still never blocks.
@@ -384,7 +344,7 @@ have never chosen, and it is always available to a learner who has cards at all.
 #### What the cooled tier costs (games)
 
 A mark fired at a still-cooling track is **dropped** at `POST /api/flashcards/mark`
-(the hard "next markable at" guard — [HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md) § 8). So
+(the hard "next markable at" guard — [FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md](./FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md) § "Cooldown is a hard next-markable-at"). So
 tier-3 cards **play but earn nothing**. (This cost is why the flp no longer has the tier —
 see above.)
 
@@ -435,11 +395,6 @@ same 16 on every subsequent entry.
 
 * a genuinely **under-supplied** learner whose baseline top-up could not cover the board
   (dictionary supply exhausted);
-* **Hydra Bubbles**, whose every spawn is a refill and whose colour ladder is built on
-  lending ([HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md) § 6.2). It now pulls cooling cards
-  before it lends, like everything else — but a colour whose buckets the learner has
-  *no* cards in at all (a beginner's `bloom` tier = `Mastered` + `Comfortable`) still lends,
-  which is the ladder working as designed;
 * **Word Search**, via the controller's `PROVISION_RETRY_FACTOR` escalation — the one
   surface where meeting the baseline does not guarantee a playable round (§ 6).
 
@@ -447,9 +402,7 @@ Two sessions never reach it:
 
 * **focused rounds** (`CollectionFilter` `{ kind: 'focus' }`, [FOCUS_MODE.md](./FOCUS_MODE.md)) —
   a round padded with words outside the day's set is not that day's set;
-* **partial game refills** (`need` is set) for games that keep the exemption — Bubble
-  Match's *Play Again*. A rolling-supply surface (Hydra Bubbles) opts out and may lend
-  on a refill.
+* **partial game refills** (`need` is set).
 
 Since § 3b a lent card is **not** always `Unfamiliar`: a re-lent card carries whatever
 history it earned the last time it was out. Any code that assumes "lent ⇒ Unfamiliar"
@@ -470,7 +423,7 @@ Whether the notice can **name** the words is a per-surface property, shared as
 
 | Surface | Itemized? | Why |
 |---|---|---|
-| Bubble Match, Speed Reading, Word Search, Bucket Drop | **yes** — tabulates the exact cards | fixed, known set |
+| Speed Reading, Word Search | **yes** — tabulates the exact cards | fixed, known set |
 | Match Speed | no — generic message | deals from a rolling buffer |
 | flp | no notice — the flp's out-of-ready-cards card announces lent cards (DECK_TOWER.md § Running out of ready cards) | working loop refills as you go |
 
@@ -512,8 +465,8 @@ the decision.
 **Known gap — CLOSED.** A card previewed from the fetched path (below) is adapted from a
 `DiscoverCard` by `discoverCardToProvisionalEntry`, which cannot supply `category`, so
 those previews used to carry no utcm badge where the surfaces holding real vet rows
-(Bubble Match, Speed Reading) did. The **corner badge no longer exists** on any mini card
-(see [MASTERY_REWORK.md](./MASTERY_REWORK.md) § "Mini cards — the eight-mark window"), so the two
+(Speed Reading) did. The **corner badge no longer exists** on any mini card
+(see [MASTERY_REWORK.md](./MASTERY_REWORK.md) § "Mini cards — the mastery strip"), so the two
 paths now agree by construction. The matching `typedMarkHistory` gap likewise does not
 show, since the strip is off on both paths.
 
@@ -521,7 +474,7 @@ There is no way to decline. Declining would mean not playing, which is the outco
 whole rework removed.
 
 Because the notice opens the moment a round is primed, **every game freezes while it is
-up** — its clock, and in Bubble Match's case its launcher and descending ceiling. Reading
+up** — its clock and anything else that advances on its own. Reading
 which cards were lent to you is not playing, so it isn't charged to the run. See
 [GAMES_FEATURE.md](./GAMES_FEATURE.md) § Popups pause the clock for the per-game table.
 
@@ -537,8 +490,8 @@ generator — and the notice turns those words into cards by fetching them
 
 The notice is a one-shot: once dismissed, a learner mid-round has no way to tell a
 borrowed word from one of their own. That gap is widest on exactly the surfaces whose
-notice is generic — Match Speed and flp cannot even name the set, and a rolling supply
-keeps adding to it after the notice is gone.
+notice is generic — Match Speed and flp cannot even name the set, and a streaming
+supply keeps adding to it after the notice is gone.
 
 `LentCardBadge` is the in-round tell: **one icon**, shown large on the notice and small
 in the corner of a lent card, so the learner meets the mark before they have to read it.
@@ -551,7 +504,6 @@ module rather than naming an id each.
 | `ProvisionalCardsNotice` heading | 30px icon beside the title |
 | `ProvisionalCardsNotice` footnote | 15px inline, only when the caller passes `badgedInRound` — the surfaces that show no badge must not promise one |
 | `MatchSpeedCard` | 13px on a translucent disc, top-right corner |
-| Hydra Bubbles word bubble | 12px on the same disc, inset 10% from the top-right so it stays on the squircle's curve at every spawn radius (`Bubble`'s `lent` prop, passed by `HydraStage`). Replaced Hydra's mid-run `HydraLendNotice` popup on 2026-09-05 — the earlier claim that a bubble was too small to badge did not survive being tried |
 
 **The badge goes on the FOREIGN side only, and that is correctness rather than layout.**
 Badging both faces of a lent pair would mark two board cards as belonging together, so a
@@ -576,31 +528,27 @@ just spent a whole round with those words. Accepting opens the sort flow in set 
 
 #### The offer lists what was REVIEWED, not what was served
 
-A surface with a **fixed board** (Bubble Match, Speed Reading, Word Search) can list the
+A surface with a **fixed board** (Speed Reading, Word Search) can list the
 cards it was handed, because dealt *is* played. A surface whose supply **streams** cannot:
-the served set is strictly larger than the played one, and each of the three used to
-accumulate it at a different — and progressively earlier — moment.
+the served set is strictly larger than the played one, and each streaming surface used
+to accumulate it at a different — and progressively earlier — moment.
 
 | Surface | Used to record | What that over-offered |
 |---|---|---|
 | Match Speed | on **fetch**, every buffer top-up | cards that never reached the board |
-| Hydra Bubbles | on **deal** (`useColorBuffers.take`) | bubbles lost to overflow, never matched |
 | flp | on **entry to the working loop** | the loop holds ~10, so a session ended after 3 offered all 10 |
 
-All three now record at the **mark call site** instead, through the shared
-`useMarkedLentWords` (`src/hooks/useMarkedLentWords.ts`). The served set does not
-disappear — it still drives the things that are genuinely about arrival: Hydra's one-shot
-mid-run notice (`hasLent`). (flp's arrival notice, which read `provisionalSeen`, was replaced
-on 2026-11-11 by the out-of-ready-cards card, and `provisionalSeen` was deleted with it.) Only the *offers*
-moved to the reviewed set, including flp's back-arrow gate, which no longer stops a
+Both now record at the **mark call site** instead, through the shared
+`useMarkedLentWords` (`src/hooks/useMarkedLentWords.ts`). (flp's arrival notice, which
+read `provisionalSeen`, was replaced on 2026-11-11 by the out-of-ready-cards card, and
+`provisionalSeen` was deleted with it.) The *offers* moved to the reviewed set, including flp's back-arrow gate, which no longer stops a
 learner on the way out over words they never saw.
 
 **Any attempt counts — a hit, a miss, or a mark the server drops on cooldown.** This is
 why recording happens at the call site rather than off the mark response:
 
-* a **miss** is the best possible reason to keep a card, and in Hydra it is the last thing
-  that happens (a wrong match ends the run), so correctness-only would systematically drop
-  the word the player just failed;
+* a **miss** is the best possible reason to keep a card, so correctness-only would
+  systematically drop the word the player just failed;
 * a **suppressed** mark writes nothing (§ 4b, the hard "next markable at" guard). For lent
   cards that is routine rather than exotic: the server **re-lends** rows the learner
   already holds before minting new ones (§ 3b), and the cooldown clock keys off the last
@@ -622,22 +570,17 @@ it was removed). `useProvisionalSortOffer` (`src/hooks/useProvisionalSortOffer.t
 the open/minimized/dismissed state and resets the whole thing on a replay so a second run
 is judged on its own.
 
-Both popups are on screen together, so they must never read as one thing:
-
-| | Collapses to | Puck color |
-|---|---|---|
-| End-of-run popup (`GameEndPopup`) | top-**right** | neutral card color |
-| Sort offer (`ProvisionalSortOffer`) | top-**left** | ink (`COLORS.infoInk`), white icon |
+The offer collapses to a **top-left** corner puck in ink (`COLORS.infoInk`, white icon).
+(The shared end-of-run popup, `GameEndPopup`, collapsed top-right; it was archived with
+its last caller on 2026-11-23.)
 
 Minimizing the offer is the "not right now, but don't take it away" answer — it lives on
 as the corner puck for the rest of the round; **Not now** dismisses it for good. The
-collapse/restore mechanics are shared by both popups and live in
-`src/components/MinimizablePopup.tsx`; `GameEndPopup` is now a thin wrapper that pins the
-end-of-run corner and color. Both scrims cover the **entire screen**, the game's header
-included: `MinimizablePopup` portals the scrim to the phone frame (`useScreenOverlayHost`),
-while both pucks still dock into the game panel's corners (`puckAnchorSelector=".game-frame"`).
-Speed Reading alone renders them `inPlace`, inside its rotating sideways stage
-(docs/UX_AND_NAVIGATION.md § Dimming the background).
+collapse/restore mechanics live in `src/components/MinimizablePopup.tsx`. The scrim covers
+the **entire screen**, the game's header included: `MinimizablePopup` portals it to the
+phone frame (`useScreenOverlayHost`), while the puck docks into the game panel's corner
+(`puckAnchorSelector=".game-frame"`). `inPlace` (`ProvisionalSortOffer`'s prop) keeps it
+inside its parent instead (docs/UX_AND_NAVIGATION.md § Dimming the background).
 
 **On flp** there is no scoreboard to attach the offer to — a study session ends when the
 learner LEAVES — so the offer **gates the back arrow**. The first tap raises it listing
@@ -645,7 +588,12 @@ every borrowed card the learner REVIEWED across the session (`provisionalReviewe
 the loop's untouched tail — see the subsection above); a session that reviewed no lent
 card is not gated at all. **Sort these cards** goes to
 the sort flow, **Leave anyway** completes the exit. It is a one-shot (`exitOfferShown`):
-tapping back after declining leaves immediately rather than asking twice. It is also not
+tapping back after declining leaves immediately rather than asking twice. While the offer's
+lookup runs, the Back tap shows the `PawnLoader` (`ProvisionalSortOffer` → `showLoader`,
+passed the session's `loaderAllowed` gate). When the lookup comes back empty — nothing lent
+is left, **or the request failed** (`useProvisionalEntries` maps a failure to an empty
+list) — `onNothingToOffer={leaveSession}` carries the Back tap through, so it is never lost
+(before 2026-11-23 the offer stayed "open" but invisible and the tap did nothing). It is also not
 minimizable — the learner is on their way out, so a corner puck would have nothing to sit
 over. The loop-empty state shows nothing extra.
 
@@ -792,12 +740,13 @@ earned in a game. It now branches, atomically, in one CTE:
 
 "Has marks" is *any* `typedMarkHistory` track being non-empty.
 
-### Removing from Learning demotes (dictionary eip toggle + vet cdp delete)
+### Removing from Learning demotes (dictionary eip toggle + td card view's remove button)
 
 Both the eip's "Added!" key (`useLearningToggle`, drawn as `EipAddKey` in the eip trail on the
-Dictionary page and on words drilled into from the saved-card cdp — LEAF_NODE_PAGES.md § "The Learning control")
-and the vet cdp's delete button (`VocabCardDetailPage` → `handleDelete`, one tap, no
-confirmation) remove a word from Learning by setting a `'library'` row's bucket to `'tracked'` —
+Dictionary page and on words drilled into from td's card view — LEAF_NODE_PAGES.md § "The Learning control")
+and td's card view's outlined trash button (`features/deckTower/cardView/TowerCardView` →
+`handleDelete`, top-right of the view's header, one tap, no confirmation; it replaced the
+routed cdp's delete on 2026-11-23 — DECK_TOWER.md § "The card view") remove a word from Learning by setting a `'library'` row's bucket to `'tracked'` —
 **always** a demotion, marks or not (unlike undo above, it never deletes). The row keeps
 its history (and any legacy `deck_cards` rows); `vetSortedClause()` reads stop seeing it, and a re-add
 via `addToLibrary` promotes it back in place. It is **never re-lent**: the learner removed
@@ -859,7 +808,7 @@ others, admits lent rows by id when it has to borrow.
 | Client (shared) | `src/api/provisional.ts`, `src/utils/provisionalCards.ts` | typed call; derive lent cards (`provisionalWords` / `provisionalEntries`) from a served set, and adapt a `DiscoverCard` into the mini card's `VocabEntry` |
 | Client (shared) | `src/hooks/useProvisionalEntries.ts` | the lent cards as `VocabEntry` rows — local when the caller holds them, fetched when it holds only words |
 | Client (shared) | `src/hooks/useProvisionalSortOffer.ts` | a game's offer timing + open/minimized/dismissed state. An flp break's Match Speed waits on `dismissed` before leaving the board; `ProvisionalSortOffer` → `onNothingToOffer` closes an offer whose lookup came back empty, so that wait always ends |
-| Client (shared) | `src/components/MinimizablePopup.tsx` | the scrim / card / corner-puck collapse shell (also backs `GameEndPopup`) |
+| Client (shared) | `src/components/MinimizablePopup.tsx` | the scrim / card / corner-puck collapse shell |
 | Client (shared) | `src/components/ProvisionalCardGrid.tsx` | the lent cards as `MiniVocabCard` thumbnails, 2 per row |
 | Client (shared) | `src/components/ProvisionalCardsNotice.tsx`, `src/components/ProvisionalSortOffer.tsx` | the pre-round notice; the end-of-round offer popup (which records `?from=` for the exit) |
 | Client (shared) | `src/components/LentCardBadge.tsx` | `LENT_ICON_ID` + the two forms of the borrowed mark (`LentCardIcon`, `LentCardBadge`) — § 5 |
@@ -874,5 +823,3 @@ others, admits lent rows by id when it has to borrow.
 * [DISCOVER_FLOW.md](./DISCOVER_FLOW.md) — the sort flow this hands off to
 * [MASTERY_REWORK.md](./MASTERY_REWORK.md) — typed marks, the per-bar (know) cooldown, utcm banding
 * [DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md) — `frequencyScore`, the commonality ordering key
-* [HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md) — the first surface to lend **by tier** (§ 3c) and
-  the reason partial refills became per-game (§ 4)

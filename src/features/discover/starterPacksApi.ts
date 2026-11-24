@@ -67,7 +67,9 @@ export function sortCard(input: {
     packId: number | null;
     lastInPack?: boolean;
 }): Promise<unknown> {
-    return apiPost<unknown>("/api/starterPacks/sort", input);
+    // Quietly retried (src/api/http.ts `retry`): a repeat finds the row already in
+    // Learning and re-applies the same band seed (StarterPacksService → sortCard).
+    return apiPost<unknown>("/api/starterPacks/sort", input, { retry: true });
 }
 
 /** Defer every remaining unsorted card in the on-deck pack. */
@@ -76,7 +78,8 @@ export function skipPack(input: {
     language: Language;
     packId: number | null;
 }): Promise<unknown> {
-    return apiPost<unknown>("/api/starterPacks/skipPack", input);
+    // Quietly retried: the skip rows insert ON CONFLICT DO NOTHING (StarterPacksDAL → insertSkips).
+    return apiPost<unknown>("/api/starterPacks/skipPack", input, { retry: true });
 }
 
 /** Reverse one sort/skip action. */
@@ -86,7 +89,9 @@ export function undoSort(input: {
     language: Language;
     packId: number | null;
 }): Promise<unknown> {
-    return apiPost<unknown>("/api/starterPacks/undo", input);
+    // Quietly retried: a repeat finds nothing left to undo and answers 200
+    // `success: false`, which the caller does not read (StarterPacksService → undoSort).
+    return apiPost<unknown>("/api/starterPacks/undo", input, { retry: true });
 }
 
 /** The cards the user has skipped (det-derived, not vet rows). */

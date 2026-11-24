@@ -72,9 +72,23 @@ export const TOWER_STUDY_FONT = FONTS.cjk;
  * light, a 0.5px fillet), the wall under the face, then the contact shadow. Pressed: flush,
  * no wall, no fillet, no shadow; the rim light stays.
  */
-const restShadow = (tones: PlateTones) =>
-    `${roundedEdgeRimLightTop(tones.top)}, ${roundedEdgeFilletDown(tones.top, tones.right)}, 0 ${PLATE_WALL_PX}px 0 ${tones.right}, ${SHADOW.chip}`;
-const pressedShadow = (tones: PlateTones) => `${roundedEdgeRimLightTop(tones.top)}, 0 0 0 ${tones.right}`;
+const restShadow = (tones: PlateTones) => towerPlateShadow(tones, 0);
+const pressedShadow = (tones: PlateTones) => towerPlateShadow(tones, PLATE_WALL_PX);
+
+/**
+ * The plate's shadow with its face resting `sunk` px down its `PLATE_WALL_PX` wall: 0 is
+ * the up plate (rim light, fillet, full wall, contact shadow), `PLATE_WALL_PX` is the plate
+ * bottomed out (rim light only), and anything between is a plate LATCHED part-way down
+ * (no caller latches today).
+ *
+ * Used by td's card view (deckTower/cardView/TowerMasteryPanel.tsx): the track keycap
+ * (0 at rest, PLATE_WALL_PX pressed) and the raised mastery bar (0, no press).
+ */
+export function towerPlateShadow(tones: PlateTones, sunk: number): string {
+    const wallPx = Math.max(0, PLATE_WALL_PX - sunk);
+    if (wallPx === 0) return `${roundedEdgeRimLightTop(tones.top)}, 0 0 0 ${tones.right}`;
+    return `${roundedEdgeRimLightTop(tones.top)}, ${roundedEdgeFilletDown(tones.top, tones.right)}, 0 ${wallPx}px 0 ${tones.right}, ${SHADOW.chip}`;
+}
 
 /**
  * The plate's SLAB alone — fill, wall, contact shadow and the push-down — with none of

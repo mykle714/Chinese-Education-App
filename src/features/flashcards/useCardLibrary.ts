@@ -52,7 +52,7 @@ export interface CardLibraryState {
     language: string | null | undefined;
     /** The lens's two built-in collections (Learning, Mastered), in display order. */
     collections: BuiltinCollectionEntry[];
-    /** Figure for one filter key; undefined while its count is still loading. */
+    /** Figure for one filter key; undefined until its count has loaded (and still undefined after a failed load). */
     tileCount: (entry: BuiltinCollectionEntry) => number | undefined;
     /**
      * The library narrowed by `cardsFilter`, then by `cardsSearch`, then ordered by
@@ -77,14 +77,19 @@ export interface CardLibraryState {
     toggleCardsFilter: (entry: BuiltinCollectionEntry) => void;
 }
 
-export function useCardLibrary(lens: MasteryWorldId): CardLibraryState {
+/**
+ * `refreshKey`: bump it to re-read the library and the key figures quietly (no spinner).
+ * td's cards page bumps it when its card view closes — the card may have been edited or
+ * removed from Learning there (deckTower/cardView/useTowerCardView → `refreshKey`).
+ */
+export function useCardLibrary(lens: MasteryWorldId, refreshKey = 0): CardLibraryState {
     const { isAuthenticated, user } = useAuth();
 
     // Per-band card counts THROUGH THIS LENS, driving the filter keys' figures. These
     // count SORTED cards only — never cards a game lent (docs/PROVISIONAL_CARDS.md).
-    const { counts: categoryCounts } = useCategoryCounts(lens);
+    const { counts: categoryCounts, ok: categoryCountsOk } = useCategoryCounts(lens, refreshKey);
     // Mastered totals per bar — all three arrive in one response regardless of lens.
-    const { counts: masteredCounts } = useMasteredCounts();
+    const { counts: masteredCounts, ok: masteredCountsOk } = useMasteredCounts(refreshKey);
 
     // Memoized: a fresh object each render would invalidate the sort control's own
     // bundle memo on every unrelated re-render.
@@ -120,7 +125,8 @@ export function useCardLibrary(lens: MasteryWorldId): CardLibraryState {
 
         (async () => {
             try {
-                if (!quietRefresh) setCardsLoading(true);
+                // A refresh (refreshKey > 0) always has the grid to keep showing.
+                if (!quietRefresh && refreshKey === 0) setCardsLoading(true);
                 setCardsError(null);
                 const loaded = await loadCardLibrary(libKey);
                 if (!cancelled) setCards(loaded);
@@ -133,7 +139,7 @@ export function useCardLibrary(lens: MasteryWorldId): CardLibraryState {
         })();
 
         return () => { cancelled = true; };
-    }, [isAuthenticated, libKey, quietRefresh]);
+    }, [isAuthenticated, libKey, quietRefresh, refreshKey]);
 
     // Filter by collection, then by the (deferred) search, then order — client-side, the
     // whole library is already in memory. The search term is DEFERRED so the keystroke
@@ -165,10 +171,19 @@ export function useCardLibrary(lens: MasteryWorldId): CardLibraryState {
     // Every key figure comes from the two count hooks — no extra request. The derivation
     // lives beside the collection list (builtinCollectionCount) so a collection's
     // definition and its number cannot drift.
+    //
+    // A figure is undefined (the key draws its em dash) until the hook it is read from
+    // has SUCCEEDED once: both hooks start from empty/zero counts and keep them on a
+    // failed fetch, so reading them early would print a "0" that was never loaded. A
+    // failed load therefore stays on the dash. A later refetch (`refreshKey`) keeps the
+    // last good figure up rather than dropping back to the dash.
     const tileCount = useCallback(
-        (entry: BuiltinCollectionEntry) =>
-            builtinCollectionCount(entry.ref, categoryCounts, masteredCounts),
-        [categoryCounts, masteredCounts]
+        (entry: BuiltinCollectionEntry) => {
+            const sourceOk = entry.ref.kind === "mastered" ? masteredCountsOk : categoryCountsOk;
+            if (!sourceOk) return undefined;
+            return builtinCollectionCount(entry.ref, categoryCounts, masteredCounts);
+        },
+        [categoryCounts, masteredCounts, categoryCountsOk, masteredCountsOk]
     );
 
     const activeCollection = useMemo(

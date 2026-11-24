@@ -68,7 +68,7 @@ describe("route registry integrity", () => {
 describe("findRoute", () => {
   it("matches parameterized patterns the way the router does", () => {
     expect(findRoute("/discover/sort/zh")?.path).toBe("/discover/sort/:language");
-    expect(findRoute("/flashcards/card/42")?.path).toBe("/flashcards/card/:id");
+    expect(findRoute("/reader/42")?.path).toBe("/reader/:id");
   });
 
   it("does not let a parent path swallow its children", () => {
@@ -113,7 +113,7 @@ describe("shell classification matches the old MOBILE_DEMO_PATHS behaviour", () 
     ...(isFeatureEnabled("community") ? ["/community"] : []),
     "/tester-dashboard", "/settings",
     "/discover/sort/zh", "/discover/sort/es",
-    "/flashcards/card/7", "/reader/abc-123",
+    "/reader/abc-123",
     ...ROUTED_GAMES.map((g) => g.route),
   ];
   // The auth pages moved into the frame on 2026-11-14: the boot cover opens onto `/login`,
@@ -152,7 +152,6 @@ describe("footer tab matches the old FOOTER_ROUTES behaviour", () => {
     // Prefix-matched node pages. Add Cards and the card detail page are drill-ins
     // from the Deck Tower, so they light the Flashcards tab.
     ["/discover/sort/zh", "deck"],
-    ["/flashcards/card/7", "deck"],
     // Footerless.
     ["/reader/abc", undefined],
     ["/tester-dashboard", undefined],
@@ -170,7 +169,7 @@ describe("page transitions match the old NODE/LEAF tables", () => {
     "/reader",
     ...(isFeatureEnabled("arena") ? ["/arena"] : []),
     "/discover/sort/zh",
-    "/flashcards/card/7", "/reader/abc",
+    "/reader/abc",
   ];
   const LEAF = [
     "/tester-dashboard",

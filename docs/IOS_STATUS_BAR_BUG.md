@@ -25,7 +25,7 @@ Neither appears in a Safari tab, on Android, or on desktop.
 
 | # | Symptom | Status |
 |---|---|---|
-| **A** | The band behind the clock/battery does not match the page. On a flooded game page (Bubble Match, crimson ground) it shows flat paper `#FBFAF8`. | **Fixed** — round 2 (tags) + round 6 |
+| **A** | The band behind the clock/battery does not match the page. On a flooded game page (then Bubble Match's crimson ground; that game was archived 2026-11-23) it shows flat paper `#FBFAF8`. | **Fixed** — round 2 (tags) + round 6 |
 | **B** | A strip of the same height at the **bottom** of the screen, unpainted by any page. | **Fixed in round 6** — awaiting on-device confirmation of the deployed build |
 
 They are two faces of one thing: the app and the layout viewport iOS reports are not

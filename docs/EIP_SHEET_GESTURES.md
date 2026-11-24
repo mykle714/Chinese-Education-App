@@ -19,8 +19,9 @@ browser pans natively in `scroll` mode (so it needs `touch-action: pan-y` +
 last of its rows moved out — see [AUDIO_PLAYBACK.md](./AUDIO_PLAYBACK.md).
 
 **Mount sites.** The eip sheet is not flp-private: besides the flp (which mounts
-`InfoCardSection` itself), the sort cards page (acp), the saved-card cdp
-(`src/features/flashcards/VocabCardDetailPage.tsx`) and the Dictionary page
+`InfoCardSection` itself), the sort cards page (acp), td's card view
+(`src/features/deckTower/cardView/TowerCardView.tsx`, which replaced the routed saved-card cdp
+on 2026-11-23 — [DECK_TOWER.md](./DECK_TOWER.md) § "The card view") and the Dictionary page
 (`src/features/dictionary/DictionaryPage.tsx`) all mount `EipSheet` → `InfoCardSection`, each
 with its own `useEipTabs` word trail — acp opens it from each on-deck card's info button
 ([SORT_CARDS_REQUIREMENTS.md §4.7](./SORT_CARDS_REQUIREMENTS.md)). The sheet is the ONLY place
@@ -29,7 +30,7 @@ a dictionary word is shown: there is no read-only dictionary card page (deleted 
 | Host | `EipSheet` props that differ |
 |---|---|
 | acp (`AddCardsPage.tsx`) | `depth` 1 while its skipped-cards sheet is open |
-| saved-card cdp (`VocabCardDetailPage.tsx`) | `showSynonymsRelated`, `showLearning`, `learningSkipsRoot` (the Add key is hidden on the root — the saved card itself — and appears on drilled-in words); no `showWordTools` (its rail sits above the hero card; its Compare closes the eip and raises the Compare panel via `useCompareSheet`) |
+| td's card view (`deckTower/cardView/TowerCardView.tsx`) | `showSynonymsRelated`, `showLearning`, `learningSkipsRoot` (the Add key is hidden on the root — the saved card itself — and appears on drilled-in words); no `showWordTools` (its rail — Compare + Customize — sits above the hero card; its Compare closes the eip and raises the Compare panel via `useCompareSheet`). Opened from the flp's `MoreInfoPill` at the flp's position |
 | Dictionary page (`DictionaryPage.tsx`) | `showSynonymsRelated`, `showWordTools`, `showLearning`, `defaultHeightRatio` 0.8 | Everything on this
 page applies to all of them, and to the Compare panel, a `SheetPanel` host of its own that
 reuses the eip's chrome — `EipUpperPanel`, `EipShelf`, the palette
@@ -253,7 +254,7 @@ not".
 
 **Why study surfaces get the flame.** A panel covers its page's header, flame included,
 and it does that precisely while the learner is reading a definition — which *is* study
-time. So the eip panels on flp, acp and the cdp pass `showMinutePoints`, and the
+time. So the eip panels on flp, acp and td's card view pass `showMinutePoints` (every `EipSheet` does), and the
 indicator survives at every panel height. **Pull-up dictionary flows never show it**
 (2026-10-06): the Compare panel (`CompareSheet` → `EipUpperPanel` without `showMinutePoints`)
 and the Writing Notebook's `NotebookWordPickerSheet` omit it. That changes only the indicator, not earning — the host page's own `PageHeader`
@@ -294,6 +295,13 @@ Any pop also cancels an in-flight drill-in lookup, so a fetch that lands after t
 walked back cannot push onto the trail they left. A popped crumb's state (sub-tab, sense
 pick) is discarded with it; the crumbs below keep theirs, so walking back restores each
 word's last sub-tab.
+
+While a drill-in lookup is in flight, `useEipTabs` reports `drillPending` (from its
+`pendingKey`: set when the lookup starts, cleared when the LIVE lookup settles — success or
+failure — and by any pop, a new root or `clear`). The flp shows the `PawnLoader` on it
+(`FlashcardsLearnPage`, docs/DECK_TOWER.md § "Loading feedback"); the other eip hosts
+(Add Cards, Dictionary, the tower card view, Reader, Voice) do not read it yet. A failed
+lookup is still silent.
 
 Code: `src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` → `useEipTabs`
 (`activeIndex` is derived as `tabs.length - 1`, never set), `popTo`, `pop`,
@@ -343,8 +351,8 @@ Three rules, all changed on **2026-09-06**:
 belongs to the CARD, so reopening the sheet on the same card resumes the same drill-in
 chain on the same word. It is dropped when the ROOT changes: the flp's next card (the
 `currentIndex` reset effect, plus `openForRoot` reseeding), another card's info button on
-acp, or the page unmounting. (On the saved-card cdp the root never changes, so the trail
-lasts for the page's life.)
+acp, or the page unmounting. (In td's card view the root never changes, so the trail
+lasts for the view's life.)
 
 ### Telescope — the eip's two panels (2026-10-29, Tower Tier 2)
 
@@ -537,11 +545,11 @@ ground (`src/timeOfDay/tier2Look.ts`) carries the same day hexes for its page.
 `EipAddKey` — the design's `.kc.add`, built exactly: a 92px raised key in the trail row,
 at its right end (`+ Add` on a 5px lip, lifted 1px; held, it sinks 4px and loses the lip;
 `✓ Added!` sits 2px low on a 2px lip with a green check). Driven by `useLearningToggle`
-(EipSheet `showLearning`: the Dictionary page, the saved-card cdp and the Reader); tapping "Added!" removes. The hook is
+(EipSheet `showLearning`: the Dictionary page, td's card view and the Reader); tapping "Added!" removes. The hook is
 optimistic: Add ⇄ Added! flips on the tap and the request follows after paint, so the key is
 never disabled waiting on the network (LEAF_NODE_PAGES.md § "The Learning control"). **No glow.**
-With `learningSkipsRoot` (the saved-card cdp) the key is hidden while the trail's root is
-showing — the root is the saved card the page is about, so the key would only offer to un-save
+With `learningSkipsRoot` (td's card view) the key is hidden while the trail's root is
+showing — the root is the saved card the view is about, so the key would only offer to un-save
 it — and appears on every word drilled into from it. It is the app's only Learning control
 (the dictionary cdp's glowing `LearningToggle` was deleted with that page, 2026-11-10). acp
 offers none. **Outside the eip** it has one mount: the Reader's dictionary keycap
@@ -881,7 +889,7 @@ page archetype that transforms its surface inherits the fix automatically.
   `SheetPanel` calls `useHideFooter(minHeight <= 0)`, so the hold covers its whole
   lifetime on every host and is released on unmount. It used to be each page's job —
   `useHideFooter(eipOpen)` in `AddCardsPage`, `useHideFooter(infoOpen)` in
-  `VocabCardDetailPage`, **both now deleted** — which left other hosts' modal sheets
+  `VocabCardDetailPage` (the routed cdp, itself deleted 2026-11-23), **both now deleted** — which left other hosts' modal sheets
   without one. A **persistent** sheet keeps the footer: it is page furniture whose
   resting height is chosen to clear the bar, not a modal that takes over the screen.
 
@@ -994,7 +1002,7 @@ Now:
    tab's **id** changes; the direction is the sign of the `activeIndex` delta, so a pushed
    word enters from the right and a pop (Escape, or tapping an earlier crumb) enters from the
    left. Hosts opt in by passing `entryTabId` / `entryTabIndex` (the flp does, and `EipSheet`
-   does for all its hosts — acp, the saved-card cdp, the Dictionary page).
+   does for all its hosts — acp, td's card view, the Dictionary page).
    - It is **enter-only** — the outgoing word's DOM is already gone — which is why the
      travel is a fraction of the panel width rather than a full page.
    - It is **imperative, not a keyed remount**: remounting would tear down the three
@@ -1018,7 +1026,9 @@ cycles back — each confirmed by a small floating caption ("Characters Copied!"
 - **Where it lives.** The behaviour is a `CPCDRow` property (`tapToCopy`, defaulting to
   false), threaded through `ForeignText` and switched on for the eip header's
   `ForeignText` in `EipEntryHeader` (and the Dictionary page's result headwords,
-  `DictionaryEntryRow.headwordTapToCopy`). It is opt-in because most cpcd surfaces
+  `DictionaryEntryRow.headwordTapToCopy`, and the Reader keycap's headword for a word with
+  a single reading — one with several cycles its reading instead,
+  [USER_DOCUMENT_FEATURE_SUMMARY.md](./USER_DOCUMENT_FEATURE_SUMMARY.md) § "Reading choices"). It is opt-in because most cpcd surfaces
   already own the tap (flip the card, select a segment); the eip header is the one place
   the headword is shown purely as a reference, so a tap there has nothing else to mean.
 - **The headword sits in a pressable KEYCAP (2026-10-29).** The raised tile around it

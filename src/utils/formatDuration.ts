@@ -13,7 +13,7 @@
  * does not have to).
  *
  * Depended on by: src/features/friends/friendLabels.ts,
- * src/features/friends/FriendExpandedDetail.tsx, src/components/mastery/MasteryWindow.tsx,
+ * src/features/friends/FriendExpandedDetail.tsx, src/features/deckTower/cardView/TowerMasteryPanel.tsx,
  * src/minutePoints/BankBanner.tsx (docs/DAILY_MINUTE_BANKING.md § 6).
  * Tested by: src/__tests__/formatDuration.test.ts.
  */

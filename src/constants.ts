@@ -29,33 +29,29 @@ export const API_BASE_URL = import.meta.env.MODE === 'production'
 // This is also what makes the COMPARE sheet earn. Compare has no route of its own
 // (docs/WORD_COMPARE_FEATURE.md — it is a panel raised over the page you are on), so it
 // cannot be listed here; it earns because every surface that can open it now accrues —
-// the flp, the acp, the Dictionary page and the saved-card cdp. Anything that later hosts the compare sheet from a
+// the flp, the acp, the Dictionary page and td's card view. Anything that later hosts the compare sheet from a
 // non-earning page would break that, so keep the two lists in step.
 //
-// Accrual still requires INTERACTION (`useActivityDetection`, 15s window): a cdp or a
+// Accrual still requires INTERACTION (`useActivityDetection`, 15s window): a card view or a
 // search page is easy to leave open, so neither is in MINUTE_POINTS_AUTO_ACTIVE_PAGES.
 //
 // ⚠️ NOT '/flashcards' — the study surfaces are named one at a time rather than by a
 // parent prefix, so a future browse screen under it does not silently start earning.
-// `/flashcards/card` is listed on its own.
 //
 // The flp is not on this list: it runs only inside the Deck Tower at `/` (a menu, which
 // must not earn), and earns through a study-surface CLAIM while a session is up
-// (src/minutePoints/studySurface.ts). The four break-only games (Speed Reading, Memory
+// (src/minutePoints/studySurface.ts). td's card view (a saved card's detail, which had the
+// `/flashcards/card` route until 2026-11-23) earns through the same claim while it is open. The four break-only games (Speed Reading, Memory
 // Map, Writing Grid, Superposition) have no route of their own any more; they earn as
 // part of that same flp session.
 export const MINUTE_POINTS_ELIGIBLE_PAGES = [
-  '/flashcards/card',
   '/dictionary',
   '/reader',
   // Adventures earns like the Reader (docs/CYOA_FEATURE.md § 8).
   '/adventures',
   '/discover/sort',
-  '/games/bubble-match',
   '/games/word-search',
   '/games/match-speed',
-  '/games/hydra-bubbles',
-  '/games/bucket-drop',
   // The Writing Notebook (docs/WRITING_NOTEBOOK.md) — handwriting practice, not a game.
   '/flashcards/writing/notebook'
 ];

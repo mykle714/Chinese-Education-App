@@ -500,8 +500,8 @@ under the "Better way to say it" line.
   (male / female, Q21).
   Rounded-edge + `COLORS.border` outline on all
   controls, per the design guidelines. The orb's three state colours must come from the colour
-  framework. **They must not reuse the utcm mastery-ramp hues**, for the same reason Hydra
-  Bubbles avoided them (deferred to the owner's UX pass, Q12).
+  framework. **They must not reuse the utcm mastery-ramp hues** — a ramp hue reads as a
+  mastery level to a learner the rest of the app has trained (deferred to the owner's UX pass, Q12).
 - **Transcript lines**: learner lines and assistant lines are both rendered as `CPCDRow`
   segments from the gsa output, so any word can be tapped to open the deip popup and added to
   cards from there. Words the tutor introduced (`note_recast.newWords`) are highlighted so they
@@ -645,7 +645,7 @@ learner's *current* cards when a transcript opens, so it never goes stale.
 9. ~~**Daily cap**~~ — **answered 2026-11-18: measure cost first.** Measure STT + TTS + Claude cost per voice minute on PPE, then set the number. Was: how many voice minutes per user per day? Is it the same for every user?
 10. ~~**Voice marks**~~ — **answered 2026-11-18: out of scope entirely.** Was: full-weight typed marks (Production/Recognition), reduced weight, or only after confirmation?
 11. ~~**Minute points**~~ — **answered 2026-11-18: out of scope.** Was: should voice time earn them, and with what anti-farming rule?
-12. ~~**Orb colours**~~ — **deferred to the owner's UX pass.** Placeholder: any framework tokens that avoid the utcm ramp and the Hydra charcoal/gold.
+12. ~~**Orb colours**~~ — **deferred to the owner's UX pass.** Placeholder: any framework tokens that avoid the utcm ramp.
 13. ~~**Privacy / retention**~~ — **answered 2026-11-18:** no learner audio; transcripts kept forever; TTL possibly later.
 14. ~~**Persona**~~ — **answered 2026-11-18 (revised): one tutor persona, two voices** the learner chooses between: Google Chirp3-HD Achird (male) and Achernar (female). More voices: DEFERRED_WORK.md item 56. (Earlier the same day: one fixed ElevenLabs voice, BoHai; replaced when ElevenLabs failed the tone checks.)
 15. ~~**Re-say attempts**~~ — **answered 2026-11-18: re-say practice is dropped entirely.** Was: store them (to show improvement over time), or keep them display-only? Display-only needs no table.

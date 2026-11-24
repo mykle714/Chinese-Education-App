@@ -53,59 +53,22 @@ export {
 
 // ─── Client-only presentation ───────────────────────────────────────────────────
 
-/** One cell of an eight-mark window: how full it is (0..1) and which track owns it. */
-export interface MasteryWindowCell {
-  /** 0 = empty, 1 = full, in between = a partial trailing cell. */
-  fill: number;
-  /** The mark type whose segment covers the filled part; null when the cell is empty. */
-  type: MarkType | null;
-}
-
 /**
- * A bar's pbh as `PBH_FULL` discrete cells — the shape BOTH mastery surfaces draw.
+ * How much of a mastery bar is filled, 0..1: `pbh / PBH_FULL`, clamped — the length BOTH
+ * mastery surfaces draw as one continuous track.
  *
- * pbh is not a percentage: it is a position in an eight-mark window, and the band cut
- * points are counts inside that window. So the value is drawn as what it is, one cell
- * per mark. Cell `i` covers the pbh interval `[i, i+1)`, so its fill is
- * `clamp(pbh - i, 0, 1)`; a fractional core pbh leaves the last filled cell partial
- * rather than rounded, because rounding would make two genuinely different cards read
- * the same.
+ * The bars were `PBH_FULL` discrete cells (one per mark, `masteryWindowCells`) until
+ * 2026-11-23, when the owner replaced them with a single long fill on both surfaces.
+ * pbh is still a count, not a percentage; the fraction is only where the fill ends. A
+ * fractional core pbh (the know blend) is drawn exactly, not rounded, so two genuinely
+ * different cards never read the same.
  *
- * Returns the owning mark **type**, NOT a color, because the two surfaces paint the same
- * geometry from different palettes: the cdp window colors by mark type
- * (`MARK_TYPE_COLORS`), while the mini-card strip colors every filled cell with the
- * bar's utcm band (`getBandInk`). Handing back a color would force one palette on both.
- *
- * Consumers: `src/components/mastery/MasteryWindow.tsx` (the cdp window, which is where
- * this logic lived before the mini card needed it too) and
- * `src/components/MiniVocabCard.tsx` (the thumbnail strip).
- * See docs/MASTERY_REWORK.md § "Mini cards — the eight-mark window".
+ * Consumers: `src/features/deckTower/cardView/TowerMasteryPanel.tsx` (the card view's raised bar) and
+ * `src/components/MiniCard.tsx` → `MasteryStrip` (the thumbnail strip).
+ * See docs/MASTERY_REWORK.md § "cdp — the mastery bar" and § "Mini cards — the mastery strip".
  */
-export function masteryWindowCells(bar: MasteryBar): MasteryWindowCell[] {
-  // Segment extents in pbh units. `fraction` is each type's share of the FILLED length,
-  // so scaling by pbh turns shares into positions on the 0..PBH_FULL axis.
-  let cursor = 0;
-  const extents = bar.segments.map((seg) => {
-    const start = cursor;
-    cursor += seg.fraction * bar.pbh;
-    return { type: seg.type, start, end: cursor };
-  });
-
-  return Array.from({ length: PBH_FULL_VALUE }, (_, i) => {
-    const fill = Math.min(1, Math.max(0, bar.pbh - i));
-    if (fill <= 0) return { fill: 0, type: null };
-    // The segment covering the MIDPOINT of the filled part — the midpoint rather than
-    // the left edge so a partial cell straddling a boundary takes the color of the half
-    // actually painted.
-    const midpoint = i + fill / 2;
-    // `end` is exclusive except on the last segment, where the midpoint of the final
-    // partial cell can land exactly on the boundary — hence the fallback to the last
-    // extent rather than returning null on a filled cell.
-    const owner =
-      extents.find((e) => midpoint >= e.start && midpoint < e.end) ??
-      extents[extents.length - 1];
-    return { fill, type: owner ? owner.type : null };
-  });
+export function masteryFillFraction(bar: MasteryBar): number {
+  return Math.min(1, Math.max(0, bar.pbh / PBH_FULL_VALUE));
 }
 
 /**
@@ -154,10 +117,10 @@ export const WORLD_LABELS: Record<MasteryWorldId, string> = {
   writing: "Write",
 };
 
-// NOTE: both mastery surfaces — the cdp window and the mini-card strip — colour every
-// filled cell by the track's utcm BAND (`getBandMark`, categoryColors.ts), while the
-// cells' LENGTHS still come from the per-mark-type segments. See docs/MASTERY_REWORK.md
-// § "Mini cards — the eight-mark window".
+// NOTE: both mastery surfaces — the cdp bar and the mini-card strip — colour their fill
+// by the track's utcm BAND (`getBandMark`, categoryColors.ts), not by these per-type
+// colours; the fill's LENGTH is `masteryFillFraction`. See docs/MASTERY_REWORK.md
+// § "Mini cards — the mastery strip".
 //
 // A Mastered COLLECTION needs one colour per bar; that lives in MASTERY_BAR_COLORS
 // (src/utils/categoryColors.ts) beside the other tile palettes.

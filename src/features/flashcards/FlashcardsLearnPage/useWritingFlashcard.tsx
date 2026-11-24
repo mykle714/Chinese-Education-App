@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Dialog } from "@mui/material";
-import { useAuth } from "../../../AuthContext";
 import WritingStage from "../../../components/handwriting/WritingStage";
 import WritingFocusEditor from "../../../components/handwriting/WritingFocusEditor";
 import { levelPreview, WRITING_FOCUS_SIZE } from "../../../components/handwriting/levelBehavior";
@@ -12,6 +11,7 @@ import { modeOfLevel, writingLevelForMastery } from "../../../../server/contract
 import type { VocabEntry } from "../../../types";
 import { resolveDisplayPronunciation } from "../../../utils/definitionUtils";
 import { COLORS } from "../../../theme";
+import PawnLoader from "../../../components/PawnLoader";
 import WritingCardFace from "./WritingCardFace";
 import type { WritingFaceRenderer } from "./FlashCardSection";
 
@@ -101,7 +101,7 @@ const blankAttempt = (entry: VocabEntry | null): Attempt => {
     };
 };
 
-export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, flip, dismiss }: {
+export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, flip, dismiss, loaderAllowed }: {
     /** False on every bar but writing — the hook then renders nothing. */
     enabled: boolean;
     /** The ACTIVE FRONT card. */
@@ -112,11 +112,20 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
     flip: () => void;
     /** Send the front card off and write the marks (useWorkingLoop.handleCardDismiss). */
     dismiss: (direction: "left" | "right", attempt: WritingAttempt) => void;
+    /**
+     * Whether a PawnLoader may show (the page's `!parked && !tower.cardsCovered`): it
+     * portals out of a parked session's clip and would otherwise show over the tower.
+     */
+    loaderAllowed: boolean;
 }) {
-    const { token } = useAuth();
     const [attempt, setAttempt] = useState<Attempt>(() => blankAttempt(entry));
     const [outgoing, setOutgoing] = useState<Attempt | null>(null);
     const [checking, setChecking] = useState(false);
+    // The last submit's check could not run (after its quiet retries) — the bottom line
+    // then reads "Couldn't check · tap to try again" instead of the plain submit prompt
+    // (docs/NOTIFICATIONS.md § 3a "Failures": said in place, not as a banner). Cleared by the
+    // next submit, an edited cell, and every card change.
+    const [checkFailed, setCheckFailed] = useState(false);
     const [editing, setEditing] = useState<number | null>(null);
     // The cell being written — the focus editor grows out of it and shrinks back into it.
     const [editingOrigin, setEditingOrigin] = useState<HTMLElement | null>(null);
@@ -126,6 +135,14 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
     // dragged, so that one never moves); reset per card, like useCardDrag's, so a stale
     // nonce does not replay the wiggle on the newly promoted front card.
     const [shakeNonce, setShakeNonce] = useState(0);
+    // The card (vet id) whose cell outline is still downloading (HanziGuide's stroke data:
+    // a per-character bundled chunk, the CDN for a character outside it), null when none.
+    // Keyed by card, not a bare flag, because every card in the stack draws its cell —
+    // the peeking card loads behind the front one, and the front card can change while its
+    // own load is in flight. The loader shows only when the FRONT card's id is the one
+    // loading. A failed load settles too (the cell just stays blank — the silent failure
+    // is out of scope here), so the loader cannot spin forever.
+    const [guideLoadingFor, setGuideLoadingFor] = useState<number | null>(null);
 
     // Wipes the front card's attempt back to blank cells. Run on every card change, and
     // exposed for the page when the SAME card must start over — a Deck Tower visit ending
@@ -134,6 +151,7 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
     const resetAttempt = () => {
         setAttempt(blankAttempt(entry));
         setChecking(false);
+        setCheckFailed(false);
         setEditing(null);
         setInspecting(null);
         setShakeNonce(0);
@@ -141,6 +159,10 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
 
     // A new front card starts a clean attempt (a dismiss, an undo-free refill, a refetch).
     const entryId = entry?.id ?? null;
+    // The live front card's id, for an async check settling after renders it did not see
+    // (handleSubmit's closure holds the card it was submitted on).
+    const entryIdRef = useRef(entryId);
+    entryIdRef.current = entryId;
     useEffect(() => {
         resetAttempt();
         // Keyed on the id: the page's entry object can change identity every render.
@@ -154,6 +176,7 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
 
     const handleEditorDone = (index: number, ink: Ink, meta: { clockStarted: boolean }) => {
         setEditing(null);
+        setCheckFailed(false); // new ink: the old failure no longer describes this attempt
         setAttempt((prev) => ({
             ...prev,
             inks: prev.inks.map((old, i) => (i === index ? ink : old)),
@@ -169,25 +192,47 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
         const chars = [...entry.entryKey];
         const submittedFor = entry.id;
         setChecking(true);
-        const graded = await Promise.all(
-            chars.map(async (ch, i): Promise<{ correct: boolean; top1: string | null }> => {
-                const ink = live.inks[i] ?? [];
-                if (ink.length === 0) return { correct: false, top1: null };
-                try {
-                    const { top1 } = await recognizeHandwriting(ink, WRITING_FOCUS_SIZE, WRITING_FOCUS_SIZE, token);
+        setCheckFailed(false);
+        let graded: { correct: boolean; top1: string | null }[];
+        try {
+            graded = await Promise.all(
+                chars.map(async (ch, i): Promise<{ correct: boolean; top1: string | null }> => {
+                    const ink = live.inks[i] ?? [];
+                    // An empty cell here can only be a level-8 locked one (allFilled): its
+                    // clock ran out unwritten, which IS a wrong answer, not a failed check.
+                    if (ink.length === 0) return { correct: false, top1: null };
+                    const { top1 } = await recognizeHandwriting(ink, WRITING_FOCUS_SIZE, WRITING_FOCUS_SIZE);
                     return { correct: top1 === ch, top1 };
-                } catch (err) {
-                    // An unreachable recognizer grades the character wrong rather than
-                    // stranding the card on its front face.
-                    console.warn("[WritingFlp] verify failed", err);
-                    return { correct: false, top1: null };
-                }
-            }),
-        );
+                }),
+            );
+        } catch (err) {
+            // The check could not run (network error, recognizer down → HTTP 502). That
+            // says nothing about the learner's writing, so it must not grade the card:
+            // no flip, no verdict, and therefore no mark (marks are only written by
+            // `sendOff` from a graded back face). The card stays on its front with the
+            // ink kept, and the bottom line turns from "Checking…" to "Couldn't check ·
+            // tap to try again" (`checkFailed`) — the existing submit tap IS the retry.
+            // It only gets here after recognizeHandwriting's quiet retries
+            // (src/api/http.ts `retry`). (Before 2026-11-23 a failed check graded the
+            // character wrong and the dismiss saved a wrong mark.)
+            console.warn("[WritingFlp] verify failed; card left ungraded for a retry", err);
+            // A card change already cleared `checking` (resetAttempt), and the new card
+            // may have its own check running — leave it alone then.
+            if (entryIdRef.current === submittedFor) {
+                setChecking(false);
+                setCheckFailed(true);
+            }
+            return;
+        }
+        // The card changed under the request (e.g. a refetch, a parked visit's reset) —
+        // drop the stale verdict AND the flip: flipping would turn the NEW front card,
+        // ungraded, to an empty back face (renderFace draws no back without results).
+        // `checking` is left too: resetAttempt cleared it, and the new card may be
+        // mid-check. Read from the ref: this closure's `entry` is the submitted card.
+        if (entryIdRef.current !== submittedFor) return;
         setChecking(false);
         const results = graded.map((g) => g.correct);
         const recognized = graded.map((g) => g.top1);
-        // The card changed under the request (e.g. a refetch) — drop the stale verdict.
         setAttempt((prev) => (prev.entryId === submittedFor ? { ...prev, results, recognized } : prev));
         flip();
     };
@@ -289,6 +334,7 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
                 locked={state.locked}
                 results={state.results}
                 checking={role === "front" && checking}
+                checkFailed={role === "front" && checkFailed}
                 interactive={role === "front" && !isAnimating}
                 onOpenCell={(index, el) => {
                     setEditingOrigin(el);
@@ -297,6 +343,11 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
                 onInspectCell={setInspecting}
                 flashNonce={role === "front" ? shakeNonce : 0}
                 lookalike={side === "back" ? lookalikeFor(cardEntry, state) : null}
+                // Every role reports (see guideLoadingFor): a peeking card still loading
+                // when it is promoted shows the loader as the new front.
+                onGuideLoadingChange={(loading) =>
+                    setGuideLoadingFor((prev) => (loading ? cardEntry.id : prev === cardEntry.id ? null : prev))
+                }
             />
         );
     };
@@ -304,6 +355,13 @@ export function useWritingFlashcard({ enabled, entry, isFlipped, isAnimating, fl
     const chars = entry ? [...entry.entryKey] : [];
     const overlays = enabled ? (
         <>
+            {/* The front card's outline still downloading: its cell is blank on a level that
+                previews the outline. Screen-centred like every flp wait — the card is the
+                screen's centre anyway — and after PawnLoader's usual delay, so the normal
+                bundled-chunk load (well under it) never flashes it. */}
+            {loaderAllowed && entryId !== null && guideLoadingFor === entryId && (
+                <PawnLoader label="Loading the character" />
+            )}
             {/* Writing one character, at the card's level. Closed only by tapping out.
                 No backdrop and no Fade: the editor brings its own scrim and morphs out of
                 the tapped cell (WritingPanel), which a Dialog fade would wash out. */}

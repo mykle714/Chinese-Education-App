@@ -63,7 +63,7 @@ import { useTowerSnow } from "./useTowerSnow";
 import { SNOW_COMPONENTS, type SnowComponent } from "./towerSnow";
 import BalloonSpawnChip from "./BalloonSpawnChip";
 import LoaderPreviewChip from "./LoaderPreviewChip";
-import PawnLoader from "./PawnLoader";
+import PawnLoader from "../../components/PawnLoader";
 import ShootingStarChip from "./ShootingStarChip";
 import SnowResetChip from "./SnowResetChip";
 import { useSoftIntro } from "../../softIntro/useSoftIntro";
@@ -107,7 +107,9 @@ import { useClaimStudySurface } from "../../minutePoints/studySurface";
 import TowerCardsPage from "./TowerCardsPage";
 import { useBootCover, useHoldBootCover } from "../../hooks/useBootCover";
 import { TOWER_SCENE_CLASS, TOWER_SECTION_CLASS, heightAbovePlatform, platformScrollTop, towerSceneOf, useTowerCardsScroll } from "./towerScroll";
-import { withLens } from "../flashcards/collectionRef";
+import TowerCardView from "./cardView/TowerCardView";
+import { CARD_VIEW_EASING, CARD_VIEW_MOTION_MS } from "./cardView/cardViewTiming";
+import { useTowerCardView } from "./cardView/useTowerCardView";
 import type { VocabEntry } from "../../types";
 
 /**
@@ -519,6 +521,11 @@ function notebookSheets(total: number): number {
     return 1 + Math.floor(Math.max(0, total) / NOTEBOOK_POINTS_PER_SHEET);
 }
 
+/** The card view's page fade, on td's header and scroller — the card's own zoom timing, so the two read as one motion (cardViewTiming.ts). */
+const CARD_VIEW_FADE = `opacity ${CARD_VIEW_MOTION_MS}ms ${CARD_VIEW_EASING}`;
+/** The card view's mastery tracks in its keys' order (Know first), whichever the goals show. */
+const CARD_VIEW_TRACK_ORDER: readonly TowerWorldId[] = ["core", "reading", "writing"];
+
 const DeckTowerPage: React.FC = () => {
     const { user } = useAuth();
     const slideNavigate = useSlideNavigate();
@@ -542,7 +549,9 @@ const DeckTowerPage: React.FC = () => {
         reading: useFlpReadyCounts("reading"),
         writing: useFlpReadyCounts("writing"),
     };
-    const mastered = useMasteredCounts();
+    // Bumped by the retry imprint's tap on a Mastered tower whose count failed (`retryCounts`).
+    const [masteredRefreshKey, setMasteredRefreshKey] = useState(0);
+    const mastered = useMasteredCounts(masteredRefreshKey);
 
     // Each world's tower resizes (docs/DECK_TOWER.md § "Tower resizes"): the focus lever's
     // shrinks and grows.
@@ -557,6 +566,8 @@ const DeckTowerPage: React.FC = () => {
     const worldShown = (id: TowerWorldId) =>
         id === "core" || (id === "reading" ? user?.readingGoal === true : user?.writingGoal === true);
     const shownWorlds = WORLD_ORDER.filter(worldShown);
+    // The card view offers the same tracks as there are worlds (Know + each goal that is on).
+    const cardViewTracks = CARD_VIEW_TRACK_ORDER.filter(worldShown);
     // A goal switched ON while td is mounted (the AccountSheet opens over it) may also have
     // switched that world's focus on (docs/FOCUS_MODE.md § 1a). The skill worlds' counts
     // were read with the goal off, so they still stand the whole pile with focus off:
@@ -679,6 +690,8 @@ const DeckTowerPage: React.FC = () => {
     );
     // The page's own white things painted on the sky (title, arrows, speed lines) — lit too.
     const skyInk = light.wash(ISO.white);
+    // The card view's one night switch (its mastery bar outline): night outweighs day.
+    const cardViewNight = light.nightShare >= 0.5;
     // The browser's top-edge colour follows the settled world's sky. Without a claim it is
     // the paper default, and iOS Safari draws its scroll-edge effect behind the clock as a
     // paper-white fade over the sky (and the top of a tall tower). Keyed on the world's
@@ -717,6 +730,13 @@ const DeckTowerPage: React.FC = () => {
     useHintPawnVisit();
     useBlockEdgeSwipe(study.active);
     useClaimStudySurface(study.phase === "studying");
+    // ── The card view (docs/DECK_TOWER.md § "The card view") ─────────────────────
+    // A card tapped in the cards page opens in place over it (cardView/TowerCardView); it
+    // replaced the routed card detail page, which earned minute points by its PATH
+    // (`/flashcards/card`), so the view claims the study surface the way a session does.
+    const cardView = useTowerCardView();
+    const cardViewUp = cardView.view !== null;
+    useClaimStudySurface(cardViewUp);
     // A world's two decks, read through its own bar: Learning = that bar's OFF-COOLDOWN
     // cards (the flp's own readiness rule, so the tower never shows a card the flp would not
     // deal), in all four utcm bands (towerModes.ts → Mix). Mastered = that bar's whole
@@ -730,7 +750,8 @@ const DeckTowerPage: React.FC = () => {
     const deckCountsFor = (worldId: TowerWorldId): Record<TowerDeckId, number | undefined> => ({
         "learn-now": learningCount(worldId),
         // The 'mastered' kind reads only `mastered.counts`; the band counts argument is unused.
-        mastered: mastered.loaded ? builtinCollectionCount({ kind: "mastered", world: worldId }, readyCounts[worldId].counts, mastered.counts) ?? 0 : undefined,
+        // `ok`, not `loaded`: `loaded` is also true after a FAILED fetch, which read as a false 0.
+        mastered: mastered.ok ? builtinCollectionCount({ kind: "mastered", world: worldId }, readyCounts[worldId].counts, mastered.counts) ?? 0 : undefined,
     });
 
     const world = useMemo(() => litWorld(skyWorlds[worldId], light), [skyWorlds, worldId, light]);
@@ -792,7 +813,15 @@ const DeckTowerPage: React.FC = () => {
     // swap lands on Learning — the tower itself sky-drops in, so there is no build-up for
     // them to ride. Only the world on screen draws fixtures, so one clock serves every world.
     // Leaving Learning they fall at full height (towerOnStage stays true until `clearedMs`).
-    const fixtureProgress = useFixtureGrow(mayGrow(worldId), swap.busy);
+    //
+    // They wait on `mayGrow`, which needs the tower's figure, so while the counts LOAD they
+    // stand flat (progress 0) and grow in with the tower. A FAILED Learning count (§ "Loading
+    // feedback" → "Counts that fail") has no figure either, but it is not a moment that
+    // passes, so the fixtures stand at full height beside the retry imprint: the sort platform
+    // and the notebook do not depend on the count, and a flat "Add cards" read as broken.
+    // (The fixtures draw only beside the Learning tower, so Learning's `failed` is the flag.)
+    const fixturesReady = mayGrow(worldId) || (swap.towerOnStage && readyCounts[worldId].failed);
+    const fixtureProgress = useFixtureGrow(fixturesReady, swap.busy);
     const towerCount = towerCounts[worldId] ?? 0;
     // This world's tower resize. While a resize plays, the scene is fitted to the TALLER of
     // its two heights: a shrink starts from it, and a grow needs its sky to fall through.
@@ -1045,7 +1074,8 @@ const DeckTowerPage: React.FC = () => {
     // is up td's own events WAIT (the opening grow, cooldown drops, the banking run), so they
     // play once the learner can see them, and the scroller is locked. A td mounted later
     // (navigation, not the launch) sees it already gone.
-    const launchReady = towerWeather.settled && readyCounts[worldId].loaded;
+    // A failed count (useFlpReadyCounts `failed`) is settled too: the cover opens on the retry imprint.
+    const launchReady = towerWeather.settled && (readyCounts[worldId].loaded || readyCounts[worldId].failed);
     useHoldBootCover(!launchReady);
     const { up: launchUp, covering: launchCovering } = useBootCover();
     // A page dash bringing td in (acp's Back, docs/DECK_TOWER.md § "Back from Add Cards"):
@@ -1056,7 +1086,8 @@ const DeckTowerPage: React.FC = () => {
     // sky takes every change at once (SpaceBackdrop `snapSky`), so the circle opens onto the
     // true time of day and the real weather if it has arrived, else clear.
     // The footer slides away while a session is up. Under the cover the cover's slot hides it.
-    useHideFooter(study.active || launchUp);
+    // Also hidden under the card view, whose More Info plate stands where the flp's does.
+    useHideFooter(study.active || launchUp || cardViewUp);
     // ── The cards page under the platform (§ "The cards page") ────────────────────
     // Its root (the header hand-off measures its top; a world swipe slides it with the
     // scene) and the page header's layer, which its title row pushes off. The platform stop
@@ -1086,16 +1117,20 @@ const DeckTowerPage: React.FC = () => {
         if (!study.cameraDown) cardsScroll.syncHeader();
         // eslint-disable-next-line react-hooks/exhaustive-deps -- cardsScroll's methods read refs
     }, [study.cameraDown]);
-    // A card in the cards page opens its cdp through that world's lens — the swipe's
-    // closing click (a desktop drag) is not a tap, the guard the tower's own tap uses.
-    // Read through a ref so the handler the memoized cards page receives keeps one identity:
-    // this page re-renders every frame of a build-up, a resize or a pan.
-    const openTowerCardRef = useRef<(entry: VocabEntry, cardWorld: TowerWorldId) => void>(() => {});
-    openTowerCardRef.current = (entry, cardWorld) => {
+    // A card in the cards page opens the card view through that world's lens, zooming out of
+    // the tapped tile — the swipe's closing click (a desktop drag) is not a tap, the guard
+    // the tower's own tap uses. Read through a ref so the handler the memoized cards page
+    // receives keeps one identity: this page re-renders every frame of a build-up, a resize
+    // or a pan.
+    const openTowerCardRef = useRef<(entry: VocabEntry, cardWorld: TowerWorldId, tile: HTMLElement) => void>(() => {});
+    openTowerCardRef.current = (entry, cardWorld, tile) => {
         if (worldSwipe.wasDrag() || pan.busy || study.active) return;
-        slideNavigate(withLens(`/flashcards/card/${entry.id}`, cardWorld));
+        cardView.open(entry, tile, cardWorld);
     };
-    const onOpenTowerCard = useCallback((entry: VocabEntry, cardWorld: TowerWorldId) => openTowerCardRef.current(entry, cardWorld), []);
+    const onOpenTowerCard = useCallback(
+        (entry: VocabEntry, cardWorld: TowerWorldId, tile: HTMLElement) => openTowerCardRef.current(entry, cardWorld, tile),
+        []
+    );
     // The scroller's own onScroll, so it is attached however late the scroller mounts.
     const recordClimb = (e: React.UIEvent<HTMLDivElement>) => {
         const el = e.currentTarget;
@@ -1480,6 +1515,27 @@ const DeckTowerPage: React.FC = () => {
     // mid-swap, mid-pan or mid-resize, and not on a still-loading tower. An EMPTY tower
     // starts one too (a tap on its "0 cards" imprint): the session opens straight on the
     // flp's out-of-ready-cards card (docs/DECK_TOWER.md § "Running out of ready cards").
+    // ── Counts that fail (docs/DECK_TOWER.md § "Loading feedback" → "Counts that fail") ──
+    // The Learning deck's figure could not be fetched (useFlpReadyCounts `failed`): the
+    // tower has no figure (towerCounts undefined, so not startable), and rather than a bare
+    // platform — or, as until 2026-11-23, a false "0 cards" — its footprint prints "↻ retry"
+    // and a tap there re-fetches, the loader showing while it runs (`loadingLabel`).
+    // Same on the Mastered tower.
+    // Each deck reads its own source: Learning the ready counts (`failed`), Mastered
+    // useMasteredCounts (settled but not `ok`). A Mastered retry keeps the imprint up while it
+    // runs (that hook reports no in-flight state), so the loader does not show for it.
+    const deckCountFailed =
+        swap.towerDeck === "learn-now" ? readyCounts[worldId].failed : mastered.loaded && !mastered.ok;
+    const countsFailed =
+        deckCountFailed &&
+        !swap.busy &&
+        !study.active &&
+        towerCounts[worldId] === undefined;
+    const retryCounts = () => {
+        if (worldSwipe.wasDrag() || pan.busy) return;
+        if (swap.towerDeck === "learn-now") readyCounts[worldId].reload();
+        else setMasteredRefreshKey((k) => k + 1);
+    };
     const startable =
         swap.titleDeck === "learn-now" &&
         swap.towerDeck === "learn-now" &&
@@ -1551,6 +1607,33 @@ const DeckTowerPage: React.FC = () => {
         writeTowerHeight(userId, language, "core", "learn-now", coreSettledCount);
     }, [userId, language, coreSettledCount]);
 
+    // ── Loading feedback (docs/DECK_TOWER.md § "Loading feedback") ───────────────
+    // One PawnLoader for the tower's two real waits, so the two can never stack and a
+    // hand-off between them would not restart its show delay:
+    //   T1 "preparing"  the tap landed but the session's deal (or its card) is not in yet;
+    //                   the footer is gone and the tower frozen, for up to PREPARE_TIMEOUT_MS.
+    //   T2 counts       this world's tower has no figure yet (`towerCounts` undefined), so its
+    //                   platform stands bare and untappable. Not behind the launch cover,
+    //                   which covers that wait itself, and not mid-session (the study owns
+    //                   the screen then). Main usually skips it: it opens held at its stored
+    //                   height (§ "Opening at the last height"), which is a figure. Not on a
+    //                   failed count either (`countsFailed`): that shows the retry imprint;
+    //                   its tap's reload clears `failed`, and the loader returns meanwhile.
+    //   recount         this world's tower is HELD awaiting a re-read (the focus lever's
+    //                   confirm — T4 —, a climb-out, a tab return, opening at the last
+    //                   height): `holdVersion` is set and its counts' `version` has not
+    //                   moved past it yet (`resolveRecount` plays the resize once it does).
+    // PawnLoader's own show delay keeps a quick wait (a parked, already-dealt session) from
+    // flashing it.
+    const loadingLabel =
+        study.phase === "preparing"
+            ? "Opening your session"
+            : !launchUp && !study.active && towerCounts[worldId] === undefined && !countsFailed
+              ? "Loading your cards"
+              : !launchUp && !study.active && resize.holdVersion !== null && resize.holdVersion === readyCounts[worldId].version
+                ? "Updating your cards"
+                : null;
+
     return (
         // The banking run waits for the launch screen to go (it is stamped seen as it starts).
         <DailyBankingProvider held={launchUp}>
@@ -1576,8 +1659,11 @@ const DeckTowerPage: React.FC = () => {
                                 position: "relative",
                                 zIndex: 2,
                                 ...TOWER_TYPE_SX,
-                                opacity: towerUiOpacity,
-                                pointerEvents: study.active ? "none" : undefined,
+                                // The card view hides it with the rest of the page (it eases;
+                                // the dive's fade is per-frame, so no transition mid-study).
+                                opacity: cardView.hostHidden ? 0 : towerUiOpacity,
+                                transition: study.active ? undefined : CARD_VIEW_FADE,
+                                pointerEvents: study.active || cardViewUp ? "none" : undefined,
                             }}
                         >
                             {header}
@@ -1683,7 +1769,12 @@ const DeckTowerPage: React.FC = () => {
                             overflowY: study.active || launchUp ? "hidden" : "auto",
                             overscrollBehavior: "contain",
                             touchAction: study.active || launchUp ? "none" : "pan-y",
-                            pointerEvents: launchUp ? "none" : undefined,
+                            pointerEvents: launchUp || cardViewUp ? "none" : undefined,
+                            // The card view fades the whole scene and cards page out (the sky,
+                            // SpaceBackdrop, stays as its ground) — all but the tapped tile,
+                            // which its zoom ghost stands in for (cardView/TowerCardView).
+                            opacity: cardView.hostHidden ? 0 : 1,
+                            transition: CARD_VIEW_FADE,
                             // No visible scrollbar (desktop draws a chunky grey one over the sky).
                             // Wheel / trackpad / touch scrolling all still work.
                             scrollbarWidth: "none",
@@ -1759,7 +1850,9 @@ const DeckTowerPage: React.FC = () => {
                                               collapse: resize.collapse,
                                               drop: resize.drop,
                                               dropFigure: resize.toCards ?? undefined,
-                                              onTap: startable && !pan.busy && !resize.busy ? onStackTap : undefined,
+                                              onTap: countsFailed
+                                                  ? retryCounts
+                                                  : startable && !pan.busy && !resize.busy ? onStackTap : undefined,
                                               // Bare while the count card is its own layer or off the deck.
                                               printOpacity: study.towerPrintShown ? 1 : 0,
                                           }
@@ -1770,7 +1863,8 @@ const DeckTowerPage: React.FC = () => {
                                 keepDeck={studying(worldId)}
                                 bobPaused={study.active}
                                 // Not while the count is loading: it reads as 0 then (towerCount's `?? 0`).
-                                showImprint={towerCounts[worldId] !== undefined}
+                                showImprint={towerCounts[worldId] !== undefined || countsFailed}
+                                imprintVariant={countsFailed ? "retry" : "count"}
                                 stackFalling={swap.outgoing !== null}
                                 dropPx={(swap.outgoing?.drop ?? 0) * proj.heightUnit}
                                 pawns={swap.pawns}
@@ -1895,6 +1989,7 @@ const DeckTowerPage: React.FC = () => {
                             onOpenCard={onOpenTowerCard}
                             onUp={cardsScroll.up}
                             style={cardsPageStyle}
+                            refreshKey={cardView.refreshKey}
                         />
                     </Box>
 
@@ -1931,6 +2026,21 @@ const DeckTowerPage: React.FC = () => {
                             </DailyBankingOptOut>
                         </Box>
                     ))}
+                    {/* THE CARD VIEW — a tapped card's detail, in place over the faded page
+                        (docs/DECK_TOWER.md § "The card view"). Mounted only while open. */}
+                    {cardView.view && (
+                        <TowerCardView
+                            key={cardView.view.entry.id}
+                            view={cardView.view}
+                            ink={skyInk}
+                            night={cardViewNight}
+                            sky={pan.palette.sky}
+                            tracks={cardViewTracks}
+                            onRequestClose={cardView.requestClose}
+                            onRevealHost={cardView.revealHost}
+                            onClosed={cardView.finish}
+                        />
+                    )}
                     {/* The tower's count card, over the session while it slides off the deck (and
                         back on before the climb) — TowerCoverCard. */}
                     {study.cover && (
@@ -1956,6 +2066,7 @@ const DeckTowerPage: React.FC = () => {
                     )}
 
                 </Box>
+                {loadingLabel !== null && <PawnLoader label={loadingLabel} />}
                 {focusLevers.core.dialog}
                 {focusLevers.reading.dialog}
                 {focusLevers.writing.dialog}

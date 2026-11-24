@@ -14,6 +14,14 @@
 import { buildTextareaMirror, measureTextareaRange } from '../utils/textareaMirror';
 
 /**
+ * Rendered (wrapped) lines kept visible between the selection and the textarea's top or
+ * bottom edge, so tapping through a doc scrolls early rather than at the last moment
+ * (owner's call 2026-11-23). ReaderCpcdView's SCROLL_MARGIN_PX keeps the same count of
+ * cpcd lines.
+ */
+export const SCROLL_MARGIN_LINES = 2;
+
+/**
  * Scroll the textarea so the current selection is visible. Programmatic
  * setSelectionRange does not trigger the browser's "scroll-into-view" behavior
  * that real keyboard navigation gets, so we measure the selection's vertical
@@ -35,7 +43,7 @@ export const scrollSelectionIntoView = (
 
     const viewTop = textarea.scrollTop;
     const viewBottom = viewTop + textarea.clientHeight;
-    const padding = lineHeight; // keep one line of breathing room
+    const padding = SCROLL_MARGIN_LINES * lineHeight;
 
     if (markerTop < viewTop + padding) {
         textarea.scrollTop = Math.max(0, markerTop - padding);

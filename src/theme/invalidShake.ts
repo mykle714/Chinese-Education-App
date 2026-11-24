@@ -1,9 +1,6 @@
 // The app's INVALID-OPERATION SHAKE — "no, not that": a damped side-to-side wobble.
 //
 // One definition so every refusal reads identically:
-//   - a wrong bubble pair (games/bubbles/Bubble.tsx → `.bubble__inner`, via
-//     games/bubbles/constants.ts `WRONG_SHAKE_KEYFRAMES`);
-//   - a wrong Bucket Drop bucket (games/bucket-drop/DropBucket.tsx);
 //   - dragging an already-sorted card on the sort cards page
 //     (features/discover/AddCardsPage.tsx → `DraggableCard`).
 // It lives in theme/ (not games/) so features/ can use it: features/ must not import games/.

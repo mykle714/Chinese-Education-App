@@ -103,10 +103,10 @@ Child docs:
   is det's `definitions[0]` and ignores the learner's sense pick, so a raw call makes
   the same word read differently in two places.
 - **Client call sites:** `FlashCardSection.tsx` (`EnglishBlock`, passes the live index),
-  `EipEntryHeader.tsx` (eip header, mounted by `InfoCardSection`), `VocabCardDetailPage.tsx` + `FlashcardsLearnPage.tsx`
+  `EipEntryHeader.tsx` (eip header, mounted by `InfoCardSection`), `deckTower/cardView/TowerCardView.tsx` + `FlashcardsLearnPage.tsx`
   (fie movable-text label + icon-search prefill, via `iconSearchTerm`),
   `useCardIconEditor.ts` (icon prefetch warm), `MiniVocabCard.tsx`,
-  `games/bubble-match/Bubble.tsx` + `BubbleStage.tsx` (text and its radius measurement).
+  `games/match-speed/MatchSpeedCard.tsx`.
 - **Server call sites** (payloads that flatten dd to a string and drop the clusters):
   `OnDeckVocabService.getWordSearchGrid` (word list),
   `VocabEntryDAL.findRelatedBySharedCharacters` (related words),
@@ -178,8 +178,9 @@ Child docs:
   (`InfoCardPanelBody.tsx` definition tab) it forwards `onSegmentOpen`
   (= `onExampleSegmentClick` → `eip.openForEntryKey`), so the segment popup is
   tappable and drills into the eip for that headword — the same gesture as the est
-  popups. The cdp (`VocabCardDetailPage.tsx`) omits `onSegmentOpen`, so there the
-  popup stays a passive tooltip (it has no eip). A run that carries a `translation`
+  popups. (The routed cdp, `VocabCardDetailPage.tsx`, rendered it without `onSegmentOpen`;
+  it was deleted 2026-11-23, and td's card view that replaced it shows long definitions only
+  inside its eip.) A run that carries a `translation`
   (form #5b) overrides all of that: it becomes one tappable unit showing the phrase's
   meaning, and is never drillable.
 - **Producer:** `backfill-long-definitions.js` — reads `definitionClusters`, so it runs
@@ -316,7 +317,7 @@ synonym runs into one string with commas — `después` → `["later, afterwards
 post", "next", "after"]`. Measured on discoverable rows, `definitions[0]` contains a
 comma in **22.7% of es rows vs 0.9% of zh**. Every consumer keyed off `definitions[0]`
 inherits the whole list where it expects one gloss: dd (form #3 — the flashcard face,
-eip header, cdp, bubble-match), the icons8 search term, and the cluster partition.
+eip header, td's card view, game cards), the icons8 search term, and the cluster partition.
 
 **Why the model decides, in its own pass.** A comma is not always a delimiter, and the
 difference is semantic, not lexical:
@@ -511,7 +512,7 @@ server/scripts/backfill/run-ppe.sh scripts/backfill/spanish/backfill-frequency-s
 
 | Surface | Form used |
 |---|---|
-| Flashcard face, bubble-match, eip header, cdp, mini cards (td's cards page), related + used-in rows, word-search word list | dd = `resolveDisplayDefinition` (#3) — chosen sense (#6) with `definitions[0]` fallback |
+| Flashcard face, game cards, eip header, td's card view hero, mini cards (td's cards page), related + used-in rows, word-search word list | dd = `resolveDisplayDefinition` (#3) — chosen sense (#6) with `definitions[0]` fallback |
 | Discover sort cards (acp, QuickMark, Skipped) | dd (#3), resolved server-side to the default sense |
 | Memory Map prompt | the eip header's form: every sense's dd (`sortedSenseClusters` order, chosen underlined, default and commonality-4–5 senses starred (`isStarredSense`), `buildSenseSegments`), or the plain dd (#3) for a single-sense word — [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md) § 3.1 |
 | Dictionary row | each sense's dd in `sortedSenseClusters` order; with no choice of sense, EVERY gloss of the one sense (lone cluster's `glosses`, else `definitions`), paren-stripped and de-duplicated so the dd still leads (`resolveSearchRowView` → `singleSenseGlossList`, `src/utils/definitionUtils.ts`) |

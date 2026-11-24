@@ -42,7 +42,7 @@ import type { LongDefinitionPart, VocabEntry } from "../../../types";
  *
  * Layer: feature component + local state owner (src/features/flashcards/compare). Requests
  * live in CompareShelfBody (the comparison) and DictionaryWordSearch (the search).
- * Hosts (via useCompareSheet.tsx): FlashcardsLearnPage, VocabCardDetailPage, EipSheet (the
+ * Hosts (via useCompareSheet.tsx): FlashcardsLearnPage, TowerCardView (td's card view), EipSheet (the
  * Dictionary page and the Reader).
  */
 export interface CompareSheetProps {

@@ -18,6 +18,8 @@ Parent doc: [USER_DOCUMENT_FEATURE_SUMMARY.md](./USER_DOCUMENT_FEATURE_SUMMARY.m
 | Layer | Piece |
 |---|---|
 | Client util (pure) | `src/reading/documentSegmentation.ts` — gsa port, span computation, navigation |
+| Client util (pure) | `src/reading/phraseChunking.ts` (phrase rules), `wordRoles.ts` (one role per word), `phrasePick.ts` (the split keycap's pick-2), `readerDrill.ts` (tap inside the selection) — § "Phrase stepping" |
+| Client state | `src/reading/useReadingText.ts` (`phrases`, `stepSpans`, `drillAtOffset`), `useReaderStepMode.ts` (the Phrase pill's per-device setting) |
 | Client feature | `ReaderDocumentPage.tsx` (span memo) → `TextArea.tsx` (arrow keys) / `useTextSelection.ts` (auto select) / `ReaderTapOverlay.tsx` (tap gestures) / `ReaderCpcdView.tsx` (Pinyin display mode: renders the same spans as cpcd words and highlights the textarea's selected span — see USER_DOCUMENT_FEATURE_SUMMARY.md § Display modes) |
 | Server (canonical algorithm) | `server/dal/shared/segmentString.ts` — `segmentWithDict` et al. (est enrichment) |
 | Server (data source) | `POST /api/vocabEntries/byTokens` (`VocabEntryController.getEntriesByTokens`) |
@@ -216,3 +218,115 @@ the read ⇄ edit hand-off effect); `src/features/beginnerKeyboard/eligibility.t
 - `server/dal/shared/segmentString.ts` — canonical gsa; header points back here.
 - CLAUDE.md § "Never reload/reset a page on a silent token refresh" — the span
   memo's dependency list is bound by this rule.
+
+## Phrase stepping
+
+Built 2026-11-23, no migration. A **Phrase** pill (`src/reading/ReaderPhraseToggle.tsx`), just
+left of the Pinyin pill on the Reader's display strip and the cyoa story toolbar, makes one
+forward / back tap select a whole **phrase** instead of one gsa word: 太多的 in one tap, not
+three. Chinese texts only (the pill is not drawn for other languages). Per device
+(`useReaderStepMode`, localStorage `reader.stepMode`), shared by the Reader and cyoa.
+
+### Phrases come from grammar rules
+
+The gsa can only pick dictionary headwords, and most phrases are not headwords (dev has no
+det row for 太多 or 太多的). So something has to decide which neighbouring words belong
+together. `phraseChunking.ts` → `chunkPhrases` does it with nine Chinese patterns over
+**adjacent** words (no gap between them, so punctuation, spaces and line breaks always end a
+phrase). At each word the longest matching rule wins; a word that matches nothing is a
+one-word phrase. Verb phrases nest (below); otherwise rules do not chain.
+
+| # | Rule | Examples |
+|---|---|---|
+| 1 | degree adverb (`DEGREE_ADVERBS`: 太 很 好 真 最 更 多 稍微 极其 …; 多 = the exclamative "how") + adjective [+ 的 / 了 / 地] | 太多的 · 很漂亮 · 多荒唐 |
+| 2 | [第 \| determiner (`MEASURE_DETERMINERS`: 这 那 哪 每 几 某 各 上 下 好几 …)] [number, one or more words] + measure word (det lists `classifier` anywhere, or `MEASURE_WORDS`: pct's classifiers + time / measurement units); needs the determiner or a number | 三本 · 这个 · 这三个 · 三十五个 · 第二次 |
+| 3 | **verb phrase**: [去 / 来 (`SERIAL_LEADS`) +] verb [+ complement: directional (`DIRECTIONAL_COMPLEMENTS`: 起 来 去 上 下 出 到 … 起来 出来 …) or resultative (`RESULT_COMPLEMENTS`: 完 好 见 懂 住 掉 错 清楚 …)] [+ 了 / 过 / 着]; also adjective + 了 | 吃了 · 收起 · 吃完了 · 去想 · 累了 |
+| 4 | noun / pronoun / adjective / **verb phrase** + 的 (incl. 的 written for 得) | 我的 · 漂亮的 · 说的 · 收起的 |
+| 5 | [scope adverb (`LEAD_ADVERBS`: 都 也 还 就 才 根本 千万 …) \| time adverb (`VERB_ADVERBS`)] + `NEGATORS` (不 没 没有 别 甭 不要 不用 从没 绝不 …) [+ adjective / **verb phrase** [+ 的]]; a bare negator needs the predicate, an adverb + negator does not | 不好 · 没去过 · 没想的 · 没去想 · 从没去想 · 都没有 |
+| 6 | one-character verb / adjective doubled: X X · X 一 X · X 了 X | 看看 · 看一看 |
+| 7 | time / frequency / manner adverb (`VERB_ADVERBS`: 再 又 已经 正在 马上 一起 重新 …) + **verb phrase** | 再争辩 · 已经吃了 · 马上去看 |
+| 8 | [scope adverb] + pivot verb (`PIVOT_VERBS`: 请 让 叫 使 帮 教 麻烦 拜托 任 由 随 任凭 …) or preposition (`PERSON_PREPOSITIONS`: 为 给 对 跟 和 向 替 被 把 比 从 在 …) + person (`PERSON_PRONOUNS`: 你 您 我 他 … 大家 自己 别人). The person is required; 要 is left out (要我的书 is "want", rule 4) | 请你 · 就请你 · 任你 · 为你 · 给我 |
+| 9 | noun / pronoun + localizer (`LOCALIZERS`: 上 下 里 中 外 前 后 … 上面 里面 旁边 之间 以后 … 这儿 那里) | 心上 · 家里 · 门外 · 我这儿 |
+
+**Phrases nest.** Rules 4, 5 and 7 take a whole verb phrase (rule 3), not one verb, so the
+joins compose: 去想 (go to think) → 没去想 (didn't go to think) → 从没去想 (never went to
+think). `phraseChunking.ts` → `verbPhrase` / `predicate` build the inner phrase; the outer
+rule wraps it. Outside the verb phrase, rules still do not chain (一个 | 很好的 stay two).
+
+**Word lists, not special cases.** Every rule is a grammar pattern over word CLASSES. Where
+det's part of speech is too coarse to name the class, the class is a closed list of
+function words (det tags 太, 都 and 再 all "adverb", but only 太 is a degree adverb, only 都
+a scope adverb that leads a whole predicate, only 再 a time adverb that joins its verb). No
+rule names a particular sentence or a particular content word. One list per class, shared
+by every rule that uses the class (`LEAD_ADVERBS` serves rules 5 and 8). Each list was
+filled out as completely as its class allows (2026-11-23; the measure words start from the
+pct table's classifiers). A word may sit in two classes when it really does both jobs (多:
+degree "how" and manner "more", 多吃). A listed function word never stands in for an
+unprocessed content word (`FUNCTION_WORDS`), even before its own det row is enriched.
+
+`MEASURE_WORDS` covers common measure words whose LEAD part of speech is something else
+(只 leads with "adverb"). It is only consulted right after a number or determiner.
+
+### One role per word
+
+`wordRoles.ts` → `wordRole`: the det row's **lead** part of speech (`partsOfSpeech[0]`).
+"Lists X anywhere" would be wrong, because 多 lists `numeral` and 一 lists `adjective`.
+`ROLE_OVERRIDES` pins a few closed-class function words whose lead part of speech is a role
+they rarely play in running text: 在 / 给 / 比 / 对 / 跟 / 把 → preposition, 和 → conjunction,
+得 / 地 / 过 / 着 / 了 → particle. ⚠️ Owner sign-off on this map is pending (2026-11-23). A
+word with no det row, or with no part of speech yet (the backfill has not reached it), has
+no role (`isUnprocessed`). It counts as whichever **content word** a rule wants (the
+adjective, verb or noun a rule wants): next to those grammar words that is by far the
+likeliest reading, and without it every unprocessed word breaks its phrase (太残忍的,
+没纠缠, 放弃的 on dev). Rule 6 and the measure rule stay strict.
+
+### Step units vs words
+
+`useReadingText` returns **`spans`**, the gsa words, which are still what is drawn, read
+aloud, searched and listed in the split keycap. It also returns **`stepSpans`**, which is
+the phrases with the pill on and the words with it off. Everything
+that *selects* walks `stepSpans`:
+- `TextArea` arrow keys and the overlay's synthetic arrows (pages pass
+  `segmentSpans={stepSpans}`);
+- `useTextSelection`: auto-select of a placed caret, and the long-press WORD JUMP
+  (`selectSpanAtOffset`);
+- `ReaderCpcdView` clicks, through its `stepSpans` prop. The long-press WORD JUMP in Pinyin
+  mode clicks a word, which then selects that word's phrase.
+
+### Tap inside the selection
+
+A short tap **on a character of the current selection** narrows it instead of stepping:
+phrase → the gsa word under the finger → the longest headword inside it covering the tap →
+the character. A tap on a single character does nothing; unlike the est's tap-to-drill
+(SEGMENT_DRILL_DOWN.md), the chain never cancels the selection. It works the same with the
+pill off (word → sub-word → character). After a drill, the next forward or back tap steps by
+the pill's unit from the drilled range, so it lands on the next phrase rather than on the
+rest of the old one. Sentence mode never drills: a tap there still steps out of the sentence.
+
+Code: `readerDrill.ts` → `drillAt` (pure); `useReadingText` → `drillAtOffset`;
+`ReaderTapOverlay` → `onTapInsideSelection` (mobile, checked after the tiebreak-alternative
+hit test and before the zone step). The offset under the finger comes from
+`textareaOffsetAtPoint` in text mode and from the cpcd cell's `data-reader-offset`
+(`readerAlternatives.ts` → `READER_OFFSET_ATTR`, `findOffsetAt`) in Pinyin mode.
+Desktop: the Pinyin view's click-capture (`ReaderCpcdView` → `handleDrillClickCapture`). The
+desktop **Text** mode has no drill yet: a native click inside a selection collapses the
+caret, and auto-select re-expands it to the step unit.
+
+### What a phrase selection shows
+
+- **Highlight.** Text mode: the textarea's own selection. Pinyin mode: any selection that is
+  not exactly one word (a phrase, a drilled character) is painted cell by cell and joined
+  into one box, like a sentence (`ReaderCpcdView` → `rangeSelection`, `paintedRange`).
+- **The keycap splits into two halves** (USER_DOCUMENT_FEATURE_SUMMARY.md § "Split-screen
+  keycap"). The two words come from `phrasePick.ts` → `pickPhraseWords`.
+- **Tap-to-hear speaks the whole phrase** as one clip (owner's call 2026-11-23):
+  `useReadingKeycap` → `phraseSpeech` → `useTTS` → `surfaceAutoSpeakText`. The words'
+  readings are joined when every word has one.
+
+⚠️ Known gaps: tap-to-hear **preloading** (`useReaderAudioPreload`) still prefetches word
+clips, so a phrase's first play is a cold synthesis. The rules have not been tuned against
+real documents.
+
+Tests: `src/__tests__/phraseChunking.test.ts` (rules, `wordsCoveringRange`,
+`pickPhraseWords`, `drillAt`).
+

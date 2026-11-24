@@ -37,7 +37,7 @@ The central fact: **A and E are ours; B, C and D belong to the browser.** Any ru
 The app uses React Router 7's component `<BrowserRouter>`. The facts that matter:
 
 - **`location.key`** is unique per history entry, and the *same* key comes back when that entry is returned to with Back. This is the identity per-entry restore should key on (§ 1.5).
-- **`window.history.state.idx`** is the entry's index in this tab's stack, and `0` means the page is the first entry. On a deep link or reload, `navigate(-1)` from `idx === 0` **leaves the app**. Two places check this today: `AddCardsPage` → `exitToOrigin` and `VocabCardDetailPage` → `handleDelete`.
+- **`window.history.state.idx`** is the entry's index in this tab's stack, and `0` means the page is the first entry. On a deep link or reload, `navigate(-1)` from `idx === 0` **leaves the app**. One place checks this today: `AddCardsPage` → `exitToOrigin` (`VocabCardDetailPage` → `handleDelete` did too, until the routed cdp was deleted 2026-11-23).
 - **`useNavigationType()`** returns `"PUSH"`, `"REPLACE"` or `"POP"`. Every B/C/D trigger, the arrow's `navigate(-1)`, and the initial page load are all `POP`.
 - **`location.state`** is stored per entry and survives Back, so it can carry "where did I come from" (`ChallengeDetailPage` reads `state.from`).
 - **`navigate(path)`** pushes a *new* entry even when `path` is the logical parent. Tapping an arrow wired this way leaves the old entries on the stack. The next browser Back returns to the page you just "backed out of".
@@ -97,15 +97,15 @@ The arrow should land exactly where browser Back (B/C/D) would land. That keeps 
   - that parent is a tab root or hub where a duplicate history entry is harmless.
 - **Never** `slideNavigate(...)` from a back handler. It is a forward navigation with forward motion (§ 1.4).
 
-> **The helper:** `src/utils/navigateBack.ts` → `navigateBackOr(navigate, fallbackPath)`: `navigate(-1)` when `history.state.idx` is absent or > 0, else `navigate(fallbackPath, { replace: true })`. Callers: every Menu-popover destination's arrow (Community, Reader, Tester Dashboard, fallback `/`), `VocabCardDetailPage` → `handleDelete` and `AddCardsPage` → `exitToOrigin`. It is a plain function, not a hook, so it can be called from inside callbacks that already hold `navigate`.
+> **The helper:** `src/utils/navigateBack.ts` → `navigateBackOr(navigate, fallbackPath)`: `navigate(-1)` when `history.state.idx` is absent or > 0, else `navigate(fallbackPath, { replace: true })`. Callers: every Menu-popover destination's arrow (Community, Reader, Tester Dashboard, fallback `/`) and `AddCardsPage` → `exitToOrigin` (`VocabCardDetailPage` → `handleDelete` was one until 2026-11-23). It is a plain function, not a hook, so it can be called from inside callbacks that already hold `navigate`.
 
 ### 2.2 Rule 2: A consumed entry is replaced, not left behind
 
 If the page just left can never be returned to meaningfully, the exit must use `{ replace: true }`. Otherwise Back lands on a dead page. Current examples:
-- the page's object was deleted (none today — `VocabCardDetailPage` → `handleDelete` goes Back instead, since the card survives as a `'provisional'` row);
+- the page's object was deleted (none today — td's card view's remove button, `TowerCardView` → `handleDelete`, closes the view with the same Back as its arrow, since the card survives as a `'tracked'` row);
 - a one-shot action spent it (`ChallengeRoundScoreboard` "Next round");
 - the learner is not allowed there (the `isFeatureTester`-or-`isAdmin` bounce);
-- a required launch parameter is missing (Bubble Match with no level, Word Search with no mode).
+- a required launch parameter is missing (Word Search with no mode).
 
 ### 2.3 Rule 3: Back returns the page as it was left
 
@@ -178,7 +178,7 @@ This is also the fallback source for Rule 1's first-entry case.
 
 | Page | File | Arrow | R1 | R3 restore | Guard |
 |---|---|---|---|---|---|
-| Card detail (saved) | `VocabCardDetailPage.tsx` | `navigate(-1)` | ⚠️ no idx guard (its delete is guarded) | — | — |
+| Card detail (saved) — td's card view, no route since 2026-11-23 | `deckTower/cardView/useTowerCardView.ts` → `requestClose` | `navigate(-1)` onto td's own entry: opening PUSHES an entry on `/` with route state `{ towerCard: <vet id> }`, and any Back (arrow, edge swipe, system back) is a POP the hook's watcher turns into the close | ✅ the entry is always the view's own push, and a reload strips the stale `towerCard` key at mount, so `-1` never leaves the app | ✅ td is not remounted, so the cards page keeps its state | — |
 | Deck Tower | `DeckTowerPage.tsx` at `/` | tab root (Deck) | — | ✅ world restored on POP (`useRememberTowerWorld` stamps `towerWorld` into its entry); ⚠️ cards page not restored | — |
 | Add Cards | `AddCardsPage.tsx` → `leave` | `state.exitTo` (td's `SORT_EXIT`, dashing back onto the tower — NodePage `exitDash`), else `navigate("/")` with `towerWorld: "core"`; set mode `exitToOrigin` (`-1`, else `?from=`, else `/`) | ✅ set mode (idx-guarded) | — | done popup (arrow-independent) ✅ |
 | flp (inside td, no route) | `FlashcardsLearnPage.tsx` → `handleBack` | `leaveSession` → `tower.onExit` (the camera climbs back out) | — | — | provisional sort offer (arrow-only) ✅ |
@@ -189,7 +189,7 @@ This is also the fallback source for Rule 1's first-entry case.
 | Settings | `SettingsPage.tsx` | `navigate("/")` | ✅ (normally read as AccountSheet's tab; this route is `/settings/account`'s parent) | — | — |
 | Community / Reader / Tester Dashboard | Menu-popover destinations | `navigateBackOr(navigate, "/")` | ✅ idx-guarded | — | — |
 | Reader document | `ReaderDocumentPage.tsx` | `navigate("/reader")` | ✅ single parent | — | ⚠️ no guard for an unsaved inline edit |
-| Bubble Match, Hydra Bubbles, Match Speed, Word Search | game pages | `useGameBack` → challenge or `GAMES_HUB_EXIT` (`/`; pages off behind `standaloneGames`) | ✅ | Word Search: saved game | ✅ confirm + swipe blocked + unmount finalise |
+| Match Speed, Word Search | game pages | `useGameBack` → challenge or `GAMES_HUB_EXIT` (`/`; pages off behind `standaloneGames`) | ✅ | Word Search: saved game | ✅ confirm + swipe blocked + unmount finalise |
 >>>
 
 
@@ -201,8 +201,8 @@ This is also the fallback source for Rule 1's first-entry case.
    - lets a following browser Back return to the page just left.
 
    *Guess at intent:* the parent should be "held beneath" like a forward drill-in. *Proposed:* switch to Rule 1 (`navigate(-1)` with fallback), keeping `ChallengeDetailPage`'s `state.from` as its fallback.
-2. **A `navigate(-1)` arrow has no first-entry guard:** the saved-card cdp. Opened from a shared link or after a reload, the arrow leaves the app. `PageHeader`'s default `onBack` has the same problem. *Proposed:* the Rule 1 helper, `navigateBackOr` (the saved cdp's `handleDelete` already uses it).
-3. **td's cards page is not restored on Back.** Returning from a cdp remounts td on the platform line with the search, sort and filter reset. On iOS this is also the § 1.6 snapshot mismatch. *Proposed:* a per-entry snapshot (Rule 3) of the cards page's climb, search, sort and filter.
+2. **A `navigate(-1)` arrow has no first-entry guard:** ~~the saved-card cdp~~ (deleted 2026-11-23; td's card view pops only an entry it pushed itself). `PageHeader`'s default `onBack` still has the problem. *Proposed:* the Rule 1 helper, `navigateBackOr`.
+3. **td's cards page is not restored on Back.** Returning from a cdp remounted td on the platform line with the search, sort and filter reset. *(2026-11-23: moot for cards — a card now opens in place as td's card view, so td never unmounts; the finding still holds for returning from acp or the notebook.)* On iOS this is also the § 1.6 snapshot mismatch. *Proposed:* a per-entry snapshot (Rule 3) of the cards page's climb, search, sort and filter.
 4. **The Reader document has no guard for an inline edit.** `ReaderDocumentPage` → `handleBack` leaves mid-edit with nothing said. Add a Rule 4 confirm if an unsaved edit is worth protecting.
 
 ### 3.3 Open questions
@@ -220,12 +220,12 @@ None: the Dictionary page never navigates away to show a result (it raises the e
 
 | Section | Code |
 |---|---|
-| § 1.2 History model | React Router `useLocation` (`key`, `state`), `useNavigationType`; `AddCardsPage.tsx` → `exitToOrigin`, `VocabCardDetailPage.tsx` → `handleDelete` (`history.state.idx`) |
+| § 1.2 History model | React Router `useLocation` (`key`, `state`), `useNavigationType`; `AddCardsPage.tsx` → `exitToOrigin` (`history.state.idx`); `deckTower/cardView/useTowerCardView.ts` (`history.state.usr.towerCard`) |
 | § 1.3 Arrow mechanics | `src/hooks/usePageSlide.ts` (`exit`, `armSkipNextEnter`, `clearSkipNextEnter`); `src/components/LeafPage.tsx`, `NodePage.tsx` (`handleBack`); `src/components/PageHeader.tsx` (default `onBack`); `src/components/Layout.tsx` (latch clear) |
 | § 1.4 Motion | `src/hooks/useSlideNavigate.ts`; `src/utils/pageTransition.ts` (`routeSlideDir`); `usePageSlide.ts` (`POP` start-in-place) |
 | § 1.5 / Rule 3 State | none (no restoring store exists) |
 | § 1.6 Platform | `src/hooks/useBlockEdgeSwipe.ts` |
-| Rule 2 | `src/games/runtime/ChallengeRoundScoreboard.tsx`; access bounce in `TesterDashboardPage`; `BubbleMatchPage`, `WordSearchPage` launch guards |
+| Rule 2 | `src/games/runtime/ChallengeRoundScoreboard.tsx`; access bounce in `TesterDashboardPage`; `WordSearchPage` launch guard |
 | Rule 4 | `src/games/runtime/useGameBack.ts`; `useChallengeRound.ts` (unmount / `pagehide` finalise); `IWSceneEditorPage.tsx` → `handleBack`; `FlashcardsLearnPage.tsx` → `handleBack` + `ProvisionalSortOffer` |
 | § 3.1 acp / flp rows | `AddCardsPage.tsx` → `leave`, `dashBack`; `DeckTowerPage.tsx` → `SORT_EXIT`; `FlashcardsLearnPage.tsx` → `leaveSession` (`tower.onExit`) |
 | Rule 6 | `ChallengeHistoryPage.tsx` (`state.from`) → `ChallengeDetailPage.tsx` (`backTo`); `ProvisionalSortOffer` → `AddCardsPage.tsx` (`?from=`, `originLabelFor`) |

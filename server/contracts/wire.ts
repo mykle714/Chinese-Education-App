@@ -1137,18 +1137,16 @@ export function isHiddenBucket(bucket: StarterPackBucket | string | null | undef
  * rather than refusing to start. Nothing may block a game or flp on card count.
  */
 export type CardBaselineSurface =
-  | 'bubble-match'
   | 'match-speed'
   | 'speed-reading'
   | 'word-search'
-  | 'bucket-drop'
   | 'flp';
 
 /**
  * How many playable cards each surface needs before it can build a round.
  *
  * Single source of truth — previously duplicated across
- * `src/games/bubble-match/constants.ts` (distribution sum), `match-speed/constants.ts`
+ * the old Bubble Match distribution sum (game archived 2026-11-23), `match-speed/constants.ts`
  * (ENTRY_GATE_CARDS), `speed-reading/constants.ts` (ENTRY_GATE_CARDS),
  * `word-search/constants.ts` (TOTAL_WORDS) and the old decks page's MIN_LIBRARY_CARDS
  * (that page was deleted 2026-11-04), where they could drift apart from the
@@ -1160,13 +1158,9 @@ export type CardBaselineSurface =
  * count cannot express — see PROVISION_RETRY_FACTOR.
  */
 export const CARD_BASELINES: Record<CardBaselineSurface, number> = {
-  'bubble-match': 20,
   'match-speed': 20,
   'speed-reading': 20,
   'word-search': 9,
-  // A run is 20 words (docs/BUCKET_DROP_GAME.md § 1) — src/games/bucket-drop/constants.ts
-  // GAME_DISTRIBUTION sums to this.
-  'bucket-drop': 20,
   flp: 20,
 };
 
@@ -1223,40 +1217,6 @@ export const LEARN_NOW_LOW_THRESHOLD = CARD_BASELINES.flp;
 export const LEARN_NOW_ENOUGH_THRESHOLD = LEARN_NOW_LOW_THRESHOLD + 10;
 
 /**
- * Surfaces whose ENTIRE supply model is the partial refill.
- *
- * Background. `GET /api/onDeck/gamePool` treats a request carrying `need` as a
- * mid-session top-up and, historically, refused to lend on it: Bubble Match's
- * "Play Again" keeps the pairs you missed and refills the ones you cleared, and
- * lending there would quietly grow the player's deck on every tap.
- *
- * That rule assumes a game rolls its board ONCE and refills are the exception.
- * Hydra Bubbles inverts it — it is endless, it fetches every spawn as a refill,
- * and it declares no baseline at all, so under the blanket exemption it could
- * never lend a single card at any point in a run (docs/HYDRA_BUBBLES.md § 6.1).
- *
- * So the exemption becomes opt-out rather than universal: a surface listed here
- * may lend on a refill. Nothing else changes — the collection/deck restriction
- * still blocks lending outright, because a deck round made of non-deck words is
- * not that deck.
- *
- * Deliberately NOT folded into `CardBaselineSurface`: these are orthogonal
- * questions ("how many cards do you need up front?" vs "may you lend mid-run?"),
- * and Hydra answers the first with "none". Memory Map is the other surface that
- * lends without a `CARD_BASELINES` entry: it fills its own slots to
- * `MEMORY_MAP_CAPACITY` through `ProvisionalCardService.acquireLentCards` directly
- * (see that constant for why it is not a baseline).
- */
-export type RollingSupplySurface = 'hydra-bubbles';
-
-export const ROLLING_SUPPLY_SURFACES: readonly RollingSupplySurface[] = ['hydra-bubbles'];
-
-/** Narrow an untrusted `?surface=` value to a rolling-supply surface. */
-export function isRollingSupplySurface(raw: string | null | undefined): boolean {
-  return ROLLING_SUPPLY_SURFACES.includes(raw as RollingSupplySurface);
-}
-
-/**
  * Ceiling on over-provisioning, as a multiple of the surface's baseline.
  *
  * Word Search can be handed exactly `baseline` cards and still fail to build a grid,
@@ -1282,12 +1242,9 @@ export const PROVISION_RETRY_FACTOR = 3;
  * payload on the wire — only this policy, shared so both sides agree.
  */
 export const CARD_BASELINE_ITEMIZED: Record<CardBaselineSurface, boolean> = {
-  'bubble-match': true,
   'match-speed': false,
   'speed-reading': true,
   'word-search': true,
-  // A fixed 20-word stack, dealt up front — the notice can name every lent word.
-  'bucket-drop': true,
   flp: false,
 };
 
@@ -1982,7 +1939,30 @@ export interface TextBase {
   createdAt: string;
   /** Last save (migration 194; TextDAL.updateFields). Drives the "Recently edited" sort. */
   updatedAt: string;
+  /**
+   * READING CHOICES (migration 207): per-occurrence reading overrides for multi-reading
+   * words, picked by tapping the Reader keycap's headword. Sorted by `start`, never
+   * overlapping; `[]` when none. docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Reading choices".
+   */
+  pronunciationOverrides: PronunciationOverride[];
 }
+
+/**
+ * One READING CHOICE on a document (texts."pronunciationOverrides", migration 207): the
+ * occurrence `content.slice(start, end) === text` reads as `reading` (numbered pinyin, one
+ * syllable per character, space-separated: "de2", "zhang3 da4") instead of its default.
+ * Written by src/reading/usePronunciationOverrides.ts; validated by TextService
+ * (`normalizePronunciationOverrides`).
+ */
+export interface PronunciationOverride {
+  start: number;
+  end: number;
+  text: string;
+  reading: string;
+}
+
+/** Most reading choices one document may hold (TextService; far above any real use). */
+export const PRONUNCIATION_OVERRIDES_MAX = 5000;
 
 /** The Reader collections a document can belong to (texts.kind, migration 194). */
 export const TEXT_KINDS = ['document', 'journal'] as const;
@@ -2424,24 +2404,13 @@ export interface ChallengeScoringSpec {
    * behave identically (§ 5.4).
    */
   missChargedOncePerWord: boolean;
-  /** Per-game extras: Bubble Match's survival bonus, Word Search's time penalty. */
+  /** Per-game extras: Word Search's time penalty and hint charge. */
   bonuses?: ChallengeScoringBonus[];
 }
 
 /**
  * A per-game scoring extra, expressed as data so the server can evaluate it too.
  *
- * `survival` — awarded `points` at `trigger`, held flat for `graceMs`, then decaying
- *   `decayPoints` every `decayIntervalMs` down to `floor`, and forfeited entirely if
- *   the run is LOST. Bubble Match's +500 is deliberately large and all-or-nothing
- *   (Q68): Bubble Match *is* a survival game, so a challenge score that ignored
- *   survival would be scoring a different game than the one played.
- *
- *   ⚠️ THE KIND IS NAMED FOR ITS FIRST USER, NOT FOR WHAT IT DOES. What it actually
- *   expresses is "a decaying pot, armed by an event and forfeited on a loss", which
- *   is why Hydra's CLEAR BONUS (`trigger: 'runStart'`) also uses it: there the pot is
- *   armed at t=0 and the loss condition is "did not clear the challenge set", so the
- *   decay is simply time-to-clear. `decayingPot` would be the honest name.
  * `elapsedPenalty` — `points` (negative) per `decayIntervalMs` after
  *   `graceMs` of ACCUMULATED ACTIVE time. Word Search's −10/s after 1:00.
  * `perUse` — `points` each time the player uses something. Word Search's −20 hint.
@@ -2454,25 +2423,14 @@ export interface ChallengeScoringSpec {
 export interface ChallengeScoringBonus {
   ruleId: string;
   label: string;
-  kind: 'survival' | 'elapsedPenalty' | 'perUse';
+  kind: 'elapsedPenalty' | 'perUse';
   points: number;
-  /**
-   * `survival` only: what arms the pot. `ceilingDrop` is Bubble Match's dropping
-   * ceiling; `runStart` arms it at t=0, which is what turns the decay into a
-   * time-to-finish measure (Hydra's clear bonus).
-   */
-  trigger?: 'ceilingDrop' | 'runStart';
-  decayPoints?: number;
   decayIntervalMs?: number;
-  floor?: number;
   /**
-   * Free time before the decay/penalty starts accruing, in ACTIVE ms. On
-   * `elapsedPenalty` it is measured from the start of the run; on `survival` it is
-   * measured from the moment the pot was armed.
+   * Free time before the penalty starts accruing, in ACTIVE ms, measured from the
+   * start of the run.
    */
   graceMs?: number;
-  /** `survival` only: forfeit the whole bonus when the run is lost. */
-  forfeitOnLoss?: boolean;
 }
 
 /**
@@ -2512,41 +2470,11 @@ export interface ChallengeGameSpec {
  * here. That test is what preserves "derived from the registry" — adding a game and
  * forgetting this table is a red test, not a silently ineligible game.
  *
- * Five entries today — Hydra Bubbles was the fourth, Bucket Drop (Pinyin) the fifth.
- * The draw is without repetition, and the next recognition/production game joins the
+ * Two entries today: Bubble Match, Hydra Bubbles and Bucket Drop (Pinyin) were
+ * eligible until they were archived on 2026-11-23 (docs/ARCHIVED_FEATURES.md). The draw is without repetition, and the next recognition/production game joins the
  * rotation with no code change beyond its own entry.
  */
 export const CHALLENGE_GAMES: readonly ChallengeGameSpec[] = [
-  {
-    gameId: 'bubble-match',
-    mode: null,
-    title: 'Bubble Match',
-    markType: 'recognition',
-    scoring: {
-      contestedHit: 100,
-      contestedMiss: -100,
-      fillerHit: 20,
-      fillerMiss: -20,
-      missChargedOncePerWord: true,
-      bonuses: [
-        {
-          ruleId: 'survival',
-          label: 'survival bonus',
-          kind: 'survival',
-          points: 500,
-          trigger: 'ceilingDrop',
-          decayPoints: -100,
-          decayIntervalMs: 2000,
-          floor: 0,
-          // Losing forfeits the whole thing (Q68). Bubble Match IS a survival
-          // game, so a challenge score that ignored survival would be scoring a
-          // different game than the one played — and the cliff is what makes the
-          // last thirty seconds tense.
-          forfeitOnLoss: true,
-        },
-      ],
-    },
-  },
   {
     gameId: 'match-speed',
     mode: null,
@@ -2576,84 +2504,6 @@ export const CHALLENGE_GAMES: readonly ChallengeGameSpec[] = [
           graceMs: 100_000,
         },
       ],
-    },
-  },
-  {
-    gameId: 'hydra-bubbles',
-    mode: null,
-    title: 'Hydra Bubbles',
-    markType: 'recognition',
-    scoring: {
-      contestedHit: 100,
-      contestedMiss: -100,
-      // FILLER PAYS NOTHING HERE — the one game where it does not (2026-09-02).
-      // Everywhere else filler is near-free points that cannot decide the match. In
-      // Hydra it could: the run ends on the LAST contested clear and nothing charges
-      // for time, so a player who cleared eight of nine and then farmed filler bubbles
-      // outscored one who finished cleanly and fast. Overflow forfeits nothing either
-      // (there is no survival bonus to lose), so the farm had no downside beyond the
-      // risk of a wrong match. Zeroing the reward removes the incentive at the source;
-      // the clear bonus below then makes dawdling actively expensive rather than
-      // merely unprofitable.
-      //
-      // `fillerMiss` deliberately STAYS negative: filler clears are not optional — a
-      // drain clear is how the board is kept off the ceiling — so filler must remain
-      // pure risk rather than becoming inert. Right earns nothing, wrong still costs.
-      fillerHit: 0,
-      fillerMiss: -20,
-      missChargedOncePerWord: true,
-      bonuses: [
-        {
-          ruleId: 'clearBonus',
-          label: 'clear bonus',
-          // The `survival` KIND, not a survival bonus — see the kind's own note. Here
-          // it is a decaying pot armed at t=0 and forfeited unless the set is cleared,
-          // which is how Hydra finally scores TIME (O2, docs/HYDRA_BUBBLES.md § 11).
-          kind: 'survival',
-          trigger: 'runStart',
-          points: 300,
-          // Full pot for the first minute, then −25 every 15 s, reaching 0 at 4:00 of
-          // ACTIVE time. The grace exists because we have no telemetry on real clear
-          // times (nothing stores a round's duration), so the numbers are a first
-          // guess: a flat head start means a guess that is too aggressive cannot
-          // punish a genuinely fast run, only fail to separate it.
-          graceMs: 60_000,
-          decayPoints: -25,
-          decayIntervalMs: 15_000,
-          floor: 0,
-          // THE WHOLE REASON THIS IS SAFE. A naive per-second penalty charged every
-          // run would pay players to fail fast: a run that ends on a wrong match at
-          // 0:30 has a better clock than one that clears all nine in 4:00, because
-          // finishing takes longer than quitting BY DEFINITION. Forfeiting on a loss
-          // means the term exists only for runs that are actually comparable — every
-          // player holding it cleared the same nine words — so it can separate
-          // finishers from each other without ever inverting the contested ranking.
-          forfeitOnLoss: true,
-        },
-      ],
-      // NO SURVIVAL BONUS in the Bubble Match sense, which is the opposite call from
-      // Bubble Match's, on purpose. Bubble Match's run has a fixed length (its 20
-      // pairs), so "how long did you last" is a comparable number. Hydra is ENDLESS: a
-      // free-play run ends only when the player errs, so survival time is unbounded
-      // and would swamp every other term. The clear bonus above measures the opposite
-      // thing — how fast the run was FINISHED — and only for runs that were.
-      //
-      // Instead the challenge SHAPE carries the difficulty, exactly as Match Speed's
-      // alternation rule does (docs/HYDRA_BUBBLES.md § 7.5): challenge words ride the
-      // BLOOM slot (yellow was removed in the 2026-08-21 two-colour rework), the run
-      // ends the moment the LAST of them is cleared, and a wrong match ends it early
-      // with the unmatched words scoring zero. That makes CLEARING THE SET the goal —
-      // a player who cleared 8 of 9 outranks one who cleared 3, which speed alone
-      // could not express — and with filler at 0 the round's score IS the contested
-      // ledger: a hard ceiling of CHALLENGE_WORD_COUNT × contestedHit, in steps of 100.
-      //
-      // ⚠️ THE BONUS CANNOT INVERT THE WORD RANKING, and this is worth checking rather
-      // than assuming. A complete run scores 900 + bonus ≥ 900. The best possible
-      // PARTIAL run is eight contested clears and the miss that ended it: 800 − 100 =
-      // 700. So every complete run outranks every partial one no matter how the pot is
-      // tuned, and the pot's size is purely a statement about how much speed should
-      // separate two players who both cleared the set. 300 against 900 puts it in the
-      // same register as Bubble Match's 500 against 900 (O2, resolved 2026-09-02).
     },
   },
   {
@@ -2689,41 +2539,6 @@ export const CHALLENGE_GAMES: readonly ChallengeGameSpec[] = [
           label: 'hints used',
           kind: 'perUse',
           points: -20,
-        },
-      ],
-    },
-  },
-  {
-    gameId: 'bucket-drop',
-    mode: 'pinyin',
-    title: 'Bucket Drop (Pinyin)',
-    // Eligible as Pinyin ONLY, like Word Search. The No-Pinyin mode (pinyin hidden)
-    // marks READING, so a bare gameId here would let a challenge draw it.
-    // Production: the English bucket is the prompt and the foreign word the answer
-    // (src/games/bucket-drop/constants.ts → MODE_CONFIGS).
-    markType: 'production',
-    // No `languages`: es plays the Pinyin mode as plain words and still marks
-    // production (constants.ts → runTrackFor), so the round is the same game in both.
-    scoring: {
-      // Unlike Word Search a drop CAN be wrong, so misses are charged — once per word,
-      // matching the free-play rule that only a word's first miss writes a mark.
-      contestedHit: 100,
-      contestedMiss: -100,
-      fillerHit: 20,
-      fillerMiss: -20,
-      missChargedOncePerWord: true,
-      bonuses: [
-        {
-          // A stopwatch game, scored like Word Search's: free until the gold time,
-          // then −10 per second of ACCUMULATED ACTIVE time. The grace is 45 s rather
-          // than Word Search's 60 because a gold Bucket Drop run is 45 s
-          // (src/games/bucket-drop/constants.ts → MEDAL_THRESHOLDS).
-          ruleId: 'timePenalty',
-          label: 'time penalty',
-          kind: 'elapsedPenalty',
-          points: -10,
-          decayIntervalMs: 1000,
-          graceMs: 45_000,
         },
       ],
     },

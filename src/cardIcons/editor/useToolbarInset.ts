@@ -24,8 +24,8 @@ const OVERLAP_GAP = 8;
 /**
  * useToolbarInset — how many EXTRA px a surface must reserve at the top for the advanced-edit
  * toolbar. Shared by both fie surfaces: the flp (`FlashcardsLearnPage`, where the reservation
- * is the card slot's top padding) and the cdp (`VocabCardDetailPage`, where it is the content
- * column's). See docs/CARD_ICON_LAYOUT.md.
+ * is the card slot's top padding) and td's card view (`deckTower/cardView/TowerCardView`, where it is the
+ * body column's top padding). See docs/CARD_ICON_LAYOUT.md.
  *
  * The toolbar lives in `CardEditPanel` — an eip-style sheet portaled to the phone frame and
  * pinned to its very top, over the page header — so it takes no flow height; without a

@@ -18,7 +18,7 @@ writing bar), [PROVISIONAL_CARDS.md](./PROVISIONAL_CARDS.md) (hidden character r
 |---|---|---|
 | 1 | Eight levels | `src/components/handwriting/` |
 | 2 | Writing Grid game | `src/games/writing-grid/`, `server/services/WritingGridService.ts` |
-| 2a | Personal bests (every game but Bubble Match / Memory Map) | `game_personal_bests`, `src/games/shared/usePersonalBest.ts` |
+| 2a | Personal bests (every game but Memory Map) | `game_personal_bests`, `src/games/shared/usePersonalBest.ts` |
 | 3 | Writing flp (single characters) | `?world=writing`, `FlashcardsLearnPage/useWritingFlashcard.tsx` + `WritingCardFace.tsx` |
 | 3a | Writing mastery lives on characters | migration 170, `FlashcardMarkService.applyWritingResult` |
 | 3b | Source words ("From your words") | `FlashcardsLearnPage/WritingSourceWords.tsx`, `VocabEntryDAL.findWritingSourceWordsForCharacters` |
@@ -166,6 +166,13 @@ end popup and no Play Again. The personal best records on a finished run, and so
    Tap a cell → `WritingFocusEditor` at its level (the slot's, or a hint's — § "Hints");
    tap out → top-1 Verify → ✓ / ✗ (the verdict stamp below), and a writing mark on the character's own card
    (`surface: "writing-grid"`). A ✗ cell reopens as a fresh attempt (new ink, new clock).
+   A Verify that **could not run** (`recognizeHandwriting` threw: network error, the proxy's
+   502) records nothing — no ✓/✗, no hint point, no mark (`WritingGridStage` →
+   `handleCellDone`). The cell goes back to `idle` with its ink kept; an idle cell reopens
+   with its ink, so tapping it and tapping out again retries (after the run too: the
+   practice "unchanged drawing" skip applies only to a cell that has a verdict). No message
+   of its own: the request was retried quietly first, and a lost connection is said by the
+   shared notice (NOTIFICATIONS.md § 3a). Until 2026-11-23 a failed check was graded ✗ and marked wrong.
 4. **End** — every cell ✓ stops the stopwatch. Time, speed tier (`SPEED_TIERS` via
    `speedTierFor`), personal best; a win (`writingGrid` key) is logged per finished board. The board shows every
    cell's **own canvas** — the learner's ink over the character's **full still shadow**
@@ -248,12 +255,10 @@ Direction and unit per game: `server/contracts/personalBests.ts` → `PERSONAL_B
 | Word Search | completion ms (lower) | `pinyin` / `no-pinyin` |
 | Match Speed (`match-speed-30`) | finish time, ms (lower) | `mixed` (`PERSONAL_BEST_MODE`; the old `review` / `challenge` rows were deleted by migration 182) |
 | Speed Reading | raw finish ms (lower) | `default`; finished runs only. Bests recorded before 2026-11-10 include the removed +3 s/wrong penalty |
-| Hydra Bubbles | matches (higher) | `default` |
 | Writing Grid | completion ms (lower) | `default` |
 | Superposition | completion ms (lower) | `default` |
-| Bucket Drop | completion ms (lower) | `pinyin` / `no-pinyin`; full 20-word runs only, never a challenge round |
 
-Bubble Match (performance floor + ceiling) and Memory Map have none. Study Challenge rounds
+Memory Map has none. Study Challenge rounds
 are never recorded (they are dealt from the round's set).
 
 - API: `GET /api/users/me/personal-bests?language&game`, `POST … { language, game, mode, value }`
@@ -333,6 +338,28 @@ so it opens only after the submit tap.
   `FlashCardSection.shakeNonce` in place of `useCardDrag`'s) and the empty cell
   pulses its **outline** (not its ground) `COLORS.orgMk` twice (`WritingCardFace.flashNonce` → `CellBox.flash`) to show the
   learner what to fill. Orange, not red: red (the ✗ icon) already means "graded wrong".
+- **A check that could not run** (`useWritingFlashcard` → `handleSubmit`): when the
+  recognizer request throws — network error, or the proxy's 502 when Google is down
+  (docs/HANDWRITING_RECOGNITION.md: there is no fallback recognizer) — the card is **not
+  graded**: no flip, no verdict, so no mark is ever written (marks come only from `sendOff`
+  on a graded back). The card stays on its front with the ink kept, and the bottom line
+  turns from "Checking…" to "Couldn't check · tap to try again" (`checkFailed` →
+  `WritingCardFace`), so the same tap retries. The request was already retried quietly
+  (`recognize.ts`, `retry: true`; NOTIFICATIONS.md § 3a); the message clears on the next
+  submit, an edited cell or a card change. A drawing the proxy refuses (400 `ERR_BAD_INK`)
+  is graded ✗ instead, since a retry would fail the same way.
+  Until 2026-11-23 a failed check graded the character ✗ and its dismiss saved a wrong mark.
+  A recognizer that ran and read nothing (`top1: null`) is still a real ✗.
+- **Outline loading**: the cell's outline is Hanzi Writer drawing `hanzi-writer-data`
+  stroke data (`loadCharData`: a bundled per-character chunk, the CDN for a character
+  outside it), so a cell is blank until it lands. `HanziGuide` reports the load
+  (`onLoadingChange` → `WritingStage.onGuideLoadingChange` →
+  `WritingCardFace.onGuideLoadingChange`), and the hook keeps the loading card's id
+  (`guideLoadingFor`); while it is the FRONT card's, the screen-centred `PawnLoader` shows
+  (after its 800 ms delay, so the normal chunk load never flashes it; gated by the page's
+  `loaderAllowed`). A failed load settles the cue and leaves the cell blank (no retry).
+  Only faces that draw a guide report, so Memorize / Flash / Blank / Timed fronts never
+  show it.
 - **Back** — the same, with ✓ / ✗ (stamped in once the flip finishes — see below) and the whole outline behind the ink. Tapping
   the **cell** inspects it enlarged; tapping **anywhere else** on the card
   (`FlashCardSection.onCardClick`) sends it off — right iff the character was correct.

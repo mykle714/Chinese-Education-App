@@ -32,7 +32,8 @@ and `src/types.ts`).
 | `iconId` | optional FK → `icons8("icons8Id")`, `ON DELETE SET NULL` (**migration 193**); the learner-picked document icon. NULL = default glyph. See § Document icon |
 | `kind` | `'document'` (default) / `'journal'`, `CHECK chk_texts_kind` (**migration 194**); the Reader collection. Set on create only. See § Collections |
 | `createdAt` | `now()`. Nullable in the schema (no `NOT NULL`), though every API insert sets it |
-| `updatedAt` | `now()` default, `NOT NULL` (**migration 194**, backfilled from `createdAt`); stamped by `TextDAL.updateFields` on every update. Drives the "Recently edited" sort |
+| `updatedAt` | `now()` default, `NOT NULL` (**migration 194**, backfilled from `createdAt`); stamped by `TextDAL.updateFields` on every update **except** a reading-choices-only one (`touchUpdatedAt: false`). Drives the "Recently edited" sort |
+| `pronunciationOverrides` | jsonb `NOT NULL DEFAULT '[]'` (**migration 207**): the document's reading choices, `[{start, end, text, reading}]` (`PronunciationOverride` in `server/contracts/wire.ts`). See § Reading choices |
 
 Removed columns: `description` and the validation-doc linkage
 (`validationEntryId` / `validationLanguage` / `validationField`) were dropped by
@@ -62,7 +63,7 @@ Title derivation reads det through `IDictionaryDAL.findMultipleByWord1`.
 | GET | `/api/texts/stats` | — | counts / total characters |
 | GET | `/api/texts/:id` | — | one document |
 | POST | `/api/texts` | `{ content, language?, iconId?, kind?, title? }` | `title` absent/blank → the server derives it; `kind` ∈ `TEXT_KINDS` (default `document`) |
-| PUT | `/api/texts/:id` | `{ title?, content?, iconId? }` | owner only; `language` is rejected; `iconId: null` clears the icon, an absent `iconId` leaves it; every update stamps `updatedAt` |
+| PUT | `/api/texts/:id` | `{ title?, content?, iconId?, pronunciationOverrides? }` | owner only; `language` is rejected; `iconId: null` clears the icon, an absent `iconId` leaves it; `pronunciationOverrides` replaces the whole list (§ Reading choices); every update stamps `updatedAt` except a choices-only one |
 | DELETE | `/api/texts/:id` | — | owner only |
 | POST | `/api/texts/explainSentence` | `{ sentence, language, tz }` | the AI explanation of one highlighted sentence, tailored to the caller → `SentenceExplanationResult`; 400 over `EXPLAIN_SENTENCE_MAX_LENGTH`, 429 when the shared daily AI budget is spent (§ Sentence Explain) |
 
@@ -115,29 +116,32 @@ means whichever of the two folders holds it.
 | `useReaderSettings.ts` | auto word-select (always on) + the per-device `displayMode` (held by `useReaderDisplayMode.ts` **(reading)**, shared with the cyoa story page) |
 | `useSegmentOverrides.ts` **(reading)** | the tiebreak switches made in the Pinyin view (docs/READER_SEGMENTATION.md § Tiebreak alternatives) |
 | `ReaderDisplayToggle.tsx` **(reading)** | the Pinyin pill (§ Display modes) |
+| `ReaderPhraseToggle.tsx` + `useReaderStepMode.ts` **(reading)** | the Phrase pill, left of the Pinyin pill (Chinese documents), and its per-device `reader.stepMode` (READER_SEGMENTATION.md § "Phrase stepping") |
+| `phraseChunking.ts`, `wordRoles.ts`, `phrasePick.ts`, `readerDrill.ts` **(reading)** | phrase stepping's pure logic: the grammar rules, one role per word, the split keycap's pick-2, tap-inside-the-selection (READER_SEGMENTATION.md § "Phrase stepping") |
+| `ReaderPhraseSplitFace.tsx` **(reading)** | the keycap's split-screen face for a selected phrase (§ Split-screen keycap) |
 | `englishTranslation.ts` + `useEnglishTranslations.ts` **(reading)** | English word → the Chinese det entry it translates to, for the keycap (§ English words) |
 | `ReaderKeycapPawn.tsx` **(reading)** | the keycap's empty face: a small resting pawn (§ Look) |
 | `ReaderEditToolbar.tsx` + `useReaderContentEditor.ts` | undo/redo/cancel/save for inline edit |
 | `DeleteDocumentDialog.tsx` | delete confirmation for the document header's trash icon |
 | `readerStyles.ts` **(reading)** | the shared `sx` fragments of the look below |
 | `ReaderReadAloudButton.tsx` + `useReaderReadAloud.ts` + `readAloudClauses.ts` **(reading)** | the display strip's play button: reads the document aloud from the caret (§ Read aloud) |
-| `useReaderAudioSettings.ts` **(reading)** + `src/components/AudioModeChip.tsx` → `ReaderAudioChip` | the display strip's audio chip: the Reader's own mute / default / media setting (§ Tap-to-hear) |
+| `useReaderAudioSettings.ts` **(reading)** + `src/components/AudioModeChip.tsx` → `ReaderAudioChip` | the header's audio chip (right slot, before Edit/Delete): the Reader's own mute / default / media setting (§ Tap-to-hear) |
 | `src/components/VocabDisplayCard.tsx` | the dictionary keycap above the reading box (callers: the Reader and the Adventures play page, both through `useReadingKeycap`) |
-| `ReaderSearchKey.tsx` + `ReaderSearchBar.tsx` + `useReaderSearch.ts` + `readerSearch.ts` | find-in-document: the strip's search key, the bar it opens into, its state, and the pure text/pinyin matcher (§ Search) |
+| `src/reading/ReaderIconKey.tsx` (moved from this feature 2026-11-23, was `ReaderSearchKey`) + `ReaderSearchBar.tsx` + `useReaderSearch.ts` + `readerSearch.ts` | find-in-document: the strip's search key, the bar it opens into, its state, and the pure text/pinyin matcher (§ Search) |
 | `ReaderSearchHighlights.tsx` **(reading)** | the Text mode's yellow match highlights: a live mirror over the reading textarea (§ Search) |
 | `readerSentences.ts` **(reading)** | pure sentence splitter (`splitSentences`, `sentenceRangeAt`) for the sentence highlight (§ Sentence Explain) |
 | `ReaderSentenceFace.tsx` + `useSentenceExplanation.ts` **(reading)** + `src/api/sentenceExplanation.ts` | the keycap's face in SENTENCE MODE: the Explain key and its AI answer (§ Sentence Explain) |
 | `ReaderMoreInfoKey.tsx` **(reading)** | the keycap's More Info key, and `ReaderKeycapButton`, the generic labelled key it and the Explain key are built from |
 | `useTextSelection.ts`, `textSelection.ts`, `textSelectionUtils.ts`, `documentSegmentation.ts`, `readerAlternatives.ts`, `ReaderTapOverlay.tsx`, `ReaderTapHint.tsx`, `useReaderWordActions.ts`, `useReaderAudioPreload.ts` **(reading)** | the selection model, gsa spans, tap-to-navigate and its hint, the keycap's word actions, tap-to-hear preloading |
-| `useReadingText.ts` **(reading)** | one text read with the engine: its spans (+ tiebreak overrides) and its `useTextSelection` |
-| `useReadingKeycap.tsx` **(reading)** | the dictionary keycap's wiring, lifted from this page: `cardProps` for `VocabDisplayCard` (tap demo, pawn, Sentence Explain face, the Add / More Info keys), `wordActions`, TAP-TO-HEAR + preloading, the demo's zone flash |
+| `useReadingText.ts` **(reading)** | one text read with the engine: its spans (+ tiebreak overrides), its phrases and step units (`stepSpans`), `drillAtOffset`, and its `useTextSelection` |
+| `useReadingKeycap.tsx` **(reading)** | the dictionary keycap's wiring, lifted from this page: `cardProps` for `VocabDisplayCard` (tap demo, pawn, Sentence Explain face, the split-screen phrase face, the Add / More Info keys), `wordActions`, TAP-TO-HEAR (a phrase speaks whole) + preloading, the demo's zone flash |
 | `useReadingVocabSync.ts`, `ReadingTapRegion.tsx`, `ReadingEipHost.tsx` **(reading)** | the vocab-update listeners; the frame placing `ReaderTapOverlay` (this page's TAP REGION); the eip behind More Info |
 
 ### Look
 
 Code: `src/components/VocabDisplayCard.tsx`, `src/components/SenseList.tsx`;
 `ReaderDocumentPage.tsx` → the surface's `title`, `look`; `ReaderPage.tsx` → `look`;
-`readerStyles.ts` → `READER_CARD_RADIUS`, `READER_TEXT_GUTTER_PX`, `readerMenuPaperSx`, `readerMutedTextSx`,
+`readerStyles.ts` → `READER_CARD_RADIUS`, `READER_TEXT_GUTTER_PX`, `READER_PAGE_PAD_PX`, `READER_TEXT_PADDING_SX`, `readerMenuPaperSx`, `readerMutedTextSx`,
 `readerMessageSx`, `readerPillButtonSx`; `src/timeOfDay/useTier2Look.ts`;
 `src/components/primitives/Row.tsx` → `tones`; `src/components/NodePageHeader.tsx` →
 `titleColor`; every component in the table above.
@@ -171,7 +175,10 @@ colours (since 2026-11-17 — the Dictionary's look, SHELF_REDESIGN.md § 7b "Ti
 - **Dictionary keycap** (`VocabDisplayCard`, 2026-11-17) — the one raised object on the
   page: a static keycap (white face, `COLORS.border` outline, rounded edge, 4px `COLORS.grey`
   lip — the Tier 2 day keycap's colours). Header: the headword as a CPCD row (`ForeignText`
-  `md`, tone colours per the flp's `showPinyinColor`). Body: `SenseList`
+  `md`, tone colours per the flp's `showPinyinColor`). Tapping it **cycles the reading** of
+  a word with several readings (§ Reading choices); for any other word it copies the
+  characters, then the pinyin on the next tap, alternating (`CPCDRow` `tapToCopy`, the eip
+  header's behaviour). Body: `SenseList`
   (src/components/SenseList.tsx) — the eip's "Other Translations" list itself, same layout,
   font and trailing star, tap a row for its commonality — with no section label. A
   single-sense word lists its glosses. The keycap never takes focus from the reading box
@@ -184,6 +191,7 @@ colours (since 2026-11-17 — the Dictionary's look, SHELF_REDESIGN.md § 7b "Ti
   hard **centred** floor shadow on the white face — straight under the feet, not slid
   down-right along the light (`IsoShadow` `centred`) — ~40px tall; passed as `VocabDisplayCard` → `emptyFace`,
   a full-face centred layer). It replaced a "No dictionary entry found." line (2026-11-17).
+  A selected **phrase** of two or more words shows the split-screen face instead (§ Split-screen keycap).
 - **Keycap word actions** (2026-11-17) — the eip's speaker (`SpeakerButton`) sits just right
   of the headword. At the header's right edge: a **More Info** keycap
   (`src/reading/ReaderMoreInfoKey.tsx` — the flp's `MoreInfoPill` plate,
@@ -252,7 +260,10 @@ colours (since 2026-11-17 — the Dictionary's look, SHELF_REDESIGN.md § 7b "Ti
   `Row`s (16px) for documents, SectionCard's 18px radius for the delete dialog.
   **The reading area is not a card** (since 2026-11-20): the words sit straight on the
   page ground, in reading and edit mode alike, inside a wide side margin — the content
-  padding (16 / 24px) plus `READER_TEXT_GUTTER_PX` (24px x, 8px y), which the textarea
+  padding (`READER_PAGE_PAD_PX`, 16 / 24px) plus `READER_TEXT_GUTTER_PX` (24px x, 8px y).
+  The reading pane itself is **full-bleed** (`.reader-page-text-content-area` pulls out over
+  the content padding, 2026-11-23) so its scrollbar sits on the screen's edge; both amounts
+  live on the scroll surface as `READER_TEXT_PADDING_SX`, which the textarea
   (`TextArea.tsx`) and the Pinyin view (`ReaderCpcdView.tsx`) share so both break lines at
   the same margin. Shared with cyoa (docs/CYOA_FEATURE.md). A user document's row has a blue avatar glyph
   (`description`), a built-in text's a grey one (`menu_book`).
@@ -316,6 +327,34 @@ in both display modes (Pinyin mode draws English as plain text, no pinyin under 
   the lookup lands stays empty until the next selection (the same is true of Chinese words
   before the vocab lookup).
 
+### Split-screen keycap
+
+Built 2026-11-23. While the selection is **exactly a run of two or more whole gsa words** (a
+phrase the Phrase pill stepped to, or a search match across words) and not a sentence, the
+keycap shows two compact entries side by side instead of one entry:
+
+- **Which two**: a two-word phrase shows both. From three words up, `phrasePick.ts` →
+  `pickPhraseWords` keeps two, lowest priority dropped first: no entry → particle → numeral →
+  classifier → interjection → onomatopoeia → conjunction → preposition → pronoun → content
+  words. Ties go to the higher `difficulty`, then the lower `frequencyScore`, then the
+  earlier word (owner's ladder 2026-11-23). The halves are in text order.
+- **Each half** (`ReaderPhraseSplitFace.tsx`): the headword as a cpcd row, starting at `md` and
+  stepping down `smd → sm → xs → xxs` until it fits the half's width (measured with a
+  ResizeObserver against cpcdLayout's column widths); a hairline divider; the `SenseList` in
+  **one column** (`singleColumn`). A word with no entry shows its headword only.
+- **Compact**: no speaker, no More Info, no Add key. The face is passed as `VocabDisplayCard`
+  `customFace`, which draws no header controls.
+- **One scroll position**: both halves sit in the keycap's own scrolling content box.
+- **Tap a half to select that word** in the text (the full keycap returns). A tap on a sense
+  row's text still opens its commonality popup instead.
+- The halves are divided by a 1px `COLORS.rowBorder` line. ⚠️ They are tappable but have no
+  outline of their own, because the keycap's outline frames them (CLAUDE.md § Buttons & cards
+  exception pending the owner's call).
+
+Code: `src/reading/useReadingKeycap.tsx` → `phraseWords`, `splitFace`, `phraseSpeech`;
+`ReaderPhraseSplitFace.tsx`; `phrasePick.ts`; `phraseChunking.ts` → `wordsCoveringRange`;
+`src/components/SenseList.tsx` → `singleColumn`.
+
 ### Display modes
 
 Code: `src/reading/useReaderDisplayMode.ts` → `ReaderDisplayMode`, `useReaderDisplayMode` (via `useReaderSettings.ts`);
@@ -329,10 +368,13 @@ Code: `src/reading/useReaderDisplayMode.ts` → `ReaderDisplayMode`, `useReaderD
 
 A **display strip** sits under the dictionary keycap (inside the keyboard-lift fold): a row
 whose right edge holds `ReaderDisplayToggle`: a single **Pinyin** pill with two style
-states — off = Text mode (the neutral `readerPillButtonSx` pill faded to `OFF_OPACITY`
-0.45), on = Pinyin mode (the same pill at full opacity); no hue for "on" (owner's call
-2026-11-18; it replaced a "Text ◯━ Pinyin" MUI switch). Its left edge holds the audio controls: the read-aloud button (§ Read aloud), then the
-tap-to-hear audio chip (§ Tap-to-hear). While editing, all three are `visibility: hidden`
+states — off = Text mode (the neutral `readerPillButtonSx` pill faded to
+`READER_PILL_OFF_OPACITY` 0.45, readerStyles.ts), on = Pinyin mode (the same pill at full
+opacity); no hue for "on" (owner's call 2026-11-18; it replaced a "Text ◯━ Pinyin" MUI
+switch). Just left of it, in Chinese documents, the **Phrase** pill (`ReaderPhraseToggle`,
+same two states; per-device `reader.stepMode`) switches tap-to-navigate between words and
+phrases (READER_SEGMENTATION.md § "Phrase stepping"). Its left edge holds the read-aloud button (§ Read aloud), then the search key (§ Find in
+document); the tap-to-hear audio chip lives in the page header (§ Tap-to-hear). While editing, the strip's controls are `visibility: hidden`
 (the strip keeps its height, so the text box does not jump) — edit mode is always the plain
 field. The pill commits **deferred** (`ReaderDisplayToggle` → `pendingMode`): a tap restyles the
 pill at once and hands the mode to the page one frame later (double `requestAnimationFrame`),
@@ -356,7 +398,9 @@ old style until it finished. The choice is stored **per device** (`localStorage`
   runs once over each whole paragraph (`applyYiBuSandhi`), so it now applies across word
   boundaries. Pinyin per word comes from
   `buildReaderPronunciationMap` — the same first-match rule as the keycap's
-  `findDictionaryMatch`, so the pinyin under a word agrees with the entry it opens.
+  `findDictionaryMatch`, and the same reading (`resolveDisplayPronunciation`, the sense
+  clusters' reading, not the raw `pronunciation` column), so the pinyin under a word
+  agrees with the keycap header and with what tap-to-hear and the read-aloud speak.
   **Tiebreak alternatives:** while the selected word won a frequencyScore tiebreak
   against an overlapping word of the same length, the losing word shows in the
   search-match yellow, and tapping it switches the selection
@@ -370,7 +414,7 @@ nothing-selected mode and the keycap lookup all run unchanged. `ReaderCpcdView` 
 **highlight renderer**: it reads `useTextSelection` → `selectionRange` (the state twin of
 `lastSelectionRef`), highlights the span that starts AND ends exactly there (the text
 mode's selection tint, as a background + box-shadow bleed, so no reflow), and scrolls it
-into view with one line of margin (measured against its own scroll box, not
+into view with two rendered lines of margin (`SCROLL_MARGIN_PX` = 2 cpcd lines; text mode keeps the same 2 wrapped lines via `textSelectionUtils.ts` → `SCROLL_MARGIN_LINES`), so tapping through scrolls early instead of at the edge (measured against its own scroll box, not
 `scrollIntoView`, which would also scroll the overflow-hidden page). Switching modes keeps
 the reader's place.
 
@@ -402,6 +446,25 @@ hit-tests (`scrollRef`, `wordSource`).
   sentence (`onSelectSentence` → `selectSentenceAtSelection`). Moving off the spot disarms it
   (the finger is choosing a word); once it fires, further moves are ignored until release so
   jitter cannot snap back to one word. See § Sentence Explain.
+- **PRESS DONUT** (`ReaderTapOverlay` → `showDonut` / `holdDonutAtWord` / `hideDonut`, the
+  `DONUT_*` constants) — a small
+  progress ring drawn `DONUT_LIFT_PX` above the pressed spot (below it when the press is too
+  near the overlay's top), so the finger does not hide it. Lap 1 completes at `LONG_PRESS_MS`:
+  full = WORD JUMP has selected the word. When SENTENCE PRESS arms, the ring empties and lap
+  2 fills over `SENTENCE_PRESS_EXTRA_MS`: full = the sentence is selected. It stays full until
+  release and vanishes at once on a release, a move past `MOVE_THRESHOLD_PX`, a scroll, a
+  horizontal-drag WORD JUMP, a press on empty space, or a cancel. It appears only after
+  `DONUT_SHOW_DELAY_MS` (200 ms — past a normal tap), so a single tap never brings it up;
+  lap 1 starts empty then and fills over the rest of `LONG_PRESS_MS`. Day: ink (`COLORS.onSurface`) on a
+  `COLORS.border` track; night: translucent white (⚠️ off-framework, like the ZONE FLASH's
+  night fill).
+  **Compositor-only, one animation per press:** two half-rings ROTATE into view through
+  `overflow: hidden` windows (`transform` + `opacity`, Web Animations API, no React state),
+  and both laps (lap 1, the reset, lap 2) are keyframes of ONE timeline started on
+  pointerdown (`DONUT_RIGHT_SWEEP` / `DONUT_LEFT_SWEEP`). The word select at the end of lap
+  1 is a heavy main-thread frame; a main-thread animation (an SVG `stroke-dashoffset`), or
+  a lap 2 started from the timer, stalled right there. With no sentence lap to follow
+  (`onSelectSentence` absent) the timeline is frozen full at lap 1's end instead.
 - The overlay suppresses the browser's own long-press `contextmenu` (the "right click"
   menu), since it owns that gesture. On desktop (no
 overlay) clicking a word selects it (`selectRange`), mirroring a click placing the caret;
@@ -434,9 +497,10 @@ selecting its range, so the selection's own `recordSelection` keeps the mode.
 - The highlight: the Text mode's own textarea selection covers the sentence; the Pinyin mode
   paints it (§ Display modes).
 - **Leaving:** any other selection ends the mode (`recordSelection` drops a sentence whose
-  range no longer matches). A **forward** tap lands on the sentence's FIRST word (`TextArea`
-  parks the caret at the sentence start before `selectRelativeSpan`); a **back** tap on the
-  word before the sentence. A long-press on empty space (`clearSelection`) also clears it.
+  range no longer matches). A **forward** tap lands on the step unit AFTER the sentence and a
+  **back** tap on the unit before it (`TextArea` → `selectRelativeSpan` steps from the
+  sentence's own range, like any selection; owner's call 2026-11-23 — it used to land on the
+  sentence's first word). A long-press on empty space (`clearSelection`) also clears it.
 
 **The keycap in SENTENCE MODE.** `VocabDisplayCard` `customFace` → `ReaderSentenceFace`: only
 the **Explain** key, top right — `ReaderKeycapButton` (the More Info key's recipe) with the
@@ -489,7 +553,15 @@ Code: `ReaderReadAloudButton.tsx`; `useReaderReadAloud.ts` → `useReaderReadAlo
 
 The **Read** pill (read-aloud) at the display strip's left edge reads the document aloud **from the
 caret**, starting at the word the caret is on. If nothing is selected yet, it reads from the
-top, and a caret after the last word also reads from the top. It works in both display modes
+top, and a caret after the last word also reads from the top. **With a sentence selected**
+(SENTENCE MODE, § Sentence Explain) it reads **only that sentence** and stops at its end
+(owner's call 2026-11-23; `useReaderReadAloud` → `getSelectedSentence`, fed by
+`ReaderDocumentPage` → `getSelectedSentence`). Exact, because a sentence end is always a
+clause end (`readerSentences.ts`). The word highlight steps through it as usual, and when
+the read **finishes on its own the sentence is selected again** (`reselectSentence`), so the
+keycap returns to its sentence face and another press replays it; a stop mid-sentence leaves
+the caret on the current word. The Adventures play page does not pass the getter and
+keeps reading from the caret. It works in both display modes
 and is hidden while editing. While it plays, the pill turns `bluM` and reads **Stop**.
 
 - **One clip per clause.** `buildReadAloudClauses` cuts the text at 。！？，：；!?; and
@@ -555,7 +627,7 @@ and is hidden while editing. While it plays, the pill turns `bluM` and reads **S
   the pause: the caret stays on the word being read, so Read resumes from there.
 - **Mute does not silence it.** Pressing play is a manual press (`speakSentence`), so it
   speaks on Mute like every speaker button (docs/AUDIO_PLAYBACK.md § 4). The route
-  (default or media) comes from the strip's audio chip (§ Tap-to-hear), the Voice from the
+  (default or media) comes from the header's audio chip (§ Tap-to-hear), the Voice from the
   narration settings.
 - **The keycap's Add key stands down while reading** (`suspendLearningStatus`). Its
   per-word status fetch would otherwise fire about 4 times a second. The key reappears on
@@ -565,16 +637,18 @@ and is hidden while editing. While it plays, the pill turns `bluM` and reads **S
 
 Code: `useReaderAudioSettings.ts` → `useReaderAudioSettings`; `src/components/AudioModeChip.tsx`
 → `ReaderAudioChip`; `useReadingKeycap.tsx` → `tapToHearRef` (the TAP-TO-HEAR effect);
-`ReaderDocumentPage.tsx` → `searchFieldFocused`, `.reader-document-display-strip__audio`; `useReaderWordActions.ts` → `autoSpeakSelected`;
+`ReaderDocumentPage.tsx` → `searchFieldFocused`, `docHeaderRightContent`; `useReaderWordActions.ts` → `autoSpeakSelected`;
 `src/hooks/useTTS.ts` → `surfaceAutoSpeak`; `src/services/tts/CloudTTSProvider.ts` →
 `setRouteOverride`, `effectiveRoute`.
 
-The display strip's audio chip, next to the Read pill, is the app-wide audio chip's skin
+The audio chip sits in the page header's right slot, ahead of Edit/Delete and hidden with
+them while editing (moved up from the display strip 2026-11-23, matching the cyoa story
+page's header). It is the app-wide audio chip's skin
 (same glyphs, labels and cycle order: **mute → default → media**) bound to a **separate
 setting** (owner's call 2026-11-17), because "speak each word I move to" is a different
 behaviour from the flp's card-flip narration. Its ink is the look's primary `look.ink`, the
 Read pill's text ink (`readerStyles.ts` → `readerPillButtonSx`), rather than the secondary
-`ink2` the app's other audio chips use, so the two neighbours letter alike (2026-11-18).
+`ink2` the app's other audio chips use (2026-11-18, from when it sat beside Read in the strip).
 
 - **default / media** — moving the selection to a new word speaks it, as if the keycap's
   speaker were pressed. An English word speaks its Chinese translation, the keycap's word.
@@ -614,11 +688,57 @@ Read plays:
 Both send the pinyin `useTTS().speak` would (`resolveDisplayPronunciation` on the adapted
 entry), so the warmed clip is the one played. `TTSService.synthesize` joins a request to an
 in-flight synthesis of the same clip (`inFlightSyntheses`), so a pre-warm racing a tap pays
-Google once.
+Google once. A word with a reading choice (§ Reading choices) is warmed with its chosen
+reading instead (`readingAt` → `useTTS().prefetchSentence`), the key it is played under.
+
+### Reading choices
+
+A Chinese word with several readings (了 le/liǎo, 得 de/dé/děi, 着, 还, 行, 长 …) shows its
+DEFAULT reading (`resolveDisplayPronunciation`) everywhere. Tapping the dictionary keycap's
+headword **cycles the selected occurrence** through the word's readings, and the choice is
+saved with the document (owner's calls 2026-11-23).
+
+- **Which readings** — `readingOptionsFor`: the default first, then each other distinct
+  `definitionClusters[].reading` in cluster order, skipping one whose syllable count differs
+  from the default. Past the last it wraps to the default, which removes the entry. A word
+  with fewer than two keeps the headword's **tap-to-copy**.
+- **Which occurrence** — only the one tapped, and only when the selection is exactly one gsa
+  span of Chinese text: not an English word showing its translation, not a drilled-into part
+  of a word, not a phrase or sentence. Stored as `{start, end, text, reading}`, `reading` in
+  numbered pinyin (`"dei3"`).
+- **What it changes** — the keycap headword (`VocabDisplayCard` `headwordPronunciation`),
+  the speaker and tap-to-hear (`useReaderWordActions` `pronunciationOverride`: spoken as
+  text + pinyin hint), preloading (`useReaderAudioPreload` `readingAt`), the Pinyin view
+  (`ReaderCpcdView` `readingAt`), read-aloud clauses (`buildReadAloudClauses` `readingAt`),
+  the phrase's tap-to-hear, and pinyin search (`buildDocumentSyllables`). The sense list does
+  **not** change: it keeps its order and its alternate-pinyin tags.
+- **Saving** — `usePronunciationOverrides` holds the list optimistically and PUTs the whole
+  list, debounced (`SAVE_DEBOUNCE_MS`), chained in tap order, flushed on unmount and before
+  the editor opens. A choices-only PUT does not stamp `updatedAt`. A failed save raises the
+  `reader-reading-choice-save-error` notification.
+- **Edits — SHIFT ONLY** (`shiftPronunciationOverrides`): the edit is read as one changed
+  stretch (common prefix + suffix of old and new content). Choices before it stay, choices
+  after it move by the length difference, and choices touching it are dropped, as is any
+  choice whose word is no longer at its offsets. The editor's Save sends the shifted list
+  with the content.
+- **Server** — `TextService.updateText` → `normalizePronunciationOverrides`
+  (`server/utils/pronunciationOverrides.ts`): a malformed list is a 400. An entry whose
+  `text` is not at its offsets in the stored (sanitized) content is dropped silently.
+  Overlaps keep the later entry. A content update without a list re-checks the stored one.
+  Capped at `PRONUNCIATION_OVERRIDES_MAX`.
+- **Not in cyoa** — `StoryPlayPage` passes no `readingChoices` to `useReadingKeycap`, so its
+  headword only copies.
+
+Code: `src/reading/pronunciationOverrides.ts` (pure rules), `src/reading/usePronunciationOverrides.ts`
+(state + saving), `src/reading/useReadingKeycap.tsx` (`readingChoices`, `selectedTarget`),
+`src/components/VocabDisplayCard.tsx` (`onHeadwordTap`), `src/features/reader/ReaderDocumentPage.tsx`
+(wiring, `handleSaveEdit`), `server/utils/pronunciationOverrides.ts`, `server/services/TextService.ts`
+→ `updateText`, `database/migrations/207-add-pronunciation-overrides-to-texts.sql`. Tests:
+`src/__tests__/pronunciationOverrides.test.ts`, `server/__tests__/pronunciationOverrides.test.ts`.
 
 ### Search
 
-Code: `ReaderSearchKey.tsx`, `ReaderSearchBar.tsx`, `useReaderSearch.ts`,
+Code: `src/reading/ReaderIconKey.tsx`, `ReaderSearchBar.tsx`, `useReaderSearch.ts`,
 `readerSearch.ts` (`findReaderMatches`, `findTextMatches`, `findPinyinMatches`,
 `buildDocumentSyllables`), `ReaderSearchHighlights.tsx`; `ReaderCpcdView.tsx` → "Search
 highlights"; `src/components/CPCDRow.tsx` → `CPCDRowItem.highlight`;
@@ -630,7 +750,7 @@ Tests: `__tests__/readerSearch.test.ts`.
 
 Find-in-document, like a browser's find.
 
-- **Entry.** A round search key on the display strip, between Read and the audio chip.
+- **Entry.** A round search key on the display strip, right of Read.
   It opens into a bar that covers the whole strip: `[🔍 field  2/7] [˄] [˅] [✕]`. The
   bar grows out of the key with a clip-path animation. The strip's other controls stay
   laid out but hidden underneath, so the row keeps its height. Pressing Edit closes the

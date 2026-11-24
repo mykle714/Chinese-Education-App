@@ -23,10 +23,8 @@ function parseFrameAspect(raw: unknown): number | undefined {
  * LAYER: controller. Parses and validates request SHAPE, delegates every decision to
  * MemoryMapService, and does no SQL. See docs/MEMORY_MAP_GAME.md § 9.
  *
- * WHY NOT GamesController: that controller is deliberately game-AGNOSTIC (one
- * controller, every game, scoped by `:gameId`) and serves only the framework-level
- * assets/progress endpoints. Memory Map owns tables of its own, so folding it in would
- * break that invariant — the same reasoning that gave Speed Reading its own controller.
+ * One controller per game: Memory Map owns tables of its own (the generic, game-agnostic
+ * GamesController was deleted 2026-11-23 with no caller).
  *
  * The language is resolved from the ACCOUNT, never from the request. A map is per
  * (user, language) and each language has its own independent map; letting the client

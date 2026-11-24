@@ -95,7 +95,7 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
 }) => {
     const onCardClearedRef = useRef(onCardCleared);
     onCardClearedRef.current = onCardCleared;
-    const { token, isAuthenticated } = useAuth();
+    const { isAuthenticated } = useAuth();
     const { recordWin } = useGameWins(GAME_KEY);
     const personalBest = usePersonalBest(GAME_ID, "default");
 
@@ -222,17 +222,30 @@ const WritingGridStage: React.FC<WritingGridStageProps> = ({
         if (!cell) return;
         const practice = phase === "ended";
         // Practice: closing with the canvas untouched — or cleared and left empty — keeps
-        // the board's drawing and verdict rather than blanking a finished cell.
-        if (practice && (ink.length === 0 || sameInk(ink, inks[cell.char] ?? []))) return;
+        // the board's drawing and verdict rather than blanking a finished cell. A cell left
+        // "idle" with ink (its last check could not run — below) has no verdict to keep,
+        // so reopening and closing it untouched IS the retry.
+        const hasVerdict = results[cell.char] === "correct" || results[cell.char] === "wrong";
+        if (practice && (ink.length === 0 || (hasVerdict && sameInk(ink, inks[cell.char] ?? [])))) return;
         setInks((prev) => ({ ...prev, [cell.char]: ink }));
         if (ink.length === 0) return; // nothing written: no check, no mark
         setResults((prev) => ({ ...prev, [cell.char]: "checking" }));
-        let correct = false;
+        let correct: boolean;
         try {
-            const { top1 } = await recognizeHandwriting(ink, CANVAS_SIZE, CANVAS_SIZE, token);
+            const { top1 } = await recognizeHandwriting(ink, CANVAS_SIZE, CANVAS_SIZE);
             correct = top1 === cell.char;
         } catch (err) {
-            console.warn("[WritingGrid] verify failed", err);
+            // The check could not run (network error, the proxy's 502 when Google is
+            // down). That is not a wrong answer: no ✓/✗, no hint point, no mark. The cell
+            // goes back to "idle" with its ink kept — an idle cell reopens WITH its ink
+            // (handleOpenCell only wipes a "wrong" one) — so tapping it and closing the
+            // editor re-checks. No message of its own: it only gets here after
+            // recognizeHandwriting's quiet retries, and a lost connection is said once by
+            // the shared notice (docs/NOTIFICATIONS.md § 3a "Failures"). Until 2026-11-23 a failed check graded the cell ✗ and wrote a
+            // wrong mark. Same rule as useWritingFlashcard → handleSubmit.
+            console.warn("[WritingGrid] verify failed; cell left unchecked for a retry", err);
+            setResults((prev) => ({ ...prev, [cell.char]: "idle" }));
+            return;
         }
         setResults((prev) => ({ ...prev, [cell.char]: correct ? "correct" : "wrong" }));
         if (practice) return; // post-run redraws are evaluated, never marked

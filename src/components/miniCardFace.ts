@@ -209,12 +209,11 @@ export function miniCardDefinitionFontSize(definition: string, size: MiniCardSiz
 }
 
 /**
- * The mastery window strip's geometry (MiniCard → MasteryStrip, whose comment carries the
+ * The mastery strip's geometry (MiniCard → MasteryStrip, whose comment carries the
  * design rationale). Here because the definition's anchor depends on it.
  */
 export const MINI_CARD_BAR_STRIP = {
     height: 3.5,      // v2 frame 17's hairline (`.mcd .mk`, was 3)
-    cellGap: 1.5,     // the cdp's 3px gap does not survive the scale down; half of it does
     inset: 8,         // left AND right — the window spans the card
     bottom: 8,
 };

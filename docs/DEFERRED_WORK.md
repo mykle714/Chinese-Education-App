@@ -46,11 +46,11 @@ dropping the column is a contract migration that must follow the new code onto P
 
 ### 1. Tell the learner when a card is resting and earning nothing
 
-*Added 2026-08-18 with Hydra Bubbles; narrowed 2026-08-20 when lending moved to the
+*Added 2026-08-18 with Hydra Bubbles (archived 2026-11-23); narrowed 2026-08-20 when lending moved to the
 bottom of the fill ladder. Code: `server/services/FlashcardMarkService.ts` →
 `applyMark` (the `[MarkSuppressed]` branch), `OnDeckVocabService.getGameVocabPool` /
 `getDistributedWorkingLoop` (the fill tiers). Docs:
-[HYDRA_BUBBLES.md § 8.1](./HYDRA_BUBBLES.md),
+[FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md § "Cooldown is a hard next-markable-at"](./FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md),
 [PROVISIONAL_CARDS.md § 4b](./PROVISIONAL_CARDS.md).*
 
 **What changed.** A card's cooldown (one clock per bar since 2026-09-25) is a hard **"next markable at"**: a mark
@@ -72,7 +72,7 @@ never chose was the worse failure, and it was growing provisional holdings witho
 cooled-tier suppression happens.
 
 **The task that remains is UI.** Give the learner feedback rather than silence —
-"resting until tomorrow" on the card, a muted state on a bubble, or an end-of-session
+"resting until tomorrow" on the card, a muted state on a game tile, or an end-of-session
 line saying how much of the round counted. The server already knows: the response
 carries `suppressed: true`, and **no client reads it today**.
 
@@ -83,7 +83,7 @@ carries `suppressed: true`, and **no client reads it today**.
 | **What** | A short learner-facing note on the ~10 **hosted** forms in det (`一会儿`, `一辈子`, `一家子`, `一阵子`, `这会儿` …) saying the word is a fixed unit and its tail is not a standalone word. Full spec, the complete 14-item class, and four open questions: [BOUND_FORM_WORDS.md](./BOUND_FORM_WORDS.md) § 6 |
 | **Why deferred** | The **data** half shipped on 2026-08-17 — the 6 bound bases were deleted from PPE det (+1 vet row) and both re-entry paths are now gated by `boundForms.js`. That stopped the app teaching a bad card, which was the urgent part. The **teaching** half is new UI with an undecided surface (eip tab vs. bt inline copy vs. cdp chip) and so is not a same-day change |
 | **Cost of leaving it** | Moderate and silent. A learner meeting `一会儿` has no way to know `会儿` is not a word, and the bt actively misleads by decomposing the word into `一` + `会` + `儿` — implying a compositional reading that does not hold. They will infer wrong and produce ungrammatical Mandarin. Nothing in the app currently corrects this |
-| **Trigger** | The next piece of eip/cdp work that touches the bt or adds a tab — the note should ride along rather than claim a surface of its own. Decide open question § 6.1 (where it lives) at that point |
+| **Trigger** | The next piece of eip / td card view work that touches the bt or adds a tab — the note should ride along rather than claim a surface of its own. Decide open question § 6.1 (where it lives) at that point |
 | **⚠️ Do not** | Add a det column for this without asking first (CLAUDE.md rule). The note is derivable at read time from `ZH_BOUND_FORMS`, which needs no migration and cannot drift from the denylist — that is the recommended route |
 | **References** | [BOUND_FORM_WORDS.md](./BOUND_FORM_WORDS.md), `server/scripts/backfill/shared/lib/boundForms.js` |
 
@@ -110,15 +110,18 @@ carries `suppressed: true`, and **no client reads it today**.
 | **Interim mitigation** | The write path is a single chokepoint by design (`ArenaService.setMessage` → `ArenaDAL.setArenaMessage`, the ONLY writer of the column), and `{ message: null }` clears it. So an urgent takedown today is one `UPDATE users SET "arenaMessage" = NULL WHERE id = …` and nothing else in the app needs to change |
 | **References** | [ARENA_FEATURE.md](./ARENA_FEATURE.md) § 2.1a, `server/services/ArenaService.ts` → `setMessage`, `database/migrations/152-add-arena-message.sql`, `src/features/arena/ArenaMessageDialog.tsx` |
 
-### 6. Pinyin is one shared setting across three games, and Hydra's track does not follow it
+### 6. Match Speed reads and writes the flp's shared pinyin setting
+
+*Narrowed 2026-11-23: Bubble Match and Hydra Bubbles, the other two readers, were archived
+(ARCHIVED_FEATURES.md), which also retired half (b), Hydra's track rule.*
 
 | | |
 |---|---|
-| **What** | Two halves of one decision (2026-08-23), designed and **not built**. (a) `showPinyin` lives in the flp's `useFlashcardLearnSettings` (`flashcard.learn-settings`) and is read *and written* by Bubble Match, Hydra Bubbles and Match Speed, so a change in one game silently changes the other two plus the cdp/acp/dictionary display. It should be **per game**, following `useLocalGameSettings` / `useDiscoverSettings`. (b) Hydra should then adopt the track rule — pinyin off on a zh board ⇒ `reading` — latched before the first spawn |
-| **Why deferred** | (a) is small but touches five components; (b) is not. Hydra's tier ladder and its two color buffers are keyed on the mastery bands of the track it pools by, so a reading run re-bands the entire board — and a sparsely-marked reading track puts nearly every card in drain, which is the side that grows the board. Whether the § 3.1 spawn table still terminates under that mix is an open question (O5) that has to be answered before the conversion can ship |
-| **Cost of leaving it** | A learner who switches Bubble Match to Reading loses pinyin in Hydra and Match Speed without asking, and Hydra keeps writing `recognition` marks for a board it is drawing as a reading board — the mark no longer describes what the player did. Match Speed is display-only, so it is merely surprising there |
-| **Trigger** | Ship (a) whenever a game's settings are next touched — it stands alone and fixes the leak. (b) waits on O5 |
-| **References** | [GAMES_FEATURE.md](./GAMES_FEATURE.md) § "Pinyin is a per-game setting", [HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md) § 6.0 + § 11 O5, [MASTERY_REWORK.md](./MASTERY_REWORK.md) § 1a, `src/hooks/useFlashcardLearnSettings.ts` |
+| **What** | `showPinyin` lives in the flp's `useFlashcardLearnSettings` (`flashcard.learn-settings`) and Match Speed reads *and writes* it, so toggling pinyin in the game also changes the acp/dictionary display (td's card view, the cdp's 2026-11-23 replacement, always shows pinyin and reads only `showPinyinColor`). It should be **per game**, following `useDiscoverSettings` |
+| **Why deferred** | Small, but not urgent: Match Speed's chip is display-only (it always marks recognition) |
+| **Cost of leaving it** | A pinyin toggle in Match Speed silently changes the app-wide display setting |
+| **Trigger** | Whenever Match Speed's settings are next touched |
+| **References** | [GAMES_FEATURE.md](./GAMES_FEATURE.md) § "Pinyin is a per-game setting", [MASTERY_REWORK.md](./MASTERY_REWORK.md) § 1a, `src/hooks/useFlashcardLearnSettings.ts` |
 
 ---
 
@@ -530,11 +533,11 @@ study time**, not with open tabs.
 
 | | |
 |---|---|
-| **What** | The standalone end popups of Match Speed (`MatchSpeedEndPopup`), Word Search (its inline win card) and Bucket Drop (`BucketDropEndPopup`) were deleted, with Play Again and Match Speed's cleanup mode. Their routed pages (`/games/match-speed`, `/games/word-search`, `/games/bucket-drop`) still exist and now end on a frozen board with no results and no replay. Before `standaloneGames` is switched back on, give those pages an end card (reuse `RunTierPanels` and the break's `FlpBreakResults`) or archive standalone games entirely |
+| **What** | The standalone end popups of Match Speed (`MatchSpeedEndPopup`), Word Search (its inline win card) and Bucket Drop (`BucketDropEndPopup`; the game itself was archived 2026-11-23) were deleted, with Play Again and Match Speed's cleanup mode. Their routed pages (`/games/match-speed`, `/games/word-search`) still exist and now end on a frozen board with no results and no replay. Before `standaloneGames` is switched back on, give those pages an end card (reuse `RunTierPanels` and the break's `FlpBreakResults`) or archive standalone games entirely |
 | **Why deferred** | Every game runs as an flp break; the routed pages are unreachable while `standaloneGames` is OFF |
 | **Cost of leaving it** | None while the flag is off. Flipping it on ships a dead end |
 | **Trigger** | Any plan to turn `standaloneGames` back on |
-| **References** | `server/contracts/featureFlags.ts` → `FEATURE_FLAGS.standaloneGames`; `src/games/match-speed/MatchSpeedStage.tsx`, `src/games/word-search/WordSearchStage.tsx`, `src/games/bucket-drop/BucketDropStage.tsx`; GAMES_FEATURE.md § Layer 2 (`GameEndPopup`), § Run tiers |
+| **References** | `server/contracts/featureFlags.ts` → `FEATURE_FLAGS.standaloneGames`; `src/games/match-speed/MatchSpeedStage.tsx`, `src/games/word-search/WordSearchStage.tsx`; GAMES_FEATURE.md § Layer 2 (`GameEndPopup`), § Run tiers |
 
 ### 39. Tune the run-tier cutoffs and name the tiers
 
@@ -848,6 +851,32 @@ Doc: [DICTIONARY_AI_FALLBACK_SEARCH.md](./DICTIONARY_AI_FALLBACK_SEARCH.md).
 | **Why deferred** | Owner's call (2026-11-23): reuse the Voice key so Sentence Tiles can be tested on PPE now. The env var was set to `VOICE_AI_API_KEY`'s value on dev and copied to PPE (where Voice itself has no key yet) |
 | **Cost of leaving it** | The design gives the judge its own key so its spend is billed apart and can be revoked alone (`server/services/anthropicClient.ts` → `getSentenceTilesAiClient`; docs/SENTENCE_TILES_GAME.md § "Abuse protection"). While shared, judge spend and Voice spend are indistinguishable on the bill, and cutting one off cuts both. The game's own caps still apply (40 calls/player/day, 1,000/day overall) |
 | **Trigger** | Before Sentence Tiles reaches anyone outside the tester accounts, or before Voice's flag is turned on — whichever is first |
+
+### 64. Callerless leftovers from the 2026-11-23 dead-code sweep
+
+*Added 2026-11-23, when Bubble Match / Hydra Bubbles / Bucket Drop were archived, font lab,
+the generic games framework and the uncalled vocab CRUD endpoints were deleted. Each piece
+below lost its last caller in that pass, but was outside what the owner approved removing.*
+
+| | |
+|---|---|
+| **What** | (a) `GET /api/onDeck/gamePool`'s `avoid` soft-demote param (`OnDeckVocabController.getGamePool` → `avoidIds`, `getGameVocabPool` tier 4, `src/api/gamePool.ts` → `avoid`): its one caller was Bubble Match's "Play Again". (b) `PUT /api/vocabEntries/:id` (`VocabEntryController.updateEntry` → `VocabEntryService.updateEntry`) and its client `src/utils/vocabApi.ts` → `updateVocabEntry`: no component calls it. Also in that file, `estimateApiCalls` has no caller. (c) `flpBreakSuiteFor`'s `playable` flag (`src/games/flpBreak/index.ts`, read by ForcedBreakPicker) is always true now, because every registry game has a break adapter. (d) `PERSONAL_BEST_GAMES`'s `higher` / `count` direction has no game (Hydra was its only one); `PersonalBestService` still branches on it, untested. (e) `src/games/bubbles/` may still carry Hydra-only branches (lend/mastery tier fills, `ringWidth`, the fill-ratio spawn constants); the add cards page is its only remaining user |
+| **Why deferred** | Out of the approved scope of the sweep |
+| **Cost of leaving it** | Dead parameters and branches that read as live; (b) is an authenticated endpoint with no owner |
+| **Trigger** | The next dead-code pass, or the next edit to the owning file |
+| **References** | the files above; [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md) § Bubble Match, Hydra Bubbles, Bucket Drop |
+
+### 65. Study Challenge can no longer fill a three-round test
+
+*Added 2026-11-23.*
+
+| | |
+|---|---|
+| **What** | With Bubble Match, Hydra Bubbles and Bucket Drop archived, `CHALLENGE_GAMES` (server/contracts/wire.ts) holds two entries: Match Speed and Word Search (Pinyin). `CHALLENGE_ROUND_COUNT` is 3, so a zh-vs-zh challenge plays 2 rounds and a cross-language one plays 1 (Match Speed only). The draw already bends (`Math.min(sequence.length, CHALLENGE_ROUND_COUNT)` in StudyChallengeService) |
+| **Why deferred** | Study Challenge is flagged off |
+| **Cost of leaving it** | None while the flag is off |
+| **Trigger** | Any plan to switch `studyChallenge` back on: lower the round count, or make another game challenge-eligible |
+| **References** | `server/contracts/wire.ts` → `CHALLENGE_GAMES`, `CHALLENGE_ROUND_COUNT`; `src/games/__tests__/challengePool.test.ts`; [STUDY_CHALLENGE.md](./STUDY_CHALLENGE.md) § 5.1 |
 
 ## Recently closed
 

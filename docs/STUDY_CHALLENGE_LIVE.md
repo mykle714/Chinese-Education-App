@@ -382,12 +382,10 @@ was the only thing the time caps were ever for.
 * **`GameDef.liveTimeLimitSec` is dropped.** No game needs a live-only time cap. Word
   Search was the last candidate, and it fails only against a *present* player who cannot
   find the final word — see below.
-* **Bubble Match keeps its natural end and its scoring, and the contradiction dissolves.**
-  The previous draft required Bubble Match to *not* pause when abandoned (so an abandoned
-  run would self-terminate) while `GAMES_FEATURE.md` required it *to* pause. Under the AFK
-  rule it pauses, unconditionally, like everything else — and an abandoned run ends by
-  forfeit rather than by drowning in bubbles. Its ±500 survival bonus (STUDY_CHALLENGE.md
-  § 5.4, Q68) is untouched in live mode, so live and async scores stay comparable.
+* **The pause-vs-self-terminate contradiction dissolves.** An earlier draft needed
+  Bubble Match (archived 2026-11-23) to *not* pause when abandoned while
+  `GAMES_FEATURE.md` required it *to* pause. Under the AFK rule every game pauses,
+  unconditionally, and an abandoned run ends by forfeit.
 * **Every game becomes live-capable**, which retires Q71's per-challenge eligibility check:
   there is no longer a property a drawn game can fail. `isLiveEligible` reduces to "both
   players at zero rounds, window open" (§ 1).
@@ -533,7 +531,7 @@ Restated from STUDY_CHALLENGE.md § 7, now with the reasons this document suppli
 | **Q69** | How long may the between-rounds Ready gate stay open? | **Forever — no timeout, and it never collapses to async on its own.** Instead there is an always-present **Exit live challenge** control on the scoreboard. Only the waiting player knows how long is too long, and they are sitting right there; a timer would have to guess, and guessing wrong dissolves a session the friend was about to rejoin (§ 3). Explicit exit is now the **only** trigger for the async reversion (§ 8) |
 | **Q70** | Rate-limiting live invites | **One ping per day, per sender, per target** — banner and push counted together. Much harder than the per-challenge cooldown originally proposed, and affordable because the **waiting room is a permanent rendezvous** (§ 4): the ping only creates awareness, it is not the mechanism. Per *person*, not per challenge, so the 6-challenge cap cannot be farmed for six allowances against one friend |
 | **Q71** | Is live-eligibility decided per challenge at `gameSequence` generation? | **Retired — the question no longer exists.** The AFK forfeit (§ 6) bounds every round regardless of the game, so no game can fail live-eligibility and there is nothing to check when the sequence is drawn. `GameDef.liveTimeLimitSec` is dropped with it (§ 7) |
-| **Q72** | Does Bubble Match's ±500 survival bonus pay out when a live time cap ends the run? | **Moot twice over.** First because Bubble Match has a natural end, then — decisively — because **no game gets a live time cap at all** under the AFK rule. Its scoring is untouched in live mode, so live and async scores stay comparable (§ 7). The one live-only ruling: a player who **forfeits** mid-run banks their points but does not earn the bonus |
+| **Q72** | Does Bubble Match's ±500 survival bonus pay out when a live time cap ends the run? | *(Bubble Match and the `survival` bonus kind archived 2026-11-23.)* **Moot twice over.** First because Bubble Match has a natural end, then — decisively — because **no game gets a live time cap at all** under the AFK rule. Its scoring is untouched in live mode, so live and async scores stay comparable (§ 7). The one live-only ruling: a player who **forfeits** mid-run banks their points but does not earn the bonus |
 | **Q77** | How long is the AFK forfeit timeout? | **60 seconds of no input**, measured unpausably from the last interaction. Long enough to read a definition popup or answer a short interruption, short enough that the waiting player is not stranded. ⚠️ Recorded as the working number — this is the one live-mode constant most likely to want tuning against a real session |
 
 **The revision of Q20 is worth keeping visible**, because it dissolved a contradiction the

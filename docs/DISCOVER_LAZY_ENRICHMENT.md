@@ -4,7 +4,7 @@
 >
 > **Still live** — the required-scripts manifest, the per-word step runner
 > (`run-lazy-enrichment.js`), and the **request-time, validator-gated triggers**
-> (`LazyEnrichmentService`, fired from the cdp lookup + the sort commit — §5) that
+> (`LazyEnrichmentService`, fired from the dictionary lookup + the sort commit — §5) that
 > replaced the standing cron.
 >
 > **Retired (migration 144)** — the `sortable` column and everything built on it: the
@@ -314,7 +314,7 @@ validator accounts** (`users.isValidator`):
 
 | Trigger | Hook | When it fires |
 |---|---|---|
-| **on-open** | `DictionaryController.lookupTerm` (after the response) | a validator opens a word's card-detail page — the **eip drill-in link** lands on the cdp, which calls `GET /api/dictionary/lookup/:term` |
+| **on-open** | `DictionaryController.lookupTerm` (after the response) | a validator opens a word through `GET /api/dictionary/lookup/:term` (`src/api/dictionary.ts` → `lookupVocabEntry`) — an eip drill-in (`useEipTabs`), a Dictionary page result, an acp / Reader / Voice lookup. (It used to be the cdp's lookup; both card-detail pages are gone — the dictionary one 2026-11-10, the saved-card one 2026-11-23, and td's card view that replaced the latter reads `/api/vocabEntries/:id` instead) |
 | **on-sort** | `StarterPacksService.sortCard` (after the vet upsert) | a validator sorts a card into **Learning / Already-Learned** (the `skip` bucket returns early, so it never triggers) |
 
 > **DECIDED (2026-07-17, revised): the standing cron was retired.** Earlier this was a
@@ -676,7 +676,7 @@ still surfaced *after* that step's batch completes and *before* the dependent
 - `server/dal/implementations/DictionaryDAL.ts` — `isLazyEnrichmentCandidate`: gate 3 of the
   trigger (discoverable + `buildIncompletePredicate`) (§5).
 - `server/controllers/DictionaryController.ts` — `lookupTerm` fires the **on-open**
-  trigger after responding (the eip drill-in / cdp lands here) (§5).
+  trigger after responding (eip drill-ins and Dictionary page results land here) (§5).
 - `server/scripts/backfill/shared/lib/requiredScripts.js` — the manifests (`REQUIRED_SCRIPTS_ZH`, `REQUIRED_SCRIPTS_ES`, `scriptsForLanguage`) + `buildIncompletePredicate` / `appliesTo` (§5).
 - `server/scripts/backfill/promote-discoverable.js` — the only standalone promoter; full-manifest bar, dry-run by default.
 - `server/scripts/backfill/oracle-plan.js` — round planner; `--lang=zh|es`, `--discoverable` / `--new` / `--words=`. The zh `--new` scope carries the candidate-quality filter + `CHAR_FREQ_CTE` ordering inherited from the retired `--unsortable` scope (§4b).

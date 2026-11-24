@@ -23,14 +23,14 @@ inside the eip.
 | Host | Entry point | When an eip is open |
 |---|---|---|
 | flp (`FlashcardsLearnPage`) | the `Compare` tower plate on `WordToolsRail` above the card (flips the card to the answer first — `revealAnswer`) | `closeEip()`, then `openCompare(word)` |
-| saved-card cdp (`VocabCardDetailPage`) | the `Compare` pill on the rail above the hero card | `setInfoOpen(false)`, then `openCompare(word)` |
+| td's card view (`deckTower/cardView/TowerCardView`; replaced the routed saved-card cdp 2026-11-23) | the `Compare` tower plate on the flp-style rail above the hero card (Compare + Customize only) | `setInfoOpen(false)`, then `openCompare(word)` |
 | Dictionary page and Reader (`EipSheet` with `showWordTools`) | the `Compare` pill at the bottom of the eip's definition tab | the pill is INSIDE the eip, so it closes it (`onClose()`) and opens the panel at the eip's own `depth` |
 
 **Compare never stacks over the eip** (owner's call 2026-11-21). The eip closes first, and the
 panel slides up on its own. Because `EipSheet` owns the panel (`useCompareSheet` lives there,
 outside the eip's `open` guard), the panel outlives the eip it was opened from. On the Dictionary
 page and in the Reader the rail sits under whichever word the eip is showing, so a word the
-learner DRILLED INTO can be compared too. On the flp and the cdp the rail acts on the card's word.
+learner DRILLED INTO can be compared too. On the flp and td's card view the rail acts on the card's word.
 
 acp mounts `EipSheet` without `showWordTools`, so it has no Compare entry point.
 
@@ -46,8 +46,10 @@ Re-comparing a pair costs no extra AI call, because `word_comparison_cache` serv
 
 ### Compare earns minute points
 
-The panel has no route, so it accrues through its HOST page: the flp, the saved-card cdp and
-the Dictionary page are all study surfaces (`MINUTE_POINTS_ELIGIBLE_PAGES`, `src/constants.ts`).
+The panel has no route, so it accrues through its HOST: the flp and td's card view (both
+study surfaces claimed by `DeckTowerPage` through `useClaimStudySurface`,
+`src/minutePoints/studySurface.ts`) and the Dictionary page (`MINUTE_POINTS_ELIGIBLE_PAGES`,
+`src/constants.ts`).
 The learner reading a comparison earns for as long as they keep interacting (the 15-second
 activity window still applies). The panel itself draws **no** flame (2026-10-06: pull-up
 dictionary flows never show the counter). Earning is unaffected, because it rides the host
@@ -57,7 +59,7 @@ earning there. See [MINUTE_POINTS_SYSTEM.md](./MINUTE_POINTS_SYSTEM.md)
 § "The cdp, the dictionary, and Compare all earn".
 
 References: `src/features/flashcards/compare/useCompareSheet.tsx` → `useCompareSheet`;
-`FlashcardsLearnPage.tsx` → `handleCompare`; `VocabCardDetailPage.tsx` → `handleCompare`;
+`FlashcardsLearnPage.tsx` → `handleCompare`; `deckTower/cardView/TowerCardView.tsx` → `handleCompare`;
 `EipSheet.tsx` → `handleCompare`; `src/components/WordToolsRail.tsx` (the `Compare` pill).
 
 ---
@@ -161,7 +163,8 @@ popup (no `onSegmentOpen`): the eip closed when Compare opened, so there is noth
 - The `xl` `CPCDSize` was added for the slots (`COLUMN_WIDTH`, `CHAR_FONT_SIZE`,
   `PINYIN_RESERVED_HEIGHT` in `cpcdLayout.ts`; `PLAIN_CHAR_FONT` / `PLAIN_COMPACT_CHAR_FONT` in
   ForeignText). Since 2026-11-21 the slots render at `lg` (their fixed square cannot hold an xl
-  2×2 block), leaving the font lab (`src/pages/fontLab/specimens.tsx`) as xl's only user.
+  2×2 block), leaving Speed Reading's option glyphs (`src/games/speed-reading/constants.ts` →
+  `OPTION_GLYPH_SIZE`) as xl's only user.
 
 ---
 
@@ -279,10 +282,10 @@ CREATE TABLE word_comparison_cache (
 | Client UI | `src/features/flashcards/FlashcardsLearnPage/EipUpperPanel.tsx`, `EipShelf.tsx`, `EipPaletteContext.tsx`, `useEipPalette.ts`, `eipPalette.ts` → `eipShelfLook` | the eip chrome and palette the panel reuses |
 | Client UI | `src/components/sheet/SheetPanel.tsx`, `src/components/sheet/sheetStyled.ts` | the maximizable bottom-sheet primitive |
 | Route / nav | — | **Nothing.** `/compare`, `ComparePage.tsx`, the `routeMeta`/`registry` rows and the hub's "Compare Words" tile were all deleted 2026-09-04; Compare has no route |
-| Hosts | `FlashcardsLearnPage.tsx`, `VocabCardDetailPage.tsx`, `FlashcardsLearnPage/EipSheet.tsx` (Dictionary page, Reader) | each → `handleCompare`: close the eip, `openCompare(word)` |
+| Hosts | `FlashcardsLearnPage.tsx`, `deckTower/cardView/TowerCardView.tsx`, `FlashcardsLearnPage/EipSheet.tsx` (Dictionary page, Reader) | each → `handleCompare`: close the eip, `openCompare(word)` |
 | Shared util | `src/utils/dictEntryAdapter.ts` | `dictionaryEntryToVocabEntry` — a picked search row → the slot's `VocabEntry`; also `src/api/dictionary.ts` |
 | Client UI | `src/components/LongDefinitionDisplay.tsx`, `src/components/SegmentedSentenceDisplay.tsx` | shared renderer; `runTranslation` puts a translated run into whole-run (passive) mode |
-| Client UI | `src/components/WordToolsRail.tsx` | the `Compare` pill: above the card on the flp and `VocabCardDetailPage`; at the bottom of the eip's definition tab on `EipSheet` hosts with `showWordTools` (Dictionary page, Reader). Self-hides when `onCompare` is omitted |
+| Client UI | `src/components/WordToolsRail.tsx` | the `Compare` pill: above the card on the flp and td's card view (`TowerCardView`); at the bottom of the eip's definition tab on `EipSheet` hosts with `showWordTools` (Dictionary page, Reader). Self-hides when `onCompare` is omitted |
 | Client UI | `src/components/DictionaryWordSearch.tsx` | the mini search (shared with the Writing Notebook picker) — see [The search](#the-search) |
 | Client UI | `src/components/dictionarySearch/` (**new** 2026-11-21) | `DictionarySearchResults.tsx`, `DictionaryResultParts.tsx`, `dictionaryMatchSections.ts`, `dictionarySearchField.ts` — the Dictionary page's result layout and field, shared with the mini search |
 | Client UI | `src/components/PinyinKeypad.tsx` | shared tone-vowel / accent keypad (es only above the dictionary fields) |

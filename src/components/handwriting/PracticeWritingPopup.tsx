@@ -24,7 +24,6 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, Button, Box, CircularProgress } from "@mui/material";
-import { useAuth } from "../../AuthContext";
 import { COLORS } from "../../theme";
 import WritingStage, { type StageResult } from "./WritingStage";
 import LevelStepper from "./LevelStepper";
@@ -82,8 +81,6 @@ export default function PracticeWritingPopup({
   onClose,
   origin,
 }: PracticeWritingPopupProps) {
-  const { token } = useAuth();
-
   // Split into characters (code-point aware). One Ink + one result per character.
   const chars = useMemo(() => [...character], [character]);
   const isMulti = chars.length > 1;
@@ -259,20 +256,30 @@ export default function PracticeWritingPopup({
     setChecking(true);
     const startedAt = performance.now();
 
-    // Recognise every character in parallel; an empty/failed panel counts as wrong.
-    const settled = await Promise.all(
-      chars.map(async (ch, i) => {
-        const ink = inksToVerify[i] ?? [];
-        if (ink.length === 0) return { i, correct: false, top1: null as string | null, candidates: [] as string[] };
-        try {
-          const { candidates, top1 } = await recognizeHandwriting(ink, FOCUS_SIZE, FOCUS_SIZE, token);
+    // Recognise every character in parallel; an EMPTY panel counts as wrong (nothing was
+    // written). A recognizer call that could not run (network error, the proxy's 502 when
+    // Google is down) is not a wrong answer: the whole Verify is dropped — no ✓/✗, no
+    // Writing marks (`onWritingResult`), no star — and the popup goes back to its pre-check
+    // state with every stroke kept, so the same Verify button retries. No message of its
+    // own: it only gets here after recognizeHandwriting's quiet retries, and a lost
+    // connection is said once by the shared notice (docs/NOTIFICATIONS.md § 3a "Failures"). Until
+    // 2026-11-23 a failed panel was graded ✗ and its wrong mark was written.
+    // Same rule as useWritingFlashcard → handleSubmit (docs/WRITING_PRACTICE_REWORK.md § 3).
+    let settled: { i: number; correct: boolean; top1: string | null; candidates: string[] }[];
+    try {
+      settled = await Promise.all(
+        chars.map(async (ch, i) => {
+          const ink = inksToVerify[i] ?? [];
+          if (ink.length === 0) return { i, correct: false, top1: null as string | null, candidates: [] as string[] };
+          const { candidates, top1 } = await recognizeHandwriting(ink, FOCUS_SIZE, FOCUS_SIZE);
           return { i, correct: top1 === ch, top1, candidates };
-        } catch (err) {
-          console.warn("✍️ handwriting verify failed", { target: ch, index: i, error: err });
-          return { i, correct: false, top1: null as string | null, candidates: [] as string[] };
-        }
-      }),
-    );
+        }),
+      );
+    } catch (err) {
+      console.warn("✍️ handwriting verify failed; attempt left unchecked for a retry", { target: character, error: err });
+      setChecking(false);
+      return;
+    }
 
     const newResults: StageResult[] = chars.map((_, i) => (settled[i].correct ? "correct" : "wrong"));
     setResults(newResults);

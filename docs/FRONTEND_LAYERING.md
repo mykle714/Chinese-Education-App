@@ -15,7 +15,7 @@ Referenced from [ARCHITECTURE_REVIEW.md](./ARCHITECTURE_REVIEW.md) (findings 5 a
 | `src/pages/` | App-level, auth, and legacy pages only (`AccountSheet`, login/register, settings) | It is not part of any one feature |
 | `src/components/` | Genuinely shared presentational components | Importers in **two or more** features |
 | `src/hooks/`, `src/utils/` | Shared, feature-agnostic logic | Same test as `components/` |
-| `src/cardIcons/` | The card-icon subsystem (layout math, text layout, API client, `editor/`) | Consumed by both flp and cdp |
+| `src/cardIcons/` | The card-icon subsystem (layout math, text layout, API client, `editor/`) | Consumed by both the flp (`features/flashcards`) and td's card view (`features/deckTower/cardView`) |
 | `src/reading/` | The reading engine: the reading box (`TextArea`), tap overlay, selection, segmentation, the rdb keycap's wiring (`useReadingKeycap`), Sentence Explain, tap-to-hear, the eip mount | Consumed by the Reader and Adventures (cyoa) — [CYOA_FEATURE.md](./CYOA_FEATURE.md) § 4. ⚠️ Still imports the eip kit from `features/flashcards` and the pawn from `features/deckTower` (DEFERRED_WORK item 61) |
 | `src/api/` | The HTTP transport (§ 3) | — |
 | `src/routes/` | `routeMeta.ts` (path table, **no page imports**) + `registry.ts` (components, **all `React.lazy`**) | — |
@@ -56,7 +56,7 @@ importers, and the correct home is determined.
 
 **The failure this prevents.** The flashcard icon editor (fie) lived in
 `src/features/flashcards/FlashcardsLearnPage/` while being consumed by **two** pages
-(flp and the cdp). One page's folder therefore owned code the other page depended on, so
+(flp and the cdp — the cdp's role is now td's card view). One page's folder therefore owned code the other page depended on, so
 neither could change it safely. It now lives in `src/cardIcons/editor/`.
 
 **Applied again, 2026-09-04.** `SheetPanel` — the modal/persistent bottom-sheet chrome —
@@ -121,7 +121,13 @@ plus `withFallback`. It supplies:
   its own multipart boundary,
 - `credentials: 'include'`,
 - the `Authorization: Bearer` header, read **at call time** via `authHeader()`,
-- throw-on-non-2xx as `ApiError`, carrying the parsed body at `err.response.data`.
+- throw-on-non-2xx as `ApiError`, carrying the parsed body at `err.response.data`,
+- a **quiet retry** of transient failures (network error, 502/503/504; `RETRY_DELAYS_MS`) —
+  every GET, and a write only when its API function passes `retry: true`. ⛔ Opt a write in
+  only when the endpoint is safe to receive twice (it sets a state; a repeat changes
+  nothing) — never a flashcard mark. The opted-in list lives on `RequestOptions.retry`,
+- `CONNECTION_EVENT`, the reachability signal behind the shared "No connection" notice
+  ([NOTIFICATIONS.md § 3a](./NOTIFICATIONS.md)).
 
 It deliberately wraps the **global** `fetch`, which `utils/fetchInterceptor.ts` has
 already patched for transparent token refresh + retry on 401 — so one auth layer serves

@@ -1,7 +1,6 @@
 import type { PoolClient } from 'pg';
 import { IBaseDAL } from './IBaseDAL.js';
-import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, DifficultyLevel, UsedInItem, IconLayoutItem, SnapConfig, TextColors, TextLayout, TypedMarkHistory } from '../../types/index.js';
-import { BulkResult, ITransaction } from '../../types/dal.js';
+import { VocabEntry, VocabEntryCreateData, VocabEntryUpdateData, UsedInItem, IconLayoutItem, SnapConfig, TextColors, TextLayout, TypedMarkHistory } from '../../types/index.js';
 import type { MasteredAtByBar, MasteryWorldId, StarterPackBucket } from '../../contracts/wire.js';
 
 /**
@@ -151,7 +150,6 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
     language: string,
     selectedSense: string | null
   ): Promise<VocabEntry | null>;
-  findByUserIdAndLanguage(userId: string, language: string, limit?: number, offset?: number): Promise<VocabEntry[]>;
   findByUserAndKey(userId: string, entryKey: string, language: string): Promise<VocabEntry | null>;
   /**
    * The row's id + `starterPackBucket` for (user, entryKey, language), or null when the
@@ -200,17 +198,7 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
    * false when there was no 'library' row to demote. See docs/PROVISIONAL_CARDS.md.
    */
   demoteLibraryRowToTracked(userId: string, entryKey: string, language: string): Promise<boolean>;
-  countByUserIdAndLanguage(userId: string, language: string): Promise<number>;
-
-  // Search and filtering
-  searchEntries(userId: string, searchTerm: string, language: string, limit?: number): Promise<VocabEntry[]>;
-  findByDifficultyLevel(userId: string, difficulty: DifficultyLevel): Promise<VocabEntry[]>;
   findByTokens(userId: string, tokens: string[], language: string): Promise<VocabEntry[]>;
-
-  // Bulk operations for CSV import
-  bulkCreate(entries: VocabEntryCreateData[]): Promise<VocabEntry[]>;
-  bulkUpsert(entries: VocabEntryCreateData[]): Promise<BulkResult>;
-  bulkCreateWithTransaction(entries: VocabEntryCreateData[], transaction: ITransaction): Promise<VocabEntry[]>;
 
   // Advanced queries
   /**
@@ -220,7 +208,6 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
    */
   bulkFindByKeys(userId: string, entryKeys: string[], language: string): Promise<VocabEntry[]>;
   findDuplicateKeys(userId: string, entryKeys: string[], language: string): Promise<VocabEntry[]>;
-  findEntriesCreatedAfter(userId: string, date: Date, language: string): Promise<VocabEntry[]>;
   findRelatedBySharedCharacters(
     userId: string,
     word: string,
@@ -261,10 +248,4 @@ export interface IVocabEntryDAL extends IBaseDAL<VocabEntry, VocabEntryCreateDat
     chars: string[],
     language: string
   ): Promise<Map<string, UsedInItem[]>>;
-
-  // Batch operations with progress tracking
-  bulkUpsertWithProgress(
-    entries: VocabEntryCreateData[],
-    progressCallback?: (processed: number, total: number) => void
-  ): Promise<BulkResult>;
 }

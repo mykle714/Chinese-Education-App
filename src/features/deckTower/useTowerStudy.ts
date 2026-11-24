@@ -166,7 +166,7 @@ export interface SceneBox {
  * the floor plate's slab in WHITE, per the design — its walls stepped down from white the
  * way a plate's are from its band (`bandMaterial`), so they read as light greys.
  */
-const STUDY_PLATE_TONES = bandMaterial(COLORS.white);
+export const STUDY_PLATE_TONES = bandMaterial(COLORS.white);
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 /** World z of the top face of a tower of `cards` cards (the floor when empty). */

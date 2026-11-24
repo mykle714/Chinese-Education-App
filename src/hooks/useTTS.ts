@@ -225,6 +225,13 @@ export function useTTS() {
         await speakText(entry.entryKey, resolveDisplayPronunciation(entry, senseIndexOverride), 'surface');
     }, [speakText]);
 
+    // surfaceAutoSpeak for a run of text with no entry of its own — the Reader's tap-to-hear
+    // on a selected PHRASE (src/reading/useReadingKeycap; docs/READER_SEGMENTATION.md
+    // § "Phrase stepping"). `pronunciation` = the words' readings joined, when all are known.
+    const surfaceAutoSpeakText = useCallback(async (text: string, pronunciation?: string) => {
+        await speakText(text, pronunciation, 'surface');
+    }, [speakText]);
+
     // Narrate an arbitrary Chinese sentence. Pronunciation is the optional
     // space-separated pinyin hint (one token per GSA segment) — see
     // buildSentencePronunciation. Server-side cache is keyed on text+pinyin+voice
@@ -371,6 +378,8 @@ export function useTTS() {
         autoSpeakSentence,
         /** Automatic narration gated by the CALLER's own setting (the Reader audio chip). */
         surfaceAutoSpeak,
+        /** surfaceAutoSpeak for text with no entry (the Reader's selected phrase). */
+        surfaceAutoSpeakText,
         cancel,
         prefetch,
         prefetchSentence,

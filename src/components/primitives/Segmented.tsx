@@ -2,6 +2,7 @@ import { Box, Typography } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
 import { COLORS } from "../../theme/colors";
 import { FONTS } from "../../theme/fonts";
+import type { Tier2Look } from "../../timeOfDay/tier2Look";
 
 /**
  * `Segmented` — the design's `.trkseg`: a hairline-outlined pill split into 2–4
@@ -27,7 +28,7 @@ import { FONTS } from "../../theme/fonts";
  * a border-collapse scheme that all have to be overridden away to reach an 8.5px mono
  * pill, and what survived the overrides was a `Box` with extra steps.
  *
- * Depended on by: docs/SHELF_REDESIGN.md § A5. Sibling primitives: `Label`, `Row`.
+ * Depended on by: docs/SHELF_REDESIGN.md § A5 and § 7b ("The cdp at night", `tones`). Sibling primitives: `Label`, `Row`.
  */
 
 export interface SegmentedOption<T extends string> {
@@ -35,6 +36,22 @@ export interface SegmentedOption<T extends string> {
     /** Rendered uppercase and widely tracked, so keep it to one short word. */
     label: string;
 }
+
+/**
+ * The colours `tones` can override — field names match Tier2Look's, so a Tier 2 page can
+ * pass its time-of-day look straight through (`tones={look}`). The active segment's text
+ * takes the GROUND (the "paper text" punched out of the ink fill), not a surface.
+ */
+export type SegmentedTones = Pick<Tier2Look, "line" | "ink" | "ink2" | "muted" | "ground">;
+
+/** The paper-ground switch, as every caller without `tones` draws it. */
+const SEGMENTED_DAY_TONES: SegmentedTones = {
+    line: COLORS.rowBorder,
+    ink: COLORS.onSurface,
+    ink2: COLORS.textSecondary,
+    muted: COLORS.textFaint,
+    ground: COLORS.background,
+};
 
 export interface SegmentedProps<T extends string> {
     options: readonly SegmentedOption<T>[];
@@ -44,6 +61,13 @@ export interface SegmentedProps<T extends string> {
     ariaLabel: string;
     className?: string;
     sx?: SxProps<Theme>;
+    /**
+     * Re-colours the outline, dividers, fill and text for a ground that is not paper — a
+     * Tier 2 page at night passes its look. (No caller since the cdp's MasteryWindow was
+     * deleted 2026-11-23.) Omitted = the
+     * paper day tones (SEGMENTED_DAY_TONES).
+     */
+    tones?: SegmentedTones;
 }
 
 export function Segmented<T extends string>({
@@ -53,7 +77,9 @@ export function Segmented<T extends string>({
     ariaLabel,
     className,
     sx,
+    tones,
 }: SegmentedProps<T>) {
+    const t = tones ?? SEGMENTED_DAY_TONES;
     return (
         <Box
             className={className ? `segmented ${className}` : "segmented"}
@@ -63,7 +89,7 @@ export function Segmented<T extends string>({
                 {
                     display: "flex",
                     flexShrink: 0,
-                    border: `1px solid ${COLORS.rowBorder}`,
+                    border: `1px solid ${t.line}`,
                     borderRadius: "999px",
                     // The active segment is a solid fill that must clip to the pill's
                     // curve; without this the ink square pokes out of both ends.
@@ -96,13 +122,13 @@ export function Segmented<T extends string>({
                             border: "none",
                             // A divider BETWEEN segments only — a leading border would
                             // double up with the container's own outline.
-                            borderLeft: index === 0 ? "none" : `1px solid ${COLORS.rowBorder}`,
-                            backgroundColor: active ? COLORS.onSurface : "transparent",
-                            color: active ? COLORS.background : COLORS.textFaint,
+                            borderLeft: index === 0 ? "none" : `1px solid ${t.line}`,
+                            backgroundColor: active ? t.ink : "transparent",
+                            color: active ? t.ground : t.muted,
                             // No transition on the fill: the control switches what is
                             // being reported below it, and a 200ms cross-fade on the
                             // pill reads as lag on a change that is instant.
-                            "&:hover": { color: active ? COLORS.background : COLORS.textSecondary },
+                            "&:hover": { color: active ? t.ground : t.ink2 },
                         }}
                     >
                         {option.label}

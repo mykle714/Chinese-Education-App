@@ -93,9 +93,6 @@ describe("challenge-eligible game pool", () => {
         // Word Search's No-Pinyin mode is the other one — same game, ineligible mode.
         expect(challengeScoringFor("word-search", "no-pinyin")).toBeUndefined();
         expect(challengeScoringFor("word-search", "pinyin")).toBeDefined();
-        // Bucket Drop has the same split: Pinyin is recognition, No Pinyin is reading.
-        expect(challengeScoringFor("bucket-drop", "no-pinyin")).toBeUndefined();
-        expect(challengeScoringFor("bucket-drop", "pinyin")).toBeDefined();
 
         // ...and it stays ineligible even though it DOES emit a production mark. This is
         // the pin for the secondary-track rule above: No-Pinyin's find writes reading +
@@ -106,9 +103,13 @@ describe("challenge-eligible game pool", () => {
         expect(noPinyin.markType).toBe("reading");
     });
 
-    it("draws a same-language pool of at least the round count, and a smaller cross-language one", () => {
-        // zh-vs-zh can fill a full test today.
-        expect(challengeGamesForLanguages("zh", "zh").length).toBeGreaterThanOrEqual(CHALLENGE_ROUND_COUNT);
+    it("draws a same-language pool no larger than the round count, and a smaller cross-language one", () => {
+        // ⚠️ zh-vs-zh can NOT fill a full test today: Bubble Match, Hydra Bubbles and
+        // Bucket Drop were archived 2026-11-23, leaving Match Speed + Word Search (Pinyin),
+        // so a test plays `min(pool, CHALLENGE_ROUND_COUNT)` = 2 rounds. Study Challenge is
+        // flagged off; revisit CHALLENGE_ROUND_COUNT (or add eligible games) before it
+        // ships again.
+        expect(challengeGamesForLanguages("zh", "zh").length).toBeLessThanOrEqual(CHALLENGE_ROUND_COUNT);
 
         // es-vs-es and any cross-language pair lose Word Search, which is zh-only because
         // its grid is built from characters. The format BENDS to two rounds rather than

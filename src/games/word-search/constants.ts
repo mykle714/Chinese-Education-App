@@ -72,7 +72,7 @@ export interface WordSearchModeConfig {
      * ⚠️ A secondary mark is BEST-EFFORT. The board was pooled on `markType`, so a
      * card can be off cooldown for reading while still cooling for production; the
      * `/api/flashcards/mark` chokepoint then drops the production mark (logged
-     * `[MarkSuppressed]`, docs/HYDRA_BUBBLES.md § 8). That is the correct outcome —
+     * `[MarkSuppressed]`, docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md § "Cooldown is a hard next-markable-at"). That is the correct outcome —
      * the cooldown rule is exactly what stops one board from inflating a track — but
      * it means "emits both" is a statement about the ATTEMPT, not a guarantee.
      */

@@ -27,14 +27,16 @@ This is the backend API server for the vocabulary application, providing endpoin
 - `POST /api/auth/changePassword` - Change user password
 
 ### Vocabulary Entries
-- `GET /api/vocabEntries` - Get all vocabulary entries (protected)
-- `GET /api/vocabEntries/paginated` - Get paginated vocabulary entries (protected)
-- `GET /api/vocabEntries/:id` - Get a specific vocabulary entry by ID (protected)
-- `POST /api/vocabEntries` - Create a new vocabulary entry (protected)
-- `PUT /api/vocabEntries/:id` - Update a vocabulary entry (protected)
-- `DELETE /api/vocabEntries/:id` - Delete a vocabulary entry (protected)
-- `POST /api/vocabEntries/import` - Import vocabulary entries from CSV (protected)
-- `POST /api/vocabEntries/byTokens` - Get vocabulary entries by tokens (protected)
+All protected; registered in `server/routes/vocabEntryRoutes.ts`. Cards enter the library
+through `addToLibrary` (or acp's sort), not a generic create endpoint.
+- `POST /api/vocabEntries/addToLibrary` - Add a card to the library
+- `GET /api/vocabEntries/libraryStatus?entryKey=&language=` - Whether one word is in the library
+- `POST /api/vocabEntries/removeFromLibrary` - Remove a card from the library
+- `POST /api/vocabEntries/byTokens` - Get vocabulary entries by tokens
+- `GET /api/vocabEntries/:id` - Get a specific vocabulary entry by ID
+- `PUT /api/vocabEntries/:id` - Update a vocabulary entry
+- `PATCH /api/vocabEntries/:id/iconLayout` - Save a card's custom icon layout
+- `PATCH /api/vocabEntries/:id/selectedSense` - Save the learner's chosen sense
 
 ### Users
 - `GET /api/users/:id` - Get your OWN user row (protected, self-only — another id is a 403)
@@ -75,7 +77,7 @@ server/
 │   ├── onDeckRoutes.ts
 │   ├── starterPacksRoutes.ts
 │   ├── dictionaryRoutes.ts
-│   ├── gamesRoutes.ts    # games framework (/api/games/*)
+│   ├── speedReadingRoutes.ts # /api/games/speedReading/* (Speed Reading's distractors)
 │   ├── mediaRoutes.ts    # TTS + icons8 (behind proxyLimiter)
 │   ├── handwritingRoutes.ts
 │   ├── diagnosticsRoutes.ts # unauthenticated sinks (behind diagnosticsLimiter)

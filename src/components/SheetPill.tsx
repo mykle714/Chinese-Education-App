@@ -3,6 +3,14 @@ import Icon from "./Icon";
 import { COLORS } from "../theme/colors";
 import { FONTS } from "../theme/fonts";
 import { WEIGHT, TRACKING } from "../theme/scale";
+import type { Tier2Look } from "../timeOfDay/tier2Look";
+
+/**
+ * The colours `tones` can override — field names match Tier2Look's, so a Tier 2 page can
+ * pass its time-of-day look straight through. `surface` is the face, `outline` the 1px
+ * ring (CLAUDE.md § Buttons & cards), `ink` the label and the arrow.
+ */
+export type SheetPillTones = Pick<Tier2Look, "surface" | "outline" | "ink">;
 
 /**
  * `SheetPill` — the capsule that raises a bottom sheet.
@@ -22,7 +30,7 @@ import { WEIGHT, TRACKING } from "../theme/scale";
  * that page MEASURES the pill (`useCardSlotPadding`) to size the card slot and
  * carries flip-state semantics; its visual spec is the one reproduced here.
  *
- * Referenced by docs/SHELF_REDESIGN.md, docs/LEAF_NODE_PAGES.md.
+ * Referenced by docs/SHELF_REDESIGN.md (incl. § 7b "The cdp at night", `tones`), docs/LEAF_NODE_PAGES.md.
  */
 
 export interface SheetPillProps {
@@ -54,6 +62,12 @@ export interface SheetPillProps {
     ariaExpanded?: boolean;
     /** Leading icon; the arrow is the shared "this raises a sheet" mark. */
     iconName?: string;
+    /**
+     * Re-colours the pill for a ground that is not paper — the vet cdp passes its Tier 2
+     * look at night. Omitted = the paper pill (white face, `COLORS.border` ring, ink label,
+     * the default `COLORS.iconColor` arrow).
+     */
+    tones?: SheetPillTones;
     className?: string;
 }
 
@@ -68,6 +82,7 @@ export const SheetPill: React.FC<SheetPillProps> = ({
     ariaLabel,
     ariaExpanded,
     iconName = "arrow_upward",
+    tones,
     className,
 }) => {
     // The static half of the pill's transform (centring it on the frame). The pulse
@@ -95,8 +110,8 @@ export const SheetPill: React.FC<SheetPillProps> = ({
             gap: "8px",
             padding: "0 16px 0 14px",
             borderRadius: 999,
-            border: `1px solid ${COLORS.border}`,
-            backgroundColor: COLORS.white,
+            border: `1px solid ${tones?.outline ?? COLORS.border}`,
+            backgroundColor: tones?.surface ?? COLORS.white,
             cursor: disabled ? "default" : "pointer",
             whiteSpace: "nowrap",
             // Only the busy case swallows taps; a dimmed pill still reaches its handler.
@@ -110,7 +125,7 @@ export const SheetPill: React.FC<SheetPillProps> = ({
             },
         }}
     >
-        <Icon name={iconName} size={16} sx={{ opacity: 0.72 }} />
+        <Icon name={iconName} size={16} color={tones?.ink} sx={{ opacity: 0.72 }} />
         <Box
             component="span"
             className="sheet-pill__label"
@@ -119,7 +134,7 @@ export const SheetPill: React.FC<SheetPillProps> = ({
                 fontSize: 13,
                 fontWeight: WEIGHT.semibold,
                 letterSpacing: TRACKING.wide,
-                color: COLORS.onSurface,
+                color: tones?.ink ?? COLORS.onSurface,
             }}
         >
             {label}

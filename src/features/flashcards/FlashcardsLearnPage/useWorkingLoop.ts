@@ -386,7 +386,7 @@ export function useWorkingLoop({
             });
 
             // A SUPPRESSED mark (the card's know clock had not finished cooling —
-            // docs/HYDRA_BUBBLES.md § 8) wrote nothing, so there is no timestamp and
+            // docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md § "Cooldown is a hard next-markable-at") wrote nothing, so there is no timestamp and
             // nothing to undo. Reported as its own result rather than an error: the
             // review DID happen, it just did not change any history, and surfacing it
             // as a failure would show "Failed to save progress" for a working app.

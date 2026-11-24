@@ -41,8 +41,8 @@ function measureContext(): CanvasRenderingContext2D | null {
  * Resolve a `var(--name, fallback)` family token to a concrete stack: canvas cannot read
  * CSS custom properties. Reads the live value on `:root` (where useChineseFont writes
  * `--cjk-font`), else the var()'s own fallback. A plain stack comes back unchanged.
- * ⚠️ Sees only a `:root`-level override — a `--cjk-font` set on a container (the font
- * lab's specimen columns) is not visible here.
+ * ⚠️ Sees only a `:root`-level override — a `--cjk-font` set on a container (the
+ * Beginner Keyboard's HintBubble) is not visible here.
  */
 export function resolveFontFamily(family: string): string {
     const m = /^var\((--[\w-]+)\s*,\s*(.*)\)$/.exec(family.trim());

@@ -3,7 +3,7 @@ import { Box, useMediaQuery, useTheme } from "@mui/material";
 import { keyframes } from "@mui/material/styles";
 import { COLORS } from "../theme/colors";
 import { textareaOffsetAtPoint } from "./textSelectionUtils";
-import { findAlternativeCellAt } from "./readerAlternatives";
+import { findAlternativeCellAt, findOffsetAt } from "./readerAlternatives";
 
 /** The two tap zones: `left` = back (the left third), `right` = forward. */
 export type TapZoneSide = "left" | "right";
@@ -37,6 +37,11 @@ interface ReaderTapOverlayProps {
     // SENTENCE_PRESS_EXTRA_MS after WORD JUMP selected a word → widen that word to its
     // sentence (useTextSelection → `selectSentenceAtSelection`). Absent → no second tier.
     onSelectSentence?: () => void;
+    // TAP INSIDE THE SELECTION (useReadingText → `drillAtOffset`, readerDrill.ts): offered the
+    // character offset under every short tap BEFORE the zone step. Returns true when the tap
+    // landed inside the selection (it narrowed it, or stayed on a single character) — the
+    // zone step is then skipped. Absent → every tap steps.
+    onTapInsideSelection?: (offset: number) => boolean;
     // ZONE FLASH: set → flash that zone grey a couple of times over the reading box. Fired
     // when the learner taps the keycap's tap demo (ReaderTapHint → `onZoneTap`), to show
     // where the real zone is.
@@ -78,6 +83,59 @@ const MOVE_THRESHOLD_PX = 10;
 // docs/USER_DOCUMENT_FEATURE_SUMMARY.md § "Sentence Explain".
 const SENTENCE_PRESS_EXTRA_MS = 600;
 
+// PRESS DONUT: a small ring drawn just ABOVE the pressed spot (the finger covers the spot
+// itself) that shows the long-press's progress. Lap 1 fills over LONG_PRESS_MS — full = the
+// word under the finger is selected (WORD JUMP); lap 2 empties and fills again over
+// SENTENCE_PRESS_EXTRA_MS — full = the sentence is selected (SENTENCE PRESS). It stays full
+// until the finger lifts, and vanishes at once on a release, a move, a scroll or a cancel.
+// It appears only once the press has outlasted a tap (DONUT_SHOW_DELAY_MS — most taps lift
+// within ~150 ms), so a single tap never brings it up; lap 1 then starts EMPTY at that
+// moment and fills over what is left of LONG_PRESS_MS, so it still completes exactly when
+// the word is selected.
+//
+// ⚡ Compositor-only, and ONE animation per press. The word select at the end of lap 1
+// re-renders the reader (a heavy main-thread frame), exactly when the ring must keep moving:
+//   - an SVG stroke-dashoffset animation (main thread) stuttered there;
+//   - so did starting lap 2 from the long-press timer — a new animation cannot begin until
+//     the main thread is free, so the full ring hung before lap 2 started.
+// So the ring is two HALF-rings that ROTATE into view (`transform`, plus `opacity` for the
+// fade) through rectangular `overflow: hidden` windows, and BOTH laps — lap 1, the reset,
+// lap 2 — are keyframes of one Web Animation started on pointerdown. Nothing touches it at
+// the lap boundary; the main thread only cancels it (hideDonut) or freezes it full after
+// lap 1 when no sentence lap follows (holdDonutAtWord).
+//   right window (shows the right half) ← its rotor's visible half is the LEFT half-ring,
+//                                          rotating 0→180° in a lap's first half: 12 → 6 o'clock;
+//   left window  (shows the left half)  ← its rotor shows the RIGHT half-ring, rotating
+//                                          0→180° in a lap's second half: 6 → 12 o'clock.
+// By day the ring is ink on a --line2 track; at night (slate card) ink would vanish, so it
+// is white on a faint white track (⚠️ off-framework — the framework has no night tier;
+// same exception as FLASH_NIGHT_FILL).
+const DONUT_SIZE_PX = 34;
+const DONUT_STROKE_PX = 4;
+// Gap between the pressed point and the donut's centre — clears a fingertip.
+const DONUT_LIFT_PX = 56;
+const DONUT_SHOW_DELAY_MS = 200;
+const DONUT_FADE_MS = 60;
+const DONUT_NIGHT_FILL = "rgba(255, 255, 255, 0.92)";
+const DONUT_NIGHT_TRACK = "rgba(255, 255, 255, 0.22)";
+// Both laps on one timeline, which begins DONUT_SHOW_DELAY_MS after pointerdown (the
+// animations' `delay`); offsets are fractions of DONUT_TOTAL_MS.
+const DONUT_LAP1_MS = LONG_PRESS_MS - DONUT_SHOW_DELAY_MS;
+const DONUT_TOTAL_MS = DONUT_LAP1_MS + SENTENCE_PRESS_EXTRA_MS;
+const DONUT_LAP1_END = DONUT_LAP1_MS / DONUT_TOTAL_MS;
+const DONUT_LAP1_MID = DONUT_LAP1_END / 2;
+const DONUT_LAP2_MID = DONUT_LAP1_END + (1 - DONUT_LAP1_END) / 2;
+const rot = (deg: number, offset: number): Keyframe => ({ transform: `rotate(${deg}deg)`, offset });
+// Two keyframes at DONUT_LAP1_END = an instant reset to empty for lap 2.
+const DONUT_RIGHT_SWEEP: Keyframe[] = [
+    rot(0, 0), rot(180, DONUT_LAP1_MID), rot(180, DONUT_LAP1_END),
+    rot(0, DONUT_LAP1_END), rot(180, DONUT_LAP2_MID), rot(180, 1),
+];
+const DONUT_LEFT_SWEEP: Keyframe[] = [
+    rot(0, 0), rot(0, DONUT_LAP1_MID), rot(180, DONUT_LAP1_END),
+    rot(0, DONUT_LAP1_END), rot(0, DONUT_LAP2_MID), rot(180, 1),
+];
+
 // MOMENTUM (the overlay drives scrolling by hand, so the browser adds no fling of its own):
 // the release velocity is averaged over the drag's last VELOCITY_WINDOW_MS, a release
 // slower than MIN_FLING_PX_PER_MS just stops, and a fling decays exponentially with time
@@ -88,7 +146,7 @@ const MIN_FLING_PX_PER_MS = 0.15;
 const DECAY_TAU_MS = 325;
 const STOP_PX_PER_MS = 0.02;
 
-function ReaderTapOverlay({ inputRef, scrollRef, wordSource, onSelectSpanAtOffset, onClearSelection, onSelectSentence, flash, onFlashEnd, night = false }: ReaderTapOverlayProps) {
+function ReaderTapOverlay({ inputRef, scrollRef, wordSource, onSelectSpanAtOffset, onClearSelection, onSelectSentence, onTapInsideSelection, flash, onFlashEnd, night = false }: ReaderTapOverlayProps) {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
@@ -125,6 +183,12 @@ function ReaderTapOverlay({ inputRef, scrollRef, wordSource, onSelectSpanAtOffse
     const overlayRef = useRef<HTMLDivElement | null>(null);
     // MOMENTUM: the running fling's animation frame, or null.
     const flingFrameRef = useRef<number | null>(null);
+    // PRESS DONUT (see the constants above): the ring's elements and its running
+    // animations. Declared before the desktop early return.
+    const donutRef = useRef<HTMLDivElement | null>(null);
+    const donutRightRef = useRef<HTMLDivElement | null>(null);
+    const donutLeftRef = useRef<HTMLDivElement | null>(null);
+    const donutAnimsRef = useRef<Animation[]>([]);
 
     const stopFling = (): boolean => {
         if (flingFrameRef.current === null) return false;
@@ -158,6 +222,41 @@ function ReaderTapOverlay({ inputRef, scrollRef, wordSource, onSelectSpanAtOffse
         }
     };
 
+    // PRESS DONUT controls (see the constants above).
+    const cancelDonutAnims = () => {
+        donutAnimsRef.current.forEach((a) => a.cancel());
+        donutAnimsRef.current = [];
+    };
+    const hideDonut = () => {
+        cancelDonutAnims();
+        if (donutRef.current) donutRef.current.style.opacity = "0";
+    };
+    // Place the ring and start the press's single timeline: the fade plus both laps.
+    const showDonut = (x: number, y: number) => {
+        const el = donutRef.current;
+        const right = donutRightRef.current;
+        const left = donutLeftRef.current;
+        if (!el || !right || !left) return;
+        cancelDonutAnims();
+        el.style.left = `${x - DONUT_SIZE_PX / 2}px`;
+        el.style.top = `${y - DONUT_SIZE_PX / 2}px`;
+        el.style.opacity = "0";
+        // `fill: "both"` holds the first keyframe (empty) through the delay.
+        const sweep: KeyframeAnimationOptions = { duration: DONUT_TOTAL_MS, delay: DONUT_SHOW_DELAY_MS, easing: "linear", fill: "both" };
+        donutAnimsRef.current = [
+            el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: DONUT_FADE_MS, delay: DONUT_SHOW_DELAY_MS, fill: "forwards" }),
+            right.animate(DONUT_RIGHT_SWEEP, sweep),
+            left.animate(DONUT_LEFT_SWEEP, sweep),
+        ];
+    };
+    // WORD JUMP fired by the hold but no sentence lap follows (no onSelectSentence): freeze
+    // the ring FULL at lap 1's end (just before the reset keyframe). The fade is left running.
+    const holdDonutAtWord = () => {
+        donutAnimsRef.current.slice(1).forEach((a) => {
+            a.pause();
+            a.currentTime = LONG_PRESS_MS - 1; // currentTime includes the delay
+        });
+    };
     // Scroll by a finger's movement and record the sample for the release velocity.
     const dragScroll = (clientY: number) => {
         const g = gestureRef.current;
@@ -258,9 +357,16 @@ function ReaderTapOverlay({ inputRef, scrollRef, wordSource, onSelectSpanAtOffse
         g.jumping = true;
         const result = selectWordAt(clientX, clientY);
         if (!result.hit) {
+            // Nothing to widen: the donut has nothing more to count.
+            hideDonut();
             onClearSelection(result.caretOffset);
             return;
         }
+        // A horizontal drag is choosing a word, not holding: no donut. A hold keeps lap 1's
+        // full ring, then starts lap 2 when a sentence can follow.
+        // (Lap 2 needs no call here: it is already scheduled on the donut's timeline.)
+        if (!fromHold) hideDonut();
+        else if (!onSelectSentence) holdDonutAtWord();
         if (fromHold && onSelectSentence) {
             g.sentenceTimer = window.setTimeout(() => {
                 const current = gestureRef.current;
@@ -294,6 +400,12 @@ function ReaderTapOverlay({ inputRef, scrollRef, wordSource, onSelectSpanAtOffse
         };
         const startX = e.clientX;
         const startY = e.clientY;
+        // PRESS DONUT lap 1, above the finger — or below it when the press is too near the
+        // overlay's top for the ring to fit above.
+        const rect = e.currentTarget.getBoundingClientRect();
+        const pressY = startY - rect.top;
+        const above = pressY - DONUT_LIFT_PX;
+        showDonut(startX - rect.left, above >= DONUT_SIZE_PX / 2 ? above : pressY + DONUT_LIFT_PX);
         gestureRef.current.longPressTimer = window.setTimeout(() => {
             engageWordJump(startX, startY, true);
         }, LONG_PRESS_MS);
@@ -308,6 +420,7 @@ function ReaderTapOverlay({ inputRef, scrollRef, wordSource, onSelectSpanAtOffse
             // the sentence: disarm SENTENCE PRESS.
             if (g.sentenceTimer !== null && Math.hypot(e.clientX - g.startX, e.clientY - g.startY) > MOVE_THRESHOLD_PX) {
                 clearSentenceTimer();
+                hideDonut();
             }
             // WORD JUMP follows the finger, the way a native selection handle would.
             // Gaps crossed on the way keep the last word (only the initial press clears).
@@ -325,6 +438,7 @@ function ReaderTapOverlay({ inputRef, scrollRef, wordSource, onSelectSpanAtOffse
         const dy = e.clientY - g.startY;
         if (Math.hypot(dx, dy) > MOVE_THRESHOLD_PX) {
             clearLongPressTimer();
+            hideDonut();
             // A vertical-dominant drag is a scroll: proxy it to the scroll target.
             // A horizontal-dominant drag jumps to the word under the finger.
             if (Math.abs(dy) > Math.abs(dx)) {
@@ -341,6 +455,7 @@ function ReaderTapOverlay({ inputRef, scrollRef, wordSource, onSelectSpanAtOffse
         if (!g) return;
         clearLongPressTimer();
         clearSentenceTimer();
+        hideDonut();
         gestureRef.current = null;
 
         // A scroll drag coasts on (MOMENTUM); a jump or a fling-stopping touch has no
@@ -378,6 +493,17 @@ function ReaderTapOverlay({ inputRef, scrollRef, wordSource, onSelectSpanAtOffse
             return;
         }
 
+        // TAP INSIDE THE SELECTION: a tap on a character of the highlighted phrase / word
+        // narrows the selection to the piece under the finger instead of stepping
+        // (readerDrill.ts). Resolved to a character the same way WORD JUMP resolves a
+        // long-press: the cpcd cell under the point, or the textarea's mirror.
+        if (onTapInsideSelection) {
+            const offset = box
+                ? findOffsetAt(box, e.clientX, e.clientY)
+                : textareaOffsetAtPoint(textarea, e.clientX, e.clientY);
+            if (offset !== null && onTapInsideSelection(offset)) return;
+        }
+
         // Reuse the existing keyboard navigation: dispatch the same Arrow
         // keydown the textarea's onKeyDown handler already processes. That
         // handler correctly distinguishes collapsed-caret vs selected-word
@@ -400,6 +526,7 @@ function ReaderTapOverlay({ inputRef, scrollRef, wordSource, onSelectSpanAtOffse
     const handlePointerCancel = () => {
         clearLongPressTimer();
         clearSentenceTimer();
+        hideDonut();
         gestureRef.current = null;
     };
 
@@ -430,6 +557,72 @@ function ReaderTapOverlay({ inputRef, scrollRef, wordSource, onSelectSpanAtOffse
                 touchAction: "none",
             }}
         >
+            {/* PRESS DONUT: always mounted, hidden at opacity 0; the handlers place and
+                animate it (showDonut / holdDonutAtWord / hideDonut). Inert to pointers.
+                Each window is half the ring's width with overflow hidden; its rotor is the
+                ring's full size, offset back over the whole ring, and itself shows only the
+                OTHER half (its own half-width overflow box) — so a rotor at 0° shows nothing
+                through its window and rotating sweeps the arc in. */}
+            <Box
+                ref={donutRef}
+                className="reader-page-tap-overlay__press-donut"
+                aria-hidden
+                sx={{
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    width: DONUT_SIZE_PX,
+                    height: DONUT_SIZE_PX,
+                    pointerEvents: "none",
+                    opacity: 0,
+                    willChange: "opacity",
+                    "& .reader-page-tap-overlay__press-donut-ring": {
+                        position: "absolute",
+                        top: 0,
+                        width: DONUT_SIZE_PX,
+                        height: DONUT_SIZE_PX,
+                        boxSizing: "border-box",
+                        borderRadius: "50%",
+                        border: `${DONUT_STROKE_PX}px solid ${night ? DONUT_NIGHT_FILL : COLORS.onSurface}`,
+                    },
+                    "& .reader-page-tap-overlay__press-donut-window, & .reader-page-tap-overlay__press-donut-half": {
+                        position: "absolute",
+                        top: 0,
+                        width: DONUT_SIZE_PX / 2,
+                        height: DONUT_SIZE_PX,
+                        overflow: "hidden",
+                    },
+                    "& .reader-page-tap-overlay__press-donut-rotor": {
+                        position: "absolute",
+                        top: 0,
+                        width: DONUT_SIZE_PX,
+                        height: DONUT_SIZE_PX,
+                        transformOrigin: "50% 50%",
+                        willChange: "transform",
+                    },
+                }}
+            >
+                <Box
+                    className="reader-page-tap-overlay__press-donut-ring reader-page-tap-overlay__press-donut-track"
+                    sx={{ left: 0, borderColor: `${night ? DONUT_NIGHT_TRACK : COLORS.border} !important` }}
+                />
+                {/* Right window ← rotor showing its LEFT half-ring. */}
+                <Box className="reader-page-tap-overlay__press-donut-window" sx={{ left: DONUT_SIZE_PX / 2 }}>
+                    <Box ref={donutRightRef} className="reader-page-tap-overlay__press-donut-rotor" sx={{ left: -DONUT_SIZE_PX / 2 }}>
+                        <Box className="reader-page-tap-overlay__press-donut-half" sx={{ left: 0 }}>
+                            <Box className="reader-page-tap-overlay__press-donut-ring" sx={{ left: 0 }} />
+                        </Box>
+                    </Box>
+                </Box>
+                {/* Left window ← rotor showing its RIGHT half-ring. */}
+                <Box className="reader-page-tap-overlay__press-donut-window" sx={{ left: 0 }}>
+                    <Box ref={donutLeftRef} className="reader-page-tap-overlay__press-donut-rotor" sx={{ left: 0 }}>
+                        <Box className="reader-page-tap-overlay__press-donut-half" sx={{ left: DONUT_SIZE_PX / 2 }}>
+                            <Box className="reader-page-tap-overlay__press-donut-ring" sx={{ left: -DONUT_SIZE_PX / 2 }} />
+                        </Box>
+                    </Box>
+                </Box>
+            </Box>
             {/* ZONE FLASH, over the overlay's whole area (the screen below the display
                 strip). `key` restarts the animation on every request. Inert to pointers so
                 it never intercepts a gesture. */}

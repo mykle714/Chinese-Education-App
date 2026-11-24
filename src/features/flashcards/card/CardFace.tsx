@@ -30,7 +30,7 @@ import { resolveCardColor } from "../../../utils/cardColor";
  * `ChineseBlock`, `EnglishBlock` and `CardFaceSide` render a card face and nothing
  * else; the swipe/flip/fly-out DRILL that consumes them lives in
  * `features/flashcards/FlashcardsLearnPage/FlashCardSection.tsx`. Several surfaces
- * outside the flp render a card face without the drill — VocabCardDetailPage (cdp),
+ * outside the flp render a card face without the drill — td's card view (TowerCardView),
  * CommunityCardView, ExampleSentenceList and
  * InfoCardPanelBody — and each of them used to reach INTO the flp page folder to get
  * these, which made a page-specific folder a de-facto shared module.

@@ -23,7 +23,7 @@ Two behavior changes ride along:
 1. **The anchor sentence is gone.** v13 opened clean-match definitions with the verbatim
    `"Matches the common English definition for <gloss>."` That read as noise once several
    senses were on screen, and it restated a gloss the learner is already looking at.
-2. **Learner surfaces show ONE sense.** The eip Definition tab and both cdps render only
+2. **Learner surfaces show ONE sense.** The eip Definition tab (and, until their deletion, both cdps) render only
    the sense the card is on (all of that sense's POS blocks). The validator review document
    still shows every pair.
 

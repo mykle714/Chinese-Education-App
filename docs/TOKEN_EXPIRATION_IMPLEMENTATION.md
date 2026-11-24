@@ -315,11 +315,12 @@ sends). Use it in fetch callbacks that drive load effects so they don't need
 
 ### Sites converted (reference)
 Loader effects re-keyed to `user?.id` / `isAuthenticated` / `Boolean(token)`:
-`WordSearchStage.tsx` (mount load), `BubbleMatchPage.tsx` (pool load + wins seed),
+`WordSearchStage.tsx` (mount load),
 `useWorkingLoop.ts` (distributed-loop fetch), `ReaderPage.tsx`,
 `useCardLibrary.ts` (the card-library load; its former
 hosts `FlashcardsDecksPage.tsx` and `CollectionViewPage.tsx` are deleted),
 `VocabEntryCards.tsx` (×3), `PracticeWritingButton.tsx`, `useCategoryCounts.ts`,
+`useMasteredCounts.ts` (also moved onto `src/api/masteredCounts.ts`, so it holds no token at all),
 `EntryDetailPage.tsx`, `EditEntryPage.tsx`, `AddCardsPage.tsx`,
 `DictionaryPage.tsx`, `CommunityPage.tsx`,
 `useMinutePoints.ts` (reads `tokenRef.current`). Driver callbacks moved to

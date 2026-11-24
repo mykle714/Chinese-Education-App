@@ -95,7 +95,7 @@ export class TextController {
       }
 
       const { id } = req.params;
-      const { title, content, language, iconId } = req.body;
+      const { title, content, language, iconId, pronunciationOverrides } = req.body;
 
       const updateData: TextUpdateData = {};
       if (title !== undefined) updateData.title = title;
@@ -103,6 +103,8 @@ export class TextController {
       if (language !== undefined) updateData.language = language;
       // `null` is meaningful here (clear the icon), so only `undefined` is skipped.
       if (iconId !== undefined) updateData.iconId = iconId;
+      // The whole READING CHOICES list (migration 207); shape-checked in TextService.
+      if (pronunciationOverrides !== undefined) updateData.pronunciationOverrides = pronunciationOverrides;
 
       if (Object.keys(updateData).length === 0) {
         res.status(400).json({

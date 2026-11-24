@@ -186,7 +186,7 @@ is global except the two rollups listed above.
     level.
   - **Study** (`MINUTE_POINTS_ELIGIBLE_PAGES`): the ghost + fill treatment. Orange while
     earning, grey when idle, struck-through count when paused. On a game's accent
-    surface (every `GameLeafPage`, Bubble Match's white ground included) `gameSurfaceSx`
+    surface (every `GameLeafPage`) `gameSurfaceSx`
     overrides all of this: glyph AND count are ink. Progress toward the next
     point (`progressToNextPoint`) is drawn as a rising fill inside the flame glyph rather
     than as a seconds number — see [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § the
@@ -206,7 +206,7 @@ Accrual is decided by path, not by what a page does:
 
 | List | Match | Members |
 | --- | --- | --- |
-| `MINUTE_POINTS_ELIGIBLE_PAGES` | prefix (page + descendants) | **`/flashcards/card`**, **`/dictionary`** (prefix; matches only the search page), `/reader`, `/adventures` ([CYOA_FEATURE.md](./CYOA_FEATURE.md) § 8; behind the `cyoa` flag), `/discover/sort`, `/games/{bubble-match,word-search,match-speed,hydra-bubbles,bucket-drop}`, `/flashcards/writing/notebook` ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)) |
+| `MINUTE_POINTS_ELIGIBLE_PAGES` | prefix (page + descendants) | **`/dictionary`** (prefix; matches only the search page), `/reader`, `/adventures` ([CYOA_FEATURE.md](./CYOA_FEATURE.md) § 8; behind the `cyoa` flag), `/discover/sort`, `/games/{word-search,match-speed}`, `/flashcards/writing/notebook` ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)) |
 | `MINUTE_POINTS_AUTO_ACTIVE_PAGES` | prefix; subset that starts accruing on mount | `/games` |
 
 The `/games/*` entries (and the `/games` auto-active prefix) currently match nothing: the
@@ -238,6 +238,14 @@ claimants (or a StrictMode double-mount) cannot release each other's claim. The
 one-PageHeader rule still holds: the tower page unmounts its own header while the session's
 is up.
 
+**td's card view claims it too (2026-11-23).** A saved card tapped in td's cards page opens
+in place over `/` (`features/deckTower/cardView/TowerCardView`, [DECK_TOWER.md](./DECK_TOWER.md)
+§ "The card view"), so it earns the same way: `DeckTowerPage` calls
+`useClaimStudySurface(cardViewUp)` while the view is up. The view draws no `PageHeader` of its
+own — td's header stays mounted (faded) under it and runs the one tick. This replaced the
+routed cdp's `/flashcards/card` entry in `MINUTE_POINTS_ELIGIBLE_PAGES`, deleted with that
+route.
+
 Only **study** surfaces earn. Menus and browse screens deliberately do not: the hubs
 (the Deck Tower outside a study session, Menu, Games) and browse screens such as td's
 cards page. They still show the flame — solid orange with the count, in the badge's
@@ -259,7 +267,11 @@ system `abc` keyboard is up ([CYOA_FEATURE.md](./CYOA_FEATURE.md) § 8,
 
 ### The cdp, the dictionary, and Compare all earn (2026-09-04)
 
-`/flashcards/card` (saved-card cdp) and `/dictionary` (the search page, whose results open in
+> The cdp half now applies to **td's card view**, which replaced the routed cdp
+> (`/flashcards/card`) on 2026-11-23 and earns through a study-surface claim, not a path —
+> § "Study surfaces on other routes" above.
+
+`/flashcards/card` (saved-card cdp, until 2026-11-23) and `/dictionary` (the search page, whose results open in
 the eip sheet) are **study surfaces**. A cdp is where a learner
 reads the definition, the breakdown, the example sentences and a word comparison: the same
 reading the eip does on the flp, which has always earned. Looking a word up and reading what
@@ -273,7 +285,7 @@ route under `/dictionary` would silently make it earn.
 This is also how the **compare sheet** earns. Compare has no route since 2026-09-04
 ([WORD_COMPARE_FEATURE.md](./WORD_COMPARE_FEATURE.md)) — it is a panel raised over the page
 you are already on — so it cannot appear in any of these lists. It accrues because every
-surface that can open it does: the flp, the acp, the Dictionary page and the saved-card cdp. **Keep the two in step:** a
+surface that can open it does: the flp, the acp, the Dictionary page and td's card view. **Keep the two in step:** a
 future host that raises the compare sheet from a non-earning page would silently make
 Compare stop earning there, and nothing would report it.
 
@@ -283,13 +295,14 @@ leave open, and auto-active exists for game boards that are read for a few secon
 the first tap, not for pages a learner might walk away from.
 
 ⚠️ `/flashcards` is deliberately **not** listed — as a prefix it would admit every
-route under it, including any future browse screen there, so its earning children (the cdp
-and the notebook) are named one at a time. (The bare `/flashcards` path used to earn through
+route under it, including any future browse screen there, so its earning children (the
+notebook; the cdp until 2026-11-23) are named one at a time. (The bare `/flashcards` path used to earn through
 a separate exact-match list, `MINUTE_POINTS_ELIGIBLE_EXACT_PAGES`, for the legacy desktop
 flashcards page; both were deleted 2026-11-10.) It was a prefix until
 2026-08-24, which is why the cdp and the Decks & Cards tab used to accrue minutes; the cdp
-is now back, but named explicitly (`/flashcards/card`), which is the difference that
-matters — the Decks & Cards tab did not come back with it.
+came back named explicitly (`/flashcards/card`), which was the difference that
+mattered — the Decks & Cards tab did not come back with it. (That route was deleted
+2026-11-23; its successor, td's card view, earns by claim.)
 
 ## Day boundary
 

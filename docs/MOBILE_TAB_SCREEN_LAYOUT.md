@@ -232,14 +232,11 @@ clearance contract is: **a scrollable surface reserves
 `SLAB_FOOTER_TOTAL_CLEARANCE` at the bottom** — `MobileTabScreen` does this for every
 node page automatically, and a page laying out its own scroller must do it by hand.
 
-> Related: `VocabCardDetailPage` is a node page; the routed game pages are **leaf pages**
+> Related: the routed game pages are **leaf pages**
 > (`LeafPage`) with **no footer** at all. See [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md).
 
 ## Game info screens
 
-The **generic** game shell (`GamePage`, for future registry games that don't ship
-their own page) shows the floating footer on its info / loading screens so players
-can jump to another tab without backing out, and hides it during the live stage
-(`!showStage`). Bubble Match no longer follows this pattern — it is a leaf page
-(`BubbleMatchPage` wrapped in `LeafPage`) with **no footer** on any screen; its
-only exit is the down-arrow back button. See [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md).
+Game pages do not use this pattern: every routed game is a leaf page (`GameLeafPage`)
+with **no footer** on any screen; its only exit is the down-arrow back button. (The
+generic `GamePage` shell that showed the footer off-stage was deleted unused.) See [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md).

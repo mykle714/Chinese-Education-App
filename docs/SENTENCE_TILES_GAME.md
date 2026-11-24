@@ -36,8 +36,8 @@ That is what the testing phase is for.
 | 2026-11-22 | Spend limits as in § 6; four new tables (§ 7); feature testers only while testing |
 | 2026-11-22 | Updates by **polling** (a cheap heartbeat), not a WebSocket |
 
-No marks, no minute points, no Study Challenge eligibility. It is not a `GAME_REGISTRY` game (no
-`gameprogress` row, not an flp break), so it has a feature flag rather than a `GAME_FLAGS` entry.
+No marks, no minute points, no Study Challenge eligibility. It is not a `GAME_REGISTRY` game (not an
+flp break), so it has a feature flag rather than a `GAME_FLAGS` entry.
 
 ---
 

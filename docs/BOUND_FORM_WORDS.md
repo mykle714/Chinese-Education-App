@@ -172,7 +172,7 @@ breaks into `一` + `会` + `儿`, implying a compositional reading that does no
 
 ### What to build
 
-A short learner-facing note on the **hosted** form's cdp/eip explaining that the word
+A short learner-facing note on the **hosted** form's eip (or td's card view, the cdp's 2026-11-23 replacement) explaining that the word
 is a fixed unit and its tail is not a standalone word. Roughly:
 
 > **Learn this as one unit.** 一会儿 is fixed — 会儿 is not a word on its own, so it
@@ -189,7 +189,9 @@ Scope: the ~10 hosted forms in det that correspond to a § 4 base (`一会儿`, 
      to a card, but a whole tab is heavy for one sentence;
    - inline copy on the **bt**, where the misleading decomposition actually appears —
      most likely to be read at the moment of confusion;
-   - a badge/chip on the **cdp** next to the Commonality chip.
+   - a badge/chip on the **cdp** next to the Commonality chip. *(2026-11-23: the cdp is
+     gone; td's card view, its replacement, has no Commonality chip outside the eip, so this
+     would be the eip header's chip or a new mark on the card view.)*
 2. ⚠️ **Does this need a new column?** The note could be derived at read time from
    `ZH_BOUND_FORMS` (no schema change — the server maps a hosted form to its base and
    synthesizes the copy), or stored per-entry as a new det column. **Deriving it needs

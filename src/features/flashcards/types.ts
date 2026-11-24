@@ -24,7 +24,7 @@ export type MarkType = 'recognition' | 'production' | 'reading' | 'writing';
 export interface MarkCardResult {
     /**
      * The server declined to record the mark because the card's track had not
-     * finished cooling down (docs/HYDRA_BUBBLES.md § 8). Nothing was written, so
+     * finished cooling down (docs/FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md § "Cooldown is a hard next-markable-at"). Nothing was written, so
      * `markTimestamp` is null, `displacedMarks` is empty and there is nothing to undo.
      */
     suppressed: boolean;

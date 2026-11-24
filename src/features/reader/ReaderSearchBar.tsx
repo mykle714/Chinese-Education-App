@@ -4,7 +4,7 @@ import { keyframes } from "@mui/material/styles";
 import Icon from "../../components/Icon";
 import { FONTS } from "../../theme/fonts";
 import { SIZE, WEIGHT } from "../../theme/scale";
-import ReaderSearchKey from "./ReaderSearchKey";
+import ReaderIconKey from "../../reading/ReaderIconKey";
 import type { Tier2Look } from "../../timeOfDay/tier2Look";
 
 /**
@@ -15,7 +15,7 @@ import type { Tier2Look } from "../../timeOfDay/tier2Look";
  *
  * A pill FIELD in the Reader's neutral pill look (the look's surface, ink and outline,
  * 30px tall like the Read pill) holding the query and the "current / total" count, then
- * three ReaderSearchKeys: previous match, next match, close.
+ * three ReaderIconKeys: previous match, next match, close.
  *
  * OPENING: the bar is laid over the strip (absolute, full row) and GROWS out of the
  * search key — a clip-path inset that starts at the key's box (`origin`, measured by the
@@ -105,7 +105,7 @@ function ReaderSearchBar({
             // press, the gaps between keys. It dismisses on any pointerdown outside an
             // allow-list (BeginnerKeyboardProvider → `onPointerDown` / `keepsOpen`), and
             // its close would drop the keyboard inset and unfold the rdb (ReaderDocumentPage
-            // → KEYBOARD LIFT). The keys' mousedown preventDefault (ReaderSearchKey) is the
+            // → KEYBOARD LIFT). The keys' mousedown preventDefault (ReaderIconKey) is the
             // separate guard for the OS keyboard: it keeps the field focused.
             data-beginner-keyboard="keep"
             sx={{
@@ -196,7 +196,7 @@ function ReaderSearchBar({
                     </Box>
                 )}
             </Box>
-            <ReaderSearchKey
+            <ReaderIconKey
                 look={look}
                 className="reader-search-bar__prev"
                 icon="keyboard_arrow_up"
@@ -204,7 +204,7 @@ function ReaderSearchBar({
                 onClick={() => onStep("prev")}
                 disabled={!hasMatches}
             />
-            <ReaderSearchKey
+            <ReaderIconKey
                 look={look}
                 className="reader-search-bar__next"
                 icon="keyboard_arrow_down"
@@ -212,7 +212,7 @@ function ReaderSearchBar({
                 onClick={() => onStep("next")}
                 disabled={!hasMatches}
             />
-            <ReaderSearchKey
+            <ReaderIconKey
                 look={look}
                 className="reader-search-bar__close"
                 icon="close"

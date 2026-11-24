@@ -7,8 +7,9 @@
  *   lower  — a time in ms (fastest wins)
  *   higher — a count (most wins)
  *
- * Deliberately absent: Bubble Match (its performance has a floor and a ceiling, so a best
- * would saturate) and Memory Map (no medals, no run result to compare).
+ * Deliberately absent: Memory Map (no medals, no run result to compare). No game uses
+ * `higher` / `count` since Hydra Bubbles was archived (2026-11-23); the direction stays
+ * so a count-scored game can rejoin without a contract change.
  *
  * Pure data — no value imports — so the Node build and the client bundle both load it.
  * Referenced by: server/services/PersonalBestService.ts, src/api/personalBests.ts,
@@ -29,12 +30,8 @@ export const PERSONAL_BEST_GAMES = {
   'match-speed-30': { direction: 'lower', unit: 'ms' },
   /** Total run time. */
   'speed-reading': { direction: 'lower', unit: 'ms' },
-  /** Matches cleared in one endless run. */
-  'hydra-bubbles': { direction: 'higher', unit: 'count' },
   /** Time to write all eight characters correctly. */
   'writing-grid': { direction: 'lower', unit: 'ms' },
-  /** Time to drop all 20 words, per mode (pinyin / no-pinyin). */
-  'bucket-drop': { direction: 'lower', unit: 'ms' },
   /** Time to stack all four characters. */
   superposition: { direction: 'lower', unit: 'ms' },
 } as const satisfies Record<string, { direction: PersonalBestDirection; unit: 'ms' | 'count' }>;

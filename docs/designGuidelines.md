@@ -184,7 +184,7 @@ migration 130, renamed by 145. See [PER_LANGUAGE_STREAKS.md](./PER_LANGUAGE_STRE
 - Referenced with ON DELETE CASCADE by essentially every per-user table:
   `user_languages`, `userminutepoints`, `vocabentries_zh` / `vocabentries_es`, `decks`,
   `friendships` (both sides), `texts`, `refresh_tokens`, `validations`, `weeklies`,
-  `wins`, `discover_skips`, `category_promotions`, `gameprogress`,
+  `wins`, `discover_skips`, `category_promotions`,
   `writing_practice_completions`, `community_layout_votes`.
 
 #### VocabEntries — `vocabentries_zh` / `vocabentries_es`
@@ -269,18 +269,17 @@ HSK levels, and the UI re-adds an HSK badge from them.
 
 ### Vocabulary Entries (`server/routes/vocabEntryRoutes.ts`)
 
-- `GET /api/vocabEntries` - Get all vocabulary entries
-- `GET /api/vocabEntries/paginated` - Paged listing
-- `GET /api/vocabEntries/search` - Search the user's cards
-- `GET /api/vocabEntries/:id` - Get a specific vocabulary entry by ID
-- `POST /api/vocabEntries` - Create a new vocabulary entry
 - `POST /api/vocabEntries/addToLibrary` - Add a discoverable det word as a Learning card
-- `POST /api/vocabEntries/import` - CSV import (multipart)
+- `GET /api/vocabEntries/libraryStatus` - Which of the given words are already cards
+- `POST /api/vocabEntries/removeFromLibrary` - Remove a card from the library
 - `POST /api/vocabEntries/byTokens` - Bulk lookup by headword tokens
+- `GET /api/vocabEntries/:id` - Get a specific vocabulary entry by ID
 - `PUT /api/vocabEntries/:id` - Update a vocabulary entry
 - `PATCH /api/vocabEntries/:id/iconLayout` - Save the custom back-face icon layout
 - `PATCH /api/vocabEntries/:id/selectedSense` - Change which sense cluster the card studies
-- `DELETE /api/vocabEntries/:id` - Delete a vocabulary entry
+
+(The list / paginated / search / create / CSV-import endpoints were deleted 2026-11-23 with
+no caller; cards are created only through `addToLibrary` and the sort flow.)
 
 ### Users (`server/routes/userRoutes.ts`)
 

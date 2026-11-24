@@ -77,8 +77,9 @@ export type VocabSortKey =
 // `masteredAt` was backfillable (migration 142), so for every card mastered before that
 // migration the key is missing — the row's own comment called this "the common case,
 // not an edge one", and a dimension that sinks most of the library to the bottom in
-// BOTH directions is not one to reorder by. The stamp itself is still stored and still
-// read (`masteredAtForBar`, the cdp's mastery window); only the ordering is gone.
+// BOTH directions is not one to reorder by. The stamp itself is still stored (nothing on
+// the client reads it since the cdp's mastery window was deleted 2026-11-23); only the
+// ordering is gone.
 
 /**
  * The bar each mastery-HEIGHT key sorts on. Absent from the map = not a height key.
@@ -337,8 +338,8 @@ const pronunciationKey = (entry: VocabEntry): string => {
  *
  * A clock belongs to a bar, not a mark type: since the know merge (2026-09-25,
  * docs/MASTERY_REWORK.md § 6) recognition and production share the core bar's clock,
- * windowed by the core band. So this key is the very number the cdp prints under the
- * bar, the flp queues on, and the mark-time gate enforces — there is no longer a
+ * windowed by the core band. So this key is the very number td's card view prints beside
+ * the bar (TowerMasteryPanel → CooldownTimer), the flp queues on, and the mark-time gate enforces — there is no longer a
  * per-track caveat to carry.
  *
  * What it means to a learner:

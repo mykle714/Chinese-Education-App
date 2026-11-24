@@ -3,6 +3,7 @@ import React, { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Box, Button, Typography } from "@mui/material";
 import MinimizablePopup from "./MinimizablePopup";
+import PawnLoader from "./PawnLoader";
 import ProvisionalCardGrid from "./ProvisionalCardGrid";
 import { useProvisionalEntries } from "../hooks/useProvisionalEntries";
 import { COLORS, SIZE, WEIGHT } from "../theme";
@@ -72,6 +73,14 @@ export interface ProvisionalSortOfferProps {
     dismissLabel?: string;
     /** Render in place rather than at the frame — see MinimizablePopup's `inPlace`. */
     inPlace?: boolean;
+    /**
+     * Show the app's PawnLoader (screen-centred, after its usual delay) while the lookup
+     * runs. For a host whose learner is WAITING on the offer — flp's back arrow, which
+     * does nothing visible until the lookup decides whether to offer. Off by default: a
+     * game's offer stacks over its end popup, which already fills the wait. The host
+     * passes false whenever a loader must not show (flp: a parked session).
+     */
+    showLoader?: boolean;
 }
 
 const ProvisionalSortOffer: React.FC<ProvisionalSortOfferProps> = ({
@@ -87,6 +96,7 @@ const ProvisionalSortOffer: React.FC<ProvisionalSortOfferProps> = ({
     zIndex = 210,
     dismissLabel = "Not now",
     inPlace,
+    showLoader = false,
 }) => {
     const navigate = useNavigate();
     const location = useLocation();
@@ -101,6 +111,7 @@ const ProvisionalSortOffer: React.FC<ProvisionalSortOfferProps> = ({
     // Nothing to offer: either the round used no lent cards, or every one of them has
     // since been sorted. Also stay silent while the lookup is in flight so the popup
     // never pops in empty and then reflows as the grid lands.
+    if (open && loading && showLoader) return <PawnLoader label="Checking your borrowed cards" zIndex={zIndex} />;
     if (!open || loading || entries.length === 0) return null;
 
     // Navigate on the SERVER's list, not the caller's: the entries are already narrowed

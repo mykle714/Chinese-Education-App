@@ -1,4 +1,5 @@
 import { applyYiBuSandhi } from "../../utils/toneSandhi";
+import type { OverrideLookup } from "../../reading/pronunciationOverrides";
 import { syllableToNumberedPinyin } from "../../utils/textUtils";
 import type { SegmentSpan } from "../../reading/documentSegmentation";
 
@@ -76,11 +77,13 @@ export function buildDocumentSyllables(
     content: string,
     spans: SegmentSpan[],
     pronunciations: Map<string, string>,
+    readingAt?: OverrideLookup,
 ): string[] {
     const syllables: string[] = new Array(content.length).fill("");
     for (const span of spans) {
         if (!HAN_REGEX.test(span.text)) continue;
-        const reading = pronunciations.get(span.text);
+        // The occurrence's chosen reading (READING CHOICES) — what the Pinyin view draws.
+        const reading = readingAt?.(span) ?? pronunciations.get(span.text);
         if (!reading) continue;
         const parts = reading.trim().split(/\s+/);
         const characters = [...span.text];

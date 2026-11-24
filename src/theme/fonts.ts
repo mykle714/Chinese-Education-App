@@ -32,8 +32,7 @@ export const FONTS = {
     // off-DOM measurement, which sees only a `:root`-level override: canvas measurers
     // resolve the var() against `:root` (src/utils/canvasText.ts → resolveFontFamily, used
     // by MiniCardSvg's layout and memory-map glyphShapes), so a container-level override
-    // (the font lab's specimen columns) does not reach them.
-    // src/pages/FontLabPage.tsx is the consumer of all this.
+    // (the Beginner Keyboard's HintBubble) does not reach them.
     cjk: 'var(--cjk-font, "Noto Sans SC", "Noto Sans JP", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif)',
 
     // Sub-character component glyphs (word search No Pinyin hint row). "HanziComponents"
@@ -66,16 +65,12 @@ export const FONTS = {
     // "×12 wins" is DATA. Giving them one token is what let the flavour drift across ~19
     // hand-rolled call sites, and what made a retune impossible to do in one place.
     //
-    // THE FACE IS PUBLIC SANS (chosen 2026-09-04 in /font-lab → Info type). A plain,
+    // THE FACE IS PUBLIC SANS (chosen 2026-09-04 in the since-deleted font lab). A plain,
     // wide-aperture grotesque: very legible at 10px and with almost no voice of its own,
     // which is what an overline you see thirty times a screen should have. Overlines are
     // now the UI font set small rather than a second face — `Instrument Sans` is the tail
     // fallback for exactly that reason.
-    //
-    // Routed through `--label-font` (same trick as `cjk` above: the var()'s FALLBACK is
-    // the real stack, so an undefined variable can never blank the family) so /font-lab's
-    // Info-type mode can still re-face it per column and app-wide while the lab lives.
-    label: 'var(--label-font, "Public Sans", "Instrument Sans", system-ui, -apple-system, sans-serif)',
+    label: '"Public Sans", "Instrument Sans", system-ui, -apple-system, sans-serif',
 
     // The icon face (D3). Not used directly in `sx` — go through <Icon name="..." />,
     // which owns the ligature settings that make `nights_stay` render as a glyph

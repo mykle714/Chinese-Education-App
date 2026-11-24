@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { OverrideLookup } from "../../reading/pronunciationOverrides";
 import type { SegmentSpan } from "../../reading/documentSegmentation";
 import { buildDocumentSyllables, findReaderMatches, type ReaderSearchMatch } from "./readerSearch";
 
@@ -24,6 +25,8 @@ interface UseReaderSearchOptions {
     spans: SegmentSpan[];
     // word → pronunciation (documentSegmentation.ts → buildReaderPronunciationMap).
     pronunciations: Map<string, string>;
+    // READING CHOICES: a span's chosen reading, which outranks `pronunciations`.
+    readingAt?: OverrideLookup;
     // True in the Pinyin display mode of a Chinese document: the query is also read as pinyin.
     matchPinyin: boolean;
     // Where a new query starts looking (the reader's caret / selection start).
@@ -47,6 +50,7 @@ export function useReaderSearch({
     content,
     spans,
     pronunciations,
+    readingAt,
     matchPinyin,
     getAnchorOffset,
     onCurrentMatch,
@@ -60,8 +64,8 @@ export function useReaderSearch({
 
     // The per-offset readings, built only while they can be used (bar open, pinyin mode).
     const syllables = useMemo(
-        () => (open && matchPinyin ? buildDocumentSyllables(content, spans, pronunciations) : null),
-        [open, matchPinyin, content, spans, pronunciations],
+        () => (open && matchPinyin ? buildDocumentSyllables(content, spans, pronunciations, readingAt) : null),
+        [open, matchPinyin, content, spans, pronunciations, readingAt],
     );
     const matches = useMemo(
         () => (open && query ? findReaderMatches(content, query, syllables) : []),

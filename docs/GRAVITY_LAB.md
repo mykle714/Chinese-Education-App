@@ -96,7 +96,7 @@ them.
 ## 4. The lab (`/gravity-lab`)
 
 A dev page reachable only by typing the URL (`ROUTE_META` note; `docs/ACTIVE_DUTY_PAGES.md`).
-It uses the plain shell and owns its own scroll container, like `/font-lab`.
+It uses the plain shell and owns its own scroll container.
 
 **Layout.** The iPhone 16 stage sits on the left and stays in view (sticky). The fall-type
 cards sit on the right, so you can tune a fall and replay it without scrolling. On a narrow

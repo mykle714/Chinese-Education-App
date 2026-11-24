@@ -135,7 +135,7 @@ This asymmetry drives the core requirement:
   length). The undone card is back in its slot as the pack returns, while its bin plays
   the stack animation backwards (§5.3). The un-docked pack stays buffered right behind
   the returned one. Under reduced motion, the packs simply swap.
-  *Code:* `AddCardsPage.tsx` → `handleUndo`, `undoRestore`, `undoExitMs`,
+  *Code:* `AddCardsPage.tsx` → `handleUndo`, `restoreActionLocally`, `undoRestore`, `undoExitMs`,
   `packUnDockKeyframes`, `packReturnKeyframes`, `EnteringCardSlot`.
 
 ### 4.2 The on-deck card is immutable
@@ -188,7 +188,7 @@ A **sort pack** is a small group of vocabulary cards shown together:
   raised wall, so it is never drawn recessed, but it is **grounded**: it does not
   levitate and casts no shadow. The live cards float above the ground; this one stands
   on it. **Tapping it or trying to drag it** plays the app's invalid-operation shake
-  (`src/theme/invalidShake.ts`, the same wobble as a wrong bubble or Bucket Drop bucket).
+  (`src/theme/invalidShake.ts`, the app-wide invalid-operation wobble).
   A drag shakes once it passes the drag threshold, and a tap shakes on release. Each
   attempt replays the shake in place: `shakeNonce` drives an inline animation restart
   instead of a remount, because a remount mid-gesture would strand the drag state and the
@@ -313,8 +313,7 @@ A **sort pack** is a small group of vocabulary cards shown together:
       sizes are introduced (the one exception is a 4+ character word, which the compact
       face sets at cpcd `xxs` — CARD_LIBRARY.md § "Long words on the mini card"; and a gloss holding a word too wide for the body steps down to `SIZE.micro` (the regular face steps through `SIZE.caption` first) —
       CARD_LIBRARY.md § "Long words in the definition"). Both faces set every glyph (word, pinyin, dd) in 975 Maru SC
-      (`FONTS.cjk`), which `MiniCard` owns: docs/CJK_TYPEFACE_LAB.md § "The dd follows
-      the face too". It is the **only** exception to "every mini card is 92×132";
+      (`FONTS.cjk`), which `MiniCard` owns. It is the **only** exception to "every mini card is 92×132";
       no other surface uses it.
     - The **held card lifts relative to its own face** (compact × `HELD_CARD_SCALE`), and
       the fall ghost is drawn at the dropped card's size (`FallingCard.size`).
@@ -358,6 +357,31 @@ A **sort pack** is a small group of vocabulary cards shown together:
     leaves the deck, keeps its history, and stays in the discover supply so it can be
     re-sorted later with the progress intact. The response carries `demoted: true`.
   - the row **has no marks** → `DELETE`, exactly as before.
+- **A failed action rolls back** (2026-11-23). Sort, skip and Undo all act on screen first
+  and call the server after. When the call fails the screen is put back to match the
+  server with no message of its own: the three calls are first retried quietly
+  (`starterPacksApi.ts`, `retry: true`), and a lost connection is said once by the shared
+  "No connection" notice (NOTIFICATIONS.md § 3a).
+  - **Sort** fails → the card goes back in its slot and off its bin's deck, the way Undo
+    would show it. If it was the pack's last card, the pack comes back from its exit. Its
+    undo entry and its recorded bucket are dropped. The pack's leveling signal (§6) is
+    withdrawn **inside the sort's own promise** (the `.catch` on `sortCard` in
+    `handleSortCard`). The replenish request in `advancePack` awaits that same promise
+    before it reads the level, so it always asks with the withdrawn level, never the
+    signal's. The signal is only withdrawn if no newer pack's signal has moved the level
+    since.
+  - **Skip** fails → the pack's cards rise back into their slots, and the skip's undo
+    entries come off the stack (older entries the 4-deep cap pushed out come back too, if
+    nothing else touched the stack meanwhile). Before this, a failed skip left a row of
+    empty wells with no replacement pack coming.
+  - **Undo** fails → the action is re-applied: the card leaves its slot again, rejoins its
+    bin's deck, its bucket is recorded again (§6), and the entry returns to the stack. A previous pack Undo had brought back
+    leaves again with the forward exit, showing the pack it had displaced. Skipped if the
+    learner has already acted on the card again meanwhile.
+
+  *Code:* `AddCardsPage.tsx` → `restoreActionLocally` (the local put-back that Undo and the
+  failed-sort rollback share), `recordPackBucket` / `forgetPackBucket`, `handleSortCard`,
+  `handleSkipPack`, `handleUndo`, `queueRef`.
 
 ### 4.7 Extra info panel (eip) on an on-deck card
 
@@ -432,7 +456,7 @@ Gesture/height behavior of the sheet itself: [EIP_SHEET_GESTURES.md](./EIP_SHEET
   [LEAF_NODE_PAGES.md § Transient suppression](./LEAF_NODE_PAGES.md).
 - **Pinyin display follows the flp's saved preference** (`useFlashcardLearnSettings`'s
   `showPinyin` / `showPinyinColor`) — and that stays true: this key is the **flp's**,
-  read by the reference surfaces (acp, cdp, the Dictionary page's eip). Games are moving OFF it
+  read by the reference surfaces (acp, td's card view — `showPinyinColor` only, it always shows pinyin — and the Dictionary page's eip). Games are moving OFF it
   onto their own per-game settings, which is what stops a game from editing this panel
   ([GAMES_FEATURE.md § "Pinyin is a per-game setting"](./GAMES_FEATURE.md)).
   acp exposes no toggle of its own — the panel is a
@@ -814,8 +838,8 @@ platform.
   `KEYCAP_POP_TRANSITION`), and settles back the moment the card is let go. The growth never moves the hit test (the rects are snapshotted at drag
   start, below). **Nothing changes colour** (user request 2026-10-29): the other bins no
   longer desaturate, and the held card no longer takes a `COLORS.scrim` wash.
-  On the held card itself: it lifts once to `HELD_CARD_SCALE` (1.12, Bubble Match's
-  `SCALE_HELD`) — **no tilt** (the artboard's −5° `.held` rotate was dropped, user
+  On the held card itself: it lifts once to `HELD_CARD_SCALE` (1.12, borrowed from the
+  archived Bubble Match's held bubble) — **no tilt** (the artboard's −5° `.held` rotate was dropped, user
   request 2026-10-29) — and its **cast shadow grows** as it rises off the ground (`lift`
   0 → 1 eases its offset out to `HELD_SHADOW_GROWTH` × the resting one, ≈ 4.7 → 11.7px;
   back to 0 on a miss). The lift and shadow are
@@ -1028,7 +1052,12 @@ the user **chooses** to bring it back, in one of three ways:
     the target to **(that level) + 1** immediately.
 - **Skips carry no signal** (§5.1) — a pack that is skipped, or partially skipped
   with no sorted cards in it, moves the target in neither direction.
-- *Code:* `AddCardsPage.tsx` → `applyPackSignal`.
+- **Only cards still sorted count.** Undo (and a failed sort's rollback, §4.6) takes the
+  card's bucket back out of `packBucketsRef`, so a sort that was undone never steers the
+  pack's signal: Undo a sort, then Skip the rest, and the pack carries no signal. A failed
+  Undo puts the bucket back. Undo does **not** withdraw a signal a pack already gave when
+  it completed. That signal was applied when the pack left, and Undo leaves it in place.
+- *Code:* `AddCardsPage.tsx` → `applyPackSignal`, `recordPackBucket`, `forgetPackBucket`.
 - The new target is always computed as **(the completing pack's own level) ± 1**,
   never as an increment of whatever the client's current running target happens to
   be — the two can differ because a replacement pack may already be in flight (see

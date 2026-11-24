@@ -129,9 +129,7 @@ describe("challenge round launches", () => {
     });
 
     it("omits `mode` for a game that has only one", () => {
-        const launch = challengeLaunchFor("abc", 1, { gameId: "bubble-match", mode: null });
+        const launch = challengeLaunchFor("abc", 1, { gameId: "match-speed", mode: null });
         expect(launch?.to).not.toContain("mode=");
-        // Bubble Match bounces to /games without a level, so the launch must state it.
-        expect(launch?.state).toMatchObject({ level: 2 });
     });
 });

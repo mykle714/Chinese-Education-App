@@ -15,9 +15,13 @@ export function fetchFocusStatus(): Promise<FocusStatusResponse> {
     return apiGet<FocusStatusResponse>('/api/focus');
 }
 
-/** The Deck Tower lever: switch one world's focus mode on or off. */
+/**
+ * The Deck Tower lever: switch one world's focus mode on or off. Quietly retried
+ * (`retry: true`, src/api/http.ts): it SETS the world's state — a repeat is a no-op
+ * (FocusModeDAL → setWorldOn).
+ */
 export function setFocusMode(world: MasteryWorldId, on: boolean): Promise<FocusStatusResponse> {
-    return apiPost<FocusStatusResponse>('/api/focus', { world, on });
+    return apiPost<FocusStatusResponse>('/api/focus', { world, on }, { retry: true });
 }
 
 /** Tell the server these worlds' "focus mode turned off" popups were shown. */

@@ -47,18 +47,28 @@ interface UseReaderAudioPreloadArgs {
     readAloudPlaying: boolean;
     /** useTTS().prefetch — warms the browser cache without playing. */
     prefetch: (entry: VocabEntry | null | undefined) => void;
+    /** useTTS().prefetchSentence — the same, for a word spoken with a chosen reading. */
+    prefetchText?: (text: string, pronunciation?: string) => void;
+    /**
+     * READING CHOICES: a span's chosen (toned) reading, which its clip is then requested
+     * with — the same text + pinyin key useReaderWordActions plays it under.
+     */
+    readingAt?: (span: SegmentSpan) => string | undefined;
 }
 
-/** The clip a word will be played as (text + the pinyin hint `useTTS().speak` sends). */
-function clipOf(entry: DictionaryEntry): { vocab: VocabEntry; clip: PrewarmClip } {
+/**
+ * The clip a word will be played as (text + the pinyin hint `useTTS().speak` sends, or the
+ * occurrence's chosen reading — READING CHOICES).
+ */
+function clipOf(entry: DictionaryEntry, chosenReading?: string): { vocab: VocabEntry; clip: PrewarmClip } {
     const vocab = dictionaryEntryToVocabEntry(entry);
-    return { vocab, clip: { text: vocab.entryKey, pronunciation: resolveDisplayPronunciation(vocab) ?? null } };
+    return { vocab, clip: { text: vocab.entryKey, pronunciation: chosenReading ?? resolveDisplayPronunciation(vocab) ?? null } };
 }
 
 const clipKey = (clip: PrewarmClip) => `${clip.text}\u0000${clip.pronunciation ?? ""}`;
 
 export function useReaderAudioPreload({
-    enabled, language, spans, resolveEntry, selectionStart, readAloudPlaying, prefetch,
+    enabled, language, spans, resolveEntry, selectionStart, readAloudPlaying, prefetch, prefetchText, readingAt,
 }: UseReaderAudioPreloadArgs): void {
     // ── 1. Server pre-warm ──────────────────────────────────────────────────
     // Every distinct clip in document order.
@@ -68,14 +78,14 @@ export function useReaderAudioPreload({
         for (const span of spans) {
             const entry = resolveEntry(span.text);
             if (!entry) continue;
-            const { clip } = clipOf(entry);
+            const { clip } = clipOf(entry, readingAt?.(span));
             const key = clipKey(clip);
             if (seen.has(key)) continue;
             seen.add(key);
             clips.push(clip);
         }
         return clips;
-    }, [spans, resolveEntry]);
+    }, [spans, resolveEntry, readingAt]);
 
     // Clips already sent for this document. Reset when the language changes; the page
     // remounts per document, so a new document starts empty.
@@ -98,10 +108,13 @@ export function useReaderAudioPreload({
     // ── 2. Neighbour prefetch ───────────────────────────────────────────────
     // Keyed on the selection's START only: the latest spans / resolver / prefetch are read
     // through a ref, so a new word list or a re-render alone fetches nothing.
-    const latestRef = useRef({ enabled, readAloudPlaying, spans, resolveEntry, prefetch });
-    latestRef.current = { enabled, readAloudPlaying, spans, resolveEntry, prefetch };
+    const latestRef = useRef({ enabled, readAloudPlaying, spans, resolveEntry, prefetch, prefetchText, readingAt });
+    latestRef.current = { enabled, readAloudPlaying, spans, resolveEntry, prefetch, prefetchText, readingAt };
     useEffect(() => {
-        const { enabled: on, readAloudPlaying: reading, spans: wordSpans, resolveEntry: resolve, prefetch: warm } = latestRef.current;
+        const {
+            enabled: on, readAloudPlaying: reading, spans: wordSpans, resolveEntry: resolve,
+            prefetch: warm, prefetchText: warmText, readingAt: chosenAt,
+        } = latestRef.current;
         if (!on || reading || wordSpans.length === 0) return;
         const index = wordSpans.findIndex((span) => span.start <= selectionStart && selectionStart < span.end);
         if (index < 0) return;
@@ -110,7 +123,11 @@ export function useReaderAudioPreload({
         for (let i = from; i <= to; i++) {
             if (i === index) continue;
             const entry = resolve(wordSpans[i].text);
-            if (entry) warm(clipOf(entry).vocab);
+            if (!entry) continue;
+            const chosen = chosenAt?.(wordSpans[i]);
+            const { vocab, clip } = clipOf(entry, chosen);
+            if (chosen && warmText) warmText(clip.text, chosen);
+            else warm(vocab);
         }
     }, [selectionStart]);
 }

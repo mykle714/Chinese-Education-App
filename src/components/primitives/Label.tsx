@@ -41,9 +41,7 @@ export interface LabelProps {
  *
  * Set in `FONTS.label`, NOT `FONTS.mono`: this is the app's "info type" voice (prose set
  * small), which was split off from the data/numeric mono on 2026-09-04 so it can be
- * re-faced in one place. `FONTS.label` resolves through `--label-font`, which is what
- * /font-lab's Info-type mode swaps per column — so every `Label` on the page re-faces
- * live, through the real component. See docs/INFO_TYPE_LAB.md.
+ * re-faced in one place.
  */
 export const Label: React.FC<LabelProps> = ({ children, color = COLORS.textFaint, className, sx }) => (
     <Typography

@@ -15,46 +15,6 @@ export class VocabEntryController {
   ) {}
 
   /**
-   * Get all vocabulary entries for authenticated user
-   * GET /api/vocabEntries
-   */
-  async getAllEntries(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = requireUserId(req, res);
-      if (!userId) return;
-
-      const entries = await this.vocabEntryService.getUserEntries(userId);
-      res.json(entries.entries);
-    } catch (error) {
-      handleControllerError(error, res, 'VocabEntryController.getAllEntries');
-    }
-  }
-
-  /**
-   * Get paginated vocabulary entries for authenticated user
-   * GET /api/vocabEntries/paginated
-   */
-  async getPaginatedEntries(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = requireUserId(req, res);
-      if (!userId) return;
-
-      const limit = parseInt(req.query.limit as string) || 10;
-      const offset = parseInt(req.query.offset as string) || 0;
-
-      const result = await this.vocabEntryService.getUserEntries(userId, limit, offset);
-
-      res.json({
-        entries: result.entries,
-        total: result.total,
-        hasMore: result.hasMore
-      });
-    } catch (error) {
-      handleControllerError(error, res, 'VocabEntryController.getPaginatedEntries');
-    }
-  }
-
-  /**
    * Get vocabulary entry by ID
    * GET /api/vocabEntries/:id
    */
@@ -77,32 +37,6 @@ export class VocabEntryController {
       res.json(entry);
     } catch (error) {
       handleControllerError(error, res, 'VocabEntryController.getEntryById');
-    }
-  }
-
-  /**
-   * Create new vocabulary entry
-   * POST /api/vocabEntries
-   */
-  async createEntry(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = requireUserId(req, res);
-      if (!userId) return;
-
-      const { entryKey, difficulty } = req.body;
-
-      // Get user's selected language to tag the new entry
-      const language = await getUserLanguage(userId);
-
-      const newEntry = await this.vocabEntryService.createEntry(userId, {
-        entryKey,
-        difficulty,
-        language
-      });
-
-      res.status(201).json(newEntry);
-    } catch (error) {
-      handleControllerError(error, res, 'VocabEntryController.createEntry');
     }
   }
 
@@ -320,98 +254,6 @@ export class VocabEntryController {
       res.json({ id: updated.id, selectedSense: updated.selectedSense ?? null });
     } catch (error) {
       handleControllerError(error, res, 'VocabEntryController.updateSelectedSense');
-    }
-  }
-
-  /**
-   * Search vocabulary entries
-   * GET /api/vocabEntries/search
-   */
-  async searchEntries(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = requireUserId(req, res);
-      if (!userId) return;
-
-      const searchTerm = req.query.q as string;
-      const limit = parseInt(req.query.limit as string) || 50;
-
-      if (!searchTerm) {
-        res.status(400).json({
-          error: 'Search term is required',
-          code: 'ERR_MISSING_SEARCH_TERM'
-        });
-        return;
-      }
-
-      const language = await getUserLanguage(userId);
-      const entries = await this.vocabEntryService.searchEntries(userId, searchTerm, language, limit);
-      res.json(entries);
-    } catch (error) {
-      handleControllerError(error, res, 'VocabEntryController.searchEntries');
-    }
-  }
-
-  /**
-   * Get recent entries
-   * GET /api/vocabEntries/recent
-   */
-  async getRecentEntries(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = requireUserId(req, res);
-      if (!userId) return;
-
-      const days = parseInt(req.query.days as string) || 7;
-      const language = await getUserLanguage(userId);
-      const entries = await this.vocabEntryService.getRecentEntries(userId, language, days);
-      res.json(entries);
-    } catch (error) {
-      handleControllerError(error, res, 'VocabEntryController.getRecentEntries');
-    }
-  }
-
-  /**
-   * Import vocabulary entries from CSV file
-   * POST /api/vocabEntries/import
-   */
-  async importFromCSV(req: Request, res: Response): Promise<void> {
-    try {
-      const userId = requireUserId(req, res);
-      if (!userId) return;
-
-      if (!req.file) {
-        res.status(400).json({
-          error: 'No file uploaded',
-          code: 'ERR_NO_FILE'
-        });
-        return;
-      }
-
-      if (!req.file.originalname.toLowerCase().endsWith('.csv')) {
-        res.status(400).json({
-          error: 'File must be a CSV file',
-          code: 'ERR_INVALID_FILE_TYPE'
-        });
-        return;
-      }
-
-      console.log('🔄 Using NEW DAL architecture for CSV import');
-
-      const result = await this.vocabEntryService.importFromCSV(userId, req.file.buffer);
-
-      if (result.success) {
-        res.json({
-          message: result.message,
-          results: result.results
-        });
-      } else {
-        res.status(400).json({
-          error: result.message,
-          code: 'ERR_IMPORT_FAILED',
-          results: result.results
-        });
-      }
-    } catch (error) {
-      handleControllerError(error, res, 'VocabEntryController.importFromCSV');
     }
   }
 

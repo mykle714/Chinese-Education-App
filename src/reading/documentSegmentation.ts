@@ -33,6 +33,7 @@
 
 import type { DictionaryEntry, VocabEntry } from "../types";
 import { scrollSelectionIntoView } from "./textSelectionUtils";
+import { resolveDisplayPronunciation } from "../utils/definitionUtils";
 
 /**
  * One tappable word in the document. `start`/`end` are UTF-16 code-unit offsets
@@ -94,28 +95,30 @@ export function buildReaderDictMap(
 }
 
 /**
- * Build the word → pronunciation lookup the Pinyin display mode reads
- * (ReaderCpcdView). Same entry-picking rule as the keycap's card lookup
- * (textSelection.ts → findDictionaryMatch): the FIRST det row whose word1 — or,
- * failing that, word2 — matches, so the pinyin under a word always agrees with the
- * entry the keycap shows when that word is selected. Personal cards fill gaps only
- * (a user-created word with no det row).
+ * Build the word → pronunciation lookup the Pinyin display mode, the read-aloud and the
+ * pinyin search read (ReaderCpcdView, readAloudClauses.ts, useReaderSearch). Same
+ * entry-picking rule as the keycap's card lookup (textSelection.ts → findDictionaryMatch):
+ * the FIRST det row whose word1 — or, failing that, word2 — matches. Personal cards fill
+ * gaps only (a user-created word with no det row).
+ *
+ * The READING is `resolveDisplayPronunciation` — the one the keycap header shows and
+ * tap-to-hear speaks (VocabDisplayCard, useTTS → surfaceAutoSpeak) — never the raw
+ * `pronunciation` column. A heteronym's column can disagree with its sense clusters
+ * (划: column huá, top sense "to plan" huà), and reading the column here printed one tone
+ * under the word while the audio spoke the other (fixed 2026-11-23).
  */
 export function buildReaderPronunciationMap(
     dictCards: DictionaryEntry[],
     personalCards: VocabEntry[]
 ): Map<string, string> {
     const map = new Map<string, string>();
+    const add = (key: string | null | undefined, reading: string | null) => {
+        if (key && reading && !map.has(key)) map.set(key, reading);
+    };
     // word1 first, as its own pass, so a word2 alias can never shadow a headword.
-    for (const entry of dictCards) {
-        if (entry.pronunciation && !map.has(entry.word1)) map.set(entry.word1, entry.pronunciation);
-    }
-    for (const entry of dictCards) {
-        if (entry.pronunciation && entry.word2 && !map.has(entry.word2)) map.set(entry.word2, entry.pronunciation);
-    }
-    for (const card of personalCards) {
-        if (card.pronunciation && card.entryKey && !map.has(card.entryKey)) map.set(card.entryKey, card.pronunciation);
-    }
+    for (const entry of dictCards) add(entry.word1, resolveDisplayPronunciation(entry));
+    for (const entry of dictCards) add(entry.word2, resolveDisplayPronunciation(entry));
+    for (const card of personalCards) add(card.entryKey, resolveDisplayPronunciation(card));
     return map;
 }
 

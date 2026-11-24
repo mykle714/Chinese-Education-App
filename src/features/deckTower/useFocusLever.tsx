@@ -5,6 +5,8 @@ import { forgiveAutoFocusNotice, isAutoFocusNoticeOwed } from "../focusMode/auto
 import { FOCUS_LEVER_THRESHOLD } from "../../../server/contracts/focusMode";
 import type { MasteryWorldId } from "../../../server/contracts/wire";
 import FocusDialog, { type FocusDialogContent } from "../focusMode/FocusDialog";
+import PawnLoader from "../../components/PawnLoader";
+import { useNotify } from "../../components/notifications/useNotify";
 import { FOCUS_WORLD_NAMES } from "../focusMode/focusWorldNames";
 import type { PawnEntranceCue } from "./iso";
 import { TOWER_MODES, bandTotal } from "./towerModes";
@@ -132,6 +134,8 @@ export function useFocusLever({
         setDialog(focusOn ? "turn-off" : "turn-on");
     };
 
+    const { notify } = useNotify();
+
     const onConfirm = async () => {
         if (!dialog || dialog === "auto-on") return;
         // The learner is now steering focus by hand: an unshown auto-on notice would be stale.
@@ -144,7 +148,19 @@ export function useFocusLever({
             onRecount?.();
             ready.reload();
         } catch (err) {
+            // Already retried quietly (setFocusMode → `retry`). The dialog closes as if the
+            // switch went through, so this is the one failure that must be SAID: without it
+            // the learner believes focus changed (docs/NOTIFICATIONS.md § 3a "Failures"). Not
+            // when the shared "No connection" notice is the cause — a network-level failure
+            // (fetch rejects with a TypeError) is already covered by that banner.
             console.error("Focus mode switch failed:", err);
+            if (!(err instanceof TypeError)) {
+                notify({
+                    id: "focus-mode-save-error",
+                    tone: "error",
+                    message: turnOn ? "Couldn't turn focus mode on. Try again." : "Couldn't turn focus mode off. Try again.",
+                });
+            }
         } finally {
             setSaving(false);
             setDialog(null);
@@ -170,8 +186,8 @@ export function useFocusLever({
             busy: busy || saving || dialog !== null,
         },
         dialog: (
+            <React.Fragment key={`focus-dialog-${world}`}>
             <FocusDialog
-                key={`focus-dialog-${world}`}
                 content={content}
                 onClose={() => {
                     if (saving) return;
@@ -181,6 +197,13 @@ export function useFocusLever({
                 onConfirm={onConfirm}
                 busy={saving}
             />
+            {/* T4 (docs/DECK_TOWER.md § "Loading feedback"): the confirm button only greys
+                out while the switch saves, so the loader speaks for a slow save. Above the
+                dialog: MUI's modal layer is z 1300, PawnLoader's default. (After the save the
+                tower's held recount takes over — DeckTowerPage → `loadingLabel`.) A FAILED save
+                closes the dialog and raises the `focus-mode-save-error` notice (onConfirm). */}
+            {saving && <PawnLoader label="Saving focus mode" zIndex={1301} />}
+            </React.Fragment>
         ),
     };
 }

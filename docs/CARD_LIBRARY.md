@@ -10,10 +10,10 @@ Parent: [DECK_TOWER.md](./DECK_TOWER.md).
 
 | Layer | File → symbol | Role |
 |---|---|---|
-| Feature hook | `src/features/flashcards/useCardLibrary.ts` → `useCardLibrary(lens)`, `CardsFilter`, `CardLibraryState` | The library through one mastery lens: filter, search, sort, the filter keys' figures |
+| Feature hook | `src/features/flashcards/useCardLibrary.ts` → `useCardLibrary(lens, refreshKey)`, `CardsFilter`, `CardLibraryState` | The library through one mastery lens: filter, search, sort, the filter keys' figures. `refreshKey` (bumped by `features/deckTower/cardView/useTowerCardView` each time td's card view closes) re-reads the library and the key figures quietly |
 | Feature data | `src/features/flashcards/cardLibrary.ts` → `loadCardLibrary`, `peekCardLibrary`, `libraryKey` | The `all` collection, loaded once and shared across world remounts |
 | Feature module | `src/features/flashcards/builtinCollections.ts` → `lensCollectionEntries`, `builtinCollectionCount`, `BuiltinCollectionEntry` | The lens's two built-in collections and their figures |
-| Feature module | `src/features/flashcards/collectionRef.ts` → `CollectionRef`, `collectionTitle`, `builtinCollectionId`, `withLens`, `lensFromSearch`, `LENS_PARAM` | The client-side name of a collection, and the `?world=` lens param a cdp is opened with |
+| Feature module | `src/features/flashcards/collectionRef.ts` → `CollectionRef`, `collectionTitle`, `builtinCollectionId` | The client-side name of a collection. (The `?world=` lens URL param — `withLens` / `lensFromSearch` / `LENS_PARAM` — was deleted 2026-11-23 with the routed cdp; td's card view takes its world as a prop) |
 | Feature component | `src/features/flashcards/CollectionSortControl.tsx` → `CollectionSortControl` | The sort trigger + menu |
 | Shared component | `src/components/SearchField.tsx` → `SearchField` | Every search box in the app |
 | Shared component | `src/components/MiniVocabCardGrid.tsx`, `MiniVocabCard.tsx`, `MiniCard.tsx`, `miniCardFace.ts` | The grid and the mini card |
@@ -179,7 +179,7 @@ test account). Four mechanisms, each doing a different job:
 
 | Mechanism | What it removes | What it does NOT do |
 |---|---|---|
-| `memo` on `MiniVocabCard` + stable `onCardClick` | Re-rendering every card when unrelated page state changes | Nothing about the first mount |
+| `memo` on `MiniVocabCard` + stable `onCardClick` (`(entry, element)` — the tapped tile rides along so td's card view can zoom from it) | Re-rendering every card when unrelated page state changes | Nothing about the first mount |
 | `content-visibility: auto` + `contain-intrinsic-size` | Layout and paint for offscreen cards | React still creates every element |
 | `useIncrementalList` (the paced reveal) | The mount landing in ONE commit | Bound the total; past `CASCADE_LIMIT` (15) it stops pacing |
 | `useWindowedRows` (windowing) | The rows themselves — only ~20 cards exist at a time | Apply to `renderCard` callers |
@@ -265,7 +265,9 @@ each row names a dimension and carries both directions as toggles (a `Box` with 
   `sortVocabEntries` takes `now` once per sort; the list does not tick.
 - **Missing timestamps sink to the bottom in both directions** (`DATE_KEYS`).
 - ⚠️ No *Date mastered* row: `masteredAt` was not backfillable before migration 142, so
-  most of a library would sink. The stamp is still stored and read by the cdp's mastery
-  window.
+  most of a library would sink. The stamp is still stored (`masteredAtForBar` in
+  `src/utils/masteryCompute.ts`), but since 2026-11-23 no client surface reads it: the routed
+  cdp's mastery window that did was replaced by td's card view's `TowerMasteryPanel`, which
+  does not.
 
 See [MASTERY_REWORK.md](./MASTERY_REWORK.md) § Three bars for the bars themselves.

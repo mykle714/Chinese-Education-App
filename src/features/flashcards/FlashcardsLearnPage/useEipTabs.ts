@@ -107,6 +107,12 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
     // Tracks the most-recently-requested entryKey so a slower in-flight fetch
     // can't overwrite the user's later tap (race-free push).
     const latestRequestRef = useRef<string | null>(null);
+    // The drill-in whose lookup is in flight (the tapped breakdown / used-in / example word),
+    // null when none. Exposed as `drillPending` so a host can show its loading mark: a tap
+    // otherwise does nothing visible until the lookup returns. Cleared wherever
+    // `latestRequestRef` is (a pop, a new root, clear) and when the live lookup settles —
+    // success or failure; a superseded lookup leaves it to the newer one.
+    const [pendingKey, setPendingKey] = useState<string | null>(null);
 
     // Seed the trail with the card the panel was opened FROM.
     //
@@ -120,6 +126,7 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
         const root = tabs[0];
         if (root?.id === entry.entryKey) return;
         latestRequestRef.current = null;
+        setPendingKey(null);
         setTabs([buildEntryTab(entry, new Set())]);
         setTrailShown(false);
     }, [tabs]);
@@ -129,6 +136,7 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
     // the learner just walked back from.
     const popTo = useCallback((index: number) => {
         latestRequestRef.current = null;
+        setPendingKey(null);
         setTabs(prev => (index >= 0 && index < prev.length - 1 ? prev.slice(0, index + 1) : prev));
     }, []);
 
@@ -148,6 +156,7 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
         }
 
         latestRequestRef.current = entryKey;
+        setPendingKey(entryKey);
         try {
             const adapted = await lookupVocabEntry(entryKey, language);
             // Drop stale responses — a newer tap superseded this one.
@@ -164,6 +173,9 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
             });
         } catch (err) {
             console.error(`Failed to look up dictionary entry "${entryKey}":`, err);
+        } finally {
+            // Only the live request ends the wait; a superseded one's newer tap owns it.
+            if (latestRequestRef.current === entryKey) setPendingKey(null);
         }
         // No `token` dep: the underlying apiGet reads the header at call time, so this callback's
         // identity survives a silent refresh (CLAUDE.md ⛔ rule). A non-2xx now throws
@@ -197,6 +209,7 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
     // root, so the caller closes the eip entirely.
     const pop = useCallback((): boolean => {
         latestRequestRef.current = null;
+        setPendingKey(null);
         const willBeEmpty = tabs.length <= 1;
         setTabs(prev => prev.slice(0, -1));
         return willBeEmpty;
@@ -206,6 +219,7 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
         setTabs([]);
         setTrailShown(false);
         latestRequestRef.current = null;
+        setPendingKey(null);
     }, []);
 
     return {
@@ -221,5 +235,7 @@ export function useEipTabs({ language }: UseEipTabsOptions = {}) {
         pop,
         clear,
         overflowSignal,
+        /** A drill-in lookup is in flight (see `pendingKey`). Read by FlashcardsLearnPage's PawnLoader. */
+        drillPending: pendingKey !== null,
     };
 }

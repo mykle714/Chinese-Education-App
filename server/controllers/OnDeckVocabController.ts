@@ -8,7 +8,6 @@ import {
   CardBaselineSurface,
   CARD_BASELINES,
   PROVISION_RETRY_FACTOR,
-  isRollingSupplySurface,
   masteredCollectionWorld,
   parseMasteryWorld,
 } from '../contracts/wire.js';
@@ -369,7 +368,7 @@ export class OnDeckVocabController {
    * GET /api/onDeck/gamePool?markType=recognition&Unfamiliar=2&Target=10&Comfortable=6&Mastered=2
    *
    * `markType` selects which mastery track buckets and cools the candidates —
-   * `recognition` (Bubble Match), `reading` (Speed Reading), `production`, or `writing`.
+   * `recognition` (Match Speed), `reading` (Speed Reading), `production`, or `writing`.
    * Every caller passes it explicitly; see the parameterization note below.
    * Defaults to 2 Unfamiliar + 10 Target + 6 Comfortable + 2 Mastered (20 total)
    * when no recognised category params are supplied. The service tops the pool
@@ -379,10 +378,10 @@ export class OnDeckVocabController {
    *
    * PARTIAL REFILL: `&need=N&exclude=12,34&avoid=56,78` returns only N cards,
    * never returns an `exclude`d id, and treats `avoid`ed ids as cooled (drawn
-   * only if the library can't fill the board without them). Bubble Match's single
-   * "Play Again" button uses this to swap out only the pairs the player matched:
-   * the pairs still on the board are `exclude`d and every pair cleared this
-   * session is `avoid`ed.
+   * only if the library can't fill the board without them). Speed Reading's queue
+   * tops up with `need` + `exclude` (Match Speed sends no `need`, so its top-ups are full
+   * boards); no current client sends `avoid` (its
+   * caller, Bubble Match's "Play Again", was archived 2026-11-23).
    */
   getGamePool = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -429,8 +428,8 @@ export class OnDeckVocabController {
       // track is treated as strong because some other track is healthy.
       // See docs/MASTERY_REWORK.md § "Games select by their own mark type".
       //
-      // This used to be hardcoded to 'recognition' back when Bubble Match was the
-      // only caller. Speed Reading emits READING marks, so the endpoint is parameterized
+      // This used to be hardcoded to 'recognition' back when Bubble Match (archived
+      // 2026-11-23) was the only caller. Speed Reading emits READING marks, so the endpoint is parameterized
       // and every caller passes `markType` explicitly — the default below is a
       // safety net for a malformed request, not a supported calling convention.
       const rawMarkType = String(req.query.markType ?? '');
@@ -450,7 +449,7 @@ export class OnDeckVocabController {
       const challengeRound = await this.resolveChallengeRound(req, userId);
       if (challengeRound) {
         // THE BOARD SIZE IS THE GAME'S OWN, and every caller already states it: a
-        // full board is the sum of its requested distribution (Bubble Match's 20),
+        // full board is the sum of its requested distribution (Speed Reading's 20),
         // and a partial refill states `need` (a Match Speed buffer top-up). Reusing
         // those two rather than inventing a challenge-specific parameter is what
         // keeps a challenge round the same size as a casual one — the nine
@@ -477,9 +476,9 @@ export class OnDeckVocabController {
 
       // Top up to the surface's baseline BEFORE assembling the pool, so the selection
       // below has enough rows to draw from and `sufficient` comes back true. A partial
-      // refill (`need` set — Bubble Match's Play Again) skips this: the player is
+      // refill (`need` set — a Speed Reading queue top-up) skips this: the player is
       // mid-session with a board already in hand, and lending more cards there would
-      // quietly grow their deck every time they tapped the button.
+      // quietly grow their deck on every refill.
       //
       // The ids it lent are threaded into the pool below: selection queries are
       // sorted-only, so a lent card that is not named cannot appear in the round
@@ -495,33 +494,9 @@ export class OnDeckVocabController {
         ({ lentIds } = await this.provisionalCardService.ensureBaseline(userId, language, baseline));
       }
 
-      // ROLLING SUPPLY (ROLLING_SUPPLY_SURFACES, contracts/wire.ts). A surface whose
-      // every spawn is a refill opts out of the "refills never lend" rule above —
-      // without it, a game that declares no baseline could never lend at any point in
-      // a run. It is read from the SAME `?surface=` param as the baseline lookup;
-      // a rolling-supply surface simply isn't in CARD_BASELINES, so `parseSurface`
-      // returns null for it and the baseline branch above is a no-op even when a
-      // malformed request omits `need`.
-      const lendOnRefill = isRollingSupplySurface(
-        typeof req.query.surface === 'string' ? req.query.surface : null
-      );
-      // Optional TIER OFFSET — how many levels away from the learner's own estimated
-      // level to lend. Hydra maps a rolled payout tier to one (drain 0, bloom -1;
-      // docs/HYDRA_BUBBLES.md § 6.2); the server resolves it against `L`, which the
-      // client never sees. Bounded to the width of the 1..6 level range in both
-      // directions, so a malformed value cannot be used to probe the clamp.
-      const rawOffset = parseInt(String(req.query.lendLevelOffset ?? ''), 10);
-      const lendLevelOffset =
-        Number.isInteger(rawOffset) && rawOffset >= -5 && rawOffset <= 5 ? rawOffset : undefined;
-      // STRICT BUCKETS — "these bands or nothing". Set by a caller for whom the band a
-      // card came from IS the answer rather than a preference, so the pool must never
-      // be topped up from outside the requested set (docs/HYDRA_BUBBLES.md § 6.2d).
-      // Hydra sends it because it pays the player by the color the card was drawn as.
-      const strictBuckets = String(req.query.strictBuckets ?? '') === '1';
-
       const pool = await this.onDeckVocabService.getGameVocabPool(
         userId, language, distribution, markType,
-        { need, excludeIds, avoidIds, collection, lendOnRefill, lendLevelOffset, lentIds, strictBuckets, seedIds }
+        { need, excludeIds, avoidIds, collection, lentIds, seedIds }
       );
       res.json(pool);
     } catch (error: any) {
@@ -532,7 +507,7 @@ export class OnDeckVocabController {
   /**
    * Build the Word Search game grid.
    * GET /api/onDeck/wordSearchGrid?Unfamiliar=2&Target=6&Comfortable=3&Mastered=1
-   * Same requested distribution + fallback semantics as the bubble-match pool,
+   * Same requested distribution + fallback semantics as the game pool (getGamePool),
    * plus a substring de-dup pass and snaking grid generation. Returns
    * { grid, words, rows, cols, total, available, sufficient, reason? }.
    *

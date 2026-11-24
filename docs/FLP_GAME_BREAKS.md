@@ -6,8 +6,8 @@
 > **core** flp offers Match Speed and Word Search (Pinyin), the **reading** flp offers Match
 > Speed (No Pinyin, zh), Word Search (No Pinyin), Speed Reading (zh; on PPE 2026-11-04)
 > and Memory Map (zh; on PPE 2026-11-04), and the **writing** flp offers Writing Grid and Superposition (zh).
-> Bucket Drop's adapter is built but switched off (§ 6). The other two games join as their
-> Stages are extracted.
+> Every remaining game is in the rotation. (Bubble Match, Hydra Bubbles and Bucket Drop were
+> archived 2026-11-23 — [ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md).)
 
 Every 15 cards in an flp session (core, reading and writing alike), the learner is
 offered a **game break**: one randomly chosen game whose mark type matches the flp's
@@ -86,7 +86,7 @@ Leave before a deal) goes `playing → leaving → cards`.
 | Moment | What moves |
 |---|---|
 | **card 15 dismissed** | Card 15 flies out as usual (`CARD_FLY_OUT_MS`), revealing the break's card under it. In parallel the **More Info pill fades out** (and disables) and the **word tools (`WordToolsRail`: Compare / Customize) slide up off screen** (`playBreakAway`): the break's card has no word for them. The flp header (back / undo) stays. |
-| **title** | The break's card is on top (§ 5). The next word card is already the front slot under it, unseen and not narrated. The board and the game's code chunk have been loading since the break fell due (`useGameBreak` → `startPlan`: `adapter.prefetch` + `adapter.Stage.preload()`, `src/games/runtime/lazyWithPreload.ts`). Play waits for the prefetch to settle (spinner on the button if it hasn't). |
+| **title** | The break's card is on top (§ 5). The next word card is already the front slot under it, unseen and not narrated. The board and the game's code chunk have been loading since the break fell due (`useGameBreak` → `startPlan`: `adapter.prefetch` + `adapter.Stage.preload()`, `src/games/runtime/lazyWithPreload.ts`). Play waits for the prefetch to settle: the button keeps its label, disabled and greyed like every disabled tower plate (opacity 0.32, default cursor — `GameBreakCard`), and the page shows the `PawnLoader` (`FlashcardsLearnPage` → `breakPlayPending`; DECK_TOWER.md § "Loading feedback"). The wait is capped at `PLAY_WAIT_TIMEOUT_MS` (8 s, timed from the tap): an unsettled prefetch is then given up — settled with no board, as a failed one is, so the Stage deals its own — and Play is re-enabled; the next tap opens the game. A late result for a given-up plan is dropped (`prefetchGaveUpRef`). If the game's code chunk is still loading when the game opens, `GameBreakArea`'s Suspense fallback is the `PawnLoader` too. |
 | **skipping** | Skip: the break's card flies off to the right, uncovering the next word card, while the word tools and More Info come back (`playBreakToolsReturn`). No swap, no rise, no mark. |
 | **growing** | Play: `GameBreakArea` portals to the phone frame (`useScreenOverlayHost`), above the flp header and the footer, below a game's own popups. A white circle grows out of the screen's middle (`BREAK_AREA_MOTION.growMs`, a `transform` so the compositor runs it) until it passes the corners. The break's card holds still under it (`stackHold: "growing"`), so it goes when it is covered, not at the tap. The break's **header row** (`GameBreakChrome`: Leave, the game's name, the audio chip, the flame) is up from the first frame, at the study header's spots, and the study header steps aside (`TowerStudyHeader` `hidden={gameBreak.areaMounted}`). Its ink turns from the sky's white to the ground's dark exactly where the circle passes under each control (§ 6 "the header row"). Leave here cancels the break: the circle freezes part-way and falls away with the area (`leaving`). |
 | **playing** | The Stage mounts on the finished circle: the area is white from here on, and the game IS the screen (`GameBreakFrame`). The header row is already there; only the game's content arrives, fading in (`GameFrame` / `GameCentered` under a host, `GAME_FRAME_HOST_FADE_IN_MS`; Word Search's letters at random delays, `staggerFadeIn`; Match Speed's cards at their own random delays). There is no header bar: the game sits straight on the white ground under the row. Leave on a live run ENDS it (the run reports what it managed, as a natural end does; Writing Grid left during Phase 1 keeps showing Phase 1 on the way out — `WritingGridStage` → `leftDuringArrange`); with the lent-card offer up, Leave answers "not now"; from any other phase it closes the break. The word cards behind are hidden by opacity (`FlashCardSection` → `hiddenForBreak`). |
@@ -121,8 +121,7 @@ The candidate set is **derived from `GAME_REGISTRY`**, never hand-listed:
 4. **Track on the flp's world** — `worldForMarkType(track) === world`, where the track is:
    - a moded game's per-mode `markType`, one candidate per matching mode;
    - otherwise `GameDef.markType`, **except** a game with `noPinyinMarkType` on a zh
-     board with pinyin hidden (the reading flp) — Match Speed and Bubble Match, which
-     then mark `reading`. (Not expressed as `modes`, because a challenge stores both as
+     board with pinyin hidden (the reading flp) — Match Speed, which then marks `reading`. (Not expressed as `modes`, because a challenge stores both as
      `(gameId, mode: null)` in `CHALLENGE_GAMES`.) Match Speed honours it **only as a
      break**: the candidate's `markType` rides the prefetch and `MatchSpeedStage`'s
      `markType` prop; its route's pinyin chip is display-only and always marks
@@ -136,12 +135,12 @@ The candidate set is **derived from `GAME_REGISTRY`**, never hand-listed:
 
 Routed and **break-only** games alike are candidates — Speed Reading, Memory Map, Writing
 Grid and Superposition have no route at all (`isRoutedGame`, `src/games/registry.ts`) and
-are exactly the rflp / wflp games. The full set once every game is adapted:
+are exactly the rflp / wflp games. The full set:
 
 | flp bar | Games |
 |---|---|
-| core | Match Speed ✓, Word Search (Pinyin) ✓, Bubble Match (Pinyin), Hydra Bubbles, Bucket Drop (Pinyin) (off) |
-| reading | Match Speed (No Pinyin, zh) ✓, Word Search (No Pinyin) ✓, Speed Reading (zh) ✓, Memory Map (zh) ✓, Bubble Match (No Pinyin, zh), Bucket Drop (No Pinyin) (off) |
+| core | Match Speed ✓, Word Search (Pinyin) ✓ |
+| reading | Match Speed (No Pinyin, zh) ✓, Word Search (No Pinyin) ✓, Speed Reading (zh) ✓, Memory Map (zh) ✓ |
 | writing | Writing Grid (zh) ✓, [Superposition](./SUPERPOSITION_GAME.md) (zh) ✓ |
 
 **Pinyin follows the bar**: core shown, reading hidden (`breakShowsPinyin`).
@@ -167,7 +166,8 @@ Code: `src/games/flpBreak/candidates.ts` → `flpBreakCandidates`, `pickBreakCan
   card is dealt only when the game's mark on it COUNTS, so a correct one takes it out of
   the loop (§ 4a). `isBreakSeedPlayable` tests three things:
   - the card is not **cooling** on the game's bar (`isMarkOnCooldown`;
-    HYDRA_BUBBLES.md § 8.1 — the mark gate would drop the mark);
+    FLASHCARD_REVIEW_HISTORY_IMPLEMENTATION.md § "Cooldown is a hard next-markable-at" —
+    the mark gate would drop the mark);
   - the mark is not **flp-only** (`isFlpOnlyMark`, core pbh ≥ 6 — same);
   - the card is **under pbh 6 on the bar the game's mark lands in**
     (`BREAK_SEED_PBH_LIMIT` = `FLP_ONLY_CORE_PBH`). On core this is the flp-only line
@@ -213,7 +213,7 @@ Code: `src/games/flpBreak/candidates.ts` → `flpBreakCandidates`, `pickBreakCan
 
 | Endpoint | `seedIds` |
 |---|---|
-| `GET /api/onDeck/gamePool` (Bubble Match, Match Speed, Speed Reading, Bucket Drop, Hydra) | **built** — capped at 40 ids (`MAX_SEED_IDS`); replaced by the remaining focus set on a focused break |
+| `GET /api/onDeck/gamePool` (Match Speed, Speed Reading) | **built** — capped at 40 ids (`MAX_SEED_IDS`); replaced by the remaining focus set on a focused break |
 | `GET /api/onDeck/wordSearchGrid` | **built** — same cap and tiers; seeds over 4 characters are dropped (the grid cannot place them). Every break adds `board=compact` |
 | `GET /api/memoryMap` (Memory Map) | **never** — the break opens the learner's own map and its saved run, not a dealt board (§ 4b) |
 | `GET /api/writingGrid/deal`, `GET /api/superposition/deal` | **built** — same cap; the seed words pass the seed rule, then reach the board as their characters. `?flpBreak=1` is sent on every break |
@@ -389,7 +389,6 @@ Not read from the learner's standalone settings:
 | Setting | Value |
 |---|---|
 | **Pinyin** | Follows the flp bar (§ 3), passed as `FlpBreakCandidate.showPinyin`. |
-| **Bubble Match level** | Level 2; level 1 when ≥ 50% of the final dealt set is utcm Unfamiliar. Decided once at deal time. *(Lands with Bubble Match's adapter.)* |
 | **Other games** | The game's defaults. |
 
 ## 6. Embedding games: page + Stage
@@ -402,8 +401,8 @@ A break-capable game is split into:
 - **its Stage** — the run: phase machine, card supply (it keeps its own fetching and
   top-ups), marks, timers, `useBackgroundPause` (auto-resuming, no resume screen), the challenge
   round, sense and dd rules, and its results card. It renders inside a **host-injected
-  `Frame`** (`GameStageFrameProps`). A routed game's Stage (Match Speed, Word Search,
-  Bucket Drop) branches on `host: GameStageHost` only for: the opening board (a break seeds
+  `Frame`** (`GameStageFrameProps`). A routed game's Stage (Match Speed, Word Search)
+  branches on `host: GameStageHost` only for: the opening board (a break seeds
   it and may hand over the prefetched pool), the way out (page Back = `useGameBack` with the
   challenge confirm; break Leave = end the live run, else close), and the results actions
   (Play Again on the page only). A **break-only** game's Stage (Speed Reading, Memory Map,
@@ -460,8 +459,7 @@ The break's screen is split between the AREA and the game:
     `leaving`).
   - **The audio chip** shows unless the adapter hides it (`FlpBreakGame.hidesAudioChip`): an
     adapter call, because the row exists before the Stage does. Every break game's countdown
-    beeps, so Writing Grid shows it too (2026-11-10). Bucket Drop hides it on a reading run, its
-    header chip's rule.
+    beeps, so Writing Grid shows it too (2026-11-10).
   - **A game control that belongs in the row** goes in `GameFrame`'s `exitRowTrailing`, which
     portals into the row's slot just left of the chip (`GameFrameHost.trailingSlot`) and fades in
     with the game, at the chip's height (`OUTLINED_CHIP_HEIGHT_PX`): Superposition's hint
@@ -500,13 +498,10 @@ page and its Stage).
 |---|---|---|---|
 | 1 | Match Speed | ✓ `MatchSpeedStage` | ✓ `MATCH_SPEED_BREAK` |
 | 2 | Word Search | ✓ `WordSearchStage` | ✓ `WORD_SEARCH_BREAK` |
-| 3 | Bucket Drop | ✓ `BucketDropStage` | built, **off**: `BUCKET_DROP_BREAK` has no entry in `FLP_BREAK_GAMES` |
-| 4 | Bubble Match | — | — |
-| 5 | Speed Reading | ✓ `SpeedReadingStage` | ✓ `SPEED_READING_BREAK` (`sideways`) |
-| 6 | Hydra Bubbles | — | — |
-| 7 | Writing Grid | ✓ `WritingGridStage` | ✓ `WRITING_GRID_BREAK` |
-| 8 | Memory Map | ✓ `MemoryMapStage` | ✓ `MEMORY_MAP_BREAK` (own map, no seed — § 4b) |
-| 9 | Superposition | ✓ `SuperpositionStage` | ✓ `SUPERPOSITION_BREAK` |
+| 3 | Speed Reading | ✓ `SpeedReadingStage` | ✓ `SPEED_READING_BREAK` (`sideways`) |
+| 4 | Writing Grid | ✓ `WritingGridStage` | ✓ `WRITING_GRID_BREAK` |
+| 5 | Memory Map | ✓ `MemoryMapStage` | ✓ `MEMORY_MAP_BREAK` (own map, no seed — § 4b) |
+| 6 | Superposition | ✓ `SuperpositionStage` | ✓ `SUPERPOSITION_BREAK` |
 
 Code: `src/games/types.ts` → `GameStageHost`, `GameStageFrameProps`;
 `src/games/flpBreak/types.ts` → `FlpBreakGame`, `FlpBreakContext`,
@@ -516,8 +511,6 @@ Code: `src/games/types.ts` → `GameStageHost`, `GameStageFrameProps`;
 `MatchSpeedPage.tsx`, `poolRequest.ts` → `matchSpeedPoolRequest`;
 `src/games/flpBreak/wordSearchBreak.ts`, `WordSearchBreakStage.tsx`;
 `src/games/word-search/WordSearchStage.tsx`, `WordSearchPage.tsx`, `gridRequest.ts`;
-`src/games/flpBreak/bucketDropBreak.ts`, `BucketDropBreakStage.tsx`;
-`src/games/bucket-drop/BucketDropStage.tsx`, `BucketDropPage.tsx`, `poolRequest.ts`;
 `src/games/flpBreak/writingGridBreak.ts`, `WritingGridBreakStage.tsx`;
 `src/games/flpBreak/speedReadingBreak.ts`, `SpeedReadingBreakStage.tsx`;
 `src/games/speed-reading/SpeedReadingStage.tsx`, `poolRequest.ts`;
@@ -537,8 +530,8 @@ to the **left** edge of the timer strip, in both states, so it never moves under
 thumb. That is the edge a break's Leave arrow takes (§ 6), so a game with the eye needs
 room made before it can be a break. `GameTimer`'s corner
 slot moved to the right to make room: it is `trailing` (top-right). No game draws
-`GameTimer` today: Writing Grid dropped its visible clock on 2026-11-01, and Word Search and Bucket Drop show no clock
-(WORD_SEARCH_GAME.md § 5, BUCKET_DROP_GAME.md § 6).
+`GameTimer` today: Writing Grid dropped its visible clock on 2026-11-01, and Word Search shows
+no clock (WORD_SEARCH_GAME.md § 5).
 
 Code: `src/games/shared/TimerEyeToggle.tsx`, `GameFrame.tsx` → `GameTimer`
 (`trailing`). Docs: WRITING_PRACTICE_REWORK.md § 2.
@@ -576,8 +569,10 @@ Direction: `features/flashcards` imports `src/games` (engine), never the reverse
   (2026-11-04); every break deals the game's own Mix distribution.
 - Play waits for the board prefetched while card 15 was up. That prefetch belongs to its
   plan (`PlannedBreak.id`), not to the `due` effect's lifetime — the swipe that opens the
-  break is what ends `due`.
-- Pinyin follows the bar; Bubble Match is level 2, level 1 when ≥ 50% Unfamiliar (§ 5a).
+  break is what ends `due`. The wait is capped at `PLAY_WAIT_TIMEOUT_MS` (2026-11-23):
+  past it Play is re-enabled and the plan proceeds without the prefetched board, so a hung
+  request can no longer leave Play disabled for good.
+- Pinyin follows the bar (§ 5a).
 - The break's card names the game only; it has no "Game break" label, medal targets or
   personal best, so it fits a smaller space (§ 5, changed 2026-10-31).
 - Long / endless games are included as is; Leave ends them (§ 3).
@@ -607,7 +602,7 @@ Direction: `features/flashcards` imports `src/games` (engine), never the reverse
   break after a finish starts the map again (§ 4b).
 
 - **2026-11-01:** Bucket Drop's adapter was built on its full 20-word board, then taken out of
-  the rotation the same day. Adding it back to `FLP_BREAK_GAMES` re-enables it (§ 6).
+  the rotation the same day. (The game was archived 2026-11-23.)
 
 - **2026-11-01:** Writing Grid joined the rotation as the writing flp's game, on its full
   8-cell board. A break's Leave ends the run with no confirm, as in every other game, and

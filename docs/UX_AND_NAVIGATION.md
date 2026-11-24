@@ -9,7 +9,7 @@ specific doc.
 
 | Concept | Doc | One-liner |
 |---|---|---|
-| **App navigation structure** | [NAVIGATION.md](./NAVIGATION.md) | No hamburger/sidebar; nav is the footer tabs, left to right — **Flashcards** (`/`, the Deck Tower), **Lessons** (`/lessons`, a "coming soon" placeholder), **Dictionary**, **Menu** (no route: raises the Menu popover, a list of rows to Reader, Arena, Community, …) — + back-arrow drill-ins (each lights its parent tab via `routeMeta.footerTab`; Menu's drill-ins go back in history). Add Cards and the saved-card cdp are Deck drill-ins. Account is a sheet raised from td's header avatar (Logout and Settings live in it). |
+| **App navigation structure** | [NAVIGATION.md](./NAVIGATION.md) | No hamburger/sidebar; nav is the footer tabs, left to right — **Flashcards** (`/`, the Deck Tower), **Lessons** (`/lessons`, a "coming soon" placeholder), **Dictionary**, **Menu** (no route: raises the Menu popover, a list of rows to Reader, Arena, Community, …) — + back-arrow drill-ins (each lights its parent tab via `routeMeta.footerTab`; Menu's drill-ins go back in history). Add Cards is a Deck drill-in; a saved card opens in place over td's cards page as td's card view (no route; DECK_TOWER.md § "The card view"). Account is a sheet raised from td's header avatar (Logout and Settings live in it). |
 | **Active-duty pages** | [ACTIVE_DUTY_PAGES.md](./ACTIVE_DUTY_PAGES.md) | Registry of every page/surface reachable from td (`/`) with its entry chain, plus flagged-off pages and orphans awaiting a deprecation decision. The lookup cache for CLAUDE.md's "Unreachable components" check. |
 | **Scrollable footer-tab layout** | [MOBILE_TAB_SCREEN_LAYOUT.md](./MOBILE_TAB_SCREEN_LAYOUT.md) | Every footer-tab page uses `MobileTabScreen` (header scrolls away inside the scroll area). Dictionary uses it scrolling, Lessons (a td Tier-2 placeholder) with `scrollable={false}`; td (`/`) mounts it with `scrollable={false}`. |
 | **Drill-in page archetypes** | [LEAF_NODE_PAGES.md](./LEAF_NODE_PAGES.md) | Two back-arrow archetypes. **Leaf** (`LeafPage`): down arrow, no footer, back-arrow-only exit, slides up/down. **Node** (`NodePage`): left arrow, keeps footer, slides in/out to the right. Rule of thumb: no footer ⇒ leaf, has footer ⇒ node. |
@@ -59,7 +59,7 @@ and the footer bar with it.
 > `html`/`body` clip the overflow instead. The symptom is a page that renders correctly
 > but simply will not scroll. Frame-shell pages don't hit this — `MobileTabScreen` /
 > `LeafPage` already bound the height, so their scroll areas use `flex: 1`. Worked
-> example: `src/pages/fontLab/FontLabPage.tsx`.
+> example: `src/pages/gravityLab/GravityLabPage.tsx`.
 
 Text is **non-selectable by default app-wide** — `src/index.css` sets `user-select:
 none` on `body` (it cascades to everything). Form fields (`input`/`textarea`/
@@ -128,7 +128,7 @@ should call `useBlockEdgeSwipe(true)` (`src/hooks/useBlockEdgeSwipe.ts`) so a sw
 from the left/right screen edge doesn't navigate away mid-drag. `touch-action: none`
 does NOT stop this — the browser claims the history-navigation gesture before the
 element sees the touch, so it must be cancelled at the touch-event layer. Reference
-implementation: `src/games/bubble-match/BubbleMatchPage.tsx`.
+implementation: `src/games/match-speed/MatchSpeedPage.tsx`.
 
 ---
 
@@ -505,7 +505,7 @@ compute exactly the design's original geometry.
 | Footer slab | Sits `max(26px, SAFE_BOTTOM)` off the bottom edge, so it never rests on the home indicator | `MobileFooter` → `SLAB_FOOTER_BOTTOM`, `SLAB_FOOTER_TOTAL_HEIGHT` |
 | Footer hide travel | Translates by the slab's footprint plus its cast shadow, or the shadow's tail peeks back | `FooterPresenter` → `SLAB_FOOTER_HIDDEN_OFFSET` |
 | Scroll clearance + bottom edge-fade | Reserve and fade against the slab's total footprint | `MobileTabScreen`, `SLAB_FOOTER_TOTAL_CLEARANCE` |
-| Sheet pills, the acp platform, sheet bodies | Offset by `SLAB_FOOTER_TOTAL_CLEARANCE` (a CSS string carrying the inset) | `SheetPill` (its `bottom` prop is a CSS string now), `VocabCardDetailPage`, `AddCardsPage` |
+| Sheet pills, the acp platform, sheet bodies | Offset by `SLAB_FOOTER_TOTAL_CLEARANCE` (a CSS string carrying the inset) | `SheetPill` (its `bottom` prop is a CSS string now; no callers since the routed cdp was deleted 2026-11-23), `AddCardsPage` |
 | flp merge sheet | Its own top padding ramps to `SAFE_TOP` as the sheet merges into a full-screen page, so its header passes `safeAreaTop={false}` and does not add the inset twice | `SheetPanel` → `writeMergeChrome` |
 
 **The header, not the frame, carries the top inset.** Padding the frame would stop the
@@ -526,7 +526,7 @@ a new popup inherits it by being one of them, and nothing per call site opts in.
 | Popup family | Behaviour while a keyboard is up | Where |
 |---|---|---|
 | Every MUI `Dialog` | The Dialog **root** gets `padding-bottom: var(--keyboard-inset)`, so the paper re-centres in the space above the keyboard and a tall dialog's own `max-height` shrinks it (its content scrolls). Animated on the keyboard's own slide curve via `--keyboard-inset-timing`. | `src/contexts/ThemeContext.tsx` → `MuiDialog.styleOverrides.root` |
-| Every `SheetPanel` (eip, Compare panel, acp, cdp) | The sheet does **not** move. The body's scroll element gets extra bottom padding equal to the inset, so every row can be scrolled up above the keyboard. | `src/components/sheet/SheetPanel.tsx` → the "Keyboard clearance" layout effect |
+| Every `SheetPanel` (eip, Compare panel, acp) | The sheet does **not** move. The body's scroll element gets extra bottom padding equal to the inset, so every row can be scrolled up above the keyboard. | `src/components/sheet/SheetPanel.tsx` → the "Keyboard clearance" layout effect |
 
 **A long-form writing field keeps the caret comfortable.** Where a learner writes a
 passage (the Reader's edit mode, the cyoa passage editor), the page ends its scroll box at
@@ -586,8 +586,8 @@ hold.
 | Dim | Host / z-index | Where |
 |---|---|---|
 | Every MUI `Dialog` | mounted in the frame by `MuiDialog.defaultProps.container` (`dialogContainer`); root re-pinned `absolute` inside the frame; backdrop `absolute`, `COLORS.modalScrim`; z 1300 | `src/contexts/ThemeContext.tsx` → `MuiDialog` |
-| `SheetPanel` (modal: eip, acp, the cdp, compare) | frame; scrim 1200 / sheet 1201 (+2 per stack depth) | `src/components/sheet/SheetPanel.tsx` |
-| `MinimizablePopup` → `GameEndPopup`, `ProvisionalSortOffer`, `ProvisionalSortDonePopup`, Memory Map's inspect popup | frame; 200 / 210 (flp's exit offer 1400) | `src/components/MinimizablePopup.tsx` |
+| `SheetPanel` (modal: eip, acp, compare) | frame; scrim 1200 / sheet 1201 (+2 per stack depth) | `src/components/sheet/SheetPanel.tsx` |
+| `MinimizablePopup` → `ProvisionalSortOffer`, `ProvisionalSortDonePopup`, Memory Map's inspect popup | frame; 200 / 210 (flp's exit offer 1400) | `src/components/MinimizablePopup.tsx` |
 | `ChallengeSheet`, `SteppedHelpPopup` | frame; 1200 / 1300 | `src/features/studyChallenge/ChallengeSheet.tsx`, `src/components/SteppedHelpPopup.tsx` |
 | `ChallengeRoundScoreboard` | `nearestOverlayHost` — the leaf Surface, which already fills the screen on a footerless game page; 1200 | `src/games/runtime/ChallengeRoundScoreboard.tsx` |
 | `ProvisionalCardsNotice` | `position: fixed` inside a transformed leaf Surface (games; the flp dropped it 2026-11-11), which makes the Surface its containing block — the whole screen; 1400 | `src/components/ProvisionalCardsNotice.tsx` |
@@ -629,5 +629,5 @@ popup, and MUI dialogs dimming the whole desktop browser window in MUI's own bla
 - `src/components/overlayHost.ts` → `frameOverlayHost`, `nearestOverlayHost`, `dialogContainer`; `src/hooks/useScreenOverlayHost.ts` → `useScreenOverlayHost` — where a dim is hosted (§ Dimming the background)
 - `src/hooks/useScrollStretch.ts` — displacement-driven elastic card spacing (see above)
 - `src/hooks/useScrollSafeTap.ts` → `useScrollSafeTap`; `src/components/PageHeader.tsx` → `HeaderIconButton` / `HeaderActionChip` `scrollSafeTap` — buttons that must fire mid-fling (§ Buttons that must work mid-fling)
-- `src/games/bubble-match/BubbleMatchPage.tsx` — edge-swipe reference implementation
+- `src/games/match-speed/MatchSpeedPage.tsx` — edge-swipe reference implementation
 - `MobileTabScreen`, `LeafPage`, `NodePage` components — see the sub-docs above

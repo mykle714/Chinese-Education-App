@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Box, Typography, Button, Switch } from "@mui/material";
 import DelayedCircularProgress from "../../components/DelayedCircularProgress";
 import LibraryShelfPanel from "../../components/velocity/LibraryShelfPanel";
@@ -45,13 +45,26 @@ function AccountPane({ onClose }: AccountPaneProps) {
     const { confirm } = useConfirmation();
     const { user, isLoading, logout, updateAvatar, updateGoals } = useAuth();
 
-    // Goal toggles (docs/MASTERY_REWORK.md). Optimistic local state; a failed PUT
-    // reverts. Reading/Writing are only meaningful where those marks can be earned
-    // (zh games), so the section is hidden for Spanish accounts.
-    const [goalSaving, setGoalSaving] = useState<null | "reading" | "writing">(null);
+    // Goal toggles (docs/MASTERY_REWORK.md). Reading/Writing are only meaningful where
+    // those marks can be earned (zh games), so the section is hidden for Spanish accounts.
+    //
+    // OPTIMISTIC: a tapped switch moves at once. `pendingGoals` holds the value it was
+    // flipped to while its PUT is out, and the switch draws that over `user`'s value. On
+    // success updateGoals patches `user` to the same value, so dropping the override changes
+    // nothing on screen; on failure dropping it snaps the switch back to `user`'s untouched
+    // value — the rollback. It has no message of its own: updateGoals is retried quietly
+    // first, and a lost connection is said once by the shared notice
+    // (docs/NOTIFICATIONS.md § 3a "Failures"). The switches are no longer
+    // disabled while saving (that greyed them out); instead a second tap on a switch whose
+    // save is still out is ignored (`goalSavingRef`), so two PUTs for one goal can never
+    // land out of order. The two goals save independently.
+    const [pendingGoals, setPendingGoals] = useState<{ reading?: boolean; writing?: boolean }>({});
+    const goalSavingRef = useRef<{ reading: boolean; writing: boolean }>({ reading: false, writing: false });
     const showGoals = user?.selectedLanguage !== "es";
     const handleToggleGoal = async (which: "reading" | "writing", next: boolean) => {
-        setGoalSaving(which);
+        if (goalSavingRef.current[which]) return;
+        goalSavingRef.current[which] = true;
+        setPendingGoals((prev) => ({ ...prev, [which]: next }));
         try {
             const focusAutoEnabled = await updateGoals(which === "reading" ? { readingGoal: next } : { writingGoal: next });
             // A goal turned on may have opened a crowded world with focus mode switched on
@@ -62,11 +75,18 @@ function AccountPane({ onClose }: AccountPaneProps) {
                 else forgiveAutoFocusNotice(user.id, user.selectedLanguage, which);
             }
         } catch {
-            /* AuthContext surfaces the error; local switch reverts via user state */
+            /* Rolled back below: the override is dropped and `user` still holds the old value. */
         } finally {
-            setGoalSaving(null);
+            goalSavingRef.current[which] = false;
+            setPendingGoals((prev) => {
+                const rest = { ...prev };
+                delete rest[which];
+                return rest;
+            });
         }
     };
+    const readingGoalOn = pendingGoals.reading ?? (user?.readingGoal === true);
+    const writingGoalOn = pendingGoals.writing ?? (user?.writingGoal === true);
 
     // Avatar picker (modal) open state.
     const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
@@ -214,8 +234,7 @@ function AccountPane({ onClose }: AccountPaneProps) {
                                         className="account-sheet__goal-reading-switch"
                                         sx={goalSwitchOnSx(COLORS.redMk)}
                                         inputProps={{ "aria-label": "Learn reading" }}
-                                        checked={user.readingGoal === true}
-                                        disabled={goalSaving !== null}
+                                        checked={readingGoalOn}
                                         onChange={(e) => handleToggleGoal("reading", e.target.checked)}
                                     />
                                 }
@@ -230,8 +249,7 @@ function AccountPane({ onClose }: AccountPaneProps) {
                                         className="account-sheet__goal-writing-switch"
                                         sx={goalSwitchOnSx(COLORS.orgMk)}
                                         inputProps={{ "aria-label": "Learn writing" }}
-                                        checked={user.writingGoal === true}
-                                        disabled={goalSaving !== null}
+                                        checked={writingGoalOn}
                                         onChange={(e) => handleToggleGoal("writing", e.target.checked)}
                                     />
                                 }

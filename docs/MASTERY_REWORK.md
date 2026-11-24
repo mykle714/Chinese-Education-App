@@ -39,11 +39,12 @@
 >   Switching a goal on may also switch that world's focus mode on
 >   ([FOCUS_MODE.md](./FOCUS_MODE.md) § 1a; response field `focusAutoEnabled`).
 > - Client mark sources: flp (`useWorkingLoop.ts`), Word Search
->   (`WordSearchStage.tsx`), Bubble Match (`BubbleMatchPage.tsx`), Practice Writing
+>   (`WordSearchStage.tsx`), Match Speed (`MatchSpeedStage.tsx`), Practice Writing
 >   (`PracticeWritingButton.tsx` → `PracticeWritingPopup.tsx`).
-> - Bars UI: `src/components/mastery/MasteryWindow.tsx` (cdp "Mastery" section — the
->   eight-mark `.msb` window for **one** track at a time, defaulting to the surface's
->   lens, with its per-track cooldowns) and `src/components/MiniVocabCard.tsx` (the
+> - Bars UI: `src/features/deckTower/cardView/TowerMasteryPanel.tsx` (td's card view's
+>   mastery section — a raised plate bar filled to `pbh / PBH_FULL` for **one** track at a
+>   time, opening on the world the card was tapped in, with the shown bar's cooldown; it
+>   replaced the cdp's `MasteryWindow` on 2026-11-23, § 5) and `src/components/MiniVocabCard.tsx` (the
 >   hairline strip, likewise one bar). `MasteryProgressBar` was deleted 2026-08-24.
 >
 > **Movement between bands is logged separately** — see
@@ -78,9 +79,9 @@ Confirmed mark sources:
 
 | Type | Produced by | Sign |
 |---|---|---|
-| **Recognition** | flp **foreign-first** review, **pinyin shown or not** (zh chars-first / es spanish-first → meaning; § 1a); **Bubble Match**; **Match Speed**; **Hydra Bubbles** | correct / incorrect |
+| **Recognition** | flp **foreign-first** review, **pinyin shown or not** (zh chars-first / es spanish-first → meaning; § 1a); **Match Speed** | correct / incorrect |
 | **Production** | flp **English-first** review (meaning → foreign); **Word Search "Pinyin" mode** matches | flp: correct/incorrect. Word Search: **positive-only** (a match = positive Production mark; no negatives), and **hinted words emit nothing at all** — see note below |
-| **Reading** | **Bubble Match** with pinyin off (§ 1a); **Word Search "No Pinyin" mode** matches (`WordSearchMode = 'no-pinyin'`, `src/games/word-search/constants.ts`); **Speed Reading** (`docs/SPEED_READING_GAME.md`) | flp: correct / incorrect. Word Search: **positive-only**. Speed Reading: **correct / incorrect** — see below |
+| **Reading** | the **reading flp** (§ "The reading flp"); **Match Speed** with pinyin hidden, as a reading-flp break (`noPinyinMarkType`); **Memory Map**; **Word Search "No Pinyin" mode** matches (`WordSearchMode = 'no-pinyin'`, `src/games/word-search/constants.ts`); **Speed Reading** (`docs/SPEED_READING_GAME.md`) | flp: correct / incorrect. Word Search: **positive-only**. Speed Reading: **correct / incorrect** — see below |
 | **Writing** | **Practice Writing drill** (`docs/PRACTICE_WRITING.md`), top-1 stroke grading | correct / incorrect |
 
 **Speed Reading emits NEGATIVE reading marks, and that is intended.** It is the
@@ -106,11 +107,11 @@ neither a positive nor a negative reading is warranted. See
 The two Word Search modes already exist and are chosen at launch from the hub
 (fixed per run) — the mode slug cleanly disambiguates Production vs Reading.
 
-### 1a. Pinyin off → the reading track (Bubble Match only; NOT the flp)
+### 1a. Pinyin off → the reading track (NOT the flp)
 
 > STATUS: **CHANGED 2026-09-25 — the flp no longer takes part.** Code: `foreignPromptTrack`
-> + `ForeignPromptTrack` (`server/contracts/wire.ts`; the type was `FlpForeignTrack`),
-> read by `src/games/bubble-match/BubbleMatchPage.tsx`. The flp side of this section —
+> + `ForeignPromptTrack` (`server/contracts/wire.ts`; the type was `FlpForeignTrack`) —
+> **no caller since Bubble Match was archived 2026-11-23** (dead code). The flp side of this section —
 > `flpMarkTypes`, `parseFlpForeignTrack`, the `?foreignTrack=` wire parameter on
 > `GET /api/onDeck/distributedWorkingLoop`, `GET /api/onDeck/flpReadyCounts` and
 > `POST /api/flashcards/mark`, and `OnDeckVocabService.DEFAULT_FOREIGN_TRACK` — was
@@ -154,7 +155,7 @@ On the reading world:
 - Autoplay narration plays on the answer face only (on the flip — `narrateNow`).
 - `readingMode` is the **only** input to flp pinyin: the flp has no pinyin chip and does
   not read `useFlashcardLearnSettings().showPinyin`, so the core and writing flp show pinyin
-  on every face. That shared pref still drives the games that toggle it and the cdps.
+  on every face. That shared pref still drives the games that toggle it, acp and the Dictionary eip (td's card view always shows pinyin).
 - A reading refill prefers the READING band just left (`markedBarCategoryBefore`).
 - ⚠️ Open: the eip ("More Info") is reachable on a reading card's question face and shows
   the definition and readings — the same pre-flip leak the core flp has. Undecided
@@ -162,49 +163,28 @@ On the reading world:
 
 The writing world's flp is the writing card (WRITING_PRACTICE_REWORK.md § 3).
 
-**Bubble Match is the rule's one consumer**: a pinyin-off zh board marks `reading`, and
-its pool is requested on that track. Two properties, both forced by it being a game —
-see
-[GAMES_FEATURE.md § "Bubble Match: pinyin picks the track"](./GAMES_FEATURE.md):
+**The rule's consumers are flp game breaks.** The rule's original consumer, Bubble Match
+(a pinyin-off zh board marked `reading`, its track latched at deal for the run), was
+archived on 2026-11-23 ([ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)). Today a game
+switches to `reading` only as a break inside the reading flp, which hides pinyin
+(`GameDef.noPinyinMarkType` — Match Speed; Word Search's No Pinyin mode;
+[FLP_GAME_BREAKS.md](./FLP_GAME_BREAKS.md) § 3). A game's pool is bucketed and cooled on
+its track up front, so the track is fixed for the run.
 
-* the track is **latched when the board is dealt** and held for the run (including
-  Play-Again refills), because a game's whole pool is bucketed and cooled up front;
-* so the toggle moved OUT of the game and onto the **Games hub**
-  (`BubbleMatchTrackToggle`). Since 2026-10-03 there is no toggle at all: each
-  launcher **pins** the track (`state.showPinyin`). The Games hub was Bubble Match's
-  only launcher (it has no flp-break adapter) and pinned Recognition; since the hub was
-  deleted (2026-11-06, `standaloneGames` flag off) no live surface launches Bubble Match at
-  all, so no Reading run is launched either
-  ([GAMES_FEATURE.md](./GAMES_FEATURE.md) § "Bubble Match: pinyin picks the track").
-  A reading run is silent — no autoplay, no narration — since hearing
-  the word would supply the reading being tested.
-
-> **Hydra Bubbles is next, and the setting is going per-game** (decided 2026-08-23,
-> **not built**). Two changes that must land together:
->
-> 1. **Pinyin becomes a per-game setting.** Today Bubble Match, Hydra and Match Speed
->    share the flp's one `showPinyin` boolean, so switching Bubble Match to Reading
->    strips pinyin from the other two — neither of which changes track to match — and
->    a game writing that key also edits the cdp/acp/dictionary display. Each game gets
->    its own persisted preference; the flp keeps `flashcard.learn-settings` and becomes
->    its only writer. Word Search, Memory Map and Speed Reading are already per-game.
->    Full rule: [GAMES_FEATURE.md § "Pinyin is a per-game setting"](./GAMES_FEATURE.md).
-> 2. **Hydra converts to the track rule**, latched before the first spawn rather than
->    at deal (it has no deal — every spawn is a refill). Its tier ladder and its two
->    color buffers are keyed on the mastery bands of the track it pools by, so a
->    reading run re-bands the whole board and its bloom side thins out badly. Design +
->    the blocking question: [HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md).
->
-> **Match Speed gets the per-game toggle but keeps marking `recognition`** — a per-game
-> *setting* is not a per-game *track*; the track rule applies only where these docs say
-> it does.
+> **Pinyin is going per-game** (decided 2026-08-23, **not built**): Match Speed still
+> shares the flp's one `showPinyin` boolean, so a game writing that key also edits the
+> acp/dictionary display. Each game gets its own persisted preference; the flp keeps
+> `flashcard.learn-settings`. Word Search, Memory Map and Speed Reading are already
+> per-game. Full rule: [GAMES_FEATURE.md § "Pinyin is a per-game setting"](./GAMES_FEATURE.md).
+> **Match Speed's toggle on its own page keeps marking `recognition`** — a per-game
+> *setting* is not a per-game *track*.
 
 **Spanish is deliberately excluded**: es renders as plain text with no phonetic layer
 to hide, so the toggle changes nothing on the card and must not swap its track.
 
 **These four are the _only_ emitters.** No other game or feature emits Reading or
-Writing marks — Reading comes from pinyin-off Bubble Match, Word Search No-Pinyin,
-Speed Reading and Memory Map; Writing from the Practice Writing drill, the Writing Grid
+Writing marks — Reading comes from the reading flp, its pinyin-hidden Match Speed breaks,
+Word Search No-Pinyin, Speed Reading and Memory Map; Writing from the Practice Writing drill, the Writing Grid
 game and the writing flp (`?world=writing`). Since migration 170 writing marks land on each
 CHARACTER's own card and a word's writing bar is the average of its characters' — see
 [WRITING_PRACTICE_REWORK.md § 3a](./WRITING_PRACTICE_REWORK.md).
@@ -256,6 +236,16 @@ comes from the app-wide `MuiSwitch` override (`src/contexts/ThemeContext.tsx`, "
 ink); the goal switches recolour only the "on" TRACK (the knob stays ink) with their row's ramp Mark tier
 — Reading `COLORS.redMk`, Writing `COLORS.orgMk` — via `goalSwitchOnSx` in
 `src/pages/account/AccountPane.tsx` (2026-11-14).
+
+**A switch moves the moment it is tapped** (2026-11-23). `handleToggleGoal` draws the
+new value from a local override (`pendingGoals`) while its `PUT /api/users/goals` is out,
+and drops the override when the call settles. On success `updateGoals` has already
+patched `user` to the same value. On failure the switch snaps back to `user`'s unchanged
+value, with no message of its own: `updateGoals` is retried quietly first, and a lost
+connection is said by the shared notice (NOTIFICATIONS.md § 3a). The switches are not disabled while saving, since that
+greyed them out. Instead, a second tap on a switch whose save is still out is ignored
+(`goalSavingRef`), so one goal's PUTs cannot land out of order. The two goals save
+independently.
 
 **The section-level description paragraph is gone**, replaced by the one-line
 subtitle per row above. The paragraph said once, for both goals, what each row now
@@ -354,7 +344,7 @@ users join**:
 ⚠️ **One deliberate exception: the flp's cooldown window.** Bucket *quotas* (which utcm
 tier a card counts toward) are still `core`. But the per-card, per-track cooldown check within that bucket is **not** —
 since the "either category" fix (§ 6), each of recognition/production clears its OWN
-per-type window independently, matching what the cdp already displays per track. A card
+per-type window independently, matching what the cdp displayed per track. A card
 can sit in the core-Comfortable bucket while its production track is individually off
 cooldown under a weaker per-type category.
 
@@ -365,12 +355,12 @@ the Mastered collections (`masteredBarClause(bar)`), the per-bar Learning collec
 **EVERY SURFACE carries exactly one bar.** A *lens* is a `MasteryWorldId` a page is
 read through: the Deck Tower's main world (its tower, its cards page) and search are
 `core`; the reading and writing worlds are their own skill (DECK_TOWER.md § Worlds,
-[CARD_LIBRARY.md](./CARD_LIBRARY.md)). The band counts, the collection membership, the sort keys, the mini-card strip and the cdp's Mastery section all come
+[CARD_LIBRARY.md](./CARD_LIBRARY.md)). The band counts, the collection membership, the sort keys, the mini-card strip and td's card view's mastery panel (on the world it was opened from) all come
 from the lens bar.
 
 (There used to be a mini-card *badge* here too — a corner U/T/C/M letter disc — and it
 was the notable case, because it was the only place the whole-card answer was *replaced*
-rather than joined. It is **gone**; see "Mini cards — the eight-mark window" below.)
+rather than joined. It is **gone**; see "Mini cards — the mastery strip" below.)
 
 ⚠️ **A surface never shows a bar it is not about.** `core` is not "no lens", it is the
 recognition/production lens, and it draws ONE bar. Drawing a track per *goal* — which
@@ -471,45 +461,78 @@ Date mastered** (one row per active bar, each reading `masteredAtForBar(mastered
 **removed** from `src/utils/vocabSort.ts`: the column was never backfilled, so for every
 card mastered before migration 142 the key is missing, and the ordering sank most of the
 library to the bottom in both directions. See
-[CARD_LIBRARY.md](./CARD_LIBRARY.md) § "Sort by". `masteredAtForBar` survives and is
-still read by the cdp's mastery window. No query orders or filters on `masteredAt`, so
+[CARD_LIBRARY.md](./CARD_LIBRARY.md) § "Sort by". `masteredAtForBar` survives, but no client
+surface reads it since the cdp's mastery window was deleted (2026-11-23). No query orders or filters on `masteredAt`, so
 it carries no index.
 
 ## 5. The progress bars on screen
 
-### cdp — the eight-mark window (`.msb`), one track at a time
+### cdp — the mastery bar (`.msb`), one track at a time
+
+> **⚠️ Superseded 2026-11-23 — design change, owner's call.** The routed cdp and
+> `MasteryWindow` were deleted. A saved card now opens as **td's card view**
+> (`src/features/deckTower/cardView/TowerCardView.tsx`, DECK_TOWER.md § "The card view"), and
+> its mastery section is **`TowerMasteryPanel`** (`src/features/deckTower/cardView/TowerMasteryPanel.tsx`):
+> - **Bar:** no track and no fill — the bar is itself a raised plate (straight-down wall, not
+>   pressable) in the band's Mark tier (`getBandMark`), and its LENGTH is the progress: a
+>   short red bar (`BAR_MIN_WIDTH_PX`) when empty, growing by `masteryFillFraction(bar)`
+>   (exact, never rounded) toward the full row and repainting per band, to a maxed-out blue bar. A faded dashed
+>   outline traces the full bar behind it.
+> - **Dropped:** the band cut-point ticks, the `target` / `comfortable` captions, the
+>   printed `n / 8` figure, the track name and the band pill (the latched key names the
+>   track; the bar's colour is the band).
+> - **Kept:** the live per-bar cooldown timer (`CooldownTimer`, same
+>   `barCooldownRemainingMs` + `formatCooldownRemaining`), now in larger type and reading
+>   "Ready to mark!" in place of a zero (the ready check icon is gone).
+> - **Track switch:** ONE raised keycap naming the shown track, faced in its track's colour (blue / green / pink);
+>   each press steps to the next track (not `Segmented`). It cycles **Know plus only the
+>   goals the account has on** (`users.readingGoal` / `writingGoal` — the tower's own world rule), and are hidden
+>   entirely when only Know is on. This **reverses** "all three tracks are always offered"
+>   below.
+> - **Opening track:** the world (core / reading / writing) whose cards page the card was
+>   tapped in, passed as a prop (the `?world=` URL param — `withLens` / `lensFromSearch` —
+>   is deleted); Know if that world's goal is off.
+> - **No night tones:** the view sits on td's sky; ink is td's `skyInk`.
+>
+> The rest of this section is the `MasteryWindow` record.
 
 > **Rewritten 2026-08-24** with the shelf redesign's Card Detail entry. The vertical
 > thermometer this section used to describe (`MasteryProgressBar`) is **deleted**; the
 > component is now `src/components/mastery/MasteryWindow.tsx`. See
 > [SHELF_REDESIGN.md](./SHELF_REDESIGN.md) entry 18 and decisions **D6** / **D7**.
+> **Cells → one fill, 2026-11-23** (owner's call, cdp and mini card together).
 
 `MasteryWindow` renders `masteryBar(entry.typedMarkHistory, track)` for ONE track,
 captioned from `WORLD_LABELS` (**Know** / **Read** / **Write**).
 
-**Why the shape changed.** pbh is not a percentage. It is a position in an **eight-mark
-window** — the last eight marks of a track are what the number is computed from, and the
-two cut points (Target at 3, Comfortable at 6) are counts inside that window, not
-milestones on a continuum. A vertical bar with two lines across it drew that as a liquid
-level, which invites "89% of the way to mastered": the wrong mental model, because one bad
-mark does not evaporate a fraction of a tank, it turns one cell off. So the window is
-drawn as what it is — **`PBH_FULL` discrete cells, one per mark**, with the cut points
-ticked between them. Reading a card's state is counting, not estimating.
+**The shape.** pbh is a position in an **eight-mark window**: the last eight marks of a
+track are what the number is computed from, and the two cut points (Target at 3,
+Comfortable at 6) are counts inside that window. It is drawn as **one horizontal track
+filled to `pbh / PBH_FULL`** (`masteryFillFraction`, `src/utils/masteryCompute.ts`), with
+the cut points ticked across it.
 
-- **Cells.** Cell `i` covers the pbh interval `[i, i+1)`, so its fill is
-  `clamp(pbh − i, 0, 1)`. The core bar's pbh is FRACTIONAL (the stronger track capped at
-  6 plus a third of the weaker), so its last filled cell can be a **partial** — rendered
-  as a partial rather than rounded, because rounding makes two genuinely different cards
-  read the same. Cell colour is the segment covering the MIDPOINT of the filled part, so
-  a partial cell straddling a boundary takes the colour of the half actually painted.
-- **Composition.** A skill track is one mark type, so one colour. The core track's filled
-  cells are painted in the ratio of its two tracks' positive marks (blue recognition then
-  green production) — the same `positive(type) / Σ positive(bar's types)` split the old
-  bar used. These are the **saturated** `MARK_TYPE_COLORS`, on purpose (D2b).
-- **Ticks.** At `pbh / PBH_FULL` of the row, BETWEEN cells — the band changes when a cell
-  turns on, not part-way through one. Captioned `target` / `comfortable`, hanging above.
+**History.** v1 was a vertical thermometer. 2026-08-24 replaced it with `PBH_FULL`
+discrete cells, one per mark (`masteryWindowCells`), on D7's argument that pbh is a count,
+so a liquid level invites "89% of the way to mastered" and reading it should be counting,
+not estimating. On 2026-11-23 the owner replaced the cells with a single long fill on both
+surfaces (`masteryWindowCells` deleted). The ticks and the printed `n / 8` still say it
+is a count.
+
+- **Fill.** Width `masteryFillFraction(bar)` = `clamp(pbh / PBH_FULL, 0, 1)`. The core
+  bar's pbh is FRACTIONAL (the stronger track capped at 6 plus a third of the weaker), so
+  the fill can end between two marks. It is drawn exactly, never rounded, because rounding
+  makes two genuinely different cards read the same. 20px tall, 3px radius, on a flat
+  `--hover` track (`COLORS.rowHoverBg`, no ring).
+- **Colour.** The whole fill takes the track's utcm **band** in the Mark tier
+  (`getBandMark`), the same as the mini card (§ "Mini cards" below). (The 2026-08-24
+  window coloured the core track blue-then-green by mark type; that was retired
+  2026-09-23.)
+- **Ticks.** At `pbh / PBH_FULL` of the track (3 and 6), drawn across the bar and
+  captioned `target` / `comfortable` above it.
+- **Night.** `tones` re-colours the ink, ticks and empty track on a Tier 2 night ground
+  ([SHELF_REDESIGN.md](./SHELF_REDESIGN.md) § 7b "The cdp at night").
 - **`.hd4` heading.** Track name, the band as a **pastel** pill (`BAND_COLORS[...].main`
-  — it is a surface, the cells beside it are the marks), and the figure as
+  — it is a surface, the fill beside it is the mark), and the figure as
   `pbh / PBH_FULL`. The core blend prints one decimal ("4.3"); an integer track prints
   bare. The decimal is load-bearing: printing "4" for both 4.0 and 4.3 hides the weaker
   track's contribution, which is the one thing the blend adds.
@@ -520,14 +543,15 @@ ticked between them. Reading a card's state is counting, not estimating.
 **Which track is on screen — the learner's choice (D6, amended).** A `Segmented` control
 (`Know / Read / Write`, the design's `.trkseg`) sits at the end of the section's rule. It
 **defaults to the surface's lens** — `core` from td's main world / a search result,
-`reading` or `writing` for a card reached from that td world's cards page (`?world=`,
-`withLens` → `lensFromSearch`) — so an untouched page still reports exactly one track, the one the
+`reading` or `writing` for a card reached from that td world's cards page (then `?world=`,
+`withLens` → `lensFromSearch`; now a prop of td's card view) — so an untouched page still reports exactly one track, the one the
 surface that opened it was asking about. Only one track is ever on screen; the learner is
 simply allowed to say which.
 
 Two rules inside that:
 
-- **All three tracks are always offered, whatever the goals say.** Reading and writing
+- **All three tracks are always offered, whatever the goals say.** *(Reversed 2026-11-23:
+  `TowerMasteryPanel` offers Know + the goals that are on — see the banner above.)* Reading and writing
   marks accrue whether or not their goal is set (migration 143), so a track hidden behind
   a goal switch would hide marks the learner has actually earned. The GOAL decides what
   gets surfaced, sorted and counted elsewhere; it does not decide whether this card's
@@ -547,7 +571,9 @@ dropped and the bare countdown moved up beside the badge. It reads
 minute-points formatter: leading zero units dropped, **middle zero units kept**, seconds
 always printed. The middle zeros are load-bearing — `m` is both months and minutes, so a
 collapsed `6m 26s` would read as six *minutes*. A **ready track reads `0s`**, not a word,
-so the timer keeps the same shape. Months are a flat 30 days and weeks a flat 7, so the
+so the timer keeps the same shape. *(Superseded 2026-11-23 for td's card view: its
+`CooldownTimer` reads "Ready to mark!" once ready, in the session's lettering rather than
+mono, with no check icon.)* Months are a flat 30 days and weeks a flat 7, so the
 180-day Mastered window is exactly `6m 0w 0d 0h 0m 0s`. Mono + `tabular-nums` so the timer
 does not jitter as digits change; a resting timer is dimmed, and a ready one adds a small
 green **check** (`MASTERY_READY_COLOR`) so the state is scannable without reading digits.
@@ -556,7 +582,7 @@ The component ticks on a **1s** interval, one interval for the whole section.
 - The window used for the display is the **per-type** category (`computeTypeCategory`) —
   the one every *game* uses. ⚠️ The **flp** widens its window to the card's **core**
   category (§ 6), so on a card whose per-type and core bands differ the flp holds that
-  track back slightly longer than the cdp number suggests. The display can only name one
+  track back slightly longer than the displayed countdown suggests. The display can only name one
   window; the per-type one is the track's own.
 - No swatch or bar name rides with the timer: the heading it sits in already names the
   bar and paints its band, so the old legend's labels only repeated it.
@@ -570,33 +596,29 @@ page's pull-up sheet (entry 18). The component lives in `src/components/mastery/
 than in the deleted `VocabCardDetailBody` because the read-only **dictionary** cdp (also
 deleted 2026-11-10) had no marks to draw and must not import it.
 
-### Mini cards — the eight-mark window, at hairline scale
+### Mini cards — the mastery strip, at hairline scale
 
 `src/components/MiniCard.tsx` (`MasteryStrip`, fed the lens bar by `MiniVocabCard`) draws
-the **cdp's eight-mark window** along the bottom of the 92×132 thumbnail (`MINI_CARD_BAR_STRIP` in `src/components/miniCardFace.ts`: 3px tall, inset 8px each side, 1.5px cell gap) for
+the **card view's mastery bar** (formerly the cdp's) along the bottom of the 92×132 thumbnail (`MINI_CARD_BAR_STRIP`
+in `src/components/miniCardFace.ts`: 3.5px tall, inset 8px each side, pill-rounded) for
 the surface's lens bar, from the `lens` prop (default `core`, forwarded by
-`MiniVocabCardGrid`).
+`MiniVocabCardGrid`). The Deck Tower's cards page pulls the inset in further on its card
+stock (`TowerCardsPage.tsx` → `.mini-card__mastery-strip`).
 
-It is the **same shape and the same geometry** as `MasteryWindow`: `PBH_FULL` discrete
-cells, one per mark, with the trailing cell left **partial** when the core blend gives a
-fractional pbh. Both surfaces call `masteryWindowCells` (`src/utils/masteryCompute.ts`),
-so they cannot drift on where that partial cell falls. Cells rather than a continuous fill
-for the reason `MasteryWindow` gives at length: pbh **is** a count, not a percentage — one
-bad mark turns a cell off, it does not drain a fraction of a tank — and a thumbnail should
-not invite the estimate the detail page spent a whole component refusing to invite.
+It is **one track filled to `pbh / PBH_FULL`**, from the same `masteryFillFraction` td's
+card view uses, so the two cannot disagree on where the fill ends. It was `PBH_FULL` discrete
+cells (1.5px gaps) until 2026-11-23, when the owner replaced the cells with a single long
+fill on both surfaces. No ticks at this scale: at 3.5px they would be noise.
 
-**Colour — the same rule as the cdp (Shelf System v2, 2026-09-23).** Every filled cell
-takes the lens bar's utcm **band** in the ramp's MARK tier, one hue for the whole window
-(`getBandMark(category)` in `src/components/MiniCard.tsx` → `MasteryStrip`). The cdp's
-`MasteryWindow` does the same (`getBandMark(category)`), so both surfaces paint identical
+**Colour — the same rule as td's card view (formerly the cdp; Shelf System v2, 2026-09-23).** The fill
+takes the lens bar's utcm **band** in the ramp's MARK tier, one hue for the whole strip
+(`getBandMark(category)` in `src/components/MiniCard.tsx` → `MasteryStrip`). td's card view's
+`TowerMasteryPanel` (the cdp's `MasteryWindow` until 2026-11-23) does the same (`getBandMark(category)`), so both surfaces paint identical
 hexes: *"mastery bars are colored by
 mastery progress, not the mark type"* (user, 2026-09-23), which retired the v1 split where
 the cdp coloured cells by mark type and the mini card by band. The band is the question a
 thumbnail is actually asked — *"how well do I know this?"* — which is precisely what the
 deleted corner letter badge answered.
-
-`masteryWindowCells` still returns the owning mark **type**, not a colour; neither surface
-paints by it any more, and nothing else reads it (a candidate for removal).
 
 **No per-mark-type split on the thumbnail, by design.** An earlier version drew one pip per
 mark type ("you recognise this but cannot produce it"). Recognition vs production is a
@@ -606,14 +628,13 @@ strip shows only the blended Know window. It has no hover `title` either: the ol
 `MARK_TYPE_LABELS`, which had no other reader.
 
 **Lineage.** Frame 17 of the shelf design draws this strip as one pip per mark type in
-Recognition blue / Production green, and its `.mcd .mk` is a two-pip row. Two later
-decisions moved off it — colour onto the band, then the row onto the cdp's eight cells —
-so only the strip's **placement** (full width, 8px inset, 3px tall, bottom of the card) is
+Recognition blue / Production green, and its `.mcd .mk` is a two-pip row. Later
+decisions moved off it — colour onto the band, the row onto the cdp's eight cells, then
+(2026-11-23) the cells onto one fill — so only the strip's **placement** (full width, 8px inset, 3px tall, bottom of the card) is
 still the frame's. The artboard has not been re-rendered to match.
 
-**Empty cells.** The cdp's empty cell is a 6% fill plus a 12% inset ring; at 3px tall that
-ring would be most of the cell, so the mini card uses frame 17's single flat
-`rgba(23,22,26,.13)` tint instead.
+**Empty track.** Frame 17's flat `COLORS.markOutline` tint (`rgba(23,22,26,.13)`), not
+the cdp bar's old 6% `--hover` groove, which vanished on the cream card face at 3.5px (the card view's bar has no groove at all since 2026-11-23).
 
 ⚠️ **The band colour is the MARK tier, not `getCategoryColor`.** `CATEGORY_COLORS` are the
 band SURFACES — pale fills legible only behind a 1px `COLORS.markOutline` ring, and a 3px
@@ -643,15 +664,15 @@ derived from `RAMP` hue keys there, as are `BAND_MID` / `BAND_MARK`.
 top-left, colored by the lens bar's band. Two reasons it went:
 
 1. **A letter names the band but hides the shape.** `T` says nothing about whether the
-   card is one mark into Target or one mark from leaving it — the eight-cell window shows
-   exactly that, by being countable.
+   card is one mark into Target or one mark from leaving it — the strip's fill length shows
+   exactly that.
 2. **It leaked past `showMasteryStrip`.** The badge was never gated by that prop, so the
    provisional lent-card notice and the sort offer — dialogs whose only question is
    *"do you want this word?"* — still stamped a borrowed card with a discouraging `U`.
    Removing the badge makes the suppression complete.
 
 The geometry helper (`barStripHeight`) returns a **single** hairline whenever the strip is
-shown, since the eight cells sit in one row. One value (`bar`) drives both the rendering
+shown. One value (`bar`) drives both the rendering
 and the definition's bottom offset, so they cannot disagree about how much room the strip
 takes, and the definition sits at the same height on every card of every surface.
 
@@ -659,16 +680,16 @@ takes, and the definition sits at the same height on every card of every surface
 whose length was split between recognition and production by the *ratio* of their
 positives — so 1/8 and 8/8 drew the same half-and-half shape as 4/8 and 4/8. The window
 does not have that failure mode: its length is pbh, an absolute position in an eight-mark
-window, and its colour is the band.
+window, and its colour is the band. (Still true of the 2026-11-23 single fill: it is one
+track again, but its length is pbh / 8, not a ratio.)
 
 - **Colors** — one hue per **mark type** (`MARK_TYPE_COLORS`,
-  `src/utils/masteryCompute.ts`), for surfaces that name a SKILL: Bubble Match's track
-  toggle. (The eip tab strip, `TAB_COLORS`, used to alias these; since 2026-10-02 it names
+  `src/utils/masteryCompute.ts`), for surfaces that name a SKILL. ⚠️ No live reader since
+  Bubble Match's track toggle went (archived 2026-11-23). (The eip tab strip, `TAB_COLORS`, used to alias these; since 2026-10-02 it names
   its own ramp members, because the tabs were never about skills.)
-  ⚠️ **NOT for mastery cells** (since 2026-09-23): both the cdp window and the mini-card
-  strip colour every filled cell by the track's utcm **band** (`getBandMark`,
-  `src/utils/categoryColors.ts`) — see § "Mini cards — the eight-mark window" above.
-  `masteryWindowCells` still returns the owning mark type. Since **2026-10-02** only the
+  ⚠️ **NOT for mastery bars** (since 2026-09-23): both td's card view's bar (`TowerMasteryPanel`) and the mini-card
+  strip colour their fill by the track's utcm **band** (`getBandMark`,
+  `src/utils/categoryColors.ts`) — see § "Mini cards — the mastery strip" above. Since **2026-10-02** only the
   two learner-facing skills own a hue:
   - Reading → **Green** `COLORS.grnMk` (`MARK_TYPE_COLORS.reading`)
   - Writing → **Purple** `COLORS.purMk` (`MARK_TYPE_COLORS.writing`)
@@ -707,7 +728,7 @@ window, and its colour is the band.
 >   `rankCardQueueCooled`, keyed by `bar`).
 > - **Client:** `src/utils/flpFaceSteering.ts` (`sideOneForCard`, `markTypeForSideOne`),
 >   called from `src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts`;
->   `src/components/mastery/MasteryWindow.tsx` → `CooldownLegend`;
+>   `src/features/deckTower/cardView/TowerMasteryPanel.tsx` → `CooldownTimer` (was `MasteryWindow.tsx` → `CooldownLegend`);
 >   `src/utils/vocabSort.ts` → `cooldownKey`.
 > - **Tests:** `server/__tests__/cardQueueRanking.test.ts`,
 >   `server/__tests__/flashcardMark.test.ts` (the flp-only block),
@@ -742,7 +763,7 @@ passed. Consequences:
   longer "the other face is still available".
 - A card marked correct on **only one** know track is resting — an unmarked track no
   longer rescues it the way it did under the per-type rule.
-- The cdp shows **one** Know countdown (§ 5), the collection "Sort by → Cooldown" key is
+- td's card view shows **one** Know countdown (§ 5), the collection "Sort by → Cooldown" key is
   that same number, and the flp queues on it — one function
   (`barCooldownRemainingMs`), so the three can no longer disagree. (Under the per-type
   rule the cdp/sort used per-type windows while the flp count used the core window;
@@ -858,7 +879,7 @@ same way, so a loop and its replacements cannot diverge.
 > primitives in **`server/contracts/cooldown.ts`** (`COOLDOWN_MS_BY_CATEGORY`,
 > `lastCorrectOnBar`, `barReadyAt`, `barCooldownRemainingMs`). The primitives live in
 > `contracts/` — mirroring what `contracts/mastery.ts` did for the pbh formula —
-> because the cdp **displays** the remaining cooldown (§ 5) and the client may not
+> because td's card view **displays** the remaining cooldown (§ 5) and the client may not
 > import a server service. `cardQueueRanking` re-exports them; the client reaches them
 > through `src/utils/masteryCompute.ts`.
 > The one axis a caller picks is the **bar** (`{ world: 'core' }` for the flp,
@@ -942,13 +963,13 @@ refill with. See docs/PROVISIONAL_CARDS.md § 4b and § 6.
 
 ### Notes / caveats
 
-- **flp, games, cdp and sort all read one clock per bar** (`barCooldownRemainingMs`).
+- **flp, games, td's card view and sort all read one clock per bar** (`barCooldownRemainingMs`).
   The duration is the BAR's band — core for know, per-type for reading/writing (which
   are single-track, so bar band = track band). Bucketing is a different question and
   stays per-type for games (§ 7).
-- **The know clock is shared across surfaces.** A correct Bubble Match recognition mark
+- **The know clock is shared across surfaces.** A correct Match Speed recognition mark
   rests the card for the flp (both faces) and for Word Search Pinyin; a correct flp
-  production mark rests it for Bubble Match. Below pbh 6 only, since above it game marks
+  production mark rests it for Match Speed. Below pbh 6 only, since above it game marks
   are not recorded at all.
 
 ### Games honor the same clock (and the flp-only line)
@@ -967,15 +988,11 @@ that type would actually be recorded — the same two tests the mark gate applie
 > Comfortable/Mastered quotas are banded per-type, and a card whose recognition (or
 > production) track is 6+ has core pbh ≥ 6 by construction. So those quotas are now
 > filled from the fallback order (fresh Target/Unfamiliar cards) before any
-> Comfortable/Mastered card is re-served as cooled backfill. Hydra Bubbles' `bloom` tier
-> (the single-bucket caller whose fill "deliberately allowed to break the cooldown")
-> still plays those cards; their marks are dropped.
+> Comfortable/Mastered card is re-served as cooled backfill.
 
 | Surface | Mark type | Selection path |
 | --- | --- | --- |
-| Bubble Match | `recognition`, or `reading` with pinyin off (§ 1a) | `getGameVocabPool` (via `?markType=` — the track the run locked at deal time) |
-| Hydra Bubbles | `recognition` — becomes the run's locked track under [HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md) (**not built**) | `getGameVocabPool` (via `?markType=`), refetched every spawn |
-| Match Speed | `recognition` | `getGameVocabPool` (via `?markType=recognition`) |
+| Match Speed | `recognition`, or `reading` as a reading-flp break (§ 1a) | `getGameVocabPool` (via `?markType=`) |
 | Speed Reading | `reading` | `getGameVocabPool` (via `?markType=reading`) |
 | Word Search — Pinyin | `production` | `getWordSearchGrid` (mode via `?mode=` query) |
 | Word Search — No-Pinyin | `reading` **(primary)** + `production` | `getWordSearchGrid` (mode via `?mode=` query) |
@@ -1001,7 +1018,7 @@ hub label. Three rules follow:
   eligibility — `src/games/__tests__/challengePool.test.ts` pins this.
 
 **One constant per game, three consumers.** Each game's mark type is declared once
-in its own `constants.ts` (`MARK_TYPE` in `src/games/bubble-match/constants.ts`,
+in its own `constants.ts` (`MARK_TYPE` in
 `src/games/match-speed/constants.ts`, `src/games/speed-reading/constants.ts`) and
 read from there by all three places that need it: the `?markType=` pool query, the
 `markFlashcard({ type })` call, and the registry (`GameDef.markType` in
@@ -1009,9 +1026,9 @@ read from there by all three places that need it: the `?markType=` pool query, t
 them: **Word Search**'s type is per MODE, so it lives on
 `WordSearchModeConfig.markType` (`src/games/word-search/constants.ts`), read by
 `WordSearchStage`'s mark call; and
-**Bubble Match**'s is per RUN (§ 1a), latched from `foreignPromptTrack` when the board
-is dealt and read from there by its pool query and its mark call alike, while its
-`MARK_TYPE` constant stays the game's declared/default track for the registry.
+**Match Speed**'s switches to `GameDef.noPinyinMarkType` (`reading`) for a run played as a
+reading-flp break (§ 1a), while its `MARK_TYPE` constant stays the game's declared/default
+track for the registry.
 Nothing repeats the string literal, so the label a player sees cannot drift from the
 mark that is actually written.
 
@@ -1026,7 +1043,7 @@ challenge eligibility derives from (`src/games/__tests__/challengePool.test.ts`)
 See [BENTO_SYSTEM.md § Known gaps](./BENTO_SYSTEM.md).
 
 > **`getGamePool` is parameterized, not recognition-with-an-exception.** It used
-> to hardcode `'recognition'` when Bubble Match was its only caller. Speed Reading
+> to hardcode `'recognition'` when the (now archived) Bubble Match was its only caller. Speed Reading
 > emits
 > **reading** marks, so pooling through it unchanged would have gated on the wrong
 > cooldown track and bucketed by the wrong per-type category — a card just read
@@ -1065,7 +1082,7 @@ Word Search's substring-dedup replacement (`pullReplacement`) uses the same
 fresh-then-cooled preference across `[preferredCategory, …fallback]`.
 
 **Cross-surface note:** every surface that emits `recognition` or `production` shares
-the one know clock, so a Bubble Match win rests the card for the flp (both faces) and
+the one know clock, so a Match Speed win rests the card for the flp (both faces) and
 for Word Search Pinyin, and vice versa — below core pbh 6. Above it only the flp's
 marks land.
 
@@ -1126,9 +1143,7 @@ category expression joins `users` — bands are goal-independent across the boar
 
 | Surface | Buckets by | Cooldown window keyed on |
 | --- | --- | --- |
-| Bubble Match | the run's locked track (§ 1a) per-type category | **core** band (know clock) for `recognition`; reading band for `reading` |
-| Hydra Bubbles | `recognition` per-type category (the run's locked track under § 6.0) | **core** band (know clock) |
-| Match Speed | `recognition` per-type category | **core** band (know clock) |
+| Match Speed | the run's track (§ 1a) per-type category — `recognition`, or `reading` as a reading-flp break | **core** band (know clock) for `recognition`; reading band for `reading` |
 | Word Search — Pinyin | `production` per-type category | **core** band (know clock) |
 | Word Search — No-Pinyin | `reading` per-type category | reading band |
 | Speed Reading | `reading` per-type category | reading band |
@@ -1150,8 +1165,8 @@ row with `gameCategory` — the per-type bucket it was actually drawn from — w
 deliberately distinct from the row's `category` (the **core** band that
 `CORE_CATEGORY_SELECT` fills in). Both ride on the same entry and mean different
 things, so the names must stay explicit. Match Speed keys its client-side card
-buffer off `gameCategory` (docs/MATCH_SPEED_GAME.md § Backend change); Bubble Match
-and Word Search ignore it. It reports the queue actually drained, so it stays
+buffer off `gameCategory` (docs/MATCH_SPEED_GAME.md § Backend change); other callers
+ignore it. It reports the queue actually drained, so it stays
 truthful when a short bucket is topped up from `GAME_FALLBACK_ORDER`.
 
 Because the service signature is now a single `gameMarkType: MarkType` (it was a
@@ -1197,8 +1212,6 @@ differ in guess odds by more than an order of magnitude:
 | flp | self-graded ("I knew it") | n/a — self-report, a different problem (§ 8.1a) | recognition / production / reading |
 | **Speed Reading** | forced two-way choice | **1 in 2** | reading |
 | **Match Speed** | 5 English slots on the board (`ROWS = 5`) | **1 in 5**, rising as rows clear | recognition |
-| **Bubble Match** | 20 pairs on the board (`TOTAL_PAIRS`) | **1 in 20 → 1 in 1** as the board empties | recognition / reading |
-| **Hydra Bubbles** | whatever is on the field | varies per spawn; forced at the end of a colour | recognition |
 | Word Search | find it in the grid | not a choice — positive-only | production / reading |
 | Practice Writing | top-1 stroke grading | not a choice | writing |
 
@@ -1210,10 +1223,9 @@ Two concrete consequences:
    *ratio* and false of the *window*: `positive(reading)` is a **count**, not a ratio,
    and the bands are cut on the count. A pure guesser lands ~4/8 = **Target** on the
    reading bar, and a lucky one reaches Comfortable, having demonstrated nothing.
-2. **The last match on a board is free.** With one pair left in Bubble Match the only
-   remaining move is correct by construction, and it writes a full-weight positive
-   recognition mark. Same for the last card of a Match Speed column and the last bubble
-   of a Hydra colour. Not a tuning issue — a guaranteed positive for zero knowledge,
+2. **The last match on a board is free.** With one card left in a Match Speed column the
+   only remaining move is correct by construction, and it writes a full-weight positive
+   recognition mark. Not a tuning issue — a guaranteed positive for zero knowledge,
    once per board, every board.
 
 #### Sketch of the options
@@ -1273,7 +1285,9 @@ the bar has hysteresis instead of a knife edge.
   **sticky** (never cleared on regression), so using it as the latch changes what it
   means. *(The "Date mastered" sort, which used to be the reader this argument leaned
   on, has since been removed — so the objection is now weaker: what remains is the cdp's
-  mastery window and the meaning of the column itself.)*
+  mastery window and the meaning of the column itself. Since 2026-11-23 that window is gone
+  too — td's card view's `TowerMasteryPanel` does not read `masteredAt` — leaving only the
+  meaning of the column.)*
 * **(F) Asymmetric thresholds, no state.** Mastered at ≥7/8, drop out below 6 — a
   one-slot buffer that stays a pure function of the row. Cheaper and safer than (E),
   but it is a *wider band*, not true hysteresis: it still flips on whichever line it
@@ -1298,13 +1312,13 @@ to game difficulty and to review scheduling:
 |---|---|
 | **Memory Map** membership | The map holds exactly the cards that are **not** reading-mastered (`(vetSortedClause() OR lent-by-id) AND NOT masteredBarClause('reading')`, [MEMORY_MAP_GAME.md](./MEMORY_MAP_GAME.md) § 2.1). A buffer changes what is on the map **retroactively** — and slot occupants there are durable, the same reason Memory Map opted out of gloss-confusability phase 2 ([GLOSS_CONFUSABILITY.md](./GLOSS_CONFUSABILITY.md)) |
 | **Cooldown duration** | Reaching Mastered on a track jumps its window from 14 days to **180 days** (`COOLDOWN_MS_BY_CATEGORY`). An easier Mastered parks cards for six months; a harder one drills them more |
-| Speed Reading / Word Search No-Pinyin / Hydra pools | Quotas are per-type bands, and the reading distribution is already nearly all Unfamiliar (§ 6; [HYDRA_BUBBLES.md § 6.0](./HYDRA_BUBBLES.md) O5) |
+| Speed Reading / Word Search No-Pinyin pools | Quotas are per-type bands, and the reading distribution is already nearly all Unfamiliar (§ 6) |
 | Mastered collections + counts | `masteredBarClause(bar)`, `GET /api/onDeck/masteredCounts` |
 | Velocity | `category_promotions` is written per crossing; fewer crossings = a smaller number, applied retroactively at read ([VELOCITY.md](./VELOCITY.md)) |
 | `masteredAt` | Not backfilled and not swept on rule changes — cards already stamped keep their stamp under the new rule |
 
-**§ 8.2 leaves core alone; § 8.1 does not.** Recognition marks come from Bubble Match,
-Match Speed and Hydra — all multiple choice — so choice weighting reaches the core bar
+**§ 8.2 leaves core alone; § 8.1 does not.** Recognition marks come from Match Speed —
+multiple choice — so choice weighting reaches the core bar
 even though the buffer work does not.
 
 ### 8.4 Open questions
@@ -1399,7 +1413,7 @@ Implications to work through:
 ## Decisions log
 
 - ✅ **Recognition** = foreign-first flp **with pinyin shown** (pinyin off → Reading,
-  § 1a) + Bubble Match; **Production** =
+  § 1a) + Bubble Match (archived 2026-11-23); **Production** =
   English-first flp + Word Search **Pinyin** mode (positive-only); **Reading** =
   Word Search **No Pinyin** mode (positive-only) + **Speed Reading** (correct/incorrect);
   **Writing** = Practice Writing
@@ -1506,9 +1520,8 @@ Settled since:
   `MASTERED_COLLECTION_IDS`, `parseMasteryWorld`, `MasteredAtByBar`, the pinyin-off
   track rule (§ 1a): `ForeignPromptTrack`, `foreignPromptTrack`, and
   `FLP_MARK_SURFACE` (§ 6).
-- `src/games/GamesPage.tsx` (the launcher that pinned the track; deleted 2026-11-06), `src/games/bubble-match/BubbleMatchPage.tsx` (`lockRunTrack` / `runTrack` /
-  `boardShowPinyin`), `src/games/bubble-match/BubbleMatchHeader.tsx` (its toggles are
-  now optional), `src/components/bento/Bento.tsx` (`BentoStripProps.control`).
+- `src/components/bento/Bento.tsx` (`BentoStripProps.control`). (The pinyin-off track's
+  game consumer, Bubble Match, was archived 2026-11-23.)
 - `src/utils/flpFaceSteering.ts` (`markTypeForSideOne`, `sideOneForCard`) and
   `src/features/flashcards/FlashcardsLearnPage/useWorkingLoop.ts` (sends
   `surface: FLP_MARK_SURFACE` on every mark); `src/api/flashcards.ts` — `MarkSurface`.
@@ -1524,12 +1537,13 @@ Settled since:
   `lastCorrectMarkTimestamp`, `lastCorrectOnBar`, `barReadyAt`,
   `barCooldownRemainingMs`, `isBarOnCooldown`, `isMarkOnCooldown`. Re-exported by `server/services/cardQueueRanking.ts` (server) and
   `src/utils/masteryCompute.ts` (client).
-- `src/components/mastery/MasteryWindow.tsx` (cdp window + track switch + the per-bar
-  inline cooldown timer; replaced `src/features/flashcards/MasteryProgressBar.tsx`),
-  `src/components/primitives/Segmented.tsx` (the `.trkseg` track switch),
+- `src/features/deckTower/cardView/TowerMasteryPanel.tsx` (td's card view's raised bar +
+  latch track keys + the per-bar inline cooldown timer; replaced
+  `src/components/mastery/MasteryWindow.tsx` on 2026-11-23, which had replaced
+  `src/features/flashcards/MasteryProgressBar.tsx`),
 - `src/utils/vocabSort.ts` (`cooldownKey` — the Cooldown sort row),
   `src/components/MiniCard.tsx` (hairline strip; `MiniVocabCard.tsx` computes its bar),
-  `src/features/flashcards/VocabCardDetailPage.tsx` — hosts the window.
+  `src/features/deckTower/cardView/TowerCardView.tsx` — hosts the panel.
 - `src/utils/formatDuration.ts` → `formatCooldownRemaining` (tested by
   `src/__tests__/formatDuration.test.ts`).
 - `src/features/flashcards/collectionRef.ts`, `builtinCollections.ts`,

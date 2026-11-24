@@ -87,6 +87,14 @@ interface HanziGuideProps {
   fadeIn?: boolean;
   /** Fade the guide OUT when it turns off (Step Through's flash end, Memorize's first stroke). */
   fadeOut?: boolean;
+  /**
+   * The stroke data's load, for a host that shows a loading cue while the outline is
+   * still blank: true when a writer starts loading its character, false once the data
+   * has landed OR failed (a failed load draws no guide, and the cue must not spin
+   * forever), and false on unmount. Read through a ref, so it needs no stable identity.
+   * Used by the writing flp's card (useWritingFlashcard → `guideLoadingFor`).
+   */
+  onLoadingChange?: (loading: boolean) => void;
 }
 
 export default function HanziGuide({
@@ -100,6 +108,7 @@ export default function HanziGuide({
   resetKey,
   fadeIn = false,
   fadeOut = false,
+  onLoadingChange,
 }: HanziGuideProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const writerRef = useRef<HanziWriter | null>(null);
@@ -107,6 +116,9 @@ export default function HanziGuide({
   // failed to load (e.g. a glyph missing from the dataset). Gate on this so a load
   // failure degrades to "no guide" instead of crashing the component tree.
   const [dataReady, setDataReady] = useState(false);
+  // Latest `onLoadingChange`, so the writer-creation effect below needn't depend on it.
+  const onLoadingChangeRef = useRef(onLoadingChange);
+  onLoadingChangeRef.current = onLoadingChange;
 
   // ── Fade sequencing ─────────────────────────────────────────────────────────
   // `applied` is what is actually drawn; `incoming` is what the props ask for.
@@ -164,6 +176,14 @@ export default function HanziGuide({
     setDataReady(false);
     setInstantReveal(outlineVisibleRef.current);
     const { character, size, loopAnimation } = applied;
+    // Settled exactly once per writer (success, failure or teardown), whichever comes first.
+    let loadSettled = false;
+    const settleLoad = () => {
+      if (loadSettled) return;
+      loadSettled = true;
+      onLoadingChangeRef.current?.(false);
+    };
+    onLoadingChangeRef.current?.(true);
     const writer = HanziWriter.create(el, character, {
       width: size,
       height: size,
@@ -176,10 +196,14 @@ export default function HanziGuide({
       delayBetweenStrokes: 250,
       delayBetweenLoops: 1200,
       charDataLoader: loadCharData,
-      onLoadCharDataSuccess: () => setDataReady(true),
+      onLoadCharDataSuccess: () => {
+        setDataReady(true);
+        settleLoad();
+      },
       onLoadCharDataError: (reason) => {
         // Missing/failed glyph data: skip the guide rather than crash.
         console.warn(`HanziGuide: no stroke data for "${character}"`, reason);
+        settleLoad();
       },
     });
     writerRef.current = writer;
@@ -188,6 +212,8 @@ export default function HanziGuide({
       // Hanzi Writer has no destroy(); dropping the SVG + ref is sufficient.
       el.innerHTML = "";
       writerRef.current = null;
+      // A writer torn down mid-load is no longer loading anything.
+      settleLoad();
     };
     // Recreate when the drawn glyph, size, level or loop setting changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps

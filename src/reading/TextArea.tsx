@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Box, TextField } from "@mui/material";
 import { selectRelativeSpan, type SegmentSpan } from "./documentSegmentation";
-import type { SentenceRange } from "./readerSentences";
 import { FONTS } from "../theme/fonts";
 import { LEADING, SIZE } from "../theme/scale";
 import type { Text } from "../types";
 import type { Tier2Look } from "../timeOfDay/tier2Look";
-import { READER_TEXT_GUTTER_PX } from "./readerStyles";
+import { READER_TEXT_PADDING_SX } from "./readerStyles";
 import ReaderSearchHighlights from "./ReaderSearchHighlights";
 import type { ReaderSearchColors, ReaderSearchMatch } from "./readerStyles";
 import { useComfortableCaretScroll } from "../hooks/useComfortableCaretScroll";
@@ -65,10 +64,6 @@ interface TextAreaProps {
     currentMatchIndex?: number;
     // Their highlight washes (readerStyles → readerSearchColors).
     searchColors?: ReaderSearchColors;
-    // SENTENCE MODE (useTextSelection → selectedSentence): the highlighted sentence, or null.
-    // A forward step out of it lands on the sentence's FIRST word (owner's call 2026-11-20),
-    // not the word after it; a back step already lands on the word before it.
-    selectedSentence?: SentenceRange | null;
     // Desktop double-click in the TEXT mode: select the sentence containing the clicked
     // character (useTextSelection → selectSentenceAtOffset). The Pinyin mode handles its
     // own double-click (ReaderCpcdView). On mobile the tap overlay covers the box, so this
@@ -101,7 +96,6 @@ function TextArea({
     searchMatches,
     currentMatchIndex = -1,
     searchColors,
-    selectedSentence = null,
     onSelectSentenceAtOffset,
     size = 'page',
 }: TextAreaProps) {
@@ -207,12 +201,11 @@ function TextArea({
                             }
 
                             e.preventDefault(); // Arrows navigate whole words; never move the raw caret
-                            // Leaving SENTENCE MODE forward: park the caret at the sentence's
-                            // start, so the "next" step selects the word that starts there
-                            // (selectRelativeSpan treats a caret on a word's start as that word).
-                            if (selectedSentence && e.key === 'ArrowRight') {
-                                textarea.setSelectionRange(selectedSentence.start, selectedSentence.start);
-                            }
+                            // Leaving SENTENCE MODE needs no special case: the textarea's
+                            // selection IS the sentence, so "next" lands on the unit after the
+                            // sentence's end and "prev" on the unit before its start, exactly
+                            // as for a word or phrase (owner's call 2026-11-23; it used to
+                            // park the caret at the sentence start and land on its first word).
                             selectRelativeSpan(textarea, segmentSpans, e.key === 'ArrowRight' ? 'next' : 'prev');
                             return;
                         }
@@ -258,10 +251,11 @@ function TextArea({
                             overflow: 'hidden',
                             cursor: 'text',
                             '& .MuiInputBase-input': {
-                                // The shared reading gutter (readerStyles → READER_TEXT_GUTTER_PX):
-                                // with no card edge, it is part of the page's wide side margin.
+                                // The shared reading padding (readerStyles → READER_TEXT_PADDING_SX):
+                                // gutter + the page's side padding, since the pane runs full-bleed
+                                // so the scrollbar sits on the screen's edge.
                                 // Inline: none — the host control's own padding is the margin.
-                                padding: inline ? 0 : `${READER_TEXT_GUTTER_PX.y}px ${READER_TEXT_GUTTER_PX.x}px`,
+                                ...(inline ? { padding: 0 } : READER_TEXT_PADDING_SX),
                                 // Edit mode: run-out below the last line (EDIT_TAIL_SPACE).
                                 ...(editMode && { paddingBottom: EDIT_TAIL_SPACE }),
                                 // border-box so the padding stays inside the
@@ -333,7 +327,7 @@ function TextArea({
         );
         // typeSx is derived from `inline` alone, so `inline` stands in for it.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedText, onTextChange, onAutoWordSelect, onTextSelectionChange, autoSelectEnabled, segmentSpans, selectionColors, inputRef, onBlur, onUserInteraction, editMode, draftContent, onDraftChange, showCpcd, look, selectedSentence, onSelectSentenceAtOffset, inline]);
+    }, [selectedText, onTextChange, onAutoWordSelect, onTextSelectionChange, autoSelectEnabled, segmentSpans, selectionColors, inputRef, onBlur, onUserInteraction, editMode, draftContent, onDraftChange, showCpcd, look, onSelectSentenceAtOffset, inline]);
 
     if (!memoizedTextField) return null;
 

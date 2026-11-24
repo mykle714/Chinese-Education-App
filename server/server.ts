@@ -19,7 +19,6 @@ import superpositionRoutes from './routes/superpositionRoutes.js';
 import writingNotebookRoutes from './routes/writingNotebookRoutes.js';
 import starterPacksRoutes from './routes/starterPacksRoutes.js';
 import dictionaryRoutes from './routes/dictionaryRoutes.js';
-import gamesRoutes from './routes/gamesRoutes.js';
 import speedReadingRoutes from './routes/speedReadingRoutes.js';
 import memoryMapRoutes from './routes/memoryMapRoutes.js';
 import focusModeRoutes from './routes/focusModeRoutes.js';
@@ -110,9 +109,7 @@ app.use(onDeckRoutes);
 app.use(focusModeRoutes);
 app.use(starterPacksRoutes);
 app.use(dictionaryRoutes);
-// Speed Reading's specific /api/games/speedReading/* namespace goes BEFORE the
-// generic /api/games/:gameId/* framework routes, so a future parameterized route
-// can never shadow it.
+// Speed Reading owns the /api/games/speedReading/* namespace.
 app.use(speedReadingRoutes);
 app.use(memoryMapRoutes);
 // Writing Grid (docs/WRITING_PRACTICE_REWORK.md § 2) — gated by its game flag.
@@ -120,7 +117,6 @@ if (isGameEnabled('writing-grid')) app.use(writingGridRoutes);
 if (isGameEnabled('superposition')) app.use(superpositionRoutes);
 // Writing Notebook (docs/WRITING_NOTEBOOK.md) — a page, not a game, so a FEATURE flag.
 if (isFeatureEnabled('writingNotebook')) app.use(writingNotebookRoutes);
-app.use(gamesRoutes);
 // Community is flagged (server/contracts/featureFlags.ts). Not mounting the router IS
 // the gate: every /api/community/* path then 404s like any unknown route. The second
 // half of the gate is GET /api/users/:userId/designs, which serves the same designs

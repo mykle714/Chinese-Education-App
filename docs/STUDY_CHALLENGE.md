@@ -5,7 +5,7 @@ them all week, then play the same three games against that set and compare score
 
 **Status: PHASE 1 (ASYNC) IS BUILT, 2026-08-22. THE SHELF-SYSTEM REDESIGN LANDED
 2026-09-01.** The schema, the server stack, the client surfaces, the maintenance job and
-the scored round runner in all four eligible games are done. Migrations 148 and 150 are
+the scored round runner in every eligible game are done. Migrations 148 and 150 are
 on PPE; **migration 156 (taunts) is NOT yet on PPE.** What remains is phase 2 (live
 mode, § 7), a separate design: [STUDY_CHALLENGE_LIVE.md](./STUDY_CHALLENGE_LIVE.md).
 
@@ -47,8 +47,8 @@ became a full-bleed dark board (§ 5.5).
 | **Contract** — `CHALLENGE_WORD_COUNT`/`ROUND_COUNT`, `MAX_ACTIVE_CHALLENGES`, `ProvisionMode`, `CHALLENGE_GAMES`, the scoring/breakdown types | ✅ `server/contracts/wire.ts` |
 | **Server** — DAL, service, controller, routes, DI, the unfriend hook | ✅ smoke-tested end to end on dev |
 | **`mastered-first` provisioning** | ✅ `ProvisionalCardDAL.findOwnCardsByBand` + `ProvisionalCardService.getFillerPool` (the full ladder: Mastered → Comfortable → Target → Unfamiliar → lent), and the `ProvisionMode` parameter threaded through `ensureBaseline`/`lendCards`. Band ordering verified against dev data |
-| **Games** — the shared scoring runner, the registry↔pool sync test, pause-on-background | ✅ `src/games/runtime/challengeScoring.ts` (the declarative spec runner, 15 unit tests against the real specs), `challengeScoringFor` on the registry, `src/games/__tests__/challengePool.test.ts` (the test that keeps eligibility registry-derived), and pause-on-background in every game that needs it — Hydra included as of 2026-08-22, since a challenge round is the one timed variant it has |
-| **The scored round runner** | ✅ **built 2026-08-22.** (a) the challenge-board pool read — `?challengeId=` on the EXISTING `/api/onDeck/gamePool` and `/api/onDeck/wordSearchGrid`, authorized by `StudyChallengeService.getRoundContext` and assembled by `OnDeckVocabService.getChallengeGamePool`; (b) all four eligible games classify contested/filler at board generation and emit `ChallengeEvent`s through one shared hook, `src/games/runtime/useChallengeRound.ts`; (c) Match Speed's alternation rule as a pure, tested module (`src/games/match-speed/challengeDeal.ts`); (d) the between-games scoreboard (`src/games/runtime/ChallengeRoundScoreboard.tsx`) and the round POST. The whole path is § 5.2a |
+| **Games** — the shared scoring runner, the registry↔pool sync test, pause-on-background | ✅ `src/games/runtime/challengeScoring.ts` (the declarative spec runner, 15 unit tests against the real specs), `challengeScoringFor` on the registry, `src/games/__tests__/challengePool.test.ts` (the test that keeps eligibility registry-derived), and pause-on-background in every game that needs it |
+| **The scored round runner** | ✅ **built 2026-08-22.** (a) the challenge-board pool read — `?challengeId=` on the EXISTING `/api/onDeck/gamePool` and `/api/onDeck/wordSearchGrid`, authorized by `StudyChallengeService.getRoundContext` and assembled by `OnDeckVocabService.getChallengeGamePool`; (b) every eligible game (now two — § 5.1) classifies contested/filler at board generation and emit `ChallengeEvent`s through one shared hook, `src/games/runtime/useChallengeRound.ts`; (c) Match Speed's alternation rule as a pure, tested module (`src/games/match-speed/challengeDeal.ts`); (d) the between-games scoreboard (`src/games/runtime/ChallengeRoundScoreboard.tsx`) and the round POST. The whole path is § 5.2a |
 | **Tester hatch — "allow anytime"** | ✅ **built 2026-08-22.** A feature-tester-only switch on `/friends/challenges` that lifts the calendar gates (the Monday issue window, accept deadline, test window, one-per-pair-per-week, the 6-challenge cap) and nothing else. Per-device `localStorage` + `?anytime=1`, honoured by the server only for `isFeatureTester` (migration 178). See § 2a |
 | **Client** — `src/api/studyChallenges.ts`, `src/features/studyChallenge/*` (incl. `challengeLabels.ts` → `acceptLapsed`,
 `challengeAnytime.ts` + `ChallengeAnytimeNotice.tsx` → the tester hatch and its
@@ -791,11 +791,10 @@ latch current, so a game reached by direct URL still carries the flag.
 
 ⚠️ **A game must append `poolParams`, never re-spell `challengeId`/`gameId` itself.**
 `poolParams` is the whole round identity *plus* the hatch, and a page that rebuilds the
-first two by hand silently drops the third. Hydra Bubbles did exactly that in its
-contested-word fetch (`HydraBubblesPage` → `fetchChallengeCards`) and 400'd
-(`ValidationError: Your test window is not open`) on every out-of-window tester launch,
-while the round itself resolved fine — fixed 2026-09-02 by adopting the same
-`challengeParamsRef` pattern Bubble Match, Match Speed and Word Search use.
+first two by hand silently drops the third — and 400s
+(`ValidationError: Your test window is not open`) on every out-of-window tester launch
+(the now-archived Hydra Bubbles did exactly that until 2026-09-02). Match Speed and Word
+Search use the `challengeParamsRef` pattern.
 
 **The client mirrors the same rule in its labels.** `challengeAction`,
 `challengeStatusLine` and `acceptLapsed` all take an `anytime` argument, so a row reads
@@ -1167,27 +1166,24 @@ renders from the challenge row and never depends on the cards.
 
 ### 5.1 Which games
 
-Three games per test, drawn from the **Recognition** and **Production** tracks only —
+Up to three games per test (`CHALLENGE_ROUND_COUNT`), drawn from the **Recognition** and **Production** tracks only —
 reading and writing games are excluded ([MASTERY_REWORK.md](./MASTERY_REWORK.md) § the
 mark-type table):
 
 | Game | Track | Eligible |
 |---|---|---|
-| Bubble Match | recognition | ✅ |
 | Match Speed | recognition | ✅ |
-| **Hydra Bubbles** | recognition | ✅ (**since 2026-08-18**) |
 | Word Search — **Pinyin** | production | ✅ (zh only) |
 | Word Search — No Pinyin | reading | ❌ |
 | Speed Reading | reading | ❌ |
 | Memory Map | reading | ❌ |
 | Practice Writing | writing | ❌ |
 
-**The fourth game has landed, and the draw is now genuinely random.** When this section
-was written there were exactly three eligible entries, so the draw had one possible
-answer as a SET and the randomisation existed for games that did not yet exist. Hydra
-Bubbles shipped on 2026-08-18 and entered the rotation with **no change to this
-section's machinery** — which is the property the derivation was built for. A zh test
-now draws 3 of 4; an es test draws 3 of 3 (Word Search is zh-only). It follows that:
+**Only two games are eligible today** (`CHALLENGE_GAMES`, `server/contracts/wire.ts`):
+Bubble Match, Hydra Bubbles and Bucket Drop (Pinyin) were in the rotation until they were
+archived on 2026-11-23 ([ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)). So a zh test
+plays 2 rounds and an es test 1 (Word Search is zh-only) —
+[DEFERRED_WORK.md](./DEFERRED_WORK.md) item 65. It follows that:
 
 * the eligible pool is **derived from the registry**, never listed by hand — a game
   qualifies iff its `markType` (or, for a moded game, the mode's `markType`) is
@@ -1204,8 +1200,8 @@ The selection and the **order** are drawn once per challenge and stored on the c
 row — **identical for both players**, same games, same sequence, because a score
 comparison across different games is not a comparison.
 
-Word Search being zh-only means an es-vs-es challenge draws from **four** eligible games
-(Bubble Match, Match Speed, Hydra Bubbles, Bucket Drop-Pinyin) where zh-vs-zh has five.
+Word Search being zh-only means an es-vs-es challenge draws from **one** eligible game
+(Match Speed) where zh-vs-zh has two.
 Same constraint, sharper, in cross-language challenges — § 8.
 
 ### 5.1b The game sequence is hidden until Friday (Q63)
@@ -1273,7 +1269,7 @@ It is now claimed the moment the player answers:
   already writes one mark per answer against the global `writeLimiter`.
 * **What ends it:** the run ending as usual, *or* the player leaving the game — Back, a
   footer tab, any route change, a tab close. Leaving finalises the round where it
-  stands, scored as a loss (so an all-or-nothing survival bonus is forfeited, § 5.4).
+  stands, scored as a loss.
 * **Backgrounding is still just a pause** (§ 5.8). The round ends when the player walks
   out of it, not when the phone rings: the client listens for `pagehide` with
   `persisted === false`, never `visibilitychange`.
@@ -1358,9 +1354,7 @@ sight-unseen.
 meant to measure the 12 contested words, and padding the board with words the player
 has never seen would add noise (and, worse, would reward whoever got luckier filler).
 Filler the player already owns is near-free points for both sides — which is why filler
-is worth **20 points instead of 100** (§ 5.4). **Hydra Bubbles is the exception at both
-ends**: its filler is not `mastered-first` (§ 5.2's own exception, below) and pays **0**
-rather than 20, because there it was farmable rather than near-free.
+is worth **20 points instead of 100** (§ 5.4).
 
 The mode is a parameter on `ProvisionalCardService.ensureBaseline` / `lendCards` and
 travels on the pool request as `?provisionMode=`. Every step degrades silently to the
@@ -1381,9 +1375,9 @@ game's natural size; it never displaces a contested word.
 > tuning, and a challenge board is now template-eligible like any other (see
 > docs/WORD_SEARCH_GAME.md § 1c). A challenge round still takes its target LIST from
 > `CHALLENGE_WORD_COUNT` (the specific contested ids), not from `TOTAL_WORDS`; the two
-> 9s are separately declared and neither derives from the other. Bubble Match (20) and
-> Match Speed (rolling buffer) are unaffected. This is what makes the
-contested ceiling of 900 points real in all four games and what makes the rounds
+> 9s are separately declared and neither derives from the other. Match Speed (rolling
+> buffer) is unaffected. This is what makes the
+contested ceiling of 900 points real in every eligible game and what makes the rounds
 comparable to each other — a game whose natural board is smaller than 9 must run
 longer in challenge mode rather than drop words. The one deliberate exception is Match
 Speed, whose rolling buffer expresses this as an alternation rule instead (§ 5.3), and
@@ -1403,7 +1397,7 @@ Filler is often provisional and often not; the scoring tables below key on
 
 ### 5.2a How a round is actually served (BUILT 2026-08-22)
 
-The whole test — four games, three rounds, one score — runs through **one gate and one
+The whole test — up to three rounds, one score — runs through **one gate and one
 assembler**, with no challenge-specific endpoint anywhere.
 
 ```
@@ -1459,31 +1453,19 @@ around its own logic. A game does exactly four things:
 4. renders `<ChallengeRoundScoreboard>` in place of its own end-of-run popup.
 
 The hook owns the accumulator and the active-time clock. That is what makes § 5.6's
-one-accumulator rule structurally true rather than a convention, and it is why four
-games cannot drift into four readings of the same spec.
+one-accumulator rule structurally true rather than a convention, and it is why the
+games cannot drift into separate readings of the same spec.
 
 **Per-game notes.**
 
 | Game | What its board integration needed |
 |---|---|
-| **Bubble Match** | Nothing but the pool params and the events — plus one new stage signal, `onCeilingDrop`, because the survival bonus starts the instant the ceiling begins descending and only the stage knows when the launcher drained |
 | **Match Speed** | The alternation rule (§ 5.3), extracted as the pure `challengeDeal.ts`. Mid-run buffer top-ups send `&contested=exclude` — the nine are dealt once and never recycled |
 | **Word Search** | **The same board as a casual run** since 2026-08-28 — 7×6, 9 words, template mode when it applies (the separate 8×8 challenge grid was deleted; see § 5.2). Its target list is still `CHALLENGE_WORD_COUNT`, not `TOTAL_WORDS`, because the actual set is the specific contested word ids, not a band distribution. Filler is queued at **twice** the board so the substring de-dup pass has something to substitute WITH — otherwise a set that shares characters fails as `insufficient-distinct`, i.e. a round the player cannot play at all. Challenge boards are never saved to the resume slot |
-| **Hydra Bubbles** | Contested words ride the **bloom** slot, drawn ahead of that buffer's stock; the run ends on the last contested clear (`shouldEndRun` → outcome `challengeComplete`), which is also the `won` that decides its clear bonus. It arms that bonus with a `survivalStart` event at t=0 rather than on a board signal. **Its filler is deliberately NOT `mastered-first`, and pays 0** — see below |
 
-⚠️ **Hydra is the one exception to § 5.2's filler rule, on purpose.** Its filler comes
-from its own colour buffers, whose bands ARE the payout ladder
-([HYDRA_BUBBLES.md](./HYDRA_BUBBLES.md) § 5): a board padded entirely from the player's
-mastered cards would be a board of nothing but bloom, which is not the game. So a Hydra
-round draws only the contested set from the challenge and leaves the economy untouched.
-Its difficulty comes from the challenge SHAPE (clear all nine, a wrong match ends the
-run) rather than from filler selection.
-
-**Background pause came back with it.** Hydra deliberately had none — nothing in a
-free-play run advances on its own — but a challenge round is scored on time to clear, so
-that variant is genuinely timed and falls under the app-wide rule
-([GAMES_FEATURE.md](./GAMES_FEATURE.md) § Backgrounding pauses the clock). It is armed
-for challenge rounds only.
+Bubble Match, Hydra Bubbles and Bucket Drop had their own integrations (Hydra was the one
+exception to § 5.2's filler rule); they were archived on 2026-11-23 and their notes live
+with their code on the archive branch ([ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)).
 
 ### 5.3 Match Speed's alternation rule
 
@@ -1549,63 +1531,6 @@ Per-game rules as specified:
 
 A run is a fixed 30 pairs, so every finisher earns the same hit points. The time penalty
 is what keeps speed in the score, and it runs on no limit, like Word Search's.
-
-**Bubble Match**
-
-| Event | Points |
-|---|---|
-| contested match / mistake | **+100 / −100** (once per foreign word) |
-| filler match / mistake | **+20 / −20** |
-| survival bonus | **+500** the moment the ceiling starts dropping, decaying **−100 every 2 s** (floor 0) |
-| bonus if the run is **lost** | **0** |
-
-> **The bonus is deliberately large and deliberately all-or-nothing (Q68).** At up to
-> +500 against +900 for nine contested matches, surviving is worth more than a third of the
-> round, and losing forfeits it entirely. That is not an imbalance to tune away: Bubble
-> Match *is* a survival game, and a challenge score that ignored whether the player
-> survived would be scoring a different game than the one they played. The cliff is also
-> what makes the last thirty seconds tense, which is the reason to draw this game at all.
-
-**Hydra Bubbles**
-
-| Event | Points |
-|---|---|
-| contested match | **+100** |
-| contested mistake | **−100** (ends the run, so at most one is ever charged) |
-| filler match | **0** — the one game where filler pays nothing |
-| filler mistake | **−20** (also ends the run) |
-| **clear bonus** | **+300** for clearing all nine, held flat for the first **1:00** of active time, then decaying **−25 every 15 s** to a floor of 0 at **4:00** |
-| clear bonus if the set is **not** cleared | **0** — forfeited entirely |
-| survival bonus | **none** — an endless run's survival time is unbounded and would swamp every other term |
-
-> **Why the clear bonus is gated on completion (O2, resolved 2026-09-02).** § 7.5 has
-> always said a Hydra round is scored on *time to clear*, and until now nothing scored
-> time at all. It could not be done naively: a run ends either because the player
-> finished or because they erred, so a per-second penalty charged to every run pays
-> players to **fail fast** — a wrong match at 0:30 posts a better clock than a clean
-> 9-of-9 at 4:00, and finishing takes longer than quitting *by definition*, so no choice
-> of rate fixes the sign. Gating the term on completion means it only ever compares runs
-> that are actually comparable: everyone holding it cleared the same nine words. It also
-> cannot invert the word ranking — a complete run is `900 + bonus ≥ 900` and the best
-> possible partial is `800 − 100 = 700` — so the pot's size is purely a statement about
-> how much speed should separate two finishers. 300 against 900 puts it in the same
-> register as Bubble Match's 500.
->
-> **The numbers are a first guess and the grace is why that is safe.** Nothing stores a
-> round's duration (only `completedAt`), so there is no telemetry on real clear times. A
-> flat first minute means a decay rate guessed too aggressively cannot *punish* a fast
-> run, only fail to separate it. Revisit once real rounds exist.
-
-> **Why filler is zero here and 20 everywhere else (changed 2026-09-02).** Filler is
-> meant to be near-free points that cannot decide the match. In Hydra it could: the run
-> ends on the LAST contested clear and nothing charges for time, so a player who cleared
-> eight of nine and then farmed filler bubbles outscored one who finished cleanly and
-> fast — and overflow forfeits nothing, so the farm risked only a wrong match. The
-> mistake value deliberately stays negative, because a filler clear is not optional
-> (draining is how the board is kept off the ceiling): filler is now pure risk rather
-> than inert. The consequence is that a Hydra round total **is** its contested ledger —
-> always a multiple of 100 minus any miss — and that two clean 9-of-9 runs now tie at
-> exactly 900, which is O2 (`docs/HYDRA_BUBBLES.md` § 11) with nothing left to hide it.
 
 **Word Search (Pinyin)**
 
@@ -1847,14 +1772,14 @@ strip is as tall as its tallest page, the card no longer changes height between 
 After **every** game in the test, the player sees a breakdown card:
 
 ```
-   ROUND 2 · BUBBLE MATCH
-   contested matches      7 × 100     +700
+   ROUND 2 · MATCH SPEED
+   contested matches      9 × 100     +900
    contested mistakes     2 × −100    −200
-   filler matches         5 ×  20     +100
-   survival bonus                     +300
+   filler matches        21 ×  20     +420
+   time penalty                       −120
    ───────────────────────────────────────
-   this round                          900
-   previous rounds                   1 240
+   this round                         1 000
+   previous rounds                   1 140
    ═══════════════════════════════════════
    TOTAL                             2 140
 ```
@@ -1929,7 +1854,7 @@ score them on the server — the per-round row shape does not have to change for
 
 Challenge games write **normal typed marks** and earn **normal minute points**. There is
 no scoring-only mode and no suppression flag: a match in round 2 of a challenge moves the
-same recognition track that a match in a casual Bubble Match run would. The competition
+same recognition track that a match in a casual Match Speed run would. The competition
 is a study session that happens to be scored twice — once for mastery, once for the
 challenge.
 
@@ -1945,8 +1870,8 @@ Three reasons, in order of weight:
    typed marks (below). Hiding the split means the whole board is played at full effort,
    which is the study outcome the feature exists for.
 2. **It costs every game page nothing.** Marking words would mean a per-word decoration
-   hook in Bubble Match, Word Search and Match Speed, each rendering words in a different
-   structure. Not marking them is zero work in three places, forever.
+   hook in every eligible game, each rendering words in a different structure. Not
+   marking them is zero work, forever.
 3. **It follows from this section's own premise.** A challenge round is normal play; a
    board that advertises a scoring layer is not a normal board.
 
@@ -2341,8 +2266,9 @@ described above.
 ### 8.3 Cross-language game eligibility
 
 Word Search is Chinese-only ([WORD_SEARCH_GAME.md](./WORD_SEARCH_GAME.md)), so a
-zh-vs-es challenge can draw only from **Bubble Match** and **Match Speed** — two games,
-not three. Per § 5.1 the test is then simply **two rounds**; the format bends rather than
+zh-vs-es challenge can draw only from **Match Speed** — one game, not three (Bubble
+Match was the second until it was archived 2026-11-23). Per § 5.1 the test is then simply
+**one round**; the format bends rather than
 blocking, and the count is stated up front so neither player is surprised.
 
 This is a data problem, not a design problem, and it shrinks on its own: **most games
@@ -2477,7 +2403,7 @@ generation (§ 5.7) and never re-derived from library state.
 ```jsonc
 {
   "<userId>": {
-    "1": { "gameId": "bubble-match", "score": 820,
+    "1": { "gameId": "match-speed", "score": 820,
            "breakdown": { /* the itemised lines § 5.5 renders */ },
            "completedAt": "2026-08-14T18:03:11Z" }
   }
@@ -2786,7 +2712,7 @@ incoming requests. (Today the hp is the footer Menu popover, and the challenges 
 | Q65 | Per-user challenge cap | **6 active at once** (`MAX_ACTIVE_CHALLENGES`), **per (user, language)**, spent only by your own issue/accept — pending invitations never consume a slot (§ 1) |
 | Q66 | Switching active language mid-challenge | **the challenge is invisible until they switch back**; nothing is lost. The language-blind badge (Q48) is the only thread back to it (§ 1) |
 | Q67 | Challenges page with no friends | **bare empty state**, consistent with the app's other empty surfaces (§ 1) |
-| Q68 | Bubble Match's ±500 survival bonus dominating a round | **kept as specified** — Bubble Match is a survival game and the all-or-nothing cliff is the format (§ 5.4) |
+| Q68 | Bubble Match's ±500 survival bonus dominating a round | **kept as specified** — Bubble Match is a survival game and the all-or-nothing cliff is the format. *(Moot: Bubble Match archived and the `survival` bonus kind removed 2026-11-23.)* |
 | Q64 | Results-page detail | **totals and per-game scores only**; no per-word comparison — it would tax every game's scoring contract permanently (§ 6) |
 | Q47 | Cold-start players | **no gate** — never block on card count; different-word mode is the answer to a level mismatch (§ 3.1) |
 | Q40 | Round order / replays | **strictly sequential, one attempt each**; a round row is written at the first mark and is immutable once final (§ 5.1a). No longer literally insert-only — the claim is written before the score is known — but a completed round is still never rewritten |
@@ -2853,7 +2779,7 @@ highlights, used ONLY by the round scoreboard),
 `src/games/runtime/{challengeScoring,useChallengeRound,challengeLaunch}.ts` +
 `ChallengeRoundScoreboard.tsx` (the round runner — § 5.2a),
 `src/games/match-speed/challengeDeal.ts` (the alternation rule — § 5.3),
-`src/games/{match-speed,bubble-match,word-search,hydra-bubbles,bucket-drop}/*` (scoring emission, challenge mode),
+`src/games/{match-speed,word-search}/*` (scoring emission, challenge mode),
 `src/games/__tests__/{challengePool,challengeScoring,challengeDeal}.test.ts`,
 `server/services/OnDeckVocabService.ts` → `getChallengeGamePool` + `getWordSearchGrid(challenge)`,
 `server/controllers/OnDeckVocabController.ts` → `resolveChallengeRound`,

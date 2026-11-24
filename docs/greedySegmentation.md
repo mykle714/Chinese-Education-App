@@ -185,23 +185,9 @@ The frontend iterates `_segments` and looks up `segmentMetadata[token].pronuncia
 
 All endpoints below compute `segmentMetadata` server-side via `enrichExampleSentencesMetadataBatch()` before the response is sent. Auth requires a valid JWT cookie (`token`).
 
-### `GET /api/vocabEntries`
-Returns all vocab entries for the authenticated user.
-- **Response:** `VocabEntry[]` — each entry's `exampleSentences` includes `_segments` and `segmentMetadata`
-
-### `GET /api/vocabEntries/paginated`
-Returns a paginated slice of the user's vocab entries.
-- **Query params:** `limit` (default `10`), `offset` (default `0`)
-- **Response:** `{ entries: VocabEntry[], total: number, hasMore: boolean }`
-
 ### `GET /api/vocabEntries/:id`
 Returns a single vocab entry by ID.
-- **Response:** `VocabEntry`
-
-### `GET /api/vocabEntries/search`
-Searches the user's vocab entries.
-- **Query params:** `query` (string, min 2 chars)
-- **Response:** `VocabEntry[]`
+- **Response:** `VocabEntry` — its `exampleSentences` include `_segments` and `segmentMetadata`
 
 ### `GET /api/onDeck/libraryCards`
 Returns all library cards (`starterPackBucket = 'library'`). No client caller

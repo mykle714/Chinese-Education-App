@@ -1,12 +1,25 @@
 import type { Text, TextKind } from '../../types/index.js';
 
 /** The columns `TextDAL.updateFields` may change. Language is immutable after creation. */
+import type { PronunciationOverride } from '../../contracts/wire.js';
+
 export interface TextFieldUpdate {
   title?: string;
   content?: string;
   characterCount?: number;
   /** `null` clears the icon (texts."iconId", migration 193); `undefined` leaves it. */
   iconId?: string | null;
+  /**
+   * The whole READING CHOICES array (texts."pronunciationOverrides", migration 207),
+   * already validated by TextService; `undefined` leaves it.
+   */
+  pronunciationOverrides?: PronunciationOverride[];
+  /**
+   * Whether this update stamps `updatedAt` (the "Recently edited" sort). Default true;
+   * TextService passes false for an update that only changes reading choices — picking
+   * a reading is not editing the document.
+   */
+  touchUpdatedAt?: boolean;
 }
 
 /**

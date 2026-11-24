@@ -2,7 +2,7 @@
 
 > **Status: IMPLEMENTED (v1).** Recognition backends, the canonical stroke
 > format, capture, the practice popup (single-char panel + 2×2 grid for 2–4
-> chars), and the eip/cdp entry points are built. See the layer table for file
+> chars), and the eip entry point is built (the cdp's went with the routed cdp, 2026-11-23). See the layer table for file
 > paths. Open items: traditional (`zh_TW`) support and words longer than 4
 > characters (see Open Questions).
 
@@ -142,8 +142,9 @@ recognizers.
 
 A **"Practice Writing Me"** button appears on:
 
-- the **eip** (extra info panel), and
-- the **word details page (cdp)**.
+- the **eip** (extra info panel) on `showWordTools` hosts (the Dictionary page). The
+  **word details page (cdp)** had one too; td's card view, which replaced it on 2026-11-23,
+  does not (its rail passes `showWriteIt={false}`).
 
 Tapping it opens a modal **popup** scoped to that single target character/word.
 
@@ -200,12 +201,12 @@ Two distinct "reset" scopes — **soft** (tab switch) vs. **hard** (context chan
 | **Close popup** (✕, or desktop backdrop tap) | **Preserves** every character's ink, the active level index, **and** the focused grid slot. Reopening returns the user to the same level and view (grid or the same enlarged slot) with their drawing intact. Rationale: a click-off may be accidental — let them resume. |
 | **Leave the flp** (the Deck Tower study session) | **Hard clear** — discard preserved draft. |
 | **Mark a card** | **Hard clear** — discard preserved draft. |
-| **Leave the word details page (cdp)** | **Hard clear** — discard preserved draft. |
+| ~~**Leave the word details page (cdp)**~~ | Gone with the routed cdp (2026-11-23); td's card view has no `Write it`. |
 
 So the preserved draft is `{ activeTabIndex, inks[], focusedIndex }` (`inks` = one
 `Ink` per character of the word; `focusedIndex` = the enlarged slot or `null`),
 tied to the **current target word**; any context change that moves off that word
-(mark card / leave flp / leave cdp) discards it. See `writingDraftStore.ts`.
+(mark card / leave flp) discards it. See `writingDraftStore.ts`.
 
 ### Multi-character grid (2–4 characters)
 
@@ -265,7 +266,7 @@ character is top-1-correct in one Verify (a partial pass awards nothing).
   on mount and owns it as the single source of truth, passing it to the popup and
   receiving updates when a level is freshly cleared (`PracticeWritingButton.tsx`,
   `completions.ts`). The **flp flashcard** instance passes `hideStarBadge` to omit
-  the badge (keeping the card face clean); the eip and cdp instances keep it.
+  the badge (keeping the card face clean); the eip instance keeps it.
 - **Award flow:** on a correct Verify for an un-completed level, the popup POSTs the
   completion (idempotent) and lifts the returned full set up to the button, which
   refreshes both the superscript and the tab stars.
@@ -338,7 +339,7 @@ dependency (consistent with the offline-fallback stance of the recognition layer
 
 | Layer | Component | File |
 |---|---|---|
-| Presentation (entry) | One component, two `appearance`s (zh + **1–4 characters** on both): `rail` — the **`Write it` pill on `WordToolsRail`**, above the card on the saved-card cdp — **not the flp** since 2026-11-17 (`showWriteIt={false}`) — (at the bottom of the eip's definition tab on the Dictionary page), and the only entry point since 2026-08-28; `labeled` — the plain "Practice Writing Me" button, for any future action row. The on-card `icon` appearance was **removed** on 2026-08-28 (a pre-rail relic), and the eip's own action bar (`InfoCardActionBar`) is **deleted** — the panel is information-only now, and practising is a word tool | `src/components/handwriting/PracticeWritingButton.tsx`; placed by `src/components/WordToolsRail.tsx` only |
+| Presentation (entry) | One component, two `appearance`s (zh + **1–4 characters** on both): `rail` — the **`Write it` pill on `WordToolsRail`** — **not the flp** since 2026-11-17, and not td's card view (which replaced the saved-card cdp, where it sat above the card, on 2026-11-23); both pass `showWriteIt={false}` — (at the bottom of the eip's definition tab on the Dictionary page), and the only entry point since 2026-08-28; `labeled` — the plain "Practice Writing Me" button, for any future action row. The on-card `icon` appearance was **removed** on 2026-08-28 (a pre-rail relic), and the eip's own action bar (`InfoCardActionBar`) is **deleted** — the panel is information-only now, and practising is a word tool | `src/components/handwriting/PracticeWritingButton.tsx`; placed by `src/components/WordToolsRail.tsx` only |
 | Presentation (surface) | "Practice Writing Me" **popup** — single panel (1 char) or 2×2 grid + focus (2–4 chars); floating bars (corner ✕, Clear/Undo pill, Verify, bottom Trace/Step Through/Memorize/Test bar), cooldowns, lifecycle, ✓/✗ | `src/components/handwriting/PracticeWritingPopup.tsx` |
 | Presentation (panel) | One writing panel = guide + capture canvas + ✓/✗ overlay; reused for the single panel, the focused slot, and the scaled grid previews | `src/components/handwriting/WritingStage.tsx` |
 | Presentation (guide) | **Hanzi Writer** (display-only) — grey outline + stroke-order guide; local data via `charDataLoader` (CDN fallback) | `src/components/handwriting/HanziGuide.tsx`, `loadCharData.ts` |
@@ -346,13 +347,13 @@ dependency (consistent with the offline-fallback stance of the recognition layer
 | Domain (contract) | `Stroke` / `Ink` / `WritingCanvasHandle` types; client recognition adapter | `src/components/handwriting/types.ts`, `recognize.ts` |
 | Domain (draft) | Preserve-on-close / hard-clear draft store | `src/components/handwriting/writingDraftStore.ts` |
 | Persistence (stars) | `writing_practice_completions` table (Shape A) + completion helper | migration `database/migrations/81-create-writing-practice-completions-table.sql`, `server/utils/writingPracticeStore.ts` |
-| API (proxy) | `POST /api/handwriting/recognize` — `Ink` → `{ candidates, top1 }` | `server/routes/handwritingRoutes.ts` |
+| API (proxy) | `POST /api/handwriting/recognize` — `Ink` → `{ candidates, top1 }`; an upstream failure is a 502 (`ERR_UPSTREAM`). The client adapter (`recognize.ts` → `recognizeHandwriting`, no `token` argument) calls it through `src/api/http.ts` → `apiPost`, so the token refresh + 401 retry apply, and any non-2xx or network error **throws**. Every caller treats a throw as "not checked", never as a wrong answer — no verdict, no mark, strokes kept, the same tap retries: `useWritingFlashcard` → `handleSubmit` (WRITING_PRACTICE_REWORK.md § 3), `WritingGridStage` → `handleCellDone` (§ 2), `PracticeWritingPopup` → `handleVerify` (PRACTICE_WRITING.md § "Grading"). One exception: a 400 `ERR_BAD_INK` (the drawing failed `validateInk` — too many strokes or points) is returned as `top1: null` and so graded **wrong**, since resending the same ink can never succeed (`recognize.ts` → `isRefusedInk`) | `server/routes/handwritingRoutes.ts` |
 | API (stars) | `GET/POST /api/handwriting/completions` — read/record completed levels | `server/routes/handwritingRoutes.ts`; client `src/components/handwriting/completions.ts` |
 | Integration (adapter) | Google adapter (server-side; the only file touching the endpoint) | `server/utils/handwritingRecognizer.ts` |
 | Integration (fallback) | HanziLookupJS adapter (client fallback) | *not yet built* |
 
 Hard-clear call sites (`clearWritingDraft()`): `FlashcardsLearnPage.tsx` (on
-`frontCardId` change = mark-a-card, + unmount), `VocabCardDetailPage.tsx` (unmount).
+`frontCardId` change = mark-a-card, + unmount).
 
 ## Verification notes (reference)
 
@@ -385,4 +386,4 @@ The Google endpoint and the stroke format were validated manually:
 ## Related
 
 - [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) — touch/scroll rules the capture
-  canvas must follow; the popup is a modal over the eip / cdp.
+  canvas must follow; the popup is a modal over the eip.

@@ -81,7 +81,7 @@ const keyShadow = (face: string, wall: string, sunk: number) =>
 interface TowerFilterKeysProps {
     /** The lens's two built-in collections, in display order (`useCardLibrary` → `collections`). */
     entries: BuiltinCollectionEntry[];
-    /** Figure for one key; undefined while its count is still loading. */
+    /** Figure for one key; undefined until its count has loaded, and after a failed load (useCardLibrary → `tileCount`). */
     count: (entry: BuiltinCollectionEntry) => number | undefined;
     /** `key` of the latched entry (the one filtering the grid), or null. */
     activeKey: string | null;

@@ -1,8 +1,8 @@
 /**
  * gamePool.ts — the client's one typed call against GET /api/onDeck/gamePool.
  *
- * Every game that draws a board from the learner's cards (Bubble Match, Match Speed,
- * Speed Reading, Bucket Drop, Hydra Bubbles) goes through `fetchGamePool`. It used to be six hand-built querystrings — five on
+ * Every game that draws a board from the learner's cards (Match Speed, Speed Reading)
+ * goes through `fetchGamePool`. It used to be six hand-built querystrings — five on
  * raw `fetch` + `authHeader()` — each with its own copy of the response type.
  *
  * Server: `OnDeckVocabController.getGamePool` → `OnDeckVocabService.getGameVocabPool`
@@ -11,8 +11,7 @@
  * LENDING IS DECIDED BY THE SERVER, not by a flag here (docs/PROVISIONAL_CARDS.md):
  *   - a FULL board (no `need`) tops the learner up to `CARD_BASELINES[surface]`
  *     (or to the distribution's sum when `surface` is absent) before selecting;
- *   - a REFILL (`need` set) never lends — unless `surface` is a rolling-supply surface
- *     (`ROLLING_SUPPLY_SURFACES`, server/contracts/wire.ts; today only Hydra);
+ *   - a REFILL (`need` set) never lends;
  *   - a challenge round never lends.
  * So a caller controls lending only through `surface` and `need`, and should always
  * send its real `surface`.
@@ -48,7 +47,7 @@ export interface GamePoolRequest {
     markType: MarkType;
     /** `?surface=` — names the baseline to lend up to (see the header comment). */
     surface?: string;
-    /** Band quotas. Omit for a challenge-only request (Hydra's contested set). */
+    /** Band quotas. Omit for a challenge-only request. */
     distribution?: GamePoolDistribution;
     /** Partial refill size. Present = refill semantics (no baseline top-up). */
     need?: number;
@@ -68,10 +67,6 @@ export interface GamePoolRequest {
      * (docs/FOCUS_MODE.md § 4a). Send it on the opening board and every top-up.
      */
     flpBreak?: boolean;
-    /** "These bands or nothing" — no top-up from outside `distribution` (Hydra). */
-    strictBuckets?: boolean;
-    /** Lend at the learner's level plus this offset (Hydra's payout tiers). */
-    lendLevelOffset?: number;
     /** Challenge refill that must not re-serve the contested words (Match Speed § 5.3). */
     excludeContested?: boolean;
     /**
@@ -91,8 +86,6 @@ export function gamePoolParams(req: GamePoolRequest): QueryParams {
     if (req.avoid?.length) params.avoid = req.avoid.join(',');
     if (req.seedIds?.length) params.seedIds = req.seedIds.join(',');
     if (req.flpBreak) params.flpBreak = 1;
-    if (req.strictBuckets) params.strictBuckets = 1;
-    if (req.lendLevelOffset !== undefined) params.lendLevelOffset = req.lendLevelOffset;
     if (req.challengeParams) {
         for (const [key, value] of new URLSearchParams(req.challengeParams.replace(/^&/, ''))) {
             params[key] = value;

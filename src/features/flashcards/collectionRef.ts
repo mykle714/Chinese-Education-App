@@ -17,17 +17,14 @@
  * The wire ids are shared, not mirrored: `ALL_COLLECTION_ID`, `LEARN_NOW_COLLECTION_IDS`
  * and `MASTERED_COLLECTION_IDS` live in server/contracts/wire.ts.
  *
- * This module also owns the `?world=` LENS param of the card detail page (`withLens`,
- * `lensFromSearch`).
- *
- * Depended on by: builtinCollections.ts, collectionGlyph.ts, src/api/collections.ts,
- * VocabCardDetailPage.tsx, src/features/deckTower/DeckTowerPage.tsx.
+ * Depended on by: builtinCollections.ts, collectionGlyph.ts, src/api/collections.ts.
+ * (The card detail page's `?world=` lens param, `withLens` / `lensFromSearch`, went with
+ * that route on 2026-11-23: td's card view takes its world as a prop.)
  */
 import {
     ALL_COLLECTION_ID,
     LEARN_NOW_COLLECTION_IDS,
     MASTERED_COLLECTION_IDS,
-    parseMasteryWorld,
     type MasteryWorldId,
 } from '../../../server/contracts/wire';
 import type { BuiltinCollectionId } from '../../../server/dal/shared/vetTable';
@@ -74,29 +71,4 @@ export function builtinCollectionId(ref: CollectionRef): BuiltinCollection {
         case 'mastered':
             return MASTERED_COLLECTION_IDS[ref.world];
     }
-}
-
-/**
- * The `?world=` LENS param of the card detail page (`/flashcards/card/:id`).
- *
- * A lens does not change WHICH card a page shows, only which mastery bar it reads it
- * through. The Deck Tower's cards page opens a card through its world's lens
- * (DeckTowerPage → `withLens`); the card page reads it back (`lensFromSearch`).
- *
- * `core` is the default everywhere, so it is never written into a URL.
- */
-export const LENS_PARAM = 'world';
-
-/** Append the lens param to a path, unless it is the default (`core`). */
-export function withLens(path: string, lens: MasteryWorldId): string {
-    if (lens === 'core') return path;
-    const [base, existing] = path.split('?');
-    const search = new URLSearchParams(existing ?? '');
-    search.set(LENS_PARAM, lens);
-    return `${base}?${search.toString()}`;
-}
-
-/** Read a lens off a URL's search params. Anything unrecognized means `core`. */
-export function lensFromSearch(search: URLSearchParams): MasteryWorldId {
-    return parseMasteryWorld(search.get(LENS_PARAM)) ?? 'core';
 }

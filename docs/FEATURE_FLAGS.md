@@ -13,7 +13,7 @@ One registry file switches whole features, and individual games, on and off:
 | `arena` | Weekly global division leaderboard ([ARENA_FEATURE.md](./ARENA_FEATURE.md)) | ON |
 | `writingNotebook` | The Writing Notebook page and its entry, the paper stack on the Deck Tower's writing world ([WRITING_NOTEBOOK.md](./WRITING_NOTEBOOK.md)) | ON |
 | `superpositionStoredGroups` | A data path, not a feature: Superposition reads the AI-authored tile groups stored on det instead of computing them ([SUPERPOSITION_GAME.md](./SUPERPOSITION_GAME.md) § Stored groups) | ON (since 2026-11-03) |
-| `standaloneGames` | The five routed games' own pages (`/games/bubble-match`, `/word-search`, `/match-speed`, `/hydra-bubbles`, `/bucket-drop`). Client-only; their flp breaks are not gated ([GAMES_FEATURE.md](./GAMES_FEATURE.md)) | **OFF** (since 2026-11-06) |
+| `standaloneGames` | The two routed games' own pages (`/games/word-search`, `/games/match-speed`). Client-only; their flp breaks are not gated ([GAMES_FEATURE.md](./GAMES_FEATURE.md)) | **OFF** (since 2026-11-06) |
 | `cyoa` | Adventures — branching stories + the author editor ([CYOA_FEATURE.md](./CYOA_FEATURE.md)). Learner pages partly built (plain-text passages, no editor yet) | ON (since 2026-11-20; needs migration 196) |
 | `voiceAssistant` | Voice Tutor — the spoken Mandarin tutor ([VOICE_ASSISTANT.md](./VOICE_ASSISTANT.md)). Built end to end; needs migration 202 + `VOICE_AI_API_KEY` | OFF (default per VOICE_ASSISTANT.md § 10) |
 | `sentenceTiles` | Sentence Tiles — the two-player correspondence word-tile game judged by AI ([SENTENCE_TILES_GAME.md](./SENTENCE_TILES_GAME.md)). Needs migration 204 + `SENTENCE_TILES_AI_API_KEY`; feature testers only while testing | ON (testers only) |
@@ -156,14 +156,15 @@ Deck Tower, and their standalone pages would otherwise sit at reachable URLs wit
 | Layer | Site |
 |---|---|
 | Client | `src/games/registry.ts` → `ROUTED_GAMES` is `[]` while off. Through it: `GAME_ROUTE_META` (`routeMeta.ts`), `GAME_COMPONENTS` (`routes/registry.ts`), `GAME_ROUTES`, `originLabelFor`, and the route tests. The registry rows keep their `route` + `Component`, so `isRoutedGame` still tells routed from break-only |
-| Server | **Not gated.** `/api/games/*` and the pool endpoints are shared with the flp breaks |
-| Entry points | None to hide: the hub and its Menu row are deleted. Study Challenge's `src/games/runtime/challengeLaunch.ts` still names the five routes; it is reachable only while `studyChallenge` is on, so turning that on needs this on too |
+| Server | **Not gated.** `/api/games/speedReading/*` and the pool endpoints are shared with the flp breaks |
+| Entry points | None to hide: the hub and its Menu row are deleted. Study Challenge's `src/games/runtime/challengeLaunch.ts` still names the two routes; it is reachable only while `studyChallenge` is on, so turning that on needs this on too |
 
-**Why not five `GAME_FLAGS` entries:** a game flag filters `GAME_REGISTRY`, which also feeds
+**Why not per-game `GAME_FLAGS` entries:** a game flag filters `GAME_REGISTRY`, which also feeds
 the flp break candidates, so it would remove Match Speed's and Word Search's breaks too.
-**Side effect while off:** Bubble Match, Hydra Bubbles and Bucket Drop have no break in the
-rotation, so they are unreachable (code kept). Switching it on needs no edit beyond the
-boolean, but the pages come back with no launcher.
+Switching it on needs no edit beyond the boolean, but the pages come back with no launcher
+(and no end card — DEFERRED_WORK item 38). Bubble Match, Hydra Bubbles and Bucket Drop, which
+had no break and so were reachable only through this flag, were archived on 2026-11-23
+([ARCHIVED_FEATURES.md](./ARCHIVED_FEATURES.md)).
 
 ### 2i. `cyoa` — ON
 
@@ -212,7 +213,7 @@ unavailable".
 ## 3. Per-game flags
 
 `GAME_FLAGS` holds one boolean per game, keyed by the game's real slug — the same
-`GameDef.gameId` / `gameassets.gameId` value the app already uses. A `gameBubbleMatch`-style
+`GameDef.gameId` value the app already uses. A `gameWordSearch`-style
 key would be a second spelling of an existing id, and the two could drift.
 
 It is typed `Record<GameFlagId, boolean>` against `KNOWN_GAME_IDS` (via a **type-only**
@@ -223,19 +224,19 @@ inherit a default and vanish from the hub.
 | Layer | Site |
 |---|---|
 | Client | `src/games/registry.ts` → `GAME_REGISTRY = ALL_GAMES.filter((g) => isGameEnabled(g.gameId))`. **One chokepoint.** `ROUTED_GAMES` (the games with a `route`, further gated by `standaloneGames` — § 2h), and through it `GAME_ROUTE_META` in `routeMeta.ts`, `GAME_COMPONENTS` in `routes/registry.ts`, `GAME_ROUTES`, `originLabelFor` and the route tests, all derive from this array; so do the flp game-break candidates, which is the ONLY surface a break-only game (Speed Reading, Memory Map, Writing Grid, Superposition) has |
-| Server | `server/controllers/GamesController.ts` → `isGameEnabled` on all three handlers (`getAssets`, `getProgress`, `saveProgress`) |
-| Tips | `src/data/tips.ts` — a tip naming a game carries `game: "<slug>"` (Bubble Match, Word Search) and is filtered by `isGameEnabled`. Not derived from `GAME_REGISTRY`, so it is a second client site to remember |
+| Server | `server/server.ts` → a game with its own router is mounted only when its flag is on: `if (isGameEnabled('writing-grid'))`, `if (isGameEnabled('superposition'))`. Games served by shared endpoints (the onDeck pools, `/api/games/speedReading/*`, `/api/memoryMap/*`) are not gated server-side |
+| Tips | `src/data/tips.ts` — a tip naming a game carries `game: "<slug>"` (Word Search) and is filtered by `isGameEnabled`. Not derived from `GAME_REGISTRY`, so it is a second client site to remember |
 
 A disabled game's route therefore **stops existing** rather than 404-ing from a live row.
 Because `GAME_COMPONENTS` derives from the same filtered array, the registry's boot-time
 "row with no component" check cannot fire, and its dev-only orphan warning has nothing to
 report — so games need no `FLAGGED_OFF_PATHS` entry.
 
-The server half matters independently: a hidden hub tile does not stop a bookmarked game
-page from POSTing save state. All three handlers answer **404**, not 403 — to a client a
-disabled game should be indistinguishable from one that does not exist, and "this exists but
-is turned off" discloses unshipped work. `saveProgress` keeps its separate `isKnownGameId`
-whitelist, which guards a different problem (unbounded save rows for invented slugs).
+The server half matters independently: a hidden tile does not stop a direct request. An
+unmounted router answers **404**, not 403 — to a client a disabled game should be
+indistinguishable from one that does not exist, and "this exists but is turned off"
+discloses unshipped work. (The generic `GamesController` that gated `/api/games/:gameId/*`
+was deleted 2026-11-23 with its routes; no client had called them.)
 
 ---
 

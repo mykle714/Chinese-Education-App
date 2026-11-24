@@ -27,7 +27,7 @@ interface CategoryCountsResult {
  * the whole-card question. td's reading / writing cards page passes its own bar, so its
  * Learning key counts what is left to READ rather than what is left to know.
  */
-export function useCategoryCounts(world: MasteryWorldId = "core"): CategoryCountsResult {
+export function useCategoryCounts(world: MasteryWorldId = "core", refreshKey = 0): CategoryCountsResult {
     const { token, isAuthenticated } = useAuth();
     const [counts, setCounts] = useState<Record<string, number>>({});
     const [loaded, setLoaded] = useState(false);
@@ -55,8 +55,10 @@ export function useCategoryCounts(world: MasteryWorldId = "core"): CategoryCount
     // isAuthenticated not `token`: a silent refresh must not re-fetch counts.
     // See CLAUDE.md "Never reload on token refresh". `bar` IS a dep — it changes only
     // when the surface itself is a different lens, which genuinely needs new numbers.
+    // `refreshKey` re-reads on demand: td's cards page bumps it when its card view closes
+    // (a card may have been removed from Learning there — useCardLibrary).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isAuthenticated, world]);
+    }, [isAuthenticated, world, refreshKey]);
 
     return { counts, loaded, ok };
 }

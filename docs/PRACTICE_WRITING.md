@@ -50,7 +50,10 @@ There is exactly **one** entry point per page, the `Write it` pill on `WordTools
 (`src/components/WordToolsRail.tsx`, `rail` appearance) — a rail **above** the card and
 outside its boundary, because the drill acts on the WORD, not on the card. Hosts:
 
-- **vocab cdp** — `src/features/flashcards/VocabCardDetailPage.tsx`
+- ~~**vocab cdp**~~ — gone: the routed cdp (`VocabCardDetailPage.tsx`) was replaced
+  2026-11-23 by td's card view (`src/features/deckTower/cardView/TowerCardView.tsx`), whose
+  rail passes `showWriteIt={false}` — `Write it` was removed there (as on the flp since
+  2026-11-17)
 - **Dictionary page eip** — `src/features/flashcards/FlashcardsLearnPage/EipSheet.tsx`
   (`showWordTools`, from `src/features/dictionary/DictionaryPage.tsx`). The
   exception to "above the card": it has no card, so the rail sits at the **bottom of
@@ -378,6 +381,14 @@ that a snapped 十 lost top-1 to `"+"` and a snapped 户 to `"戸"` (HANDWRITING
 (`COLORS.greenMain`) / ✗ (`COLORS.redMain`); an empty panel counts as ✗. Redrawing a
 panel invalidates that character's prior result back to `idle`.
 
+A Verify whose recognizer call **could not run** (`recognizeHandwriting` threw: network
+error, the proxy's 502 when Google is down) is dropped whole: no ✓/✗, no
+`onWritingResult` (so no Writing marks), no star. `checking` clears, the panels keep their
+strokes and prior results, and the same Verify button retries (`PracticeWritingPopup` →
+`handleVerify`). No message of its own: the request was retried quietly first, and a lost
+connection is said by the shared notice (NOTIFICATIONS.md § 3a). Until
+2026-11-23 a failed panel was graded ✗ and its wrong mark written.
+
 The level's **star** is awarded only when **every** character is correct in a single
 Verify (and the level isn't already completed).
 
@@ -437,7 +448,8 @@ Closing the popup (background tap or backdrop) **preserves** the active level in
 character's ink, and the focused grid slot (`setWritingDraft` →
 `writingDraftStore.ts`); reopening the same word restores them so an accidental
 click-off doesn't lose work. The draft is **hard-cleared** when the flp advances to
-a new card or unmounts, and when the cdp unmounts (`clearWritingDraft`).
+a new card or unmounts (`clearWritingDraft`). (The routed cdp also cleared it on unmount; td's
+card view, its replacement, has no `Write it` and so no draft to clear.)
 
 ---
 

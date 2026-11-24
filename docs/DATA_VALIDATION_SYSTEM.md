@@ -81,7 +81,7 @@ allow-list is `VALID_FIELDS` in `server/controllers/ValidationController.ts`.
 > **Why commonality is per SENSE (migration 139).** A word-level `frequencyScore` is
 > a lie for a polyseme: 干 "to do" comes up constantly (5) while 干 "shield" is
 > effectively never spoken (1). The clusterer already scores each sense independently
-> ([DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md)), and the eip/cdp Commonality chip
+> ([DEFINITION_CLUSTERS.md](./DEFINITION_CLUSTERS.md)), and the eip Commonality chip
 > now shows the score of the sense the card is on — so the chip's Approve/Flag pair had
 > to follow, or a validator would be endorsing a number that is not on screen. Which of
 > the two the chip shows is decided by `resolveCommonality`
@@ -208,8 +208,9 @@ below) so the two always agree on what a given det row's text looks like.
 
 Small Approve/Flag
 icon buttons render directly on the est (example sentences) and long-definition
-surfaces, wherever a validator is already looking at an entry — flashcard eip tabs,
-the cdp, the dictionary card detail. Hidden entirely for non-validators.
+surfaces, wherever a validator is already looking at an entry — the eip tabs on every
+host (flp, acp, td's card view, the Dictionary page). (The cdp and the dictionary card
+detail that used to carry them are deleted.) Hidden entirely for non-validators.
 
 > **The icon pair itself lives in `ValidateFlagButtonsView.tsx`.** The
 > presentation (icon pair, fill-on-a-disc styling, per-icon spinner,
@@ -294,8 +295,9 @@ the cdp, the dictionary card detail. Hidden entirely for non-validators.
   `ValidateFlagButtons` keys its status fetch on it, so switching senses refetches that
   sense's own vote (and clears the previous one's filled icon while the fetch is in
   flight, since the picker swaps the prop in place rather than remounting). Used by **`src/features/flashcards/DefinitionFacts.tsx`** — the ONE component both
-  card-detail surfaces render since 2026-08-24 (the cdp's Definition box and the eip's
-  definition tab), which passes `entry.entryKey` / `entry.language` and its own
+  card-detail surfaces rendered since 2026-08-24 (the cdp's Definition box and the eip's
+  definition tab; only the eip's remains — the cdp was replaced 2026-11-23 by td's card
+  view, which shows definitions only inside its eip), which passes `entry.entryKey` / `entry.language` and its own
   `classPrefix`; the buttons are skipped when `language` is absent (det-fallback
   entries). The pair is an absolutely-positioned overlay in
   the chip's **top-right corner** with no surface of its own — styled exactly like the
@@ -456,7 +458,7 @@ the host palette's card fill in a 1px orange inset ring, 14px radius, no tint, w
 > widen, heighten, or reflow the element it annotates, or displace any of its text.
 > When adding a new mount point, position it, don't inline it.
 
-Every surface (the eip Definition tab on every host, the saved-card cdp included) inherits
+Every surface (the eip Definition tab on every host, td's card view included) inherits
 this automatically: the eip panel (`InfoCardPanelBody` → `InfoCardTabContent` →
 `DefinitionFacts`) is the one component behind all of them.
 

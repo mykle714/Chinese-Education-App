@@ -18,6 +18,16 @@ import { readBreakProgress, writeBreakProgress } from "./breakProgressStore";
 export const BREAK_INTERVAL = 15;
 
 /**
+ * The longest Play waits on a prefetch that has not settled (§ 1). A prefetch that never
+ * answers (a hung request) used to hold Play disabled forever. Past this, the plan gives
+ * up on its prefetch — settled with no board, the same state a FAILED prefetch leaves, so
+ * the Stage deals its own opening board — and Play comes back enabled: the next tap
+ * opens the game at once. A prefetch landing after the give-up is dropped
+ * (`prefetchGaveUpRef`), so it cannot swap the board or the game under a running break.
+ */
+export const PLAY_WAIT_TIMEOUT_MS = 8000;
+
+/**
  * Where the session is relative to a break.
  *   cards    — studying; a break may be DUE (the front card is the last before it).
  *   title    — the break's card is the top card of the stack (Skip / Play).
@@ -159,6 +169,9 @@ export function useGameBreak(args: {
     const forcedOpeningSpentRef = useRef(false);
     // Source of PlannedBreak.id.
     const planIdRef = useRef(0);
+    // The plan whose prefetch Play gave up waiting on (PLAY_WAIT_TIMEOUT_MS); its late
+    // result, if one ever comes, is dropped. Plan ids only grow, so one slot is enough.
+    const prefetchGaveUpRef = useRef<number | null>(null);
     // False after unmount, so a prefetch landing after the learner left sets no state.
     const mountedRef = useRef(true);
     // Read by a prefetch landing outside React: is its plan still the live one, and is the
@@ -267,11 +280,13 @@ export function useGameBreak(args: {
         // A result is discarded only when its plan was REPLACED (undo off the due card,
         // or a StrictMode re-run) — matched by id — or the page has unmounted.
         const settle = (prefetched: unknown) => {
-            if (!mountedRef.current) return;
+            if (!mountedRef.current || prefetchGaveUpRef.current === id) return;
             setPlanned((p) => (p && p.id === id ? { ...p, prefetched, prefetchSettled: true } : p));
         };
         adapter.prefetch(candidate, context)
             .then((board) => {
+                // Play already gave up on this prefetch and may have opened the game.
+                if (prefetchGaveUpRef.current === id) return;
                 if (adapter.isPlayable?.(board) !== false) {
                     settle(board);
                     return;
@@ -347,6 +362,24 @@ export function useGameBreak(args: {
             setPhase("growing");
         }
     }, [playRequested, phase, planned?.prefetchSettled]);
+
+    // Play must never stay disabled: a prefetch still unsettled PLAY_WAIT_TIMEOUT_MS after
+    // the tap is given up (see the constant). Play is re-enabled rather than the game
+    // opened outright, so a learner who waited that long chooses again — and with the plan
+    // now settled, that next tap goes straight in. Timed from the tap, per plan: a plan
+    // replaced mid-wait (an unplayable board moved on to another game) restarts the clock.
+    const plannedId = planned?.id ?? null;
+    const prefetchSettled = planned?.prefetchSettled ?? false;
+    useEffect(() => {
+        if (!playRequested || plannedId === null || prefetchSettled) return;
+        const timer = window.setTimeout(() => {
+            prefetchGaveUpRef.current = plannedId;
+            console.warn("[GameBreak] prefetch still pending after Play; the Stage will deal its own board");
+            setPlayRequested(false);
+            setPlanned((p) => (p && p.id === plannedId && !p.prefetchSettled ? { ...p, prefetched: null, prefetchSettled: true } : p));
+        }, PLAY_WAIT_TIMEOUT_MS);
+        return () => window.clearTimeout(timer);
+    }, [playRequested, plannedId, prefetchSettled]);
 
     const finishGrow = useCallback(() => {
         setPhase((p) => (p === "growing" ? "playing" : p));

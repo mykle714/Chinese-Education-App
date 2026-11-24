@@ -397,7 +397,7 @@ declared fact rather than an absence the test could mistake for a forgotten fiel
 Being **moded** makes this harder. `GameDef.modes` is typed `{ mode, markType }[]` and exists
 for the challenge-pool test, so a mark-free moded game cannot fill it. Proposal: keep the
 Listening Practice modes in the game's own `MODE_CONFIGS` (`src/games/listening-practice/constants.ts`,
-the Word Search / Bucket Drop pattern) and leave `GameDef.modes` unset. With `emitsMarks:
+the Word Search pattern) and leave `GameDef.modes` unset. With `emitsMarks:
 false`, the invariant still holds, and the hub fans the tile out from `MODE_CONFIGS`. The
 Games hub (`GamesPage`) that would have fanned the tile out was deleted 2026-11-06, so this
 entry point needs redesigning before building.
@@ -457,7 +457,7 @@ english" — confirm it is shown from round start, not only in review.)
 ### Q9. Run shape
 Endless, or a fixed run (N rounds, score / medals)? Wins counted?
 **Answered 2026-10-12: endless, with a running correct/total tally** in the header. No medals,
-no wins, no save state (so no `gameprogress` row).
+no wins, no save state.
 
 ### Q10. How to declare "no marks"
 See § 11. **Answered 2026-10-12: an explicit `emitsMarks: false` field on `GameDef`.**

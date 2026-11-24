@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Box } from "@mui/material";
 import Icon from "../../../components/Icon";
+import PawnLoader from "../../../components/PawnLoader";
 import NotebookCell from "./NotebookCell";
 import type { NotebookSheet } from "./useNotebookSheet";
 import {
@@ -46,6 +47,11 @@ import { WEIGHT } from "../../../theme/scale";
  * rows flown past are never requested; the target's pages are requested at take-off so
  * they are usually there on landing, and the rows skipped over load as soon as the
  * learner scrolls back up into them.
+ *
+ * While the lookup is out (`seeking`) the button stays up, disabled, and PawnLoader shows
+ * after its usual delay (docs/DECK_TOWER.md § "Loading feedback"). The lookup is a GET, so
+ * src/api/http.ts retries it quietly; one that still fails just ends the wait, with no
+ * message of its own (docs/NOTIFICATIONS.md § 3a "Failures").
  *
  * A touch, wheel or key press during the flight hands the scroll back to the learner.
  *
@@ -324,6 +330,8 @@ const NotebookGrid = forwardRef<NotebookGridHandle, NotebookGridProps>(function 
                     Next empty
                 </Box>
             )}
+            {/* The next-empty lookup is a server round-trip: the loader covers a slow one. */}
+            {seeking && <PawnLoader label="Finding the next empty cell" />}
         </Box>
     );
 });

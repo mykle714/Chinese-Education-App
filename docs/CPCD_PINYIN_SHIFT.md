@@ -183,8 +183,7 @@ use the low-level `items` API, which `ForeignText` passes through untouched.
   block (so pinyin reflows when the row wraps or the container resizes).
 - Text widths are measured with a `Range` over the live text node and divided by
   the ancestor scale factor (`safeScale`) so the math stays in unscaled px even
-  when an ancestor applies a CSS `transform: scale()` (e.g. bubble-match shrinks
-  long word bubbles).
+  when an ancestor applies a CSS `transform: scale()`.
 
 ### Groups (`CPCDRow` → `groups`, `CPCDRowGroup`)
 
@@ -311,6 +310,5 @@ han advance walks every syllable progressively out of register across a row.
 
 `FONTS.cjk` is swappable at runtime via the `--cjk-font` custom property
 (`src/theme/fonts.ts`), so this is a live constraint on any typeface change, not a
-frozen property of the app. The `/font-lab` page measures and reports each candidate's
-han advance for exactly this reason —
-→ [CJK_TYPEFACE_LAB.md](./CJK_TYPEFACE_LAB.md) § 2.
+frozen property of the app: check a candidate face's han advance before offering it in
+`src/theme/cjkFontOptions.ts`.

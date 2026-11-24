@@ -40,7 +40,8 @@ import type { DefinitionCluster, DictionaryEntry } from "../types";
  * ── Layout (EipSenseList's, unchanged) ────────────────────────────────────────
  * Numbered 1…n and filled column-major — DOWN the left column, then the right, like a
  * printed dictionary (owner's call 2026-11-07). Two columns only from 5 rows up
- * (`TWO_COLUMN_MIN_SENSES`). A starred row keeps its star TRAILING the gloss (owner's call
+ * (`TWO_COLUMN_MIN_SENSES`), unless the caller asks for `singleColumn` (the Reader's
+ * split-screen keycap, whose halves are already narrow — src/reading/ReaderPhraseSplitFace.tsx). A starred row keeps its star TRAILING the gloss (owner's call
  * 2026-11-07) — `buildSenseSegments` hands it over as `leading`, so this list moves it to
  * the end and flips its gap — glued to the gloss's last word (`glossHeadAndLastWord`) so
  * it never wraps onto a line alone (owner's call 2026-11-10). The number is the position;
@@ -95,6 +96,9 @@ interface SenseListProps {
     selectedSenseIndex?: number;
     /** The learner's tone-colour setting (the header cpcd's `useToneColor`). Default on. */
     showPinyinColor?: boolean;
+    /** Never split into two columns, however many rows (the Reader's split-screen keycap,
+     *  src/reading/ReaderPhraseSplitFace.tsx, where each half is already a narrow column). */
+    singleColumn?: boolean;
     /** Wraps the list when there is one to show — the eip adds its section label and rule
      *  here. Not called when the list renders nothing, so no orphaned label is left behind. */
     wrap?: (list: ReactNode) => ReactNode;
@@ -161,7 +165,7 @@ interface OpenSense {
     anchorEl: HTMLElement;
 }
 
-const SenseList: React.FC<SenseListProps> = ({ entry, wordKey, selectedSenseIndex, showPinyinColor = true, wrap }) => {
+const SenseList: React.FC<SenseListProps> = ({ entry, wordKey, selectedSenseIndex, showPinyinColor = true, singleColumn = false, wrap }) => {
     const theme = useTheme();
     const fc = theme.palette.flashcard;
     const clusters = useMemo(() => sortedSenseClusters(entry), [entry]);
@@ -232,7 +236,7 @@ const SenseList: React.FC<SenseListProps> = ({ entry, wordKey, selectedSenseInde
     // Two columns only from TWO_COLUMN_MIN_SENSES rows up. Column-major fill: a fixed row
     // count (the left column takes the odd one out) with `gridAutoFlow: "column"` sends
     // items down the left column before the right.
-    const columnCount = rows.length >= TWO_COLUMN_MIN_SENSES ? 2 : 1;
+    const columnCount = !singleColumn && rows.length >= TWO_COLUMN_MIN_SENSES ? 2 : 1;
     const rowCount = Math.ceil(rows.length / columnCount);
 
     // Single column: the popup floats in the empty space to the RIGHT of the tapped text

@@ -5,6 +5,7 @@ import { ValidationError, NotFoundError } from '../types/dal.js';
 import type { ITextDAL } from '../dal/interfaces/ITextDAL.js';
 import { DOCUMENT_TITLE_MAX_LENGTH, TEXT_KINDS } from '../contracts/wire.js';
 import { sanitizeDocumentContent } from '../utils/sanitizeContent.js';
+import { normalizePronunciationOverrides } from '../utils/pronunciationOverrides.js';
 import { deriveDocumentTitle, documentTitleSource } from '../utils/documentTitle.js';
 import {
   buildDictMap,
@@ -126,21 +127,48 @@ export class TextService {
     // Nothing to change (no field): return the document as it is. TextController
     // already rejects an empty body with 400; this guards any other caller, because
     // `TextDAL.updateFields` refuses an update that names no column.
-    if (updateData.title === undefined && updateData.content === undefined && updateData.iconId === undefined) {
+    if (
+      updateData.title === undefined && updateData.content === undefined
+      && updateData.iconId === undefined && updateData.pronunciationOverrides === undefined
+    ) {
       return existingText;
     }
+
+    // READING CHOICES (migration 207; utils/pronunciationOverrides.ts). Checked against
+    // the content as it will be STORED (sanitized), since the offsets index into it. A
+    // content change without a list re-checks the stored list, so no choice ever points
+    // at a word that is no longer there.
+    const contentToStore = updateData.content !== undefined ? sanitizeDocumentContent(updateData.content) : undefined;
+    let pronunciationOverrides;
+    if (updateData.pronunciationOverrides !== undefined || contentToStore !== undefined) {
+      const normalized = normalizePronunciationOverrides(
+        updateData.pronunciationOverrides ?? existingText.pronunciationOverrides ?? [],
+        contentToStore ?? existingText.content,
+      );
+      if (normalized.shapeError) throw new ValidationError(normalized.shapeError);
+      if (normalized.dropped > 0) {
+        console.log(`[TEXT-SERVICE] Dropped ${normalized.dropped} stale reading choice(s) on text ${textId}`);
+      }
+      pronunciationOverrides = normalized.overrides;
+    }
+    // Picking a reading is not editing: a choices-only update leaves the "Recently
+    // edited" sort alone.
+    const onlyReadingChoices = updateData.title === undefined && updateData.content === undefined
+      && updateData.iconId === undefined;
 
     // Language is immutable after creation - cannot be updated (validateUpdateData).
     const updated = await this.textDAL.updateFields(textId, {
       // Normalized (control chars stripped, whitespace collapsed) like a typed create title.
       title: updateData.title !== undefined ? this.normalizeTitle(updateData.title) : undefined,
       // Defense-in-depth: neutralize control chars / HTML before storing.
-      content: updateData.content !== undefined ? sanitizeDocumentContent(updateData.content) : undefined,
+      content: contentToStore,
       // Counted on the RAW content, as createText does. `!== undefined` (not truthiness),
       // so clearing a document to "" records 0 rather than keeping the old count.
       characterCount: updateData.content !== undefined ? updateData.content.length : undefined,
       // `null` clears the icon, `undefined` leaves it (TextDAL.updateFields skips undefined).
       iconId: updateData.iconId,
+      pronunciationOverrides,
+      touchUpdatedAt: !onlyReadingChoices,
     });
 
     if (!updated) {

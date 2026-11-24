@@ -526,7 +526,7 @@ pronunciation)`, the sense-resolved reading on screen).
   word started is dropped.
 * **It hands nothing over.** The bar already prints the pinyin, so the audio is the sound
   of what is on screen, not a clue to where the word is — which is why the chip is shown
-  on every Memory Map run, unlike Bubble Match / Bucket Drop reading runs, which hide it.
+  on every Memory Map run.
 * **The first word after load has no gesture in its call stack.** The app-wide
   pointerdown listener has primed both sinks from the tap that opened the game
   (AUDIO_PLAYBACK.md § 5), so it normally plays; on iOS's `media` route a suspended
@@ -959,7 +959,7 @@ Design notes:
   both maps (owner, 2026-11-04). Read and written by `MemoryMapDAL` (`getFrameAspect`,
   `resetMap`), not `UserDAL`: nothing else reads it, and the reset changes it together with
   the slot tree under one lock.
-* **Not `gameprogress`, not a vet column.** A JSONB blob would rewrite the whole map on
+* **Not a JSONB save blob (the old, since-dropped `gameprogress` table), not a vet column.** A JSONB blob would rewrite the whole map on
   every spawn; a jsonb on the vet tables would put a one-game concern in a core table,
   twice.
 

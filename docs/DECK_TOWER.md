@@ -55,8 +55,9 @@ Parent: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (sub-documents table).
 - The route row is in `src/routes/routeMeta.ts` (`/`: `access: "any"`,
   `shell: "frame"`, `chrome: "tab"`, `footerTab: "deck"`). The
   component is in `src/routes/registry.ts`. The tab is the `deck` row of `TABS` in
-  `src/components/MobileFooter.tsx`. The vet cdp (`/flashcards/card/:id`) and acp
-  (`/discover/sort/:language`) also light the Flashcards tab.
+  `src/components/MobileFooter.tsx`. acp (`/discover/sort/:language`) also lights
+  the Flashcards tab. A saved card's detail has no route: it is td's card view (§ "The card
+  view"; the routed cdp `/flashcards/card/:id` was deleted 2026-11-23).
 - There is no Settings gear on td: Settings is a tab of the `AccountSheet` the avatar
   raises (the `/settings` route remains).
 - The page renders in a non-scrolling `MobileTabScreen` (title "Deck"). It wears the
@@ -101,7 +102,7 @@ Parent: [UX_AND_NAVIGATION.md](./UX_AND_NAVIGATION.md) (sub-documents table).
 | Page logic | `src/features/deckTower/towerModes.ts` → `TOWER_MODES`, `bandTotal`; `DeckTowerPage` → `learningCount` | The Learning deck's study mode — Mix only (§ Study mode) |
 | Page logic | `src/features/deckTower/towerResizes.ts` → `TOWER_SHRINKS`, `TOWER_GROWS`, `GHOST_COLLAPSE`, `SKY_DROP`, `IMPACT_MS`; `useTowerResize.ts` → `useTowerResize`; `DeckTowerPage` → `startResize`, `resolveRecount` | The library of in-place tower shrinks and grows, and the per-world player the focus lever uses (§ Tower resizes) |
 | Page logic | `src/features/deckTower/usePopUpMotion.ts` → `usePopUpMotion`, `useTween` | The floor fixture's rise / sink / sky-fall tweens (the focus lever's `useLeverMotion` builds on it) (§ Floor fixtures) |
-| Data | `src/hooks/useFlpReadyCounts.ts` (once per bar: core, reading, writing; `GET /api/onDeck/flpReadyCounts`) + `src/hooks/useMasteredCounts.ts` + `src/features/flashcards/builtinCollections.ts` → `builtinCollectionCount` | Each world's figures, read through its own bar. **Learning** = the bar's cards that are OFF COOLDOWN (`flpReadyCountsByBand`, the flp's own readiness rule; the response is `{ counts, upcoming, focusOn }`), in all four utcm bands (`TOWER_MODES.mix.bands` summed by `bandTotal`); **Mastered** = the bar's whole Mastered total, cooling or not. Two different **Learning** counts are on td on purpose: the tower's Learning deck is off-cooldown cards in all four bands, while the cards page's Learning filter key (and the sort platform's low test) counts cooling cards too and leaves out Mastered (`builtinCollectionCount({ kind: "learn-now" })`). Fetched on open; a card coming off cooldown while the page is up joins the tower as its own sky drop (§ Cooldown releases). The reading and writing figures are fetched even with the goal off (the same choice `useMasteredCounts` makes). ⚠️ **The writing world's two towers count different units, on purpose** (owner, 2026-11-22): its Learning tower counts off-cooldown deck CHARACTERS (the writing deck, single characters of the learner's sorted words — WRITING_PRACTICE_REWORK.md § 3d), its Mastered tower sorted WORDS whose averaged writing bar is Mastered. Don't "fix" one to match the other |
+| Data | `src/hooks/useFlpReadyCounts.ts` (once per bar: core, reading, writing; `GET /api/onDeck/flpReadyCounts`) + `src/hooks/useMasteredCounts.ts` (over `src/api/masteredCounts.ts` → `fetchMasteredCounts`, `GET /api/onDeck/masteredCounts`) + `src/features/flashcards/builtinCollections.ts` → `builtinCollectionCount` | Each world's figures, read through its own bar. **Learning** = the bar's cards that are OFF COOLDOWN (`flpReadyCountsByBand`, the flp's own readiness rule; the response is `{ counts, upcoming, focusOn }`), in all four utcm bands (`TOWER_MODES.mix.bands` summed by `bandTotal`); **Mastered** = the bar's whole Mastered total, cooling or not. Two different **Learning** counts are on td on purpose: the tower's Learning deck is off-cooldown cards in all four bands, while the cards page's Learning filter key (and the sort platform's low test) counts cooling cards too and leaves out Mastered (`builtinCollectionCount({ kind: "learn-now" })`). Fetched on open; a card coming off cooldown while the page is up joins the tower as its own sky drop (§ Cooldown releases). The reading and writing figures are fetched even with the goal off (the same choice `useMasteredCounts` makes). ⚠️ **The writing world's two towers count different units, on purpose** (owner, 2026-11-22): its Learning tower counts off-cooldown deck CHARACTERS (the writing deck, single characters of the learner's sorted words — WRITING_PRACTICE_REWORK.md § 3d), its Mastered tower sorted WORDS whose averaged writing bar is Mastered. Don't "fix" one to match the other |
 
 ## The scene
 
@@ -719,8 +720,8 @@ is now the only twilight.
   linear day ↔ night blend, half-way at the sun event (yesterday's, today's and tomorrow's
   keyframes are all built, so a night is always bracketed). A day too short for any plain
   day blends up to day at its midday and straight back; a polar day / night holds day / night.
-- **Who honours twilight.** The tower and acp blend. The Tier 2 pages (Dictionary, Lessons,
-  cdp — `useTier2Look`) do not (since 2026-11-15): they snap to the majority phase
+- **Who honours twilight.** The tower and acp blend. The Tier 2 pages (Dictionary, Lessons
+  — `useTier2Look`) do not (since 2026-11-15): they snap to the majority phase
   (`src/timeOfDay/dayPhase.ts` → `snappedPhase`) and flip at the sun event itself.
 - **Sampling** (`useTimeOfDay`). Once a minute and on `visibilitychange` → visible; a sample
   with the same look (blend within 0.005) keeps the old `TowerLight`, so nothing re-renders.
@@ -1091,7 +1092,7 @@ each:
   | `TimeOfDayToggle` | the sky colour fades (`SKY_FADE_MS`, 10 s) | `snapSky` for the render carrying the change (`DeckTowerPage` → `timeOfDayPinChanged`, `useJustChanged.ts`) |
   | `WeatherToggle` | the sky fade; clouds drift in one by one | `snapSky` (`weatherPinTapped`) + an instant cloud fill (§ Weather → "Tester toggle") |
   | `BalloonSpawnChip` | the balloon drifted in from off screen | it starts partway across (ISO_ART_FRAMEWORK.md § IsoBalloon → "Tester spawn") |
-  | `LoaderPreviewChip` | PawnLoader's 400 ms delay before it shows | mounted with `delayMs={0}` |
+  | `LoaderPreviewChip` | PawnLoader's 800 ms delay before it shows | mounted with `delayMs={0}` |
   | `AuroraToggle`, `LightningStrikeChips`, `ShootingStarChip`, `SnowResetChip` | nothing — already immediate | — |
 
   A mid-sky start still fades in over `FADE_MS` (1.6 s, `cloudDriftMotion.ts`), so it appears
@@ -1408,8 +1409,8 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
   `src/features/flashcards/card/cardStock.ts` → `cardStockVars`, applied by
   `FlashCardSection.tsx` → `FLP_CARD_STOCK_VARS`;
   `src/features/flashcards/constants.ts` → `FLP_CARD_STOCK_INSET_RATIO`,
-  `FLP_CARD_PANEL_RADIUS_RATIO`). Every face is card stock (the vet cdp's hero card
-  wears the same `cardStockVars`). Both faces of every
+  `FLP_CARD_PANEL_RADIUS_RATIO`). Every face is card stock (the card view's hero card
+  wears the same `cardStockVars`, § "The card view"). Both faces of every
   session card are the tower's IsoCard stock: a cream rim (`COLORS.cardFace`) around a beige
   printed panel (`COLORS.cardBeige`), inset `FLP_CARD_STOCK_INSET_RATIO` of the card's width
   on every side (= IsoCard `FACE_PAD` / `CARD_W`), the panel's corner
@@ -1493,22 +1494,87 @@ idle ──tap──▶ preparing ──(deal in + card measured)──▶ divin
 
 ## Loading feedback
 
-`src/features/deckTower/PawnLoader.tsx` (`PawnLoader`), `src/features/deckTower/iso/pawnFigure.ts`
-(`pawnFigure`, `REST_POSE`).
+`src/components/PawnLoader.tsx` (`PawnLoader`), `src/components/overlayHost.ts` (`dialogContainer`),
+`src/features/deckTower/DeckTowerPage.tsx` (`loadingLabel`, `countsFailed`, `retryCounts`),
+`src/hooks/useFlpReadyCounts.ts` (`failed`), `src/features/deckTower/iso/IsoCardImprint.tsx`
+(`variant`), `src/features/flashcards/FlashcardsLearnPage/FlashcardsLearnPage.tsx`,
+`src/features/discover/AddCardsPage.tsx`, `src/App.tsx` (`RouteChunkFallback`),
+`src/features/flashcards/writingNotebook/WritingNotebookPage.tsx` (`summarySettled`),
+`src/features/flashcards/writingNotebook/NotebookGrid.tsx` (`jump`, `seeking`);
+the study session's own waits: `FlashcardsLearnPage.tsx` (`loaderAllowed`),
+`src/features/flashcards/FlashcardsLearnPage/gameBreak/useGameBreak.ts` (`PLAY_WAIT_TIMEOUT_MS`),
+`src/features/flashcards/FlashcardsLearnPage/gameBreak/GameBreakArea.tsx` (`loaderAllowed`),
+`src/features/flashcards/FlashcardsLearnPage/useEipTabs.ts` (`drillPending`),
+`src/features/flashcards/FlashcardsLearnPage/useWritingFlashcard.tsx` (`guideLoadingFor`),
+`src/components/handwriting/HanziGuide.tsx` (`onLoadingChange`),
+`src/components/ProvisionalSortOffer.tsx` (`showLoader`).
 
-`PawnLoader` is td's generic loading mark: a 72 px white disc centred on the viewport, outlined
+`PawnLoader` is the app's generic loading mark: a 72 px white disc centred on the screen, outlined
 by `COLORS.border`, with the resting pawn in ink at its centre. A 3 px ink runner line with a
 fading tail (a conic gradient masked to a ring, capped by a round dot at its head) laps the rim
-once a second. It is a fixed, `pointer-events: none` overlay with `role="status"`, portalled to
-`document.body` so a transformed ancestor cannot pull it off centre. Nothing is
-drawn for the first `delayMs` (default 400 ms), so fast loads never flash it. After that it fades
-in. It keeps spinning under prefers-reduced-motion, because it is the only sign that work is
-still going on.
+once a second. It is a `pointer-events: none` overlay with `role="status"`, portalled into the phone frame
+(`dialogContainer()`) and pinned `position: absolute; inset: 0` there, the host and pinning every
+dim and Dialog uses. So it centres on the phone card on desktop and on the full-bleed frame on
+mobile, and a transformed page ancestor cannot capture it. Outside any frame it falls back to
+`body` + `position: fixed`. Nothing is drawn for the first `delayMs` (default 800 ms, `DEFAULT_DELAY_MS`), so fast
+loads never flash it. After that it fades in. It keeps spinning under prefers-reduced-motion,
+because it is the only sign that work is still going on.
 
-It lives in the feature rather than `src/components/` because it draws through the iso kit's
-`pawnFigure`, and `components/` may not import from `features/` (FRONTEND_LAYERING.md).
+It is shared (`src/components/`) because several features use it (the tower, the study session, Add Cards, the Writing Notebook, the route-chunk fallback). `components/` may not import the
+tower's iso kit, so its pawn is a **snapshot** of `pawnFigure(…, REST_POSE)` (`PAWN_BODY_PATH`,
+`PAWN_HEAD`), not drawn live. The file's comment says how to regenerate it if the pawn's
+proportions change.
 
-**Status:** the component is built, but no loading flow uses it yet. Feature testers can hold it up with the "⏳ Loader" chip (`LoaderPreviewChip`, § "Feature-tester rows").
+**Where it shows:**
+
+| Wait | Where | Condition | Label |
+|---|---|---|---|
+| The tap landed, the session is not ready | `DeckTowerPage` → `loadingLabel` | `study.phase === "preparing"` (useTowerStudy; dives anyway at `PREPARE_TIMEOUT_MS`) | "Opening your session" |
+| The world's tower has no figure yet | `DeckTowerPage` → `loadingLabel` | `towerCounts[worldId] === undefined`, not behind the launch cover, no session up, not `countsFailed` | "Loading your cards" |
+| A held tower awaiting its re-read (focus lever confirm, climb-out, tab return, opening at the last height) | `DeckTowerPage` → `loadingLabel` | `resize.holdVersion !== null` and still equal to the world's counts `version` (`resolveRecount` has not run), not behind the launch cover, no session up | "Updating your cards" |
+| Removing a card from Learning in the card view | `src/features/deckTower/cardView/TowerCardView.tsx` → `handleDelete` | `actionLoading`. `removeFromLibrary` is retried quietly first; a failure then re-enables the button with no message of its own (the card visibly stayed — NOTIFICATIONS.md § 3a) | "Removing card" |
+| The focus lever's switch saving | `useFocusLever` → `dialog` | `saving` (z 1301, over MUI's modal layer). `setFocusMode` is retried quietly first; a failed save closes the dialog and raises the `focus-mode-save-error` notice (NOTIFICATIONS.md § 3a) | "Saving focus mode" |
+| The session's deal (re)loading | `FlashcardsLearnPage` whole-page loading branch | `loading && !readyOutUp`, and only on the studied session once its count card is off (`!parked && !tower.cardsCovered`): the loader portals out of a parked layer's clip, and while the card is covered the tower's own loader covers the wait | "Loading your cards" |
+| Play tapped, the break's board not yet prefetched | `FlashcardsLearnPage` (`breakPlayPending`) | `loaderAllowed`, `gameBreak.phase === "title"`. Play keeps its label, disabled and greyed (opacity 0.32, the session's disabled-plate look); after `PLAY_WAIT_TIMEOUT_MS` (8 s) useGameBreak gives the prefetch up and re-enables Play (FLP_GAME_BREAKS.md § 2) | "Loading the game" |
+| A break game's code chunk still downloading as it opens | `GameBreakArea` → Suspense fallback | `loaderAllowed` prop. Rare: `startPlan` preloads the chunk | "Loading the game" |
+| A word tapped inside the eip (breakdown / used-in / example segment), its lookup in flight | `FlashcardsLearnPage` (`eip.drillPending`, useEipTabs) | `loaderAllowed`, eip open. A failed lookup is still silent | "Looking up the word" |
+| Back tapped after reviewing lent cards, the sort offer's lookup in flight | `ProvisionalSortOffer` → `showLoader` (flp passes `loaderAllowed`) | an empty or failed lookup carries the Back tap through (`onNothingToOffer`) | "Checking your borrowed cards" |
+| A writing card's character outline downloading | `useWritingFlashcard` → `overlays` (`guideLoadingFor`, reported by `HanziGuide` → `onLoadingChange`) | `loaderAllowed`, only the FRONT card, only faces that draw a guide; a failed load ends it (cell stays blank) | "Loading the character" |
+| Add Cards' first load / next pack | `AddCardsPage` (`loading`, and `!currentPack && !exhausted`) | | "Loading cards" |
+| The Writing Notebook's opening lookup of the last word | `WritingNotebookPage` (`summarySettled`), in the sheet's box in place of the "Tap Choose" hint | no word yet and `GET /summary` unanswered (a failure also settles it) | "Opening your notebook" |
+| The notebook's "Next empty" lookup | `NotebookGrid` → `jump` (`seeking`) | the `GET /nextEmpty` call is out (the button also stays disabled) | "Finding the next empty cell" |
+| A page's code-split chunk downloading | `App.tsx` → `renderRoute`'s Suspense fallback (`RouteChunkFallback`) | not while the boot cover is up (it covers that wait, and the loader's z 1300 would paint over its 200) | "Loading page" |
+
+**The session's gate (`loaderAllowed`).** Every loader mounted from inside the study session is
+gated on `FlashcardsLearnPage` → `loaderAllowed` (`!parked && !tower.cardsCovered`): the loader
+portals out of a parked session's `clip-path`, so ungated it would show over the tower from a
+background session; while the count card covers the cards, the tower's own loader speaks for the wait.
+
+The tower's two waits share one loader so they never stack. Main rarely shows the second: it opens
+held at its stored height (§ "Opening at the last height"), which counts as a figure. Feature
+testers can hold the loader up with the "⏳ Loader" chip (`LoaderPreviewChip`, § "Feature-tester rows").
+
+### Counts that fail
+
+A genuine zero is a **successful** `flpReadyCounts` response whose bands are all 0. A failure is a
+fetch that throws. `useFlpReadyCounts` keeps the two apart: a failure leaves `loaded` false and
+sets `failed`. Before 2026-11-23 it set `loaded` anyway and the tower read the empty counts as a
+false "0 cards". `failed` is reported only while no fetch has ever succeeded: a later failed
+re-read (climb-out, focus lever, tab return) keeps the last good figures, so the worst case there
+is a stale count, not a false zero.
+
+The Mastered deck reads `useMasteredCounts`, whose `ok` is true only after a successful fetch
+(`loaded` is true after a failed one too, so until 2026-11-23 a failure read as Mastered 0). The
+tower gates Mastered's figure on `ok`.
+
+On a failed count for the deck on stage (`countsFailed`: Learning's `failed`, or Mastered settled
+without `ok`), the tower draws the stack at 0 and prints the
+**retry imprint** ("↻ retry", `IsoCardImprint variant="retry"`) in its footprint. The footprint is
+the tap target (`retryCounts`). On Learning it calls `reload`, which clears `failed`, so the loader
+shows while the re-fetch runs. On Mastered it bumps the hook's `refreshKey`; that hook reports no
+in-flight state, so the imprint stays up until the re-fetch succeeds. The launch cover treats a failed count as settled (`launchReady`) and opens onto
+the retry imprint. A main tower held at its stored height lets the hold go when the failed fetch
+settles (`resolveRecount` finds no figure) and shows the retry imprint too.
 
 ## Running out of ready cards
 
@@ -1624,7 +1690,10 @@ are in [CARD_LIBRARY.md](./CARD_LIBRARY.md); this section is the page.
   on the face's top-left edge — the same edge as the mini cards' card stock. Up: a 5px wall and the sky's cast shadow (`--tower-cards-ground-shadow`, 9px
   right and down). Latched: sat 3px down-right on a 2px wall, glyph at full ink. Colour never changes with state — no mute of the
   other key — so the latch's height alone says which is down (the eip Add key's "stayed down" idiom, `EipAddKey`). Held: flush, the app's snapping press (`keycapPressSx`, with `restX`/`pressedX` for the diagonal). The pair sits in the same 364px column as the search row and the grid (`TowerCardsPage` → `GRID_WIDTH_PX`, 28px sides), so its edges line up with theirs. Each key keeps its figure,
-  right-adjusted. The search field carries the sort menu (`CollectionSortControl`,
+  right-adjusted. Until that figure has **loaded** the key shows an em dash in its place, never
+  a 0 (0 is a real answer): `useCardLibrary` → `tileCount` returns undefined until its source
+  hook has succeeded once (`useCategoryCounts` → `ok` for Learning, `useMasteredCounts` → `ok`
+  for Mastered). A failed load stays on the dash; a later re-read keeps the last good figure. The search field carries the sort menu (`CollectionSortControl`,
   common orderings only). The title is always "Cards" — a filter never renames the page
   (2026-11-08) — with no count: the latched key names the set and carries the figure.
 - **The cards** are acp's mini cards: `MiniCard` on the Deck Tower's card stock (cream rim,
@@ -1643,9 +1712,9 @@ are in [CARD_LIBRARY.md](./CARD_LIBRARY.md); this section is the page.
   floating without going flush. The cast shadow vanishes and the face moves 2px down-right
   (`PRESS_SINK_PX`), while the outlined 4px wall stays, so it is still a thick card. It snaps and is held at least `KEYCAP_MIN_HELD_MS`. The press moves through
   the CSS `translate` property because `useScrollStretch` writes an inline `transform` on
-  these cards; a press that travels into a scroll lets the card up. The cdp opens on
-  release (`click`), through the world's lens (`withLens`); the click that ends a desktop
-  swipe drag is ignored.
+  these cards; a press that travels into a scroll lets the card up. The card view
+  opens on release (`click`), through the world's lens (§ "The card view"); the click that
+  ends a desktop swipe drag is ignored.
 - **The platform stop.** Momentum always stops at the platform line, from above or below
   (`useTowerCardsScroll`): a scroll event that CROSSES the line while no finger is down
   (touch momentum, wheel, trackpad) is pinned to it, and the scroller's overflow goes
@@ -1737,13 +1806,119 @@ are in [CARD_LIBRARY.md](./CARD_LIBRARY.md); this section is the page.
   title row can always reach the top.
 - **Studying.** The page fades with the tower's UI on the dive (`towerUiOpacity`) and takes
   no input while a session is up; the platform stop is off then (the scroller is locked).
-- **Back.** Returning from a cdp remounts td on the platform line: the cards page does not
-  yet restore its scroll, search or filter.
+- **The card view.** A tapped card opens in place over the page (§ "The card view"); td stays
+  mounted, so scroll, search and filter are all where they were when it closes. The page
+  re-reads its library and key figures quietly on every close (`refreshKey`).
 
-Code: `TowerCardsPage.tsx` → `TowerCardsPage`, `TOWER_CARD_STOCK`; `towerScroll.ts` →
+Code: `TowerCardsPage.tsx` → `TowerCardsPage`; `towerCardStock.ts` → `TOWER_CARD_STOCK`; `towerScroll.ts` →
 `useTowerCardsScroll`, `platformScrollTop`; `DeckTowerPage.tsx` → `cardsPageRef`,
 `headerLayerRef`, `onOpenTowerCard`, `cardsPageStyle`; `useTowerCardsScroll` → `toCards`,
 `up`, `cancelGlide`; `towerScroll.ts` → `cardsTopScrollTop`, `snapTargetOf`, `releaseVelocityOf` (both tested in `__tests__/towerScroll.test.ts`); `CardsCue.tsx` → `CardsCue`.
+
+## The card view
+
+A card tapped in the cards page opens its detail IN PLACE, over the faded page: no route,
+no slide. It replaced the routed card detail page (`/flashcards/card/:id`,
+`VocabCardDetailPage`, deleted 2026-11-23) and does everything that page did.
+
+```
+  ┌ [←]                                [🗑] ┐ ← back · Remove from Learning (outlined, sky ink)
+  │       [ COMPARE ]   [ CUSTOMIZE ]       │ ← the flp session's plate rail (no Write it)
+  │           ┌───────────────┐             │
+  │           │   hero card   │             │ ← the answer face; fits the slot
+  │           └───────────────┘             │
+  │  [Read]                   3h 12m        │ ← track keycap (blue/green/pink; press = next) · cooldown, top right
+  │  ██████··················               │ ← the bar grows red → blue in a dashed full-bar outline
+  │            [ ↑ MORE INFO ]              │ ← the flp's More Info plate, same spot
+  └─────────────────────────────────────────┘     (footer hidden)
+```
+
+- **Opening — one motion.** Everything starts in the same frame and runs on one duration
+  and curve (`cardView/cardViewTiming.ts` → `CARD_VIEW_MOTION_MS`, `CARD_VIEW_EASING`), so
+  it reads as a single gesture: td fades its scroller (scene + cards page) and header out
+  (`DeckTowerPage` → `CARD_VIEW_FADE`); a GHOST of the tapped tile (the raised keycap mini
+  card) zooms from the tile onto the hero's slot (translate + uniform scale, measured
+  rects); the flat HERO card rides the SAME path under it, laid out at full size but
+  starting transformed down onto the tile (a FLIP, `TowerCardView` → `zoom`), so the two are
+  the same size in the same place at every instant; the hero fades in early (`HERO_FADE`)
+  and the ghost fades out across the middle (`GHOST_FADE`), so the keycap becomes the flat
+  card while still small and moving, with the hero opaque before the ghost thins; the
+  chrome fades in on the same motion. Phases are `rest` (one painted frame on the tile) →
+  `open`. The tile itself is hidden through its own style, so the memoized grid does not
+  re-render. The sky (`SpaceBackdrop`) stays as the ground. The ghost is a `MiniVocabCard`
+  on `TOWER_CARD_STOCK`, carrying the cast-shadow variable (`GROUND_SHADOW_VAR_NAME`) the
+  page root normally supplies. The mini card (92 × 132) and the hero (295 × 426) share an
+  aspect to within 1%, so one scale carries both. The hero's transform sits on the inner
+  card, never on its measured frame (`heroFrameRef`).
+- **Closing** (`closing`) is the exact mirror, the fade windows reflected in time
+  (`mirrorWindow`): both ends are re-measured, td fades its page back in from the first
+  frame (`onRevealHost`), and the tile is unhidden as the view unmounts after one motion
+  (`onClosed`). With no tile to zoom from, the hero only fades.
+- **Back.** Opening pushes a history entry on `/` carrying `{ towerCard: <vet id> }` beside
+  `towerWorld` in the route state (`useTowerCardView` → `open`, read from
+  `history.state.usr`, the same entry `useRememberTowerWorld` writes). Any browser / system
+  Back is a POP that drops it, and a watcher turns that into the close; the header's back
+  arrow is `navigate(-1)` through the same door. A reload on that entry does not restore the
+  card: the stale key is stripped at mount. React Router 7 applies the push as a
+  transition, so `awaitingPushRef` keeps the watcher from reading the not-yet-updated
+  location as a Back.
+- **Layout** (`TowerCardView`). One screen, no scroll: the header row is laid out as td's hub
+  header (`HUB_HEADER_*` + safe-area top), then a body column (rail band → card slot →
+  mastery → More Info clearance). The card slot is the flexible row (`containerType: size`)
+  and the hero fits whichever side binds (`HERO_WIDTH`). The body takes the fie toolbar's
+  intrusion as top padding (`useToolbarInset`), as the routed page's column did.
+- **The plates** are the flp session's white plate (`useTowerStudy.ts` →
+  `STUDY_PLATE_TONES`, `theme/towerPlate.ts` → `towerPlateSx`): Compare and Customize on
+  `WordToolsRail` with `showWriteIt={false}` and the tower rail sizing (`TOWER_RAIL_SX`,
+  `TOWER_RAIL_PILL_SIZE_SX`); More Info is the flp's own `MoreInfoPill`
+  (`FlashcardsLearnPage/styled.ts`) at the flp's `bottom: 24px + safe area`, ghosted until
+  the full entry has loaded (`GET /api/vocabEntries/:id`; the library rows the view opens
+  with may lack fields the eip reads) and while the fie is open.
+- **Mastery** (`cardView/TowerMasteryPanel.tsx`, which replaced `MasteryWindow`). Opens on
+  the world the card was tapped in. Track keys show Know plus each goal that is on
+  (`users.readingGoal` / `writingGoal`, DeckTowerPage → `cardViewTracks`), and are hidden
+  when only Know is. It is ONE narrow raised keycap (`TrackKeycap`, `KEY_WIDTH_PX`) naming
+  the shown track and faced in its track's colour (`TRACK_KEYCAP_COLORS`: Know `bluM`, Read `grnM`,
+  Write `redM`; walls by `bandMaterial`) — not the world's sky, which it camouflaged into
+  on its own world. A 1px `COLORS.border` ring traces its whole silhouette, face and wall
+  (`plateOutline`), for contrast against the sky; a press steps to the next offered track and its label and colour change.
+  The bar does not fill a track: it IS a
+  plate in its band's Mark tier (`getBandMark`, walls by `bandMaterial`; outlined in the
+  app's 1px `COLORS.border` — a ring round the whole silhouette (`plateOutline`) plus the
+  seam between face and wall (`PLATE_SEAM`), because the band's own wall was too close in
+  tone to separate from the face) whose length is the
+  progress — an empty bar is a short red bar (`BAR_MIN_WIDTH_PX`, ~2⅓ bar-heights), and it grows by
+  `masteryFillFraction` toward the full row, repainting per band, until it is a maxed-out
+  blue bar. Behind it a faded outline of long, heavy, round-capped dashes (an SVG stroke in the sky's ink, `BAR_OUTLINE_DASH`, `BAR_OUTLINE_OPACITY`) traces
+  the full keycap's perimeter — face AND wall, the stroke kept inside the silhouette and
+  CLIPPED to the part past the plate's end (`bar-outline-clip`), so no dash shows over or
+  beside the plate — so a short bar reads as part of a whole. At
+  night (`DeckTowerPage` → `cardViewNight`, `nightShare ≥ 0.5`) the outline is the muted
+  grey (`COLORS.textSecondary`), unfaded. At the top right, above the bar's end and level with the keycap, the per-bar cooldown (`barCooldownRemainingMs`) in the session's lettering, reading
+  "Ready to mark!" once it is up. Dropped (owner, 2026-11-23): the track name, the band
+  pill, the band cut-point ticks and their captions, the `n / 8` count, the groove. Walls are STRAIGHT
+  (the study session's), not the cards page's diagonal ones: the view is read straight down
+  onto the card, like the session, and its other plates are straight-walled.
+- **Remove from Learning** (header trash) demotes the card to `tracked` — never re-lent
+  (docs/PROVISIONAL_CARDS.md § "Removing from Learning demotes"), then closes the view; the
+  cards page's close-time refresh drops it from the grid and the key figures.
+- **Minute points.** The routed page earned by its path; the view earns through a
+  study-surface claim (`DeckTowerPage` → `useClaimStudySurface(cardViewUp)`,
+  docs/MINUTE_POINTS_SYSTEM.md § "Study surfaces on other routes").
+- **Almost no time-of-day theming.** The routed page took `useTier2Look`'s night tones; the
+  view sits on td's sky and inks with td's `skyInk`. Its one night switch is the mastery
+  bar's outline (`cardViewNight`).
+- **Unchanged from the routed page:** the hero's sense picker (persists `selectedSense`),
+  manual narration only, the fie (docs/CARD_ICON_LAYOUT.md), Compare closing any open eip
+  first (docs/WORD_COMPARE_FEATURE.md), the eip with its word trail and `learningSkipsRoot`
+  (docs/EIP_SHEET_GESTURES.md § mount sites).
+
+Code: `cardView/TowerCardView.tsx` → `TowerCardView`, `localRect`, `HERO_WIDTH`;
+`cardView/useTowerCardView.ts` → `useTowerCardView`; `cardView/TowerMasteryPanel.tsx` →
+`TowerMasteryPanel`, `TrackKeycap`, `RaisedBar`, `CooldownTimer`; `cardView/cardViewTiming.ts` →
+`CARD_VIEW_MOTION_MS`, `CARD_VIEW_EASING`; `theme/towerPlate.ts` → `towerPlateShadow`; `DeckTowerPage.tsx` →
+`cardView`, `cardViewTracks`, `onOpenTowerCard`, `CARD_VIEW_FADE`; `TowerCardsPage.tsx` →
+`refreshKey`; `useCardLibrary.ts` → `useCardLibrary(lens, refreshKey)`.
 
 ## Opening at the last height
 

@@ -18,9 +18,22 @@ import type { FlpUpcomingRelease } from "../../server/contracts/flpReadiness";
  * time, each as its own sky drop, so the count and the animation change together. No
  * re-fetch is made for a release: the schedule stays true until the next mark, and every
  * mark path re-reads (`reload`), which replaces the schedule.
+ *
+ * FAILURE vs A GENUINE ZERO (docs/DECK_TOWER.md § "Loading feedback" → "Counts that fail").
+ * A genuine zero is a SUCCESSFUL response whose bands are all 0. A failure is a fetch that
+ * throws: `loaded` stays false (no figure exists) and `failed` turns true, so the tower can
+ * offer a retry instead of reading the empty `counts` as "0 cards" (until 2026-11-23 a
+ * failure set `loaded` and did exactly that). Once any fetch has succeeded, a later failed
+ * re-read keeps the last good figures and reports nothing: a stale count, not a false 0.
  */
 export interface FlpReadyCountsState extends Omit<FlpReadyCounts, "upcoming"> {
+    /** A fetch has SUCCEEDED for this world: `counts` are real figures (0 included). */
     loaded: boolean;
+    /**
+     * No fetch has succeeded yet and the latest attempt threw: there is no figure. Cleared
+     * as soon as a `reload` starts, so the caller shows loading again while it runs.
+     */
+    failed: boolean;
     focusOn: boolean;
     reload: () => void;
     version: number;
@@ -46,6 +59,8 @@ export function useFlpReadyCounts(world: FlpWorld = "core"): FlpReadyCountsState
     const [fetchedCounts, setFetchedCounts] = useState<Record<string, number>>({});
     const [focusOn, setFocusOn] = useState(false);
     const [loaded, setLoaded] = useState(false);
+    // The latest attempt threw (only reported while nothing has loaded: see the return).
+    const [lastAttemptFailed, setLastAttemptFailed] = useState(false);
     // Bumped each time a fetch SETTLES (success or failure), so a caller waiting on a
     // `reload` can tell its re-read has landed even when the figures came back unchanged
     // (the Deck Tower's focus lever: DeckTowerPage → `resolveRecount`).
@@ -65,6 +80,8 @@ export function useFlpReadyCounts(world: FlpWorld = "core"): FlpReadyCountsState
     useEffect(() => {
         if (!isAuthenticated) return;
         let cancelled = false;
+        // A new attempt is under way: not failed (yet).
+        setLastAttemptFailed(false);
 
         (async () => {
             try {
@@ -78,13 +95,12 @@ export function useFlpReadyCounts(world: FlpWorld = "core"): FlpReadyCountsState
                 setUpcoming(next);
                 setDue(dueCount(next, Date.now()));
                 setApplied(0);
+                setLoaded(true);
             } catch (err) {
                 console.error("Error fetching flp-ready counts:", err);
+                if (!cancelled) setLastAttemptFailed(true);
             } finally {
-                if (!cancelled) {
-                    setLoaded(true);
-                    setVersion((v) => v + 1);
-                }
+                if (!cancelled) setVersion((v) => v + 1);
             }
         })();
 
@@ -119,5 +135,15 @@ export function useFlpReadyCounts(world: FlpWorld = "core"): FlpReadyCountsState
         return next;
     }, [fetchedCounts, upcoming, applied]);
 
-    return { counts, focusOn, loaded, reload, version, pendingReleases: due - applied, applyReleases };
+    return {
+        counts,
+        focusOn,
+        loaded,
+        // After a success the last good figures stand, so a failed re-read is not a failure here.
+        failed: lastAttemptFailed && !loaded,
+        reload,
+        version,
+        pendingReleases: due - applied,
+        applyReleases,
+    };
 }

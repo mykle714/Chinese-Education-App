@@ -30,7 +30,7 @@ belong to the tower world; don't use it to drop outlines from bento surfaces.
 Code: `src/features/flashcards/card/CardFace.tsx` → `CardFaceSide`;
 `src/features/flashcards/card/cardStock.ts` → `cardStockVars`;
 `src/features/flashcards/FlashcardsLearnPage/FlashCardSection.tsx` → `FLP_CARD_STOCK_VARS`;
-`src/features/flashcards/VocabCardDetailPage.tsx` → `HERO_CARD_STOCK_VARS`;
+`src/features/deckTower/cardView/TowerCardView.tsx` → `HERO_CARD_STOCK_VARS` (td's card view; the routed cdp it replaced on 2026-11-23 held the same constant);
 `src/features/flashcards/constants.ts` →
 `FLP_CARD_STOCK_INSET_RATIO`, `FLP_CARD_PANEL_RADIUS_RATIO`;
 `src/features/deckTower/iso/IsoCard.tsx` → `FACE_PAD`, `PANEL_RADIUS`;
@@ -51,9 +51,9 @@ like the tower's own cards:
 - **Panel.** `COLORS.cardBeige`, or the card's custom `cardColor` when the face renders the
   advanced layout. The custom colour fills the panel and the rim stays cream.
 - **No hairline** (`CardFaceSide` → `border: "none"`). **No shadow on the flp**
-  (`FlashCardSection` → `cardShadow` is `"none"`: the tower's cards lie flush). The cdp's
-  hero wrapper keeps the resting `CARD_SURFACE.boxShadow`, since it lies on the page ground
-  rather than on a deck.
+  (`FlashCardSection` → `cardShadow` is `"none"`: the tower's cards lie flush). td's card
+  view's hero wrapper keeps the resting `CARD_SURFACE.boxShadow`, since it lies on the sky
+  rather than on a deck (as the routed cdp's did on its page ground).
 - **Content stops at the panel.** `CardFaceSide`'s inner clip box takes `--card-panel-clip`,
   so icons, text and the sense chip are cut at the panel's edge, and text wraps at its width
   less a content gutter on a basic-layout face (`--card-content-width`; `--card-stock-inset` +
@@ -69,7 +69,7 @@ like the tower's own cards:
 
 Every vet card face is on this stock: `CardFaceSide` always prints it, and each card
 FRAME supplies the rim's geometry through `cardStockVars(widthCss)` — the flp's card stack
-(`FlashCardSection`) and the vet cdp's hero card (`VocabCardDetailPage`, at `100cqw`). There
+(`FlashCardSection`) and td's card view's hero card (`TowerCardView`, at `100cqw`). There
 is no bento flashcard face any more.
 
 ## The play slab
@@ -90,17 +90,17 @@ lag at night.
 | Surface | Where | Doc |
 |---|---|---|
 | Deck Tower scene (cards, plates, platform, lever, hatch) | `src/features/deckTower/` | DECK_TOWER.md, ISO_ART_FRAMEWORK.md |
-| flp card stock and the vet cdp's hero card | `CardFaceSide` + `cardStockVars` | § Card stock above |
+| flp card stock and td's card view's hero card | `CardFaceSide` + `cardStockVars` | § Card stock above |
 | flp page buttons: Compare, Customize, More Info | `src/theme/towerPlate.ts` → `towerPlateSx` | DECK_TOWER.md § "Studying the tower" → "The buttons" |
+| td's card view: its Compare / Customize rail, More Info plate and mastery panel (`TowerMasteryPanel`: a raised straight-walled bar + latch keys) on the flp session's white plates (`STUDY_PLATE_TONES`); replaced the routed cdp, whose body below the hero card was bento | `src/features/deckTower/cardView/` | DECK_TOWER.md § "The card view" |
 | flp game break's card (card stock, plates, glyph token) | `gameBreak/GameBreakCard.tsx`, `BreakCardLayer.tsx` | FLP_GAME_BREAKS.md § 5 |
 | flp study header + audio chip | `TowerStudyHeader.tsx` (`tone="bare"`) | DECK_TOWER.md § "Studying the tower" → "The audio chip" |
 | acp's on-deck cards, its skipped-cards sheet and td's cards page (rim + panel, drawn as one thick panel: a 4px wall with a hairline rounded edge (`src/theme/roundedEdge.ts`) and a near-solid cast shadow on the ground, no outline) | `src/features/discover/sortCardStock.ts` → `sortCardStockSx` | SORT_CARDS_REQUIREMENTS.md § 4.5, § 5.1a |
-| td's cards page under the platform (the same stock on `MiniVocabCard` `stock`, with the mastery strip, no levitation; an own-colour card fills the panel via `--mini-card-panel`) | `src/features/deckTower/TowerCardsPage.tsx` → `TOWER_CARD_STOCK` | DECK_TOWER.md § "The cards page" |
+| td's cards page under the platform (the same stock on `MiniVocabCard` `stock`, with the mastery strip, no levitation; an own-colour card fills the panel via `--mini-card-panel`) | `src/features/deckTower/towerCardStock.ts` → `TOWER_CARD_STOCK` (used by `TowerCardsPage` and the card view's zoom ghost) | DECK_TOWER.md § "The cards page" |
 | Slab footer (every footer route since 2026-11-16) | `src/components/MobileFooter.tsx` | DECK_TOWER.md § Footer |
-| Tier 2 time-of-day ground (the page ground tints with the hour; the slab follows): `/dictionary`, the cdp | `src/timeOfDay/useTier2Look.ts` → `useTier2Look` | DECK_TOWER.md § Time of day |
+| Tier 2 time-of-day ground (the page ground tints with the hour; the slab follows): `/dictionary` (the cdp wore it until its 2026-11-23 removal; td's card view sits on td's sky instead) | `src/timeOfDay/useTier2Look.ts` → `useTier2Look` | DECK_TOWER.md § Time of day |
 
 ## Still bento
 
-Everything else: the Menu popover, the rest of acp, the cdp's body below
-the hero card, the eip/sheets and every game page. When one of them moves, add a row to the table above and
+Everything else: the Menu popover, the rest of acp, the eip/sheets and every game page. When one of them moves, add a row to the table above and
 say which bento rule it drops.

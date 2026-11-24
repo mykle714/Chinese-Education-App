@@ -20,8 +20,8 @@ Two ways in, one setting:
 - **`/settings` → Narration** — three `OptionRow`s that EXPLAIN the states (their
   subtitles have room to say "pauses music" and "follows the silent switch").
 - **`AudioModeChip`** — one header chip that CHANGES them mid-study: each tap
-  advances off → passthrough → media → off. Rendered on the flp, acp, Bubble Match,
-  Hydra Bubbles, Match Speed, Word Search, Bucket Drop and Memory Map headers.
+  advances off → passthrough → media → off. Rendered on the flp, acp, Match Speed,
+  Word Search and Memory Map headers.
 
 Both go through `useTTSSettings`, so they cannot disagree, and both take their order
 from `AUDIO_MODE_ORDER` — the picker lists it, the chip cycles it. Three states:
@@ -54,12 +54,12 @@ off → on round trip returns to the route the user picked.
 `src/components/AudioModeChip.tsx` is self-contained — it reads the setting itself
 rather than taking value/onChange props, so no surface can drift in label, icon or
 cycle order, and adding it to a new header is one tag. A surface that must hide it
-(Bubble Match and Bucket Drop on a reading run, where hearing the word hands over the pronunciation
-being tested) simply does not render it.
+(a reading run where hearing the word hands over the pronunciation being tested — no
+current surface; the archived Bubble Match and Bucket Drop did) simply does not render it.
 
 **The reading pages have their own setting: the Reader document page and the cyoa story
-page** (docs/CYOA_FEATURE.md § 3.1). The Reader's display strip and the story page's header
-show `ReaderAudioChip`, the same skin bound to `useReaderAudioSettings` (`localStorage`
+page** (docs/CYOA_FEATURE.md § 3.1). The Reader's header and the story page's header
+both show `ReaderAudioChip`, the same skin bound to `useReaderAudioSettings` (`localStorage`
 `reader.audio`, default **default**) — one setting shared by both pages — which gates their
 tap-to-hear and claims the route for the page while it is mounted (§ 5). It is not this setting, and changing one never
 changes the other. See [USER_DOCUMENT_FEATURE_SUMMARY.md](./USER_DOCUMENT_FEATURE_SUMMARY.md)
@@ -70,7 +70,7 @@ grow's first frame, and draws its own chip at the row's right end, level with th
 drawn twice — `ink` white for the sky and the default `COLORS.iconColor` for the white ground —
 the dark copy clipped to the growing circle, so the chip turns dark as the white arrives under
 it. An adapter hides it with `FlpBreakGame.hidesAudioChip` (the row exists before the Stage
-does): only Bucket Drop on a reading run does today.
+does): no adapter sets it today (the archived Bucket Drop did, on a reading run).
 Writing Grid narrates nothing but **shows** the chip since 2026-11-10, because its countdown
 beeps (§ 7a) and the chip is how they are muted. See docs/FLP_GAME_BREAKS.md § 6.
 *Code:* `src/features/flashcards/FlashcardsLearnPage/gameBreak/GameBreakChrome.tsx`.
@@ -414,8 +414,11 @@ whole contract:
 
 A third, `surfaceAutoSpeak(entry)` (trigger `'surface'`), is automatic narration on a
 surface that gates it with its OWN setting: the app-wide autoplay flag does not apply, the
-media-mode fallback rule does. Its one caller is the Reader's tap-to-hear
-(`useReaderWordActions` → `autoSpeakSelected`).
+media-mode fallback rule does. Its only callers are the reading engine's tap-to-hear (the
+Reader and cyoa): `surfaceAutoSpeak(entry)` for a word (`useReaderWordActions` →
+`autoSpeakSelected`), and its text form `surfaceAutoSpeakText(text, pinyin)` for a selected
+phrase, which has no entry of its own (`useReadingKeycap` → `phraseSpeech`;
+READER_SEGMENTATION.md § "Phrase stepping").
 
 The gate lives inside the hook, so a call site never re-checks the setting.
 Automatic sites today: the flp card-flip narration, the acp on-deck pack
@@ -584,7 +587,7 @@ heuristics for Web Audio — and `'auto'` in `passthrough`.
 > drag-triggered narration) must call `tts.unlockAudio()` synchronously from an
 > earlier guaranteed gesture — a start or level button. There must be no `await`
 > between the gesture and that call. Existing examples: `SpeedReadingStage`,
-> `MemoryMapStage`, `BubbleMatchPage`, `HydraBubblesPage`.
+> `MemoryMapStage`, `WordSearchStage`, `AddCardsPage`.
 
 ### ⛔ Unlock must never latch
 
@@ -880,12 +883,10 @@ parsed object).
 **The quick toggles survived, became three-state, and consolidated into the header.** Every surface
 that offered an autoplay control still offers one, now reading and writing the
 unified flag — and all of them are in the **page header** as an `autoplay` chip:
-flp (`FlashcardsLearnHeader`), acp (`AddCardsPage` header actions), Bubble Match
-and Hydra (`BubbleMatchHeaderControls`), Match Speed (`MatchSpeedHeader`) and Word
-Search (`WordSearchHeaderControls`, added 2026-08-29 — the game narrates found words,
-blue matches and review rungs, so it needed a mid-play mute like the rest) and Bucket Drop
-(`BucketDropStage`'s `headerRight`, added 2026-10-06 — it narrates the picked-up word,
-and like Bubble Match hides the chip on a reading run). The two
+flp (`FlashcardsLearnHeader`), acp (`AddCardsPage` header actions), Match Speed
+(`MatchSpeedHeader`) and Word Search (`WordSearchHeaderControls`, added 2026-08-29 —
+the game narrates found words, blue matches and review rungs, so it needed a mid-play
+mute like the rest). The two
 that were buried — flp's settings-sheet row and Match Speed's dialog row — moved up
 on 2026-08-28, so the chip means the same thing and sits in the same place
 everywhere. The *setting* was unified; the affordances were made consistent.

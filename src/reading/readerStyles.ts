@@ -40,12 +40,34 @@ import type { Tier2Look } from "../timeOfDay/tier2Look";
  * textarea's computed style, so it follows automatically.
  *
  * Since 2026-11-20 the reading area is NOT a card: the words sit straight on the page
- * ground, and this gutter (plus ReaderDocumentPage's 16/24px content padding) is the
- * generous side margin that replaced the card's edge. The gutter is on the scroll surface
- * itself, so text scrolls through it rather than being clipped short of the margin.
+ * ground, and this gutter (plus the page's 16/24px content padding, READER_PAGE_PAD_PX)
+ * is the generous side margin that replaced the card's edge. The gutter is on the scroll
+ * surface itself, so text scrolls through it rather than being clipped short of the margin.
  * Docs: docs/USER_DOCUMENT_FEATURE_SUMMARY.md § Look; docs/CYOA_FEATURE.md § Shared reading pane.
  */
 export const READER_TEXT_GUTTER_PX = { x: 24, y: 8 } as const;
+
+/**
+ * The reading pages' content padding, px (ReaderDocumentPage → `.reader-document-content`,
+ * StoryPlayPage → CONTENT_PAD_PX): 16 on phones, 24 from `sm` up.
+ */
+export const READER_PAGE_PAD_PX = { xs: 16, sm: 24 } as const;
+
+/**
+ * The reading box's full padding, as sx (TextArea's textarea, ReaderCpcdView). The pane
+ * itself runs FULL-BLEED to the screen's sides (owner's call 2026-11-23: the page padding
+ * used to sit outside the scroll surface and push the scrollbar in off the edge), so the
+ * page padding is folded in here instead: text keeps its old margin (gutter + page pad)
+ * while the scrollbar sits on the screen's edge. Longhands, not the `padding` shorthand,
+ * so a caller can still override one side (edit mode's paddingBottom) without a
+ * breakpoint's media query undoing it.
+ */
+export const READER_TEXT_PADDING_SX = {
+    paddingTop: `${READER_TEXT_GUTTER_PX.y}px`,
+    paddingBottom: `${READER_TEXT_GUTTER_PX.y}px`,
+    paddingLeft: { xs: `${READER_TEXT_GUTTER_PX.x + READER_PAGE_PAD_PX.xs}px`, sm: `${READER_TEXT_GUTTER_PX.x + READER_PAGE_PAD_PX.sm}px` },
+    paddingRight: { xs: `${READER_TEXT_GUTTER_PX.x + READER_PAGE_PAD_PX.xs}px`, sm: `${READER_TEXT_GUTTER_PX.x + READER_PAGE_PAD_PX.sm}px` },
+} as const;
 
 /** The card radius — SectionCard's 18px (src/components/primitives/SectionCard.tsx). */
 export const READER_CARD_RADIUS = "18px";
@@ -91,6 +113,14 @@ export const readerMessageSx = (look: Tier2Look) => ({
  *   `fill` omitted — NEUTRAL (Cancel, idle Read): the look's surface with the look's ink,
  *                    so it turns slate at night with the page.
  */
+/**
+ * How faded an on/off pill sits while OFF — the Pinyin pill (ReaderDisplayToggle) and the
+ * Phrase pill (ReaderPhraseToggle). The same 0.45 readerPillButtonSx uses for a disabled
+ * pill: still tappable, it just recedes until switched on (owner's call 2026-11-18: faded →
+ * not faded, no hue for "on").
+ */
+export const READER_PILL_OFF_OPACITY = 0.45;
+
 export const readerPillButtonSx = (look: Tier2Look, fill?: string) => {
     const background = fill ?? look.surface;
     const ink = fill ? COLORS.onSurface : look.ink;

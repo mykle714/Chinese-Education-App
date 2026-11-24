@@ -16,7 +16,7 @@ CLAUDE.md § "Nonstandard deploys need a temp runbook"; the deploy procedure its
 > `schema_migrations` and `migrate.sh --dry-run`, and treat any disagreement as this
 > file (or the runbook banner) being stale.
 
-PPE is current through migration **199** (2026-11-21). Latest code deploy: `8323dbb` + `0e9af62` (2026-11-21, migrations 195–199).
+PPE is current through migration **207** (2026-11-23). Latest code deploy: `9e87f3d` (2026-11-23, migrations 206–207).
 
 ## Open runbooks
 
@@ -35,6 +35,8 @@ PPE is current through migration **199** (2026-11-21). Latest code deploy: `8323
 | [GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md](./GLOSS_CONFUSABILITY_PHASE2_RUNTIME_RUNBOOK.md) | Gloss phase-2 half B, the runtime guard (**no migration**) | Deployed 2026-08-24; infrastructure checks passed | Someone must open a real game board and confirm it fills rather than coming back short (the one over-blocking symptom the checks cannot see) |
 
 ## Deploy history and lessons
+
+Deployed 2026-11-23 (`9e87f3d`), migrations **206** (drop `gameassets`/`gameprogress`; deleted 82 `wins` + 1 `game_personal_bests` rows of the archived bubble/bucket games) and **207** (`texts."pronunciationOverrides"`, additive), both standard and applied by hand after the rebuild, recorded in `schema_migrations`. There was no runbook. All three 206 verification counts were 0, and the 207 column is present. Ships Reader reading choices and phrase mode, plus the dead-code sweep that archived Bubble Match, Hydra Bubbles and Bucket Drop. The local-only `archive/bubble-match-hydra-bucket-drop` and `archive/home-screen` branches were pushed to origin. **Lesson:** a test fixture (`readerListOrder.test.ts`) lacked the new required `pronunciationOverrides` field, and only `npm run build` (tsc over tests) caught it, because vitest passed.
 
 Deployed 2026-11-21 (`8323dbb` + `0e9af62`), migrations **195–199** (`sentence_explanation_cache`; `users."isAuthor"` + the `stories` / `story_*` tables), no runbook: Adventures (cyoa) with the shared `src/reading/` engine, Sentence Explain. **Lesson:** 196 failed on PPE with a syntax error that dev never hit — an unescaped apostrophe (`app's`) in a `COMMENT ON` string added after dev had applied the file. Each file ran under `psql -1`, so nothing was half-applied; `0e9af62` escaped it. An edited migration that is already recorded on dev is never re-run there, so re-check its syntax (BEGIN … ROLLBACK) before shipping. Post-deploy data: `users."isAuthor"` set for michael2, and dev's two stories (想交朋友的人, Someone who wants friends: 10 passages / 16 choices each) copied up with michael2 as author and published.
 

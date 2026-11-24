@@ -15,9 +15,11 @@ them in the cleanup pass that followed. Index entry on `main`: `docs/ARCHIVED_FE
 Design docs (on this branch only): `docs/HYDRA_BUBBLES.md`, `docs/BUCKET_DROP_GAME.md`.
 Bubble Match's design lives in `docs/GAMES_FEATURE.md`.
 
-**Not archived, still on `main`:** `src/games/bubbles/` (the shared bubble field). The add
-cards page (`AddCardsPage`) uses it. Some of its comments still cite `HYDRA_BUBBLES.md` on
-this branch.
+**Also archived:** `src/games/bubbles/`, the bubble field Bubble Match and Hydra shared
+(physics, throw tracker, `Bubble`, `bodyFactory`, constants). Once both games were gone its
+only importer was its own test. (`AddCardsPage` named it only in a comment.)
+`src/games/runtime/GameEndPopup.tsx` went with it; its last caller was Bubble Match's end
+popup.
 
 ## Files deleted from `main`
 
@@ -26,10 +28,12 @@ Restore with `git checkout archive/bubble-match-hydra-bucket-drop -- <path>`.
 - `src/games/bubble-match/` (8 files)
 - `src/games/hydra-bubbles/` (7 files)
 - `src/games/bucket-drop/` (9 files)
+- `src/games/bubbles/` (6 files) and `src/games/runtime/GameEndPopup.tsx`
 - `src/games/flpBreak/bucketDropBreak.ts`, `src/games/flpBreak/BucketDropBreakStage.tsx`,
   `src/games/flpBreak/__tests__/bucketDropBreak.test.ts`
 - Tests: `src/__tests__/bubbleMatchSpawn.test.ts`, `hydraSpawnTable.test.ts`,
-  `hydraSpawnPlanner.test.ts`, `bucketDropQueue.test.ts`, `bucketDropPerimeter.test.ts`
+  `hydraSpawnPlanner.test.ts`, `bucketDropQueue.test.ts`, `bucketDropPerimeter.test.ts`,
+  `bubbleThrowPhysics.test.ts`
 - **The dead Games-hub launcher cluster**, removed together because `GameCard` was built
   around Bubble Match's levels. It had no importer since the hub was deleted on 2026-11-06:
   `src/games/shared/GameCard.tsx`, `src/games/shared/gameCards.ts`,
@@ -77,7 +81,8 @@ at `POST /api/flashcards/mark`". It now lives on `main` in
 
 ## Revival checklist
 
-1. Restore the game folder(s) and the tests listed above.
+1. Restore the game folder(s), `src/games/bubbles/` (for either bubble game),
+   `GameEndPopup.tsx`, and the tests listed above.
 2. Re-add the registry row, the flag, the `KNOWN_GAME_IDS` slug, the `MarkSurface` value and
    the minute-points path.
 3. Give it a host. The archive happened because these games had none. Either write an flp
